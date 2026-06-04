@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from agents.risk_analysis_agent import analyze_event
+
 app = FastAPI()
 
 app.add_middleware(
@@ -27,27 +29,23 @@ def read_root():
 
 @app.get("/api/detected-events")
 def get_detected_events():
+    event_type = "wildfire"
+    analysis = analyze_event(event_type)
+
     return {
         "events": [
             {
                 "id": 1,
-                "type": "wildfire",
+                "type": event_type,
                 "title": "Mock wildfire risk event",
                 "description": "High wildfire risk detected near a dry vegetation area.",
                 "latitude": 32.0853,
                 "longitude": 34.7818,
-                "risk_score": 82,
-                "risk_level": "high",
-                "recommended_units": [
-                    "fire_department",
-                    "municipal_emergency_team",
-                    "police"
-                ],
-                "response_plan": [
-                    "Verify the event using available environmental data.",
-                    "Alert nearby emergency response units.",
-                    "Monitor wind direction and nearby sensitive infrastructure."
-                ]
+                "risk_score": analysis["risk_score"],
+                "risk_level": analysis["risk_level"],
+                "recommended_units": analysis["recommended_units"],
+                "response_plan": analysis["response_plan"],
+                "explanation": analysis["explanation"]
             }
         ]
     }
