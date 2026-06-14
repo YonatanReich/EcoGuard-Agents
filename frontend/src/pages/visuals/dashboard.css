@@ -1,0 +1,168 @@
+/*This CSS sheet handles styling and effects for the dashboard screen*/
+.dashboard {
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: 1.5rem;
+    gap: 1rem;
+    animation: fadeIn 0.6s ease both;
+    user-select: none;
+}
+
+.dashboard--leaving {
+    animation: slideUpOut 0.6s ease both;
+}
+
+.dashboard__header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.dashboard__header-center {
+    text-align: center;
+    flex: 1;
+}
+
+.dashboard__header-spacer {
+    width: 110px;
+}
+
+.logout-button {
+    font-size: 1rem;
+    font-weight: 600;
+    font-family: "Plus Jakarta Sans", sans-serif;
+    border-radius: 20px;
+    width: 110px;
+    height: 44px;
+    cursor: pointer;
+    border: 2px solid transparent;
+    background: white;
+    transition: background 0.3s ease, border-color 0.3s ease, color 0.3s ease, transform 0.3s ease;
+}
+
+.logout-button:hover {
+    background: #005eff;
+    border-color: white;
+    color: white;
+    transform: scale(1.1);
+}
+
+.dashboard__title {
+    margin: 0;
+    font-size: clamp(1.75rem, 4vw, 2.5rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    font-family: "Plus Jakarta Sans", sans-serif;
+    word-spacing: 0.1em;
+}
+
+.dashboard__subtitle {
+    margin: 0.25rem 0 0;
+    color: var(--text-muted);
+    font-family: "Plus Jakarta Sans", sans-serif;
+}
+
+.dashboard__body {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: row;
+    gap: 1rem;
+    min-height: 0;
+}
+
+.dashboard__map {
+    flex: 1 1 auto;
+    min-height: 400px;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+}
+
+.dashboard__sidebar {
+    flex: 0 0 280px;
+    background: var(--bg-cards);
+    border-radius: 10px;
+    border: 2px solid transparent;
+    transition: border-color 0.3s ease;
+    display: flex;
+    flex-direction: column;
+}
+
+.dashboard-footer {
+    flex: 0 0 120px;
+    background: var(--bg-cards);
+    border-radius: 10px;
+    border: 2px solid transparent;
+    transition: border-color 0.3s ease;
+}
+
+.dashboard-footer:hover,
+.dashboard__sidebar:hover {
+    border-color: white;
+}
+
+.Event-summary-header {
+    position: relative;
+    text-align: center;
+    font-family: "Plus Jakarta Sans", sans-serif;
+    font-size: 1.1rem;
+    font-weight: 700;
+    padding-bottom: 6px;
+}
+
+.Event-summary-header::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 0;
+    height: 2px;
+    background: white;
+    transition: width 0.3s ease;
+}
+
+.dashboard__sidebar:hover .Event-summary-header::after {
+    width: 100%;
+}
+
+.Event-counter {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-family: "Plus Jakarta Sans", sans-serif;
+}
+
+.agent-status-header {
+    position: relative;
+    text-align: center;
+    font-family: "Plus Jakarta Sans", sans-serif;
+    font-size: 1.1rem;
+    font-weight: 700;
+    padding-bottom: 6px;
+}
+
+.agent-status-header::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 0;
+    height: 2px;
+    background: white;
+    transition: width 0.4s ease;
+}
+
+.dashboard-footer:hover .agent-status-header::after {
+    width: 100%;
+}
+
+.agent-status-container {
+    text-align: center;
+    margin-top: 30px;
+    font-family: "Plus Jakarta Sans", sans-serif;
+}
