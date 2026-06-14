@@ -1,0 +1,131 @@
+/*This CSS sheet handles styling and effects for the landing screen. and also defines global frontend variables*/
+
+:root {
+  --bg-dark-blue: #000e27;
+  --bg-cards: #002564;
+  --card-border: rgb(0, 98, 255);
+  --text-primary: #ffffff;
+  --text-muted: #9fb3d1;
+
+  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--bg-dark-blue);
+  color: var(--text-primary);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInOpacity {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideUpOut {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(-40px); }
+}
+
+.home {
+  text-align: center;
+  padding: 1.5rem;
+  user-select: none;
+}
+
+.home__bot {
+  width: 400px;
+  height: auto;
+  margin-bottom: 1.5rem;
+  animation: fadeIn 0.6s ease both;
+}
+
+.home__title {
+  animation: fadeIn 0.6s ease 0.3s both;
+}
+
+.home__subtitle {
+  animation: fadeIn 0.6s ease 0.45s both;
+}
+
+.login-button {
+  animation: fadeInOpacity 0.6s ease 1s both;
+}
+
+.home--leaving .home__bot {
+  animation: slideUpOut 0.4s ease both;
+}
+
+.home--leaving .home__title {
+  animation: slideUpOut 0.4s ease 0.08s both;
+}
+
+.home--leaving .home__subtitle {
+  animation: slideUpOut 0.4s ease 0.16s both;
+}
+
+.home--leaving .login-button {
+  animation: slideUpOut 0.4s ease 0.24s both;
+}
+
+.home__title {
+  margin: 0;
+  font-size: clamp(2.5rem, 6vw, 4.5rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  word-spacing: 0.1em;
+  font-family: "Plus Jakarta Sans", sans-serif;
+}
+
+.home__subtitle {
+  margin: 1rem 0 0;
+  font-size: clamp(1rem, 2vw, 1.25rem);
+  color: var(--text-muted);
+  font-family: "Plus Jakarta Sans", sans-serif;
+}
+
+.login-button{
+  margin-top: 50px;
+  font-size: 1rem;
+  font-weight: 600;
+  font-family: "Plus Jakarta Sans", sans-serif;
+  border-radius: 20px;
+  width: 150px;
+  height: 50px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: background 0.3s ease,
+  border-color 0.3s ease, 
+  color 0.3s ease,
+  transform 0.3s ease;
+  background: white;
+}
+
+.login-button:hover{
+  background: #005eff;
+  border-color: white;
+  color: white;
+  transform: scale(1.1);
+}
