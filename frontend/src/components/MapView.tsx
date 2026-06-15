@@ -1,4 +1,4 @@
-import { useState, useEffect, type CSSProperties } from 'react'
+import { useState, type CSSProperties } from 'react'
 import Map, {
   NavigationControl,
   ScaleControl,
@@ -9,6 +9,7 @@ import Map, {
 } from 'react-map-gl/maplibre'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import { type RiskEvent } from '../pages/Dashboard'
 
 
 maplibregl.setRTLTextPlugin(
@@ -24,6 +25,7 @@ const ISRAEL_CENTER = { longitude: 35.0, latitude: 31.4 } as const
 const ISRAEL_MAX_BOUNDS: [number, number, number, number] = [33.5, 29.0, 36.5, 33.6]
 
 type MapViewProps = {
+  events: RiskEvent[] 
   /** Inline style for the wrapping container. Defaults to filling its parent. */
   style?: CSSProperties
   /** MapTiler style id, e.g. "streets-v2", "satellite", "hybrid", "topo-v2". */
@@ -34,21 +36,8 @@ type MapViewProps = {
   children?: React.ReactNode
 } & Pick<MapProps, 'onLoad' | 'onClick'>
 
-type RiskEvent = {
-  id: number
-  type: string
-  title: string
-  description: string
-  latitude: number
-  longitude: number
-  risk_score: number
-  risk_level: string
-  recommended_units: string[]
-  response_plan: string
-  explanation: string
-}
-
 function MapView({
+  events,
   style,
   mapStyleId = 'streets-v2',
   initialZoom = 7,
@@ -57,18 +46,6 @@ function MapView({
 }: MapViewProps) {
   // Surface a missing-key error once instead of letting MapTiler return broken tiles.
   const [hadError, setHadError] = useState(false)
-  const [events, setEvents] = useState<RiskEvent[]>([])
-
-  useEffect(() => {
-    fetch('/api/detected-events')
-      .then((response) => response.json())
-      .then((data) => {
-        if (data.events) {
-          setEvents(data.events)
-        }
-      })
-      .catch((error) => console.error('Error fetching events:', error))
-  }, [])
 
   const containerStyle: CSSProperties = {
     position: 'relative',
