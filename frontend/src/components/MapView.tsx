@@ -1,9 +1,10 @@
-import { useState, type CSSProperties } from 'react'
+import { useState, useEffect, type CSSProperties } from 'react'
 import Map, {
   NavigationControl,
   ScaleControl,
   FullscreenControl,
   GeolocateControl,
+  Marker,
   type MapProps,
 } from 'react-map-gl/maplibre'
 import maplibregl from 'maplibre-gl'
@@ -33,6 +34,20 @@ type MapViewProps = {
   children?: React.ReactNode
 } & Pick<MapProps, 'onLoad' | 'onClick'>
 
+type RiskEvent = {
+  id: number
+  type: string
+  title: string
+  description: string
+  latitude: number
+  longitude: number
+  risk_score: number
+  risk_level: string
+  recommended_units: string[]
+  response_plan: string
+  explanation: string
+}
+
 function MapView({
   style,
   mapStyleId = 'streets-v2',
@@ -42,6 +57,18 @@ function MapView({
 }: MapViewProps) {
   // Surface a missing-key error once instead of letting MapTiler return broken tiles.
   const [hadError, setHadError] = useState(false)
+  const [events, setEvents] = useState<RiskEvent[]>([])
+
+  useEffect(() => {
+    fetch('/api/detected-events')
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.events) {
+          setEvents(data.events)
+        }
+      })
+      .catch((error) => console.error('Error fetching events:', error))
+  }, [])
 
   const containerStyle: CSSProperties = {
     position: 'relative',
@@ -93,7 +120,16 @@ function MapView({
         <GeolocateControl position="top-right" trackUserLocation />
         <FullscreenControl position="top-right" />
         <ScaleControl position="bottom-left" unit="metric" />
-       
+        
+        {events.map((event) => (
+          <Marker 
+            key={event.id} 
+            longitude={event.longitude} 
+            latitude={event.latitude} 
+            color={event.risk_level === 'High' ? 'red' : 'orange'} 
+          />
+        ))}
+
         {children}
       </Map>
     </div>
