@@ -1,14 +1,40 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import MapView from '../components/MapView'
 import './visuals/dashboard.css'
 
+export type RiskEvent = {
+  id: number
+  type: string
+  title: string
+  description: string
+  latitude: number
+  longitude: number
+  risk_score: number
+  risk_level: string
+  recommended_units: string[]
+  response_plan: string
+  explanation: string
+}
+
 function Dashboard() {
-  //Track how many environmental events are going on
-  const [numOfEvents, setNumOfEvents] = useState(0)
+  //Track environmental events happening now
+  const [events, setEvents] = useState<RiskEvent[]>([])
   //This state tracks if the user has logged out, if so, it triggers the leaving CSS effects
   const [leaving, setLeaving] = useState(false)
   const navigate = useNavigate()
+
+  useEffect(() => {
+    fetch('/api/detected-events')
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.events) {
+          setEvents(data.events)
+        }
+      })
+      .catch((error) => console.error('Error fetching events:', error))
+  }, [])
+
   //This handles logging out back to the main screen
   const handleLogout = () => {
     setLeaving(true)
@@ -27,14 +53,14 @@ function Dashboard() {
       </header>
       <div className="dashboard__body">
         <main className="dashboard__map">
-          <MapView />
+          <MapView events={events} />
         </main>
         <aside className="dashboard__sidebar">
           <div className="Event-summary-header">
             Events summary
           </div>
           <div className='Event-counter'>
-            there are {numOfEvents} events going on at the moment
+            there are {events.length} events going on at the moment
           </div>
         </aside>
       </div>

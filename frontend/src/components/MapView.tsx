@@ -4,10 +4,12 @@ import Map, {
   ScaleControl,
   FullscreenControl,
   GeolocateControl,
+  Marker,
   type MapProps,
 } from 'react-map-gl/maplibre'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import { type RiskEvent } from '../pages/Dashboard'
 
 
 maplibregl.setRTLTextPlugin(
@@ -23,6 +25,7 @@ const ISRAEL_CENTER = { longitude: 35.0, latitude: 31.4 } as const
 const ISRAEL_MAX_BOUNDS: [number, number, number, number] = [33.5, 29.0, 36.5, 33.6]
 
 type MapViewProps = {
+  events: RiskEvent[] 
   /** Inline style for the wrapping container. Defaults to filling its parent. */
   style?: CSSProperties
   /** MapTiler style id, e.g. "streets-v2", "satellite", "hybrid", "topo-v2". */
@@ -34,6 +37,7 @@ type MapViewProps = {
 } & Pick<MapProps, 'onLoad' | 'onClick'>
 
 function MapView({
+  events,
   style,
   mapStyleId = 'streets-v2',
   initialZoom = 7,
@@ -93,7 +97,16 @@ function MapView({
         <GeolocateControl position="top-right" trackUserLocation />
         <FullscreenControl position="top-right" />
         <ScaleControl position="bottom-left" unit="metric" />
-       
+        
+        {events.map((event) => (
+          <Marker 
+            key={event.id} 
+            longitude={event.longitude} 
+            latitude={event.latitude} 
+            color={event.risk_level === 'High' ? 'red' : 'orange'} 
+          />
+        ))}
+
         {children}
       </Map>
     </div>
