@@ -199,3 +199,90 @@ out center tags;
                 unique_settlements[unique_key] = settlement
 
         return list(unique_settlements.values())
+
+    def build_hospitals_query(self, latitude, longitude, radius_km=2):
+        """
+        Build an Overpass query for nearby hospitals.
+
+        Args:
+            latitude (float): Location latitude.
+            longitude (float): Location longitude.
+            radius_km (int): Search radius in kilometers.
+
+        Returns:
+            str: Overpass QL query for nearby hospitals.
+        """
+        radius_meters = radius_km * 1000
+
+        return f"""
+[out:json][timeout:25];
+
+(
+  node["amenity"="hospital"](around:{radius_meters},{latitude},{longitude});
+  way["amenity"="hospital"](around:{radius_meters},{latitude},{longitude});
+  relation["amenity"="hospital"](around:{radius_meters},{latitude},{longitude});
+);
+
+out center tags;
+"""
+
+    def normalize_hospitals(self, elements):
+        """
+        Normalize raw Overpass hospital elements into a unique hospital list.
+
+        OpenStreetMap may store hospitals as nodes, ways, or relations.
+        This function keeps only named hospitals and removes duplicates
+        by hospital name. If the same hospital appears more than once,
+        relation is preferred over way, and way is preferred over node.
+
+        Args:
+            elements (list): Raw Overpass elements list.
+
+        Returns:
+            list: Unique nearby hospitals.
+        """
+        unique_hospitals = {}
+
+        osm_type_priority = {
+            "node": 1,
+            "way": 2,
+            "relation": 3,
+        }
+
+        for element in elements:
+            tags = element.get("tags", {})
+
+            amenity_type = tags.get("amenity")
+            hospital_name = tags.get("name")
+
+            if amenity_type != "hospital" or not hospital_name:
+                continue
+
+            osm_type = element.get("type")
+            osm_id = element.get("id")
+            center = element.get("center", {})
+
+            hospital = {
+                "name": hospital_name,
+                "type": amenity_type,
+                "osm_type": osm_type,
+                "osm_id": osm_id,
+                "latitude": element.get("lat") or center.get("lat"),
+                "longitude": element.get("lon") or center.get("lon"),
+            }
+
+            unique_key = hospital_name
+
+            if unique_key not in unique_hospitals:
+                unique_hospitals[unique_key] = hospital
+                continue
+
+            existing_osm_type = unique_hospitals[unique_key].get("osm_type")
+
+            current_priority = osm_type_priority.get(osm_type, 0)
+            existing_priority = osm_type_priority.get(existing_osm_type, 0)
+
+            if current_priority > existing_priority:
+                unique_hospitals[unique_key] = hospital
+
+        return list(unique_hospitals.values())
