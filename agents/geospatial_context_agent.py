@@ -286,3 +286,90 @@ out center tags;
                 unique_hospitals[unique_key] = hospital
 
         return list(unique_hospitals.values())
+
+    def build_police_stations_query(self, latitude, longitude, radius_km=2):
+        """
+        Build an Overpass query for nearby police stations.
+
+        Args:
+            latitude (float): Location latitude.
+            longitude (float): Location longitude.
+            radius_km (int): Search radius in kilometers.
+
+        Returns:
+            str: Overpass QL query for nearby police stations.
+        """
+        radius_meters = radius_km * 1000
+
+        return f"""
+[out:json][timeout:25];
+
+(
+  node["amenity"="police"](around:{radius_meters},{latitude},{longitude});
+  way["amenity"="police"](around:{radius_meters},{latitude},{longitude});
+  relation["amenity"="police"](around:{radius_meters},{latitude},{longitude});
+);
+
+out center tags;
+"""
+
+    def normalize_police_stations(self, elements):
+        """
+        Normalize raw Overpass police station elements into a unique list.
+
+        OpenStreetMap may store police stations as nodes, ways, or relations.
+        This function keeps only named police stations and removes duplicates
+        by police station name. If the same police station appears more than
+        once, relation is preferred over way, and way is preferred over node.
+
+        Args:
+            elements (list): Raw Overpass elements list.
+
+        Returns:
+            list: Unique nearby police stations.
+        """
+        unique_police_stations = {}
+
+        osm_type_priority = {
+            "node": 1,
+            "way": 2,
+            "relation": 3,
+        }
+
+        for element in elements:
+            tags = element.get("tags", {})
+
+            amenity_type = tags.get("amenity")
+            police_station_name = tags.get("name")
+
+            if amenity_type != "police" or not police_station_name:
+                continue
+
+            osm_type = element.get("type")
+            osm_id = element.get("id")
+            center = element.get("center", {})
+
+            police_station = {
+                "name": police_station_name,
+                "type": amenity_type,
+                "osm_type": osm_type,
+                "osm_id": osm_id,
+                "latitude": element.get("lat") or center.get("lat"),
+                "longitude": element.get("lon") or center.get("lon"),
+            }
+
+            unique_key = police_station_name
+
+            if unique_key not in unique_police_stations:
+                unique_police_stations[unique_key] = police_station
+                continue
+
+            existing_osm_type = unique_police_stations[unique_key].get("osm_type")
+
+            current_priority = osm_type_priority.get(osm_type, 0)
+            existing_priority = osm_type_priority.get(existing_osm_type, 0)
+
+            if current_priority > existing_priority:
+                unique_police_stations[unique_key] = police_station
+
+        return list(unique_police_stations.values())
