@@ -3,7 +3,12 @@
     "country": "Israel",
     "purpose": "Basic scan preparation for future multi-location data collection",
     "version": 1,
-    "future_grid_supported": true
+    "scan_mode": "predefined_locations",
+    "future_grid_supported": true,
+    "future_scan_modes": [
+      "automatic_grid",
+      "risk_based_selection"
+    ]
   },
   "locations": [
     {
