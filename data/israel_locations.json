@@ -1,0 +1,95 @@
+{
+  "metadata": {
+    "country": "Israel",
+    "purpose": "Basic scan preparation for future multi-location data collection",
+    "version": 1,
+    "scan_mode": "predefined_locations",
+    "future_grid_supported": true,
+    "future_scan_modes": [
+      "automatic_grid",
+      "risk_based_selection"
+    ]
+  },
+  "locations": [
+    {
+      "name": "Givat Shmuel",
+      "region_type": "city",
+      "latitude": 32.0786,
+      "longitude": 34.8483,
+      "scan_radius_km": 2,
+      "enabled": true
+    },
+    {
+      "name": "Tel Aviv",
+      "region_type": "city",
+      "latitude": 32.0853,
+      "longitude": 34.7818,
+      "scan_radius_km": 2,
+      "enabled": true
+    },
+    {
+      "name": "Jerusalem",
+      "region_type": "city",
+      "latitude": 31.7683,
+      "longitude": 35.2137,
+      "scan_radius_km": 2,
+      "enabled": true
+    },
+    {
+      "name": "Haifa",
+      "region_type": "city",
+      "latitude": 32.794,
+      "longitude": 34.9896,
+      "scan_radius_km": 2,
+      "enabled": true
+    },
+    {
+      "name": "Beer Sheva",
+      "region_type": "city",
+      "latitude": 31.2529,
+      "longitude": 34.7915,
+      "scan_radius_km": 2,
+      "enabled": true
+    },
+    {
+      "name": "Eilat",
+      "region_type": "city",
+      "latitude": 29.5577,
+      "longitude": 34.9519,
+      "scan_radius_km": 2,
+      "enabled": true
+    },
+    {
+      "name": "Kiryat Shmona",
+      "region_type": "city",
+      "latitude": 33.2073,
+      "longitude": 35.5721,
+      "scan_radius_km": 2,
+      "enabled": true
+    },
+    {
+      "name": "Netanya",
+      "region_type": "city",
+      "latitude": 32.3215,
+      "longitude": 34.8532,
+      "scan_radius_km": 2,
+      "enabled": true
+    },
+    {
+      "name": "Ashdod",
+      "region_type": "city",
+      "latitude": 31.8014,
+      "longitude": 34.6435,
+      "scan_radius_km": 2,
+      "enabled": true
+    },
+    {
+      "name": "Tiberias",
+      "region_type": "city",
+      "latitude": 32.7959,
+      "longitude": 35.5309,
+      "scan_radius_km": 2,
+      "enabled": true
+    }
+  ]
+}
