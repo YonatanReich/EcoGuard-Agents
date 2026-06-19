@@ -1,0 +1,44 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.11 87bfad18",
+  "osm3s": {
+    "timestamp_osm_base": "2026-06-19T11:40:41Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+
+{
+  "type": "node",
+  "id": 1430686521,
+  "lat": 32.0909621,
+  "lon": 34.8393915,
+  "tags": {
+    "amenity": "fire_station",
+    "check_date": "2025-04-25",
+    "name": "תחנת כיבוי אש בני ברק",
+    "name:he": "תחנת כיבוי אש בני ברק"
+  }
+},
+{
+  "type": "node",
+  "id": 1693941208,
+  "lat": 32.0675385,
+  "lon": 34.8329591,
+  "tags": {
+    "addr:city": "רמת גן",
+    "addr:housenumber": "13",
+    "addr:street": "אריה בן אליעזר",
+    "amenity": "fire_station",
+    "check_date": "2025-12-28",
+    "name": "Ramat Gan Fire Station",
+    "name:en": "Ramat Gan Fire Station",
+    "name:he": "תחנת כיבוי אש רמת גן",
+    "opening_hours": "24/7",
+    "operator": "Government",
+    "phone": "+97236742222",
+    "website": "https://www.gov.il/he/Departments/israel_national_fire_and_rescue_authority"
+  }
+}
+
+  ]
+}

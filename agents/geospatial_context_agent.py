@@ -373,3 +373,90 @@ out center tags;
                 unique_police_stations[unique_key] = police_station
 
         return list(unique_police_stations.values())
+
+    def build_fire_stations_query(self, latitude, longitude, radius_km=2):
+        """
+        Build an Overpass query for nearby fire stations.
+
+        Args:
+            latitude (float): Location latitude.
+            longitude (float): Location longitude.
+            radius_km (int): Search radius in kilometers.
+
+        Returns:
+            str: Overpass QL query for nearby fire stations.
+        """
+        radius_meters = radius_km * 1000
+
+        return f"""
+[out:json][timeout:25];
+
+(
+  node["amenity"="fire_station"](around:{radius_meters},{latitude},{longitude});
+  way["amenity"="fire_station"](around:{radius_meters},{latitude},{longitude});
+  relation["amenity"="fire_station"](around:{radius_meters},{latitude},{longitude});
+);
+
+out center tags;
+"""
+
+    def normalize_fire_stations(self, elements):
+        """
+        Normalize raw Overpass fire station elements into a unique list.
+
+        OpenStreetMap may store fire stations as nodes, ways, or relations.
+        This function keeps only named fire stations and removes duplicates
+        by fire station name. If the same fire station appears more than once,
+        relation is preferred over way, and way is preferred over node.
+
+        Args:
+            elements (list): Raw Overpass elements list.
+
+        Returns:
+            list: Unique nearby fire stations.
+        """
+        unique_fire_stations = {}
+
+        osm_type_priority = {
+            "node": 1,
+            "way": 2,
+            "relation": 3,
+        }
+
+        for element in elements:
+            tags = element.get("tags", {})
+
+            amenity_type = tags.get("amenity")
+            fire_station_name = tags.get("name")
+
+            if amenity_type != "fire_station" or not fire_station_name:
+                continue
+
+            osm_type = element.get("type")
+            osm_id = element.get("id")
+            center = element.get("center", {})
+
+            fire_station = {
+                "name": fire_station_name,
+                "type": amenity_type,
+                "osm_type": osm_type,
+                "osm_id": osm_id,
+                "latitude": element.get("lat") or center.get("lat"),
+                "longitude": element.get("lon") or center.get("lon"),
+            }
+
+            unique_key = fire_station_name
+
+            if unique_key not in unique_fire_stations:
+                unique_fire_stations[unique_key] = fire_station
+                continue
+
+            existing_osm_type = unique_fire_stations[unique_key].get("osm_type")
+
+            current_priority = osm_type_priority.get(osm_type, 0)
+            existing_priority = osm_type_priority.get(existing_osm_type, 0)
+
+            if current_priority > existing_priority:
+                unique_fire_stations[unique_key] = fire_station
+
+        return list(unique_fire_stations.values())
