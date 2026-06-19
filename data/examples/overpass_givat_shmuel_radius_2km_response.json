@@ -1,0 +1,1405 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.11 87bfad18",
+  "osm3s": {
+    "timestamp_osm_base": "2026-06-19T08:35:02Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+
+{
+  "type": "node",
+  "id": 1430686521,
+  "lat": 32.0909621,
+  "lon": 34.8393915,
+  "tags": {
+    "amenity": "fire_station",
+    "check_date": "2025-04-25",
+    "name": "תחנת כיבוי אש בני ברק",
+    "name:he": "תחנת כיבוי אש בני ברק"
+  }
+},
+{
+  "type": "node",
+  "id": 1693941208,
+  "lat": 32.0675385,
+  "lon": 34.8329591,
+  "tags": {
+    "addr:city": "רמת גן",
+    "addr:housenumber": "13",
+    "addr:street": "אריה בן אליעזר",
+    "amenity": "fire_station",
+    "check_date": "2025-12-28",
+    "name": "Ramat Gan Fire Station",
+    "name:en": "Ramat Gan Fire Station",
+    "name:he": "תחנת כיבוי אש רמת גן",
+    "opening_hours": "24/7",
+    "operator": "Government",
+    "phone": "+97236742222",
+    "website": "https://www.gov.il/he/Departments/israel_national_fire_and_rescue_authority"
+  }
+},
+{
+  "type": "way",
+  "id": 30750762,
+  "center": {
+    "lat": 32.0889382,
+    "lon": 34.8673965
+  },
+  "tags": {
+    "alt_name:en": "Beilinson Hospital",
+    "alt_name:he": "בית חולים ביילינסון",
+    "amenity": "hospital",
+    "healthcare": "hospital",
+    "name": "מרכז רפואי רבין – קמפוס ביילינסון",
+    "name:en": "Rabin Medical Center – Beilinson Campus",
+    "name:he": "מרכז רפואי רבין – קמפוס ביילינסון",
+    "wikidata": "Q2071553",
+    "wikipedia": "he:מרכז רפואי רבין",
+    "wikipedia:he": "מרכז רפואי רבין"
+  }
+},
+{
+  "type": "way",
+  "id": 48559541,
+  "center": {
+    "lat": 32.0651168,
+    "lon": 34.8478812
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "גן העשרים",
+    "name:en": "Gan Ha'Esrim",
+    "name:he": "גן העשרים"
+  }
+},
+{
+  "type": "way",
+  "id": 66985424,
+  "center": {
+    "lat": 32.0895200,
+    "lon": 34.8313211
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 84915181,
+  "center": {
+    "lat": 32.0838934,
+    "lon": 34.8281491
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "גן עקיבא גור",
+    "name:en": "Akiva Gur Garden",
+    "name:he": "גן עקיבא גור"
+  }
+},
+{
+  "type": "way",
+  "id": 103730650,
+  "center": {
+    "lat": 32.0697916,
+    "lon": 34.8361685
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 103730656,
+  "center": {
+    "lat": 32.0682707,
+    "lon": 34.8351597
+  },
+  "tags": {
+    "alt_name:en": "Eli Cohen Garden",
+    "leisure": "park",
+    "name": "גן אלי כהן",
+    "name:en": "Gan Eli Cohen",
+    "name:he": "גן אלי כהן"
+  }
+},
+{
+  "type": "way",
+  "id": 103730767,
+  "center": {
+    "lat": 32.0694111,
+    "lon": 34.8380286
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 103730769,
+  "center": {
+    "lat": 32.0740946,
+    "lon": 34.8307038
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "גן ראול ולנברג",
+    "name:en": "Raoul Wallenberg Garden",
+    "name:he": "גן ראול ולנברג"
+  }
+},
+{
+  "type": "way",
+  "id": 103730785,
+  "center": {
+    "lat": 32.0669798,
+    "lon": 34.8390076
+  },
+  "tags": {
+    "alt_name:en": "Diaspora Garden",
+    "leisure": "park",
+    "name": "גן התפוצות",
+    "name:en": "HaTefuzot Garden",
+    "name:he": "גן התפוצות"
+  }
+},
+{
+  "type": "way",
+  "id": 108596873,
+  "center": {
+    "lat": 32.0828713,
+    "lon": 34.8298775
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 108596875,
+  "center": {
+    "lat": 32.0802438,
+    "lon": 34.8294414
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "גינת החרציות",
+    "name:he": "גינת החרציות"
+  }
+},
+{
+  "type": "way",
+  "id": 108596891,
+  "center": {
+    "lat": 32.0818974,
+    "lon": 34.8277029
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 108596894,
+  "center": {
+    "lat": 32.0798009,
+    "lon": 34.8285280
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 108596895,
+  "center": {
+    "lat": 32.0822601,
+    "lon": 34.8285487
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 113741076,
+  "center": {
+    "lat": 32.0763551,
+    "lon": 34.8286418
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 113741081,
+  "center": {
+    "lat": 32.0771071,
+    "lon": 34.8304225
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 114008977,
+  "center": {
+    "lat": 32.0822245,
+    "lon": 34.8357839
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 115683668,
+  "center": {
+    "lat": 32.0739327,
+    "lon": 34.8367608
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 131382008,
+  "center": {
+    "lat": 32.0864334,
+    "lon": 34.8453112
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 131382017,
+  "center": {
+    "lat": 32.0778315,
+    "lon": 34.8447661
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 135308541,
+  "center": {
+    "lat": 32.0684394,
+    "lon": 34.8425468
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 136525897,
+  "center": {
+    "lat": 32.0728116,
+    "lon": 34.8480242
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "פארק האחדות ע\"ש משפחת דהאן",
+    "name:en": "The Dahan Family Unity Park",
+    "name:he": "פארק האחדות ע\"ש משפחת דהאן",
+    "ref": "1501"
+  }
+},
+{
+  "type": "way",
+  "id": 145529522,
+  "center": {
+    "lat": 32.0866146,
+    "lon": 34.8399220
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 145531736,
+  "center": {
+    "lat": 32.0827654,
+    "lon": 34.8368728
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 145531740,
+  "center": {
+    "lat": 32.0829509,
+    "lon": 34.8399403
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 145531741,
+  "center": {
+    "lat": 32.0835694,
+    "lon": 34.8374298
+  },
+  "tags": {
+    "addr:city": "בני ברק",
+    "leisure": "park",
+    "name": "גן 93"
+  }
+},
+{
+  "type": "way",
+  "id": 145534011,
+  "center": {
+    "lat": 32.0905804,
+    "lon": 34.8426159
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 145534012,
+  "center": {
+    "lat": 32.0894327,
+    "lon": 34.8390659
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 157516442,
+  "center": {
+    "lat": 32.0717220,
+    "lon": 34.8308258
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "פארק דוד",
+    "name:en": "David Park",
+    "name:he": "פארק דוד",
+    "wikidata": "Q26769307"
+  }
+},
+{
+  "type": "way",
+  "id": 166675973,
+  "center": {
+    "lat": 32.0764133,
+    "lon": 34.8526760
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "פארק דקר",
+    "name:he": "פארק דקר"
+  }
+},
+{
+  "type": "way",
+  "id": 166675982,
+  "center": {
+    "lat": 32.0737987,
+    "lon": 34.8542803
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "פארק רמון",
+    "name:en": "Ramon Park",
+    "name:he": "פארק רמון"
+  }
+},
+{
+  "type": "way",
+  "id": 166942805,
+  "center": {
+    "lat": 32.0802519,
+    "lon": 34.8624944
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 167289017,
+  "center": {
+    "lat": 32.0737544,
+    "lon": 34.8657765
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 167289590,
+  "center": {
+    "lat": 32.0739754,
+    "lon": 34.8636653
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 167289601,
+  "center": {
+    "lat": 32.0718419,
+    "lon": 34.8684775
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 177434184,
+  "center": {
+    "lat": 32.0892206,
+    "lon": 34.8649094
+  },
+  "tags": {
+    "addr:city": "פתח תקווה",
+    "addr:housenumber": "1",
+    "addr:postcode": "49100",
+    "addr:street": "הלסינקי",
+    "amenity": "hospital",
+    "healthcare": "hospital",
+    "name": "מרכז לבריאות הנפש גהה",
+    "name:en": "Geha Mental Health Center",
+    "name:he": "מרכז לבריאות הנפש גהה",
+    "wikidata": "Q4137808",
+    "wikipedia": "he:מרכז לבריאות הנפש גהה",
+    "wikipedia:he": "מרכז לבריאות הנפש גהה"
+  }
+},
+{
+  "type": "way",
+  "id": 182733628,
+  "center": {
+    "lat": 32.0617768,
+    "lon": 34.8524316
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 182733629,
+  "center": {
+    "lat": 32.0612301,
+    "lon": 34.8486418
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 192354937,
+  "center": {
+    "lat": 32.0834878,
+    "lon": 34.8429543
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 192923486,
+  "center": {
+    "lat": 32.0685299,
+    "lon": 34.8314341
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "גן הנ״ד",
+    "name:en": "HaNun Dalet Garden",
+    "name:he": "גן הנ״ד"
+  }
+},
+{
+  "type": "way",
+  "id": 210609296,
+  "center": {
+    "lat": 32.0776771,
+    "lon": 34.8696237
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 210609806,
+  "center": {
+    "lat": 32.0772815,
+    "lon": 34.8695833
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 210611935,
+  "center": {
+    "lat": 32.0761636,
+    "lon": 34.8696604
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 210730924,
+  "center": {
+    "lat": 32.0726678,
+    "lon": 34.8643462
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 211265681,
+  "center": {
+    "lat": 32.0873464,
+    "lon": 34.8500108
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 220313572,
+  "center": {
+    "lat": 32.0859051,
+    "lon": 34.8320600
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "גן קדושי ורשה",
+    "name:en": "Kdoshe Varsha Garden",
+    "name:he": "גן קדושי ורשה"
+  }
+},
+{
+  "type": "way",
+  "id": 222854100,
+  "center": {
+    "lat": 32.0787375,
+    "lon": 34.8477637
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 225345488,
+  "center": {
+    "lat": 32.0654815,
+    "lon": 34.8576679
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "פארק אביבה ורשה",
+    "name:en": "Aviva Warsha Park",
+    "name:he": "פארק אביבה ורשה"
+  }
+},
+{
+  "type": "way",
+  "id": 229138081,
+  "center": {
+    "lat": 32.0747645,
+    "lon": 34.8543403
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 229138784,
+  "center": {
+    "lat": 32.0780135,
+    "lon": 34.8543733
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "פארק המוזיקה",
+    "name:he": "פארק המוזיקה"
+  }
+},
+{
+  "type": "way",
+  "id": 229138789,
+  "center": {
+    "lat": 32.0775872,
+    "lon": 34.8551064
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 229138791,
+  "center": {
+    "lat": 32.0763131,
+    "lon": 34.8551316
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 229138801,
+  "center": {
+    "lat": 32.0751805,
+    "lon": 34.8550458
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 254969368,
+  "center": {
+    "lat": 32.0636753,
+    "lon": 34.8576581
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "כיכר צ'נדו",
+    "name:he": "כיכר צ'נדו"
+  }
+},
+{
+  "type": "way",
+  "id": 292684388,
+  "center": {
+    "lat": 32.0697216,
+    "lon": 34.8297984
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 295024958,
+  "center": {
+    "lat": 32.0848662,
+    "lon": 34.8445950
+  },
+  "tags": {
+    "addr:city": "בני ברק",
+    "addr:housenumber": "17",
+    "addr:street": "הרב פוברסקי",
+    "amenity": "hospital",
+    "check_date": "2026-06-18",
+    "emergency": "yes",
+    "healthcare": "hospital",
+    "name": "בית חולים מעייני הישועה",
+    "name:en": "Mayanei Hayeshua",
+    "name:he": "בית חולים מעייני הישועה",
+    "wheelchair": "yes",
+    "wikidata": "Q12040651"
+  }
+},
+{
+  "type": "way",
+  "id": 339423132,
+  "center": {
+    "lat": 32.0762820,
+    "lon": 34.8540980
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "פארק אלקנה",
+    "name:he": "פארק אלקנה"
+  }
+},
+{
+  "type": "way",
+  "id": 345325912,
+  "center": {
+    "lat": 32.0656564,
+    "lon": 34.8528528
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 348748590,
+  "center": {
+    "lat": 32.0669405,
+    "lon": 34.8316633
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 362075506,
+  "center": {
+    "lat": 32.0654895,
+    "lon": 34.8638778
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 429740813,
+  "center": {
+    "lat": 32.0783322,
+    "lon": 34.8330504
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 488730490,
+  "center": {
+    "lat": 32.0716938,
+    "lon": 34.8310470
+  },
+  "tags": {
+    "natural": "water"
+  }
+},
+{
+  "type": "way",
+  "id": 513694345,
+  "center": {
+    "lat": 32.0759163,
+    "lon": 34.8444445
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 513694349,
+  "center": {
+    "lat": 32.0758550,
+    "lon": 34.8448898
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 544132318,
+  "center": {
+    "lat": 32.0667808,
+    "lon": 34.8627009
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 553538194,
+  "center": {
+    "lat": 32.0637569,
+    "lon": 34.8356847
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 620144799,
+  "center": {
+    "lat": 32.0831336,
+    "lon": 34.8488606
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "גינת הרימון",
+    "name:he": "גינת הרימון"
+  }
+},
+{
+  "type": "way",
+  "id": 674531677,
+  "center": {
+    "lat": 32.0681256,
+    "lon": 34.8573078
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "פארק מכבית",
+    "name:en": "Park Tzamarot",
+    "name:he": "פארק צמרות"
+  }
+},
+{
+  "type": "way",
+  "id": 707485452,
+  "center": {
+    "lat": 32.0704661,
+    "lon": 34.8319459
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 707487177,
+  "center": {
+    "lat": 32.0725311,
+    "lon": 34.8291159
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 800705898,
+  "center": {
+    "lat": 32.0692032,
+    "lon": 34.8565481
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "פארק דרום גבעת שמואל",
+    "name:he": "פארק דרום גבעת שמואל"
+  }
+},
+{
+  "type": "way",
+  "id": 808776037,
+  "center": {
+    "lat": 32.0811507,
+    "lon": 34.8529254
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "פארק האירועים",
+    "name:he": "פארק האירועים"
+  }
+},
+{
+  "type": "way",
+  "id": 808776810,
+  "center": {
+    "lat": 32.0809766,
+    "lon": 34.8543375
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 860940799,
+  "center": {
+    "lat": 32.0798248,
+    "lon": 34.8537321
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 923767971,
+  "center": {
+    "lat": 32.0717438,
+    "lon": 34.8493813
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 923768529,
+  "center": {
+    "lat": 32.0720642,
+    "lon": 34.8490496
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 945762813,
+  "center": {
+    "lat": 32.0869989,
+    "lon": 34.8614945
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 945762814,
+  "center": {
+    "lat": 32.0870413,
+    "lon": 34.8622031
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 946560744,
+  "center": {
+    "lat": 32.0852881,
+    "lon": 34.8498484
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "פארק שמואל פינלס",
+    "name:he": "פארק המייסדים"
+  }
+},
+{
+  "type": "way",
+  "id": 946567315,
+  "center": {
+    "lat": 32.0711405,
+    "lon": 34.8542930
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 946570164,
+  "center": {
+    "lat": 32.0727067,
+    "lon": 34.8526275
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 954996065,
+  "center": {
+    "lat": 32.0829035,
+    "lon": 34.8534454
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "גן האתרוג",
+    "name:he": "גן האתרוג"
+  }
+},
+{
+  "type": "way",
+  "id": 955811921,
+  "center": {
+    "lat": 32.0820636,
+    "lon": 34.8577666
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 960839856,
+  "center": {
+    "lat": 32.0753067,
+    "lon": 34.8321243
+  },
+  "tags": {
+    "addr:city": "רמת גן",
+    "addr:street": "שדרות ירושלים",
+    "leisure": "park",
+    "name": "גן קדושי טרנסניסטריה",
+    "name:he": "גינת גולומב",
+    "source": "https://v5.gis-net.co.il/v5/ramat_gan;https://simplex-smart3d.com/;local knowledge;aerial imagery"
+  }
+},
+{
+  "type": "way",
+  "id": 964386209,
+  "center": {
+    "lat": 32.0744586,
+    "lon": 34.8493014
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "גן גולני",
+    "name:en": "Gan Golani",
+    "name:he": "גן גולני"
+  }
+},
+{
+  "type": "way",
+  "id": 970592682,
+  "center": {
+    "lat": 32.0786228,
+    "lon": 34.8462585
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 970592955,
+  "center": {
+    "lat": 32.0669862,
+    "lon": 34.8461452
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "גן שיזף",
+    "name:en": "Gan Sheizaf",
+    "name:he": "גן שיזף"
+  }
+},
+{
+  "type": "way",
+  "id": 971128141,
+  "center": {
+    "lat": 32.0740478,
+    "lon": 34.8447034
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 971128731,
+  "center": {
+    "lat": 32.0701892,
+    "lon": 34.8462882
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 971281894,
+  "center": {
+    "lat": 32.0686026,
+    "lon": 34.8414607
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 974939927,
+  "center": {
+    "lat": 32.0713495,
+    "lon": 34.8614932
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 1042330249,
+  "center": {
+    "lat": 32.0769869,
+    "lon": 34.8331065
+  },
+  "tags": {
+    "addr:city": "בני ברק",
+    "addr:housenumber": "62",
+    "addr:street": "חזון אי\"ש",
+    "leisure": "park",
+    "name": "Water Tower Park",
+    "name:he": "גן מגדל המים"
+  }
+},
+{
+  "type": "way",
+  "id": 1092697997,
+  "center": {
+    "lat": 32.0705117,
+    "lon": 34.8552507
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 1133006008,
+  "center": {
+    "lat": 32.0712760,
+    "lon": 34.8342799
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 1137327466,
+  "center": {
+    "lat": 32.0791707,
+    "lon": 34.8523785
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "גן בוני",
+    "name:he": "גן בוני"
+  }
+},
+{
+  "type": "way",
+  "id": 1137332357,
+  "center": {
+    "lat": 32.0688376,
+    "lon": 34.8462782
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "גינת אלונים",
+    "name:he": "גינת אלונים"
+  }
+},
+{
+  "type": "way",
+  "id": 1191862869,
+  "center": {
+    "lat": 32.0758691,
+    "lon": 34.8495704
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 1238357618,
+  "center": {
+    "lat": 32.0808776,
+    "lon": 34.8564564
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 1238814229,
+  "center": {
+    "lat": 32.0841514,
+    "lon": 34.8529888
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 1250334789,
+  "center": {
+    "lat": 32.0752861,
+    "lon": 34.8341571
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 1252398560,
+  "center": {
+    "lat": 32.0634343,
+    "lon": 34.8428204
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 1252398579,
+  "center": {
+    "lat": 32.0636053,
+    "lon": 34.8474032
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 1252398600,
+  "center": {
+    "lat": 32.0684739,
+    "lon": 34.8654389
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 1252398602,
+  "center": {
+    "lat": 32.0684714,
+    "lon": 34.8645167
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 1316957419,
+  "center": {
+    "lat": 32.0717322,
+    "lon": 34.8318081
+  },
+  "tags": {
+    "natural": "water"
+  }
+},
+{
+  "type": "way",
+  "id": 1367968284,
+  "center": {
+    "lat": 32.0844757,
+    "lon": 34.8598741
+  },
+  "tags": {
+    "fixme": "add footpaths",
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 1389891376,
+  "center": {
+    "lat": 32.0821390,
+    "lon": 34.8683889
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 1394470751,
+  "center": {
+    "lat": 32.0748479,
+    "lon": 34.8620958
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 1415325279,
+  "center": {
+    "lat": 32.0787369,
+    "lon": 34.8661813
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 1463396961,
+  "center": {
+    "lat": 32.0760220,
+    "lon": 34.8640938
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 1481719575,
+  "center": {
+    "lat": 32.0823556,
+    "lon": 34.8415108
+  },
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "relation",
+  "id": 16114275,
+  "center": {
+    "lat": 32.0679989,
+    "lon": 34.8474166
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "גן ויסמונסקי",
+    "name:he": "גן ויסמונסקי",
+    "type": "multipolygon"
+  }
+},
+{
+  "type": "relation",
+  "id": 17100396,
+  "center": {
+    "lat": 32.0909788,
+    "lon": 34.8606052
+  },
+  "tags": {
+    "leisure": "park",
+    "type": "multipolygon"
+  }
+}
+
+  ]
+}
