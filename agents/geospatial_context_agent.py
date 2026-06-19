@@ -111,3 +111,91 @@ out center tags;
                 }
 
         return list(unique_roads.values())
+
+    def build_settlements_query(self, latitude, longitude, radius_km=2):
+        """
+        Build an Overpass query for nearby settlements or populated areas.
+
+        Args:
+            latitude (float): Location latitude.
+            longitude (float): Location longitude.
+            radius_km (int): Search radius in kilometers.
+
+        Returns:
+            str: Overpass QL query for nearby populated places.
+        """
+        radius_meters = radius_km * 1000
+
+        return f"""
+[out:json][timeout:25];
+
+(
+  node["place"~"city|town|village|suburb|neighbourhood"](around:{radius_meters},{latitude},{longitude});
+  way["place"~"city|town|village|suburb|neighbourhood"](around:{radius_meters},{latitude},{longitude});
+  relation["place"~"city|town|village|suburb|neighbourhood"](around:{radius_meters},{latitude},{longitude});
+);
+
+out center tags;
+"""
+
+    def normalize_settlements(self, elements):
+        """
+        Normalize raw Overpass settlement elements into a unique settlement list.
+
+        OpenStreetMap may store the same populated area as several objects.
+        For example, a town can appear both as a node and as a relation.
+        In that case, this function keeps only one result and prefers:
+        relation over way, and way over node.
+
+        Args:
+            elements (list): Raw Overpass elements list.
+
+        Returns:
+            list: Unique nearby settlements or populated areas.
+        """
+        unique_settlements = {}
+
+        osm_type_priority = {
+            "node": 1,
+            "way": 2,
+            "relation": 3,
+        }
+
+        for element in elements:
+            tags = element.get("tags", {})
+
+            place_type = tags.get("place")
+            settlement_name = tags.get("name")
+
+            if not place_type or not settlement_name:
+                continue
+
+            osm_type = element.get("type")
+            osm_id = element.get("id")
+            center = element.get("center", {})
+
+            settlement = {
+                "name": settlement_name,
+                "type": place_type,
+                "osm_type": osm_type,
+                "osm_id": osm_id,
+                "population": tags.get("population"),
+                "latitude": element.get("lat") or center.get("lat"),
+                "longitude": element.get("lon") or center.get("lon"),
+            }
+
+            unique_key = settlement_name
+
+            if unique_key not in unique_settlements:
+                unique_settlements[unique_key] = settlement
+                continue
+
+            existing_osm_type = unique_settlements[unique_key].get("osm_type")
+
+            current_priority = osm_type_priority.get(osm_type, 0)
+            existing_priority = osm_type_priority.get(existing_osm_type, 0)
+
+            if current_priority > existing_priority:
+                unique_settlements[unique_key] = settlement
+
+        return list(unique_settlements.values())
