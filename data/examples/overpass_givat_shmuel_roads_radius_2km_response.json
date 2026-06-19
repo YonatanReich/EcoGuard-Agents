@@ -1,0 +1,4677 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.11 87bfad18",
+  "osm3s": {
+    "timestamp_osm_base": "2026-06-19T09:50:10Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+    {
+      "type": "way",
+      "id": 8055799,
+      "center": {
+        "lat": 32.0920196,
+        "lon": 34.8446634
+      },
+      "tags": {
+        "destination": "אשדוד;ירושלים",
+        "destination:ref": "4",
+        "highway": "trunk_link",
+        "lanes": "2",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 8055821,
+      "center": {
+        "lat": 32.0656866,
+        "lon": 34.841669
+      },
+      "tags": {
+        "destination": "חיפה",
+        "destination:ref": "4",
+        "highway": "trunk_link",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 25012821,
+      "center": {
+        "lat": 32.088388,
+        "lon": 34.8463857
+      },
+      "tags": {
+        "destination": "פתח תקווה;תל אביב",
+        "destination:ref": "481",
+        "foot": "no",
+        "highway": "trunk_link",
+        "lanes": "2",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 25181256,
+      "center": {
+        "lat": 32.0682762,
+        "lon": 34.8403384
+      },
+      "tags": {
+        "destination": "בר אילן;אלוף שדה",
+        "destination:ref": "471",
+        "foot": "no",
+        "highway": "trunk_link",
+        "lanes": "2",
+        "lit": "yes",
+        "maxheight": "5",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 25997529,
+      "center": {
+        "lat": 32.0742337,
+        "lon": 34.8676119
+      },
+      "tags": {
+        "alt_name:en": "Ha'Atzmaut;HaAtsmaut;Atsmaut",
+        "highway": "secondary",
+        "lanes": "2",
+        "name": "העצמאות",
+        "name:en": "HaAtzmaut",
+        "name:he": "העצמאות",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 26583204,
+      "center": {
+        "lat": 32.0759639,
+        "lon": 34.843635
+      },
+      "tags": {
+        "destination": "גבעת שמואל;בני ברק",
+        "destination:lang:en": "Giv'at Shemu'el;Bene Beraq",
+        "destination:lang:he": "גבעת שמואל;בני ברק",
+        "foot": "yes",
+        "highway": "trunk_link",
+        "lanes": "1",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 28614550,
+      "center": {
+        "lat": 32.0652006,
+        "lon": 34.8382529
+      },
+      "tags": {
+        "bridge": "yes",
+        "highway": "secondary_link",
+        "lanes": "2",
+        "layer": "1",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 28614551,
+      "center": {
+        "lat": 32.0634362,
+        "lon": 34.8371444
+      },
+      "tags": {
+        "destination": "אשדוד",
+        "destination:ref": "4",
+        "highway": "trunk_link",
+        "lane_markings": "no",
+        "lanes": "1",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 28614552,
+      "center": {
+        "lat": 32.0656267,
+        "lon": 34.8382926
+      },
+      "tags": {
+        "destination": "אלוף שדה",
+        "destination:symbol": "hospital",
+        "highway": "trunk_link",
+        "lanes": "2",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 30806290,
+      "center": {
+        "lat": 32.0908375,
+        "lon": 34.8470134
+      },
+      "tags": {
+        "foot": "no",
+        "highway": "trunk_link",
+        "lanes": "2",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 33519213,
+      "center": {
+        "lat": 32.0647417,
+        "lon": 34.837825
+      },
+      "tags": {
+        "bridge": "yes",
+        "destination": "פתח תקווה;קריית אונו",
+        "highway": "trunk_link",
+        "lanes": "2",
+        "layer": "1",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 43306221,
+      "center": {
+        "lat": 32.0679065,
+        "lon": 34.8495996
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "1",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 43306223,
+      "center": {
+        "lat": 32.0701412,
+        "lon": 34.8631304
+      },
+      "tags": {
+        "destination": "פתח תקווה;קרית אונו",
+        "highway": "motorway_link",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 43306226,
+      "center": {
+        "lat": 32.0686112,
+        "lon": 34.8558698
+      },
+      "tags": {
+        "destination": "קרית אונו;גבעת שמואל",
+        "highway": "secondary_link",
+        "lanes": "3",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 43306248,
+      "center": {
+        "lat": 32.0649384,
+        "lon": 34.8384698
+      },
+      "tags": {
+        "destination": "חיפה",
+        "destination:ref": "4",
+        "highway": "trunk_link",
+        "lanes": "1",
+        "maxheight": "4.8",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 43554902,
+      "center": {
+        "lat": 32.0637684,
+        "lon": 34.8406856
+      },
+      "tags": {
+        "destination": "קרית אונו;פתח תקווה",
+        "destination:ref": "471",
+        "highway": "motorway_link",
+        "lanes": "2",
+        "maxheight": "5",
+        "name": "כביש מכבית",
+        "name:ar": "طريق مكابيت",
+        "name:en": "Maccabit Road",
+        "name:he": "כביש מכבית",
+        "oneway": "yes",
+        "ref": "471",
+        "surface": "asphalt",
+        "wikidata": "Q7371455",
+        "wikipedia": "he:כביש 471",
+        "wikipedia:he": "כביש 471"
+      }
+    },
+    {
+      "type": "way",
+      "id": 48176278,
+      "center": {
+        "lat": 32.0735102,
+        "lon": 34.865267
+      },
+      "tags": {
+        "highway": "secondary",
+        "junction": "roundabout",
+        "lanes": "2",
+        "name": "כיכר קולסקי",
+        "name:he": "כיכר קולסקי",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 48176285,
+      "center": {
+        "lat": 32.0734028,
+        "lon": 34.8638397
+      },
+      "tags": {
+        "alt_name:en": "Ha'Atzmaut;HaAtsmaut;Atsmaut",
+        "highway": "secondary",
+        "lanes": "2",
+        "name": "העצמאות",
+        "name:en": "HaAtzmaut",
+        "name:he": "העצמאות",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 53202680,
+      "center": {
+        "lat": 32.0668657,
+        "lon": 34.8477831
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "4",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 58247707,
+      "center": {
+        "lat": 32.0755557,
+        "lon": 34.8449376
+      },
+      "tags": {
+        "destination": "גבעת שמואל;בני ברק",
+        "foot": "yes",
+        "highway": "trunk_link",
+        "lanes": "2",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 60357971,
+      "center": {
+        "lat": 32.0679425,
+        "lon": 34.8606269
+      },
+      "tags": {
+        "destination": "פתח תקוה",
+        "destination:lang:en": "Petah Tikva",
+        "destination:lang:he": "פתח תקוה",
+        "destination:symbol": "industrial",
+        "highway": "motorway_link",
+        "lanes": "2",
+        "maxspeed": "50",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 60807718,
+      "center": {
+        "lat": 32.0735425,
+        "lon": 34.8624471
+      },
+      "tags": {
+        "highway": "secondary",
+        "junction": "roundabout",
+        "lanes": "2",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 67977638,
+      "center": {
+        "lat": 32.0698417,
+        "lon": 34.8603976
+      },
+      "tags": {
+        "destination": "פתח תקווה;רבין",
+        "highway": "motorway_link",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 67977667,
+      "center": {
+        "lat": 32.0697149,
+        "lon": 34.8597707
+      },
+      "tags": {
+        "destination": "תל אביב;אשדוד;חיפה",
+        "destination:ref": "471",
+        "highway": "secondary_link",
+        "lanes": "2",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 67977669,
+      "center": {
+        "lat": 32.0675393,
+        "lon": 34.8606856
+      },
+      "tags": {
+        "destination": "ירושלים;בן גוריון",
+        "destination:ref": "471",
+        "highway": "motorway_link",
+        "lanes": "1",
+        "maxspeed": "50",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 67977715,
+      "center": {
+        "lat": 32.0657768,
+        "lon": 34.8606099
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "lanes": "3",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "surface": "asphalt",
+        "turn:lanes": "through|through|right",
+        "turn:psv:lanes": "through|through|thruogh;right"
+      }
+    },
+    {
+      "type": "way",
+      "id": 67977751,
+      "center": {
+        "lat": 32.0660921,
+        "lon": 34.8465506
+      },
+      "tags": {
+        "highway": "motorway",
+        "layer": "-1",
+        "name": "כביש מכבית",
+        "name:ar": "طريق مكابيت",
+        "name:en": "Maccabit Road",
+        "name:he": "כביש מכבית",
+        "oneway": "yes",
+        "ref": "471",
+        "surface": "asphalt",
+        "tunnel": "yes",
+        "wikidata": "Q7371455",
+        "wikipedia": "he:כביש 471",
+        "wikipedia:he": "כביש 471"
+      }
+    },
+    {
+      "type": "way",
+      "id": 67977753,
+      "center": {
+        "lat": 32.0654645,
+        "lon": 34.8419204
+      },
+      "tags": {
+        "destination": "חיפה",
+        "destination:ref": "4",
+        "highway": "motorway_link",
+        "name": "כביש מכבית",
+        "name:ar": "طريق مكابيت",
+        "name:en": "Maccabit Road",
+        "name:he": "כביש מכבית",
+        "oneway": "yes",
+        "ref": "471",
+        "surface": "asphalt",
+        "wikidata": "Q7371455",
+        "wikipedia": "he:כביש 471",
+        "wikipedia:he": "כביש 471"
+      }
+    },
+    {
+      "type": "way",
+      "id": 69972043,
+      "center": {
+        "lat": 32.0945245,
+        "lon": 34.846041
+      },
+      "tags": {
+        "bicycle": "no",
+        "foot": "no",
+        "highway": "trunk",
+        "lanes": "3",
+        "lit": "yes",
+        "name": "כביש גהה",
+        "name:en": "Geha",
+        "name:he": "כביש גהה",
+        "oneway": "yes",
+        "ref": "4",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 69972044,
+      "center": {
+        "lat": 32.0922252,
+        "lon": 34.845916
+      },
+      "tags": {
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "trunk",
+        "lanes": "3",
+        "layer": "1",
+        "maxweight:signed": "no",
+        "name": "כביש גהה",
+        "name:en": "Geha",
+        "name:he": "כביש גהה",
+        "oneway": "yes",
+        "ref": "4"
+      }
+    },
+    {
+      "type": "way",
+      "id": 69972068,
+      "center": {
+        "lat": 32.0604665,
+        "lon": 34.8365895
+      },
+      "tags": {
+        "foot": "no",
+        "highway": "trunk",
+        "lanes": "3",
+        "lit": "yes",
+        "maxheight": "5",
+        "name": "כביש גהה",
+        "name:en": "Geha",
+        "name:he": "כביש גהה",
+        "oneway": "yes",
+        "ref": "4",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 69972069,
+      "center": {
+        "lat": 32.0924814,
+        "lon": 34.8457413
+      },
+      "tags": {
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "trunk",
+        "lanes": "3",
+        "layer": "1",
+        "lit": "yes",
+        "maxweight:signed": "no",
+        "name": "כביש גהה",
+        "name:en": "Geha",
+        "name:he": "כביש גהה",
+        "oneway": "yes",
+        "ref": "4"
+      }
+    },
+    {
+      "type": "way",
+      "id": 69972237,
+      "center": {
+        "lat": 32.091706,
+        "lon": 34.8462301
+      },
+      "tags": {
+        "destination": "חיפה",
+        "destination:ref": "4",
+        "foot": "no",
+        "highway": "trunk_link",
+        "lanes": "1",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 74851441,
+      "center": {
+        "lat": 32.0930875,
+        "lon": 34.8449261
+      },
+      "tags": {
+        "destination": "תל אביב-יפו",
+        "destination:ref": "481",
+        "foot": "yes",
+        "highway": "trunk_link",
+        "lanes": "2",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 81556792,
+      "center": {
+        "lat": 32.0656017,
+        "lon": 34.8449701
+      },
+      "tags": {
+        "highway": "secondary",
+        "lanes": "3",
+        "name": "רפאל איתן",
+        "name:en": "Rafael Eitan",
+        "name:he": "רפאל איתן",
+        "oneway": "yes",
+        "ref": "4612",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 81556796,
+      "center": {
+        "lat": 32.0620324,
+        "lon": 34.8461973
+      },
+      "tags": {
+        "highway": "secondary",
+        "lanes": "2",
+        "name": "רפאל איתן",
+        "name:en": "Rafael Eitan",
+        "name:he": "רפאל איתן",
+        "oneway": "yes",
+        "ref": "4612",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 118564711,
+      "center": {
+        "lat": 32.0754493,
+        "lon": 34.8453459
+      },
+      "tags": {
+        "foot": "yes",
+        "highway": "trunk_link",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 133397589,
+      "center": {
+        "lat": 32.0643489,
+        "lon": 34.8608287
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "lanes": "4",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "psv:lanes": "yes|yes|designated|yes",
+        "surface": "asphalt",
+        "turn:lanes": "left|through|through|right"
+      }
+    },
+    {
+      "type": "way",
+      "id": 133475553,
+      "center": {
+        "lat": 32.0823885,
+        "lon": 34.8607643
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 133475554,
+      "center": {
+        "lat": 32.0820242,
+        "lon": 34.8606628
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 133475559,
+      "center": {
+        "lat": 32.073433,
+        "lon": 34.860162
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "1",
+        "lit": "yes",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 133475564,
+      "center": {
+        "lat": 32.0736676,
+        "lon": 34.8609905
+      },
+      "tags": {
+        "alt_name:en": "Ha'Atzmaut;HaAtsmaut;Atsmaut",
+        "highway": "secondary",
+        "lit": "yes",
+        "name": "העצמאות",
+        "name:en": "HaAtzmaut",
+        "name:he": "העצמאות",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 133475567,
+      "center": {
+        "lat": 32.0739502,
+        "lon": 34.8602431
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "1",
+        "lit": "yes",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 133475568,
+      "center": {
+        "lat": 32.0714767,
+        "lon": 34.8601239
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "lanes": "3",
+        "lit": "yes",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 133475571,
+      "center": {
+        "lat": 32.0690691,
+        "lon": 34.8600804
+      },
+      "tags": {
+        "bridge": "yes",
+        "highway": "secondary",
+        "layer": "1",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 147055899,
+      "center": {
+        "lat": 32.0921339,
+        "lon": 34.8618086
+      },
+      "tags": {
+        "highway": "primary_link",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 157450617,
+      "center": {
+        "lat": 32.0928222,
+        "lon": 34.8411363
+      },
+      "tags": {
+        "highway": "primary_link",
+        "lane_markings": "no",
+        "oneway": "yes",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 159344579,
+      "center": {
+        "lat": 32.0698144,
+        "lon": 34.8683436
+      },
+      "tags": {
+        "highway": "motorway",
+        "maxspeed": "110",
+        "name": "כביש מכבית",
+        "name:ar": "طريق مكابيت",
+        "name:en": "Maccabit Road",
+        "name:he": "כביש מכבית",
+        "oneway": "yes",
+        "ref": "471",
+        "surface": "asphalt",
+        "wikidata": "Q7371455",
+        "wikipedia": "he:כביש 471",
+        "wikipedia:he": "כביש 471"
+      }
+    },
+    {
+      "type": "way",
+      "id": 166679638,
+      "center": {
+        "lat": 32.0841986,
+        "lon": 34.8602029
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "1",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 166679642,
+      "center": {
+        "lat": 32.08381,
+        "lon": 34.8601965
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 166680059,
+      "center": {
+        "lat": 32.0735206,
+        "lon": 34.8638289
+      },
+      "tags": {
+        "alt_name:en": "Ha'Atzmaut;HaAtsmaut;Atsmaut",
+        "highway": "secondary",
+        "lanes": "2",
+        "name": "העצמאות",
+        "name:en": "HaAtzmaut",
+        "name:he": "העצמאות",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 166680068,
+      "center": {
+        "lat": 32.0771643,
+        "lon": 34.8603955
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "1",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 166680075,
+      "center": {
+        "lat": 32.0770014,
+        "lon": 34.8603798
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "1",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 176438459,
+      "center": {
+        "lat": 32.0864722,
+        "lon": 34.8611484
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 184651431,
+      "center": {
+        "lat": 32.0821973,
+        "lon": 34.8605832
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 184652366,
+      "center": {
+        "lat": 32.0736627,
+        "lon": 34.8600111
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "lit": "yes",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 184652438,
+      "center": {
+        "lat": 32.0769272,
+        "lon": 34.8602567
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "lanes": "3",
+        "lit": "yes",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 184652506,
+      "center": {
+        "lat": 32.0830956,
+        "lon": 34.8605487
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 195073914,
+      "center": {
+        "lat": 32.0900142,
+        "lon": 34.8613832
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "1",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 196121775,
+      "center": {
+        "lat": 32.0635125,
+        "lon": 34.8370794
+      },
+      "tags": {
+        "destination": "אלוף שדה",
+        "highway": "secondary_link",
+        "lanes": "2",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 197215620,
+      "center": {
+        "lat": 32.0619516,
+        "lon": 34.8461148
+      },
+      "tags": {
+        "highway": "secondary",
+        "lanes": "2",
+        "name": "דוד בן גוריון",
+        "name:ar": "دافيد بن غوريون",
+        "name:en": "David Ben Gurion",
+        "name:he": "דוד בן גוריון",
+        "name:ru": "Давид Бен-Гурион",
+        "oneway": "yes",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 210612448,
+      "center": {
+        "lat": 32.0740743,
+        "lon": 34.8676157
+      },
+      "tags": {
+        "alt_name:en": "Ha'Atzmaut;HaAtsmaut;Atsmaut",
+        "highway": "secondary",
+        "lanes": "2",
+        "name": "העצמאות",
+        "name:en": "HaAtzmaut",
+        "name:he": "העצמאות",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 224834195,
+      "center": {
+        "lat": 32.0735447,
+        "lon": 34.8610048
+      },
+      "tags": {
+        "alt_name:en": "Ha'Atzmaut;HaAtsmaut;Atsmaut",
+        "highway": "secondary",
+        "lanes": "2",
+        "lit": "yes",
+        "name": "העצמאות",
+        "name:en": "HaAtzmaut",
+        "name:he": "העצמאות",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 224834202,
+      "center": {
+        "lat": 32.0811901,
+        "lon": 34.8603789
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "lanes": "3",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 224834206,
+      "center": {
+        "lat": 32.0715759,
+        "lon": 34.8599177
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "lit": "yes",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 224855329,
+      "center": {
+        "lat": 32.0916219,
+        "lon": 34.8451402
+      },
+      "tags": {
+        "destination": "אשדוד;ירושלים",
+        "destination:ref": "4",
+        "foot": "yes",
+        "highway": "trunk_link",
+        "lanes": "3",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 225132687,
+      "center": {
+        "lat": 32.0652757,
+        "lon": 34.8427533
+      },
+      "tags": {
+        "destination": "תל אביב;אשדוד",
+        "destination:ref": "4",
+        "highway": "motorway_link",
+        "lanes": "2",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 225132700,
+      "center": {
+        "lat": 32.0671351,
+        "lon": 34.8503459
+      },
+      "tags": {
+        "bridge": "yes",
+        "highway": "motorway_link",
+        "lanes": "2",
+        "layer": "1",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 225132703,
+      "center": {
+        "lat": 32.0653389,
+        "lon": 34.8424354
+      },
+      "tags": {
+        "destination": "תל אביב;אשדוד",
+        "destination:ref": "4",
+        "highway": "secondary_link",
+        "lanes": "1",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 225132708,
+      "center": {
+        "lat": 32.0651253,
+        "lon": 34.8453465
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "2",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 225135956,
+      "center": {
+        "lat": 32.0637246,
+        "lon": 34.8613638
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "lanes": "3",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "surface": "asphalt",
+        "turn:lanes": "left|through|right",
+        "turn:psv:lanes": "left|through|through;right"
+      }
+    },
+    {
+      "type": "way",
+      "id": 230237801,
+      "center": {
+        "lat": 32.0603639,
+        "lon": 34.848091
+      },
+      "tags": {
+        "highway": "secondary",
+        "lanes": "2",
+        "name": "דוד בן גוריון",
+        "name:ar": "دافيد بن غوريون",
+        "name:en": "David Ben Gurion",
+        "name:he": "דוד בן גוריון",
+        "name:ru": "Давид Бен-Гурион",
+        "oneway": "yes",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 230975843,
+      "center": {
+        "lat": 32.0914656,
+        "lon": 34.8470107
+      },
+      "tags": {
+        "destination": "תל אביב-יפו;בני ברק;רמת גן",
+        "destination:ref": "481;4",
+        "foot": "yes",
+        "highway": "trunk_link",
+        "lanes": "3",
+        "maxspeed": "50",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 267404124,
+      "center": {
+        "lat": 32.0918974,
+        "lon": 34.8632353
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "foot": "yes",
+        "highway": "primary",
+        "lit": "yes",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "sidewalk": "right",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 267404132,
+      "center": {
+        "lat": 32.0919201,
+        "lon": 34.8621328
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 267404142,
+      "center": {
+        "lat": 32.0867218,
+        "lon": 34.8612127
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 274048807,
+      "center": {
+        "lat": 32.0664361,
+        "lon": 34.8469408
+      },
+      "tags": {
+        "highway": "motorway",
+        "layer": "-1",
+        "name": "כביש מכבית",
+        "name:ar": "طريق مكابيت",
+        "name:en": "Maccabit Road",
+        "name:he": "כביש מכבית",
+        "oneway": "yes",
+        "ref": "471",
+        "surface": "asphalt",
+        "tunnel": "yes",
+        "wikidata": "Q7371455",
+        "wikipedia": "he:כביש 471",
+        "wikipedia:he": "כביש 471"
+      }
+    },
+    {
+      "type": "way",
+      "id": 274048813,
+      "center": {
+        "lat": 32.0656698,
+        "lon": 34.8451505
+      },
+      "tags": {
+        "highway": "motorway_link",
+        "layer": "-1",
+        "oneway": "yes",
+        "surface": "asphalt",
+        "tunnel": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 274055262,
+      "center": {
+        "lat": 32.0625147,
+        "lon": 34.8393782
+      },
+      "tags": {
+        "destination": "קריית אונו (רח׳ קציר);גבעת שמואל;אוניברסיטת בר-אילן",
+        "highway": "secondary_link",
+        "lanes": "1",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 274055263,
+      "center": {
+        "lat": 32.0664773,
+        "lon": 34.8388417
+      },
+      "tags": {
+        "destination": "פתח תקוה;קריית אונו",
+        "destination:lang:en": "Petah Tiqva;Qiryat Ono",
+        "destination:lang:he": "פתח תקוה;קריית אונו",
+        "destination:ref": "471",
+        "highway": "trunk_link",
+        "lanes": "2",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 274055264,
+      "center": {
+        "lat": 32.064085,
+        "lon": 34.8387078
+      },
+      "tags": {
+        "highway": "trunk_link",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 274055266,
+      "center": {
+        "lat": 32.0657972,
+        "lon": 34.8450232
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "4",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 280308148,
+      "center": {
+        "lat": 32.0675918,
+        "lon": 34.8530744
+      },
+      "tags": {
+        "highway": "motorway_link",
+        "lanes": "2",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 280308149,
+      "center": {
+        "lat": 32.0645972,
+        "lon": 34.8415148
+      },
+      "tags": {
+        "destination": "פתח תקווה;קריית אונו",
+        "destination:ref": "471",
+        "highway": "motorway_link",
+        "lanes": "2",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 280308151,
+      "center": {
+        "lat": 32.0670455,
+        "lon": 34.8497523
+      },
+      "tags": {
+        "bridge": "yes",
+        "highway": "secondary_link",
+        "lanes": "3",
+        "layer": "1",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 295115260,
+      "center": {
+        "lat": 32.0592573,
+        "lon": 34.8359225
+      },
+      "tags": {
+        "foot": "no",
+        "highway": "trunk",
+        "lanes": "3",
+        "lit": "yes",
+        "maxheight": "5",
+        "maxspeed": "90",
+        "maxspeed:type": "sign",
+        "name": "כביש גהה",
+        "name:en": "Geha",
+        "name:he": "כביש גהה",
+        "oneway": "yes",
+        "ref": "4",
+        "shoulder": "right",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 302603287,
+      "center": {
+        "lat": 32.0754142,
+        "lon": 34.8435292
+      },
+      "tags": {
+        "destination": "אשדוד;בן גוריון;ירושלים",
+        "destination:ref": "4",
+        "foot": "yes",
+        "highway": "trunk_link",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 303383795,
+      "center": {
+        "lat": 32.0686611,
+        "lon": 34.8591093
+      },
+      "tags": {
+        "destination": "קרית אונו;פתח תקוה",
+        "destination:lang:en": "Qiryat Ono;Petah Tikva",
+        "destination:lang:he": "קרית אונו;פתח תקוה",
+        "destination:symbol": "industrial",
+        "highway": "motorway_link",
+        "lanes": "1",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 311997030,
+      "center": {
+        "lat": 32.0925043,
+        "lon": 34.8504147
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "foot": "yes",
+        "highway": "primary",
+        "lanes": "2",
+        "lit": "yes",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "sidewalk": "left",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 340429040,
+      "center": {
+        "lat": 32.0663822,
+        "lon": 34.8607106
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "1",
+        "maxspeed": "50",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 340429195,
+      "center": {
+        "lat": 32.0642228,
+        "lon": 34.8612168
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "1",
+        "maxspeed": "50",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 366196243,
+      "center": {
+        "lat": 32.0620304,
+        "lon": 34.8460256
+      },
+      "tags": {
+        "highway": "secondary",
+        "lanes": "4",
+        "name": "רפאל איתן",
+        "name:en": "Rafael Eitan",
+        "name:he": "רפאל איתן",
+        "oneway": "yes",
+        "ref": "4612",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 367320611,
+      "center": {
+        "lat": 32.0735443,
+        "lon": 34.8622465
+      },
+      "tags": {
+        "highway": "secondary",
+        "junction": "roundabout",
+        "lanes": "2",
+        "lit": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 374106748,
+      "center": {
+        "lat": 32.0686446,
+        "lon": 34.8565922
+      },
+      "tags": {
+        "destination": "תל אביב;אשדוד;חיפה",
+        "destination:ref": "471",
+        "highway": "motorway_link",
+        "lanes": "2",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 380716618,
+      "center": {
+        "lat": 32.0926241,
+        "lon": 34.8458795
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "foot": "yes",
+        "highway": "primary",
+        "lanes": "3",
+        "lit": "yes",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "sidewalk": "right",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 380717053,
+      "center": {
+        "lat": 32.0920267,
+        "lon": 34.8574462
+      },
+      "tags": {
+        "highway": "primary_link",
+        "lanes": "1",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 380717061,
+      "center": {
+        "lat": 32.0923614,
+        "lon": 34.8535215
+      },
+      "tags": {
+        "highway": "primary_link",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 380717078,
+      "center": {
+        "lat": 32.0918665,
+        "lon": 34.8608002
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "foot": "yes",
+        "highway": "primary",
+        "lanes": "2",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "sidewalk": "left",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 394177536,
+      "center": {
+        "lat": 32.0978787,
+        "lon": 34.8469386
+      },
+      "tags": {
+        "bicycle": "no",
+        "foot": "no",
+        "highway": "trunk",
+        "horse": "no",
+        "lanes": "3",
+        "lit": "yes",
+        "maxheight": "6.3",
+        "name": "כביש גהה",
+        "name:en": "Geha",
+        "name:he": "כביש גהה",
+        "oneway": "yes",
+        "ref": "4",
+        "shoulder": "no",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 397916860,
+      "center": {
+        "lat": 32.0927095,
+        "lon": 34.8448903
+      },
+      "tags": {
+        "foot": "no",
+        "highway": "trunk_link",
+        "lanes": "5",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 397916862,
+      "center": {
+        "lat": 32.0928059,
+        "lon": 34.8378261
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "foot": "yes",
+        "highway": "primary",
+        "lanes": "2",
+        "lit": "yes",
+        "name": "זבוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "sidewalk": "right",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 397916865,
+      "center": {
+        "lat": 32.0900111,
+        "lon": 34.8455672
+      },
+      "tags": {
+        "foot": "yes",
+        "highway": "trunk_link",
+        "lanes": "2",
+        "lit": "yes",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 397916866,
+      "center": {
+        "lat": 32.0925934,
+        "lon": 34.8395687
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "highway": "primary",
+        "lanes": "2",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 397916867,
+      "center": {
+        "lat": 32.0931781,
+        "lon": 34.8451158
+      },
+      "tags": {
+        "destination": "פתח תקווה",
+        "destination:ref": "481",
+        "highway": "trunk_link",
+        "lanes": "4",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 397916868,
+      "center": {
+        "lat": 32.0965226,
+        "lon": 34.8462421
+      },
+      "tags": {
+        "highway": "trunk_link",
+        "lanes": "3",
+        "maxheight": "6.6",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 397916871,
+      "center": {
+        "lat": 32.0927267,
+        "lon": 34.8356369
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "foot": "yes",
+        "highway": "primary",
+        "lanes": "3",
+        "lit": "yes",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "sidewalk": "right",
+        "sidewalk:right:surface": "paving_stones",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 397935212,
+      "center": {
+        "lat": 32.0928789,
+        "lon": 34.8501366
+      },
+      "tags": {
+        "highway": "primary_link",
+        "lane_markings": "no",
+        "lit": "yes",
+        "oneway": "yes",
+        "sidewalk": "right",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 397935839,
+      "center": {
+        "lat": 32.0978686,
+        "lon": 34.8468785
+      },
+      "tags": {
+        "foot": "no",
+        "highway": "trunk",
+        "lanes": "4",
+        "lit": "yes",
+        "maxheight": "5.8",
+        "name": "כביש גהה",
+        "name:en": "Geha",
+        "name:he": "כביש גהה",
+        "oneway": "yes",
+        "ref": "4",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 413019475,
+      "center": {
+        "lat": 32.0651916,
+        "lon": 34.8401823
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "3",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 413746470,
+      "center": {
+        "lat": 32.0689894,
+        "lon": 34.86397
+      },
+      "tags": {
+        "highway": "motorway",
+        "maxspeed": "110",
+        "name": "כביש מכבית",
+        "name:ar": "طريق مكابيت",
+        "name:en": "Maccabit Road",
+        "name:he": "כביש מכבית",
+        "oneway": "yes",
+        "ref": "471",
+        "surface": "asphalt",
+        "wikidata": "Q7371455",
+        "wikipedia": "he:כביש 471",
+        "wikipedia:he": "כביש 471"
+      }
+    },
+    {
+      "type": "way",
+      "id": 413746471,
+      "center": {
+        "lat": 32.0677205,
+        "lon": 34.852544
+      },
+      "tags": {
+        "highway": "motorway",
+        "maxspeed": "90",
+        "name": "כביש מכבית",
+        "name:ar": "طريق مكابيت",
+        "name:en": "Maccabit Road",
+        "name:he": "כביש מכבית",
+        "oneway": "yes",
+        "ref": "471",
+        "surface": "asphalt",
+        "wikidata": "Q7371455",
+        "wikipedia": "he:כביש 471",
+        "wikipedia:he": "כביש 471"
+      }
+    },
+    {
+      "type": "way",
+      "id": 498886958,
+      "center": {
+        "lat": 32.0853169,
+        "lon": 34.8606671
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "lanes": "3",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 498886969,
+      "center": {
+        "lat": 32.0826616,
+        "lon": 34.860373
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "lanes": "4",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt",
+        "turn:lanes": "left|left|through|through"
+      }
+    },
+    {
+      "type": "way",
+      "id": 503136333,
+      "center": {
+        "lat": 32.0639548,
+        "lon": 34.8371159
+      },
+      "tags": {
+        "destination": "אלוף שדה",
+        "destination:symbol": "hospital",
+        "highway": "trunk_link",
+        "lanes": "2",
+        "maxheight:lanes": "5.40|4.50",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 503136334,
+      "center": {
+        "lat": 32.0629612,
+        "lon": 34.8368059
+      },
+      "tags": {
+        "destination": "אלוף שדה",
+        "destination:symbol": "hospital",
+        "highway": "trunk_link",
+        "lanes": "2",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 510228272,
+      "center": {
+        "lat": 32.0677984,
+        "lon": 34.8606413
+      },
+      "tags": {
+        "destination": "קרית אונו",
+        "destination:lang:en": "Qiryat Ono",
+        "destination:lang:he": "קרית אונו",
+        "highway": "motorway_link",
+        "lanes": "2",
+        "maxspeed": "50",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 513694350,
+      "center": {
+        "lat": 32.0758585,
+        "lon": 34.8444209
+      },
+      "tags": {
+        "destination": "פתח תקווה;חיפה",
+        "destination:ref": "4",
+        "foot": "yes",
+        "highway": "trunk_link",
+        "lanes": "1",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 516559467,
+      "center": {
+        "lat": 32.0644579,
+        "lon": 34.8430489
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "3",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 521375311,
+      "center": {
+        "lat": 32.0922203,
+        "lon": 34.8459591
+      },
+      "tags": {
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "trunk_link",
+        "layer": "1",
+        "maxweight:signed": "no",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 528530461,
+      "center": {
+        "lat": 32.0604374,
+        "lon": 34.8457479
+      },
+      "tags": {
+        "highway": "secondary",
+        "lanes": "2",
+        "name": "רפאל איתן",
+        "name:en": "Rafael Eitan",
+        "name:he": "רפאל איתן",
+        "oneway": "yes",
+        "ref": "4612",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 533260136,
+      "center": {
+        "lat": 32.0642765,
+        "lon": 34.8406031
+      },
+      "tags": {
+        "destination": "גבעת שמואל;אוניברסיטת בר-אילן",
+        "highway": "secondary_link",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 667210734,
+      "center": {
+        "lat": 32.0946104,
+        "lon": 34.8464947
+      },
+      "tags": {
+        "destination": "חיפה",
+        "destination:ref": "4",
+        "foot": "no",
+        "highway": "trunk_link",
+        "lanes": "1",
+        "lit": "yes",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 667210736,
+      "center": {
+        "lat": 32.0917777,
+        "lon": 34.8472751
+      },
+      "tags": {
+        "destination": "פתח תקווה",
+        "destination:ref": "481",
+        "foot": "yes",
+        "highway": "trunk_link",
+        "maxspeed": "50",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 699274376,
+      "center": {
+        "lat": 32.091798,
+        "lon": 34.8619557
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 814252970,
+      "center": {
+        "lat": 32.0640855,
+        "lon": 34.8608466
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "1",
+        "maxspeed": "50",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 815062047,
+      "center": {
+        "lat": 32.0923605,
+        "lon": 34.8555664
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "foot": "yes",
+        "highway": "primary",
+        "lanes": "2",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "sidewalk": "left",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 815062049,
+      "center": {
+        "lat": 32.0927684,
+        "lon": 34.8520213
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "foot": "yes",
+        "highway": "primary",
+        "lanes": "2",
+        "lit": "yes",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "sidewalk": "right",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 815062052,
+      "center": {
+        "lat": 32.0921708,
+        "lon": 34.8574797
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "foot": "yes",
+        "highway": "primary",
+        "lanes": "2",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "sidewalk": "left",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 815062053,
+      "center": {
+        "lat": 32.0921841,
+        "lon": 34.8573374
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "foot": "yes",
+        "highway": "primary",
+        "lanes": "2",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "sidewalk": "left",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 815062061,
+      "center": {
+        "lat": 32.0909726,
+        "lon": 34.8616878
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 856104278,
+      "center": {
+        "lat": 32.0679242,
+        "lon": 34.8502459
+      },
+      "tags": {
+        "destination": "גבעת שמואל",
+        "highway": "secondary_link",
+        "lanes": "2",
+        "oneway": "yes",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 868556739,
+      "center": {
+        "lat": 32.067455,
+        "lon": 34.8401583
+      },
+      "tags": {
+        "destination": "חיפה",
+        "destination:ref": "4",
+        "highway": "trunk_link",
+        "maxheight": "4.8",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 868556740,
+      "center": {
+        "lat": 32.069519,
+        "lon": 34.8601015
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 868556741,
+      "center": {
+        "lat": 32.0693871,
+        "lon": 34.8595766
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "4",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 868556742,
+      "center": {
+        "lat": 32.0650198,
+        "lon": 34.8451376
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "3",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 919327533,
+      "center": {
+        "lat": 32.0694496,
+        "lon": 34.8598121
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "3",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 922178593,
+      "center": {
+        "lat": 32.0927369,
+        "lon": 34.8498705
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "foot": "yes",
+        "highway": "primary",
+        "lanes": "2",
+        "lit": "yes",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "sidewalk": "right",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 993103139,
+      "center": {
+        "lat": 32.0637345,
+        "lon": 34.8453505
+      },
+      "tags": {
+        "highway": "secondary",
+        "lanes": "2",
+        "name": "רפאל איתן",
+        "name:en": "Rafael Eitan",
+        "name:he": "רפאל איתן",
+        "oneway": "yes",
+        "ref": "4612",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 993103154,
+      "center": {
+        "lat": 32.0678051,
+        "lon": 34.8510214
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "5",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 993103155,
+      "center": {
+        "lat": 32.0659937,
+        "lon": 34.8458136
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "4",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 993103156,
+      "center": {
+        "lat": 32.0676866,
+        "lon": 34.8495649
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "3",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1003910080,
+      "center": {
+        "lat": 32.0676926,
+        "lon": 34.8603581
+      },
+      "tags": {
+        "destination": "ירושלים;בן גוריון",
+        "destination:ref": "471",
+        "highway": "motorway_link",
+        "lanes": "2",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1117671983,
+      "center": {
+        "lat": 32.0922035,
+        "lon": 34.8597598
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "foot": "yes",
+        "highway": "primary",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "sidewalk": "right",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1117671986,
+      "center": {
+        "lat": 32.0923137,
+        "lon": 34.8585664
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "foot": "yes",
+        "highway": "primary",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "sidewalk": "right",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1117671993,
+      "center": {
+        "lat": 32.0926832,
+        "lon": 34.8483528
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "foot": "yes",
+        "highway": "primary",
+        "lanes": "2",
+        "lit": "yes",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "sidewalk": "right",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1117671995,
+      "center": {
+        "lat": 32.0925147,
+        "lon": 34.846947
+      },
+      "tags": {
+        "destination": "תל אביב-יפו;בני ברק;רמת גן",
+        "destination:ref": "481",
+        "foot": "yes",
+        "highway": "trunk_link",
+        "lanes": "2",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1117671997,
+      "center": {
+        "lat": 32.0923724,
+        "lon": 34.8451318
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "highway": "primary",
+        "lit": "yes",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1117671999,
+      "center": {
+        "lat": 32.0926692,
+        "lon": 34.8426901
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "foot": "yes",
+        "highway": "primary",
+        "lanes": "3",
+        "lit": "yes",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "sidewalk": "right",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1117672000,
+      "center": {
+        "lat": 32.0924936,
+        "lon": 34.8448547
+      },
+      "tags": {
+        "foot": "no",
+        "highway": "trunk_link",
+        "lanes": "5",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1117672001,
+      "center": {
+        "lat": 32.0927382,
+        "lon": 34.8401297
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "foot": "yes",
+        "highway": "primary",
+        "lanes": "3",
+        "lit": "yes",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "sidewalk": "right",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1117672005,
+      "center": {
+        "lat": 32.0925967,
+        "lon": 34.8394141
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "highway": "primary",
+        "lanes": "2",
+        "maxspeed": "50",
+        "maxspeed:type": "sign",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1117672008,
+      "center": {
+        "lat": 32.092463,
+        "lon": 34.8395675
+      },
+      "tags": {
+        "highway": "primary_link",
+        "lanes": "2",
+        "maxspeed": "50",
+        "oneway": "yes",
+        "smoothness": "excellent",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1117672009,
+      "center": {
+        "lat": 32.092563,
+        "lon": 34.8402495
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "highway": "primary",
+        "lanes": "2",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1117672018,
+      "center": {
+        "lat": 32.0926123,
+        "lon": 34.8372142
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "highway": "primary",
+        "lanes": "2",
+        "name": "ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1126588046,
+      "center": {
+        "lat": 32.0900037,
+        "lon": 34.8615202
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1126588048,
+      "center": {
+        "lat": 32.0901238,
+        "lon": 34.8616868
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1126588049,
+      "center": {
+        "lat": 32.0909622,
+        "lon": 34.8618357
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1126588050,
+      "center": {
+        "lat": 32.0882829,
+        "lon": 34.8612308
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1126588051,
+      "center": {
+        "lat": 32.0901307,
+        "lon": 34.8615385
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1126588075,
+      "center": {
+        "lat": 32.0918055,
+        "lon": 34.861882
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1126588076,
+      "center": {
+        "lat": 32.0918658,
+        "lon": 34.8619233
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1126588078,
+      "center": {
+        "lat": 32.091947,
+        "lon": 34.8618272
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1126588079,
+      "center": {
+        "lat": 32.0916523,
+        "lon": 34.8630985
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "foot": "yes",
+        "highway": "primary",
+        "lanes": "3",
+        "lit": "yes",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "sidewalk": "left",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1126588080,
+      "center": {
+        "lat": 32.0917552,
+        "lon": 34.8619022
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "foot": "yes",
+        "highway": "primary",
+        "lanes": "2",
+        "lit": "yes",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "sidewalk": "left",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1126588081,
+      "center": {
+        "lat": 32.0918619,
+        "lon": 34.8619618
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1126588083,
+      "center": {
+        "lat": 32.0920033,
+        "lon": 34.8618401
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "foot": "yes",
+        "highway": "primary",
+        "lit": "yes",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "sidewalk": "right",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1126588084,
+      "center": {
+        "lat": 32.0919907,
+        "lon": 34.8619875
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "foot": "yes",
+        "highway": "primary",
+        "lit": "yes",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "sidewalk": "right",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1126588087,
+      "center": {
+        "lat": 32.0921066,
+        "lon": 34.8607574
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "foot": "yes",
+        "highway": "primary",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "sidewalk": "right",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1126593771,
+      "center": {
+        "lat": 32.0801275,
+        "lon": 34.8603455
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1126593773,
+      "center": {
+        "lat": 32.0768681,
+        "lon": 34.8600981
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "lanes": "3",
+        "lit": "yes",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1126593774,
+      "center": {
+        "lat": 32.0811325,
+        "lon": 34.8605408
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1131166766,
+      "center": {
+        "lat": 32.0835119,
+        "lon": 34.8603534
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "lanes": "3",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1131166767,
+      "center": {
+        "lat": 32.0839505,
+        "lon": 34.8603776
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "lanes": "3",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1131166769,
+      "center": {
+        "lat": 32.0870046,
+        "lon": 34.8611116
+      },
+      "tags": {
+        "alt_name:en": "Itshak Rabin;Yitzchak Rabin;Izhak Rabin",
+        "highway": "secondary",
+        "lanes": "3",
+        "name": "יצחק רבין",
+        "name:ar": "اسحق رابين",
+        "name:en": "Yitzhak Rabin",
+        "name:he": "יצחק רבין",
+        "name:ru": "Ицхак Рабин",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1133250357,
+      "center": {
+        "lat": 32.0654318,
+        "lon": 34.8451529
+      },
+      "tags": {
+        "highway": "secondary",
+        "lanes": "2",
+        "name": "רפאל איתן",
+        "name:en": "Rafael Eitan",
+        "name:he": "רפאל איתן",
+        "oneway": "yes",
+        "ref": "4612",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1133250358,
+      "center": {
+        "lat": 32.0648269,
+        "lon": 34.8450816
+      },
+      "tags": {
+        "highway": "secondary",
+        "lanes": "2",
+        "name": "רפאל איתן",
+        "name:en": "Rafael Eitan",
+        "name:he": "רפאל איתן",
+        "oneway": "yes",
+        "ref": "4612",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1133268289,
+      "center": {
+        "lat": 32.0924527,
+        "lon": 34.8428426
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "highway": "primary",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1153695351,
+      "center": {
+        "lat": 32.0648788,
+        "lon": 34.8454029
+      },
+      "tags": {
+        "destination": "ירושלים;בן גוריון",
+        "destination:ref": "471;6",
+        "highway": "secondary_link",
+        "lanes": "2",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1153695352,
+      "center": {
+        "lat": 32.065975,
+        "lon": 34.8452212
+      },
+      "tags": {
+        "destination": "אוניברסיטת בר אילן",
+        "highway": "secondary_link",
+        "lanes": "1",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1153695353,
+      "center": {
+        "lat": 32.0647389,
+        "lon": 34.8448003
+      },
+      "tags": {
+        "destination": "קרית אונו (רפאל איתן)",
+        "highway": "secondary_link",
+        "lanes": "2",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1200593467,
+      "center": {
+        "lat": 32.0753243,
+        "lon": 34.8441808
+      },
+      "tags": {
+        "destination": "גבעת שמואל;בני ברק",
+        "foot": "yes",
+        "highway": "trunk_link",
+        "lanes": "1",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1206722683,
+      "center": {
+        "lat": 32.065874,
+        "lon": 34.8461717
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "3",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1225503918,
+      "center": {
+        "lat": 32.0746424,
+        "lon": 34.8435017
+      },
+      "tags": {
+        "foot": "yes",
+        "highway": "trunk_link",
+        "oneway": "yes",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1225503919,
+      "center": {
+        "lat": 32.0739148,
+        "lon": 34.8433809
+      },
+      "tags": {
+        "foot": "yes",
+        "highway": "trunk_link",
+        "oneway": "yes",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1232282701,
+      "center": {
+        "lat": 32.0656202,
+        "lon": 34.8451788
+      },
+      "tags": {
+        "highway": "motorway_link",
+        "layer": "-1",
+        "name": "כביש מכבית",
+        "name:ar": "طريق مكابيت",
+        "name:en": "Maccabit Road",
+        "name:he": "כביש מכבית",
+        "oneway": "yes",
+        "ref": "471",
+        "surface": "asphalt",
+        "tunnel": "yes",
+        "wikidata": "Q7371455",
+        "wikipedia": "he:כביש 471",
+        "wikipedia:he": "כביש 471"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1232282702,
+      "center": {
+        "lat": 32.0651771,
+        "lon": 34.8445106
+      },
+      "tags": {
+        "highway": "motorway",
+        "name": "כביש מכבית",
+        "name:ar": "طريق مكابيت",
+        "name:en": "Maccabit Road",
+        "name:he": "כביש מכבית",
+        "oneway": "yes",
+        "ref": "471",
+        "wikidata": "Q7371455",
+        "wikipedia": "he:כביש 471",
+        "wikipedia:he": "כביש 471"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1260758924,
+      "center": {
+        "lat": 32.0651183,
+        "lon": 34.8451197
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "2",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1260758932,
+      "center": {
+        "lat": 32.0667687,
+        "lon": 34.8486946
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "3",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1260758936,
+      "center": {
+        "lat": 32.0621111,
+        "lon": 34.8461081
+      },
+      "tags": {
+        "highway": "secondary",
+        "lanes": "2",
+        "name": "יצחק נבון",
+        "name:en": "Yitzhak Navon",
+        "name:he": "יצחק נבון",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1260758937,
+      "center": {
+        "lat": 32.0617901,
+        "lon": 34.8463725
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "1",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1260758944,
+      "center": {
+        "lat": 32.0619509,
+        "lon": 34.8464014
+      },
+      "tags": {
+        "highway": "secondary",
+        "lanes": "2",
+        "name": "דוד בן גוריון",
+        "name:ar": "دافيد بن غوريون",
+        "name:en": "David Ben Gurion",
+        "name:he": "דוד בן גוריון",
+        "name:ru": "Давид Бен-Гурион",
+        "oneway": "yes",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1260758945,
+      "center": {
+        "lat": 32.0606419,
+        "lon": 34.8476888
+      },
+      "tags": {
+        "highway": "secondary",
+        "lanes": "2",
+        "name": "דוד בן גוריון",
+        "name:ar": "دافيد بن غوريون",
+        "name:en": "David Ben Gurion",
+        "name:he": "דוד בן גוריון",
+        "name:ru": "Давид Бен-Гурион",
+        "oneway": "yes",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1260758946,
+      "center": {
+        "lat": 32.0605959,
+        "lon": 34.8456231
+      },
+      "tags": {
+        "highway": "secondary",
+        "lanes": "2",
+        "name": "רפאל איתן",
+        "name:en": "Rafael Eitan",
+        "name:he": "רפאל איתן",
+        "oneway": "yes",
+        "ref": "4612",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1260758947,
+      "center": {
+        "lat": 32.0635824,
+        "lon": 34.8457019
+      },
+      "tags": {
+        "cycleway:left": "no",
+        "cycleway:right": "track",
+        "cycleway:right:oneway": "no",
+        "highway": "secondary",
+        "lanes": "2",
+        "name": "רפאל איתן",
+        "name:en": "Rafael Eitan",
+        "name:he": "רפאל איתן",
+        "oneway": "yes",
+        "oneway:bicycle": "no",
+        "ref": "4612",
+        "sidewalk": "both",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1260758948,
+      "center": {
+        "lat": 32.0617915,
+        "lon": 34.846172
+      },
+      "tags": {
+        "highway": "secondary",
+        "lanes": "2",
+        "name": "רפאל איתן",
+        "name:en": "Rafael Eitan",
+        "name:he": "רפאל איתן",
+        "oneway": "yes",
+        "ref": "4612",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1260758949,
+      "center": {
+        "lat": 32.0650863,
+        "lon": 34.8450473
+      },
+      "tags": {
+        "highway": "secondary",
+        "lanes": "2",
+        "name": "רפאל איתן",
+        "name:en": "Rafael Eitan",
+        "name:he": "רפאל איתן",
+        "oneway": "yes",
+        "ref": "4612",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1260758950,
+      "center": {
+        "lat": 32.0660775,
+        "lon": 34.8469399
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "2",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1260758951,
+      "center": {
+        "lat": 32.0648843,
+        "lon": 34.8447996
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "3",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1260758952,
+      "center": {
+        "lat": 32.0658418,
+        "lon": 34.8452263
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "4",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1268146222,
+      "center": {
+        "lat": 32.0695893,
+        "lon": 34.8604488
+      },
+      "tags": {
+        "destination": "קרית אונו",
+        "highway": "motorway_link",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1295483172,
+      "center": {
+        "lat": 32.0842115,
+        "lon": 34.8448535
+      },
+      "tags": {
+        "foot": "no",
+        "highway": "trunk",
+        "lanes": "3",
+        "lit": "yes",
+        "maxheight": "5",
+        "name": "כביש גהה",
+        "name:en": "Geha",
+        "name:he": "כביש גהה",
+        "oneway": "yes",
+        "ref": "4",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1295483173,
+      "center": {
+        "lat": 32.0758475,
+        "lon": 34.8438261
+      },
+      "tags": {
+        "foot": "yes",
+        "highway": "trunk",
+        "lanes": "3",
+        "lit": "yes",
+        "maxheight": "5",
+        "name": "כביש גהה",
+        "name:en": "Geha",
+        "name:he": "כביש גהה",
+        "oneway": "yes",
+        "ref": "4",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1299595605,
+      "center": {
+        "lat": 32.069012,
+        "lon": 34.8602903
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "bridge": "yes",
+        "highway": "secondary",
+        "layer": "1",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1307425196,
+      "center": {
+        "lat": 32.0874509,
+        "lon": 34.8465464
+      },
+      "tags": {
+        "highway": "trunk_link",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1311349830,
+      "center": {
+        "lat": 32.0656773,
+        "lon": 34.8444854
+      },
+      "tags": {
+        "destination": "תל אביב;אשדוד",
+        "destination:ref": "4",
+        "highway": "secondary_link",
+        "lanes": "3",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1328833510,
+      "center": {
+        "lat": 32.0844291,
+        "lon": 34.8451048
+      },
+      "tags": {
+        "foot": "no",
+        "highway": "trunk",
+        "lanes": "3",
+        "lit": "yes",
+        "maxheight": "5",
+        "maxspeed": "90",
+        "maxspeed:type": "sign",
+        "name": "כביש גהה",
+        "name:en": "Geha",
+        "name:he": "כביש גהה",
+        "oneway": "yes",
+        "ref": "4",
+        "shoulder": "right",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1328833511,
+      "center": {
+        "lat": 32.0755904,
+        "lon": 34.8440485
+      },
+      "tags": {
+        "foot": "no",
+        "highway": "trunk",
+        "lanes": "3",
+        "lit": "yes",
+        "maxheight": "5",
+        "maxspeed": "90",
+        "maxspeed:type": "sign",
+        "name": "כביש גהה",
+        "name:en": "Geha",
+        "name:he": "כביש גהה",
+        "oneway": "yes",
+        "ref": "4",
+        "shoulder": "right",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1328833512,
+      "center": {
+        "lat": 32.0765626,
+        "lon": 34.8442095
+      },
+      "tags": {
+        "foot": "yes",
+        "highway": "trunk",
+        "lanes": "3",
+        "lit": "yes",
+        "maxheight": "5",
+        "maxspeed": "90",
+        "maxspeed:type": "sign",
+        "name": "כביש גהה",
+        "name:en": "Geha",
+        "name:he": "כביש גהה",
+        "oneway": "yes",
+        "ref": "4",
+        "shoulder": "right",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1328833513,
+      "center": {
+        "lat": 32.0743997,
+        "lon": 34.8438218
+      },
+      "tags": {
+        "foot": "yes",
+        "highway": "trunk",
+        "lanes": "3",
+        "lit": "yes",
+        "maxheight": "5",
+        "maxspeed": "90",
+        "maxspeed:type": "sign",
+        "name": "כביש גהה",
+        "name:en": "Geha",
+        "name:he": "כביש גהה",
+        "oneway": "yes",
+        "ref": "4",
+        "shoulder": "right",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1364943514,
+      "center": {
+        "lat": 32.0920657,
+        "lon": 34.8586775
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "foot": "yes",
+        "highway": "primary",
+        "lanes": "2",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "sidewalk": "left",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1364943515,
+      "center": {
+        "lat": 32.0925678,
+        "lon": 34.8557465
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "foot": "yes",
+        "highway": "primary",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "sidewalk": "right",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1372484046,
+      "center": {
+        "lat": 32.0632237,
+        "lon": 34.8375276
+      },
+      "tags": {
+        "destination": "חיפה",
+        "destination:ref": "4",
+        "highway": "trunk_link",
+        "lanes": "1",
+        "maxheight": "4.8",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1372484047,
+      "center": {
+        "lat": 32.0664346,
+        "lon": 34.8393487
+      },
+      "tags": {
+        "destination": "חיפה",
+        "destination:ref": "4",
+        "highway": "trunk_link",
+        "lanes": "1",
+        "maxheight": "4.8",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1372484048,
+      "center": {
+        "lat": 32.0703518,
+        "lon": 34.8416742
+      },
+      "tags": {
+        "foot": "no",
+        "highway": "trunk",
+        "lanes": "3",
+        "lit": "yes",
+        "maxheight": "5",
+        "maxspeed": "90",
+        "maxspeed:type": "sign",
+        "name": "כביש גהה",
+        "name:en": "Geha",
+        "name:he": "כביש גהה",
+        "oneway": "yes",
+        "ref": "4",
+        "shoulder": "right",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1372484061,
+      "center": {
+        "lat": 32.0749653,
+        "lon": 34.8436471
+      },
+      "tags": {
+        "foot": "yes",
+        "highway": "trunk",
+        "lanes": "3",
+        "lit": "yes",
+        "maxheight": "5",
+        "name": "כביש גהה",
+        "name:en": "Geha",
+        "name:he": "כביש גהה",
+        "oneway": "yes",
+        "ref": "4",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1372484062,
+      "center": {
+        "lat": 32.0720902,
+        "lon": 34.8424189
+      },
+      "tags": {
+        "foot": "no",
+        "highway": "trunk",
+        "lanes": "3",
+        "lit": "yes",
+        "maxheight": "5",
+        "name": "כביש גהה",
+        "name:en": "Geha",
+        "name:he": "כביש גהה",
+        "oneway": "yes",
+        "ref": "4",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394380494,
+      "center": {
+        "lat": 32.0641616,
+        "lon": 34.861086
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "lanes": "2",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "psv:lanes": "yes|designated",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394380495,
+      "center": {
+        "lat": 32.0682206,
+        "lon": 34.8603938
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "lanes": "4",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394380496,
+      "center": {
+        "lat": 32.0670791,
+        "lon": 34.8605015
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "lanes": "4",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "psv:lanes": "yes|yes|designated|yes",
+        "surface": "asphalt",
+        "turn:lanes": "next_left|through|through|right"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394380497,
+      "center": {
+        "lat": 32.0675192,
+        "lon": 34.8604692
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "lanes": "3",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "psv:lanes": "yes|yes|designated",
+        "surface": "asphalt",
+        "turn:lanes": "next_left|through|through"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394380499,
+      "center": {
+        "lat": 32.0681777,
+        "lon": 34.8602108
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394380500,
+      "center": {
+        "lat": 32.0675818,
+        "lon": 34.8602736
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "lanes": "2",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394380501,
+      "center": {
+        "lat": 32.0671321,
+        "lon": 34.8603087
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "lanes": "5",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "psv:lanes": "yes|yes|yes|yes|designated",
+        "surface": "asphalt",
+        "turn:lanes": "left|left|through|through|through"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394380502,
+      "center": {
+        "lat": 32.0665621,
+        "lon": 34.8603708
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "lanes": "4",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "psv:lanes": "yes|yes|yes|designated",
+        "surface": "asphalt",
+        "turn:lanes": "left|left|through|through"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394380503,
+      "center": {
+        "lat": 32.0658121,
+        "lon": 34.8604692
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "lanes": "3",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "psv:lanes": "yes|yes|designated",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394380504,
+      "center": {
+        "lat": 32.0651241,
+        "lon": 34.8605854
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "lanes": "2",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "psv:lanes": "yes|designated",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394380505,
+      "center": {
+        "lat": 32.0646206,
+        "lon": 34.8607082
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "lanes": "3",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "surface": "asphalt",
+        "turn:lanes": "left|left;through|right",
+        "turn:psv:lanes": "left|left;through|through;right"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394380506,
+      "center": {
+        "lat": 32.0641192,
+        "lon": 34.8609618
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "lanes": "3",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "psv:lanes": "yes|yes|designated",
+        "surface": "asphalt",
+        "turn:lanes": "left|through|through"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394380507,
+      "center": {
+        "lat": 32.063563,
+        "lon": 34.8613402
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "lanes": "2",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "psv:lanes": "yes|designated",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394380534,
+      "center": {
+        "lat": 32.0702793,
+        "lon": 34.8652409
+      },
+      "tags": {
+        "destination": "ירושלים;בן גוריון",
+        "destination:ref": "471",
+        "highway": "motorway_link",
+        "lanes": "1",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394380535,
+      "center": {
+        "lat": 32.0685037,
+        "lon": 34.8611157
+      },
+      "tags": {
+        "destination": "קרית אונו;פתח תקוה",
+        "destination:lang:en": "Qiryat Ono;Petah Tikva",
+        "destination:lang:he": "קרית אונו;פתח תקוה",
+        "destination:symbol": "industrial",
+        "highway": "motorway_link",
+        "lanes": "2",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394380536,
+      "center": {
+        "lat": 32.0678597,
+        "lon": 34.8610755
+      },
+      "tags": {
+        "destination": "קרית אונו;פתח תקוה",
+        "destination:lang:en": "Qiryat Ono;Petah Tikva",
+        "destination:lang:he": "קרית אונו;פתח תקוה",
+        "destination:symbol": "industrial",
+        "highway": "motorway_link",
+        "lanes": "4",
+        "maxspeed": "50",
+        "oneway": "yes",
+        "surface": "asphalt",
+        "turn:lanes": "left|left|right|right"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394380537,
+      "center": {
+        "lat": 32.0679857,
+        "lon": 34.8614518
+      },
+      "tags": {
+        "destination": "קרית אונו;פתח תקוה",
+        "destination:lang:en": "Qiryat Ono;Petah Tikva",
+        "destination:lang:he": "קרית אונו;פתח תקוה",
+        "destination:symbol": "industrial",
+        "highway": "motorway_link",
+        "lanes": "2",
+        "oneway": "yes",
+        "surface": "asphalt",
+        "turn:lanes": "left|right|right"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394380542,
+      "center": {
+        "lat": 32.0640466,
+        "lon": 34.8611651
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "lanes": "3",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "psv:lanes": "yes|yes|designated",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394380543,
+      "center": {
+        "lat": 32.064338,
+        "lon": 34.8609672
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "lanes": "3",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394380544,
+      "center": {
+        "lat": 32.0649332,
+        "lon": 34.8607727
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "lanes": "3",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "psv:lanes": "yes|yes|designated",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394380545,
+      "center": {
+        "lat": 32.0661567,
+        "lon": 34.8605777
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "lanes": "3",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "psv:lanes": "yes|yes|designated",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394380546,
+      "center": {
+        "lat": 32.0666409,
+        "lon": 34.8605274
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "lanes": "4",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "psv:lanes": "yes|yes|designated|yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394380547,
+      "center": {
+        "lat": 32.0677251,
+        "lon": 34.8604486
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "lanes": "3",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "psv:lanes": "yes|yes|designated",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394380548,
+      "center": {
+        "lat": 32.0673638,
+        "lon": 34.8602918
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "lanes": "4",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "psv:lanes": "yes|yes|yes|designated",
+        "surface": "asphalt",
+        "turn:lanes": "left|left;through|through|through"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394437054,
+      "center": {
+        "lat": 32.064002,
+        "lon": 34.8610417
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "lanes": "3",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "psv:lanes": "yes|yes|designated",
+        "surface": "asphalt",
+        "turn:lanes": "left|through|through"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394437058,
+      "center": {
+        "lat": 32.0663445,
+        "lon": 34.8605539
+      },
+      "tags": {
+        "alt_name:en": "Levi Eshckol;Levy Eshkol",
+        "highway": "secondary",
+        "lanes": "3",
+        "maxspeed": "50",
+        "name": "לוי אשכול",
+        "name:en": "Levi Eshkol",
+        "name:he": "לוי אשכול",
+        "oneway": "yes",
+        "psv:lanes": "yes|yes|designated",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394437060,
+      "center": {
+        "lat": 32.0686998,
+        "lon": 34.8620248
+      },
+      "tags": {
+        "destination": "ירושלים;בן גוריון",
+        "destination:ref": "471",
+        "highway": "motorway_link",
+        "lanes": "2",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1394437061,
+      "center": {
+        "lat": 32.067744,
+        "lon": 34.860353
+      },
+      "tags": {
+        "destination": "קרית אונו",
+        "destination:lang:en": "Qiryat Ono",
+        "destination:lang:he": "קרית אונו",
+        "highway": "motorway_link",
+        "lanes": "2",
+        "maxspeed": "50",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1423546545,
+      "center": {
+        "lat": 32.0653003,
+        "lon": 34.8391295
+      },
+      "tags": {
+        "bridge": "yes",
+        "highway": "secondary_link",
+        "lanes": "3",
+        "layer": "1",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1434888768,
+      "center": {
+        "lat": 32.0653027,
+        "lon": 34.8450095
+      },
+      "tags": {
+        "highway": "secondary",
+        "lanes": "4",
+        "name": "רפאל איתן",
+        "name:en": "Rafael Eitan",
+        "name:he": "רפאל איתן",
+        "oneway": "yes",
+        "ref": "4612",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1434888769,
+      "center": {
+        "lat": 32.0646563,
+        "lon": 34.8441134
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "4",
+        "oneway": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1434888770,
+      "center": {
+        "lat": 32.0653457,
+        "lon": 34.8456817
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "3",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1434888771,
+      "center": {
+        "lat": 32.0655627,
+        "lon": 34.8459636
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "4",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1434888775,
+      "center": {
+        "lat": 32.0624561,
+        "lon": 34.845871
+      },
+      "tags": {
+        "highway": "secondary",
+        "lanes": "4",
+        "name": "רפאל איתן",
+        "name:en": "Rafael Eitan",
+        "name:he": "רפאל איתן",
+        "oneway": "yes",
+        "ref": "4612",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1434888777,
+      "center": {
+        "lat": 32.0620844,
+        "lon": 34.846449
+      },
+      "tags": {
+        "highway": "secondary",
+        "lanes": "3",
+        "name": "דוד בן גוריון",
+        "name:ar": "دافيد بن غوريون",
+        "name:en": "David Ben Gurion",
+        "name:he": "דוד בן גוריון",
+        "name:ru": "Давид Бен-Гурион",
+        "oneway": "yes",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1434891954,
+      "center": {
+        "lat": 32.0649987,
+        "lon": 34.8377033
+      },
+      "tags": {
+        "highway": "secondary_link",
+        "lanes": "2",
+        "layer": "1",
+        "oneway": "yes",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1492790738,
+      "center": {
+        "lat": 32.092855,
+        "lon": 34.8459187
+      },
+      "tags": {
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "trunk",
+        "lanes": "3",
+        "layer": "1",
+        "maxweight:signed": "no",
+        "name": "כביש גהה",
+        "name:en": "Geha",
+        "name:he": "כביש גהה",
+        "oneway": "yes",
+        "ref": "4"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1492790739,
+      "center": {
+        "lat": 32.0923864,
+        "lon": 34.846205
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "highway": "primary",
+        "lit": "yes",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1493190711,
+      "center": {
+        "lat": 32.0926189,
+        "lon": 34.8447006
+      },
+      "tags": {
+        "alt_name:en": "Ze'ev Jabotinsky;Ze'ev Zhabutinsky",
+        "foot": "yes",
+        "highway": "primary",
+        "lanes": "3",
+        "lit": "yes",
+        "name": "זאב ז'בוטינסקי",
+        "name:ar": "زيئيڤ",
+        "name:en": "Zeev Jabotinsky",
+        "name:he": "זאב ז'בוטינסקי",
+        "name:ru": "Зеев Жаботинский",
+        "oneway": "yes",
+        "ref": "481",
+        "sidewalk": "right",
+        "smoothness": "good",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1493190712,
+      "center": {
+        "lat": 32.0937136,
+        "lon": 34.8453891
+      },
+      "tags": {
+        "destination": "פתח תקווה",
+        "destination:ref": "481",
+        "highway": "trunk_link",
+        "lanes": "4",
+        "oneway": "yes"
+      }
+    }
+  ]
+}
