@@ -460,3 +460,70 @@ out center tags;
                 unique_fire_stations[unique_key] = fire_station
 
         return list(unique_fire_stations.values())
+
+    def build_structured_context(
+        self,
+        latitude,
+        longitude,
+        radius_km=2,
+        roads_elements=None,
+        settlements_elements=None,
+        hospitals_elements=None,
+        police_stations_elements=None,
+        fire_stations_elements=None,
+    ):
+        """
+        Build a structured geospatial context from raw Overpass elements.
+
+        This method receives raw Overpass element lists for each supported
+        geospatial layer, normalizes them, and returns one unified context
+        object.
+
+        Args:
+            latitude (float): Location latitude.
+            longitude (float): Location longitude.
+            radius_km (int): Search radius in kilometers.
+            roads_elements (list): Raw Overpass road elements.
+            settlements_elements (list): Raw Overpass settlement elements.
+            hospitals_elements (list): Raw Overpass hospital elements.
+            police_stations_elements (list): Raw Overpass police station elements.
+            fire_stations_elements (list): Raw Overpass fire station elements.
+
+        Returns:
+            dict: Structured geospatial context.
+        """
+        roads_elements = roads_elements or []
+        settlements_elements = settlements_elements or []
+        hospitals_elements = hospitals_elements or []
+        police_stations_elements = police_stations_elements or []
+        fire_stations_elements = fire_stations_elements or []
+
+        nearby_roads = self.normalize_roads(roads_elements)
+        nearby_settlements = self.normalize_settlements(settlements_elements)
+        nearby_hospitals = self.normalize_hospitals(hospitals_elements)
+        nearby_police_stations = self.normalize_police_stations(police_stations_elements)
+        nearby_fire_stations = self.normalize_fire_stations(fire_stations_elements)
+
+        return {
+            "source": self.source_name,
+            "latitude": latitude,
+            "longitude": longitude,
+            "radius_km": radius_km,
+            "nearby_roads": nearby_roads,
+            "nearby_settlements": nearby_settlements,
+            "nearby_hospitals": nearby_hospitals,
+            "nearby_police_stations": nearby_police_stations,
+            "nearby_fire_stations": nearby_fire_stations,
+            "nearby_green_areas": [],
+            "nearby_water_sources": [],
+            "summary": {
+                "nearby_roads_count": len(nearby_roads),
+                "nearby_settlements_count": len(nearby_settlements),
+                "nearby_hospitals_count": len(nearby_hospitals),
+                "nearby_police_stations_count": len(nearby_police_stations),
+                "nearby_fire_stations_count": len(nearby_fire_stations),
+                "nearby_green_areas_count": 0,
+                "nearby_water_sources_count": 0,
+            },
+            "collection_status": "completed"
+        }
