@@ -13,6 +13,7 @@ class GeospatialContextAgent:
 
     def __init__(self):
         self.source_name = "OpenStreetMap / Overpass API"
+        self.overpass_url = "https://overpass-api.de/api/interpreter"
 
     def fetch_nearby_context(self, latitude, longitude, radius_km=2):
         """
