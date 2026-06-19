@@ -39,6 +39,15 @@ class GeospatialContextAgent:
             "nearby_fire_stations": [],
             "nearby_green_areas": [],
             "nearby_water_sources": [],
+            "missing_layers": [
+                "nearby_roads",
+                "nearby_settlements",
+                "nearby_hospitals",
+                "nearby_police_stations",
+                "nearby_fire_stations",
+                "nearby_green_areas",
+                "nearby_water_sources",
+            ],
             "collection_status": "not_implemented"
         }
 
@@ -461,6 +470,36 @@ out center tags;
 
         return list(unique_fire_stations.values())
 
+    def get_missing_layers(self, context):
+        """
+        Identify geospatial layers that are missing or empty.
+
+        Args:
+            context (dict): Structured geospatial context.
+
+        Returns:
+            list: Names of layers that are missing or contain no data.
+        """
+        layer_keys = [
+            "nearby_roads",
+            "nearby_settlements",
+            "nearby_hospitals",
+            "nearby_police_stations",
+            "nearby_fire_stations",
+            "nearby_green_areas",
+            "nearby_water_sources",
+        ]
+
+        missing_layers = []
+
+        for layer_key in layer_keys:
+            layer_value = context.get(layer_key)
+
+            if not layer_value:
+                missing_layers.append(layer_key)
+
+        return missing_layers
+
     def build_structured_context(
         self,
         latitude,
@@ -476,8 +515,8 @@ out center tags;
         Build a structured geospatial context from raw Overpass elements.
 
         This method receives raw Overpass element lists for each supported
-        geospatial layer, normalizes them, and returns one unified context
-        object.
+        geospatial layer, normalizes them, handles missing layers, and returns
+        one unified context object.
 
         Args:
             latitude (float): Location latitude.
@@ -504,7 +543,7 @@ out center tags;
         nearby_police_stations = self.normalize_police_stations(police_stations_elements)
         nearby_fire_stations = self.normalize_fire_stations(fire_stations_elements)
 
-        return {
+        context = {
             "source": self.source_name,
             "latitude": latitude,
             "longitude": longitude,
@@ -525,5 +564,15 @@ out center tags;
                 "nearby_green_areas_count": 0,
                 "nearby_water_sources_count": 0,
             },
-            "collection_status": "completed"
         }
+
+        missing_layers = self.get_missing_layers(context)
+
+        context["missing_layers"] = missing_layers
+
+        if missing_layers:
+            context["collection_status"] = "completed_with_missing_data"
+        else:
+            context["collection_status"] = "completed"
+
+        return context
