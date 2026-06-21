@@ -24,12 +24,11 @@ class WeatherDataAgent:
         }
 
         try:
-            # Send request to the API (Covers EA-98)
+            # Send request to the API
             response = requests.get(self.base_url, params=params)
-            
             response.raise_for_status()
+            
             data = response.json()
-
             current_data = data.get("current", {})
             forecast_data = data.get("daily", {})
 
@@ -49,36 +48,9 @@ class WeatherDataAgent:
                 }
             }
 
-            logging.info(f"Successfully fetched weather data for coordinates ({latitude}, {longitude})") # TODO: remove?
+            logging.info(f"Successfully fetched weather data for coordinates ({latitude}, {longitude})")
             return weather_info
 
         except requests.exceptions.RequestException as e:
-            # Handle errors in case of request or connection failure
-            logging.error(f"Failed to fetch weather data from API: {e}") # TODO: remove?``
+            logging.error(f"Failed to fetch weather data from API: {e}")
             return None
-
-# Manual testing block
-if __name__ == "__main__":
-    # Create an instance of the agent
-    agent = WeatherDataAgent()
-    
-    # Coordinates for testing (Jerusalem)
-    test_lat = 31.783333
-    test_lon = 35.216667
-
-    print(f"--- EcoGuard-Agents: Testing WeatherDataAgent ---")
-    print(f"Fetching data for Lat: {test_lat}, Lon: {test_lon}...\n")
-
-    result = agent.fetch_weather_data(test_lat, test_lon)
-
-    if result:
-        print("Current Weather Data:")
-        print(f"  Temperature: {result['current']['temperature']} °C")
-        print(f"  Humidity: {result['current']['humidity']} %")
-        print(f"  Wind Speed: {result['current']['wind_speed']} km/h")
-        print(f"  Precipitation: {result['current']['precipitation']} mm")
-        print(f"  Weather Code: {result['current']['weather_code']}")
-        print("\nForecast (Next 7 days max temperatures):")
-        print(f"  {result['forecast']['max_temperature']}")
-    else:
-        print("Test failed: No data returned.")
