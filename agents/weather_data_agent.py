@@ -51,8 +51,16 @@ class WeatherDataAgent:
                 },
                 "geospatial_context": {
                     "terrain_type": None,
+                    "region_type": None,
                     "vegetation_density": None,
-                    "distance_to_water_m": None
+                    "distance_to_water_m": None,
+                    "nearby_roads": [],
+                    "nearby_settlements": [],
+                    "nearby_hospitals": [],
+                    "nearby_police_stations": [],
+                    "nearby_fire_stations": [],
+                    "nearby_green_areas": [],
+                    "nearby_water_sources": []
                 },
                 "weather": {
                     "current": {
@@ -90,6 +98,18 @@ class WeatherDataAgent:
                     "latitude": latitude,
                     "longitude": longitude
                 },
-                "geospatial_context": {"terrain_type": None, "vegetation_density": None, "distance_to_water_m": None},
+                "geospatial_context": {
+                    "terrain_type": None,
+                    "region_type": None,
+                    "vegetation_density": None,
+                    "distance_to_water_m": None,
+                    "nearby_roads": [],
+                    "nearby_settlements": [],
+                    "nearby_hospitals": [],
+                    "nearby_police_stations": [],
+                    "nearby_fire_stations": [],
+                    "nearby_green_areas": [],
+                    "nearby_water_sources": []
+                },
                 "weather": {"current": {}, "forecast": {"daily": {}}}
             }
