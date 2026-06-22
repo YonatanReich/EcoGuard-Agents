@@ -17,8 +17,16 @@ The response must be a JSON object containing the following root sections:
 
 ### 1.3 Geospatial Context
 * **`terrain_type`** (String): Type of land (e.g., "urban", "forest", "desert").
-* **`vegetation_density`** (Float): A normalized score (0.0 to 1.0) indicating vegetation coverage.
-* **`distance_to_water_m`** (Float): Distance to the nearest significant water body in meters.
+* **`region_type`** (String): Administrative or geographical region classification.
+* **`vegetation_density`** (Float): A normalized score (0.0 to 1.0) indicating vegetation coverage (relevant for fire risk).
+* **`distance_to_water_m`** (Float): Distance to the nearest significant water body in meters (relevant for flood risk).
+* **`nearby_roads`** (Array of Objects): Unique nearby roads and highways.
+* **`nearby_settlements`** (Array of Objects): Nearby populated areas (cities, towns, etc.).
+* **`nearby_hospitals`** (Array of Objects): Nearby medical facilities.
+* **`nearby_police_stations`** (Array of Objects): Nearby police stations.
+* **`nearby_fire_stations`** (Array of Objects): Nearby fire stations.
+* **`nearby_green_areas`** (Array of Objects): Nearby forests, parks, or nature reserves.
+* **`nearby_water_sources`** (Array of Objects): Nearby lakes, rivers, or sea access points.
 
 ### 1.4 Weather
 * **`current`** (Object):
@@ -50,10 +58,25 @@ The response must be a JSON object containing the following root sections:
     "latitude": 31.783333,
     "longitude": 35.216667
   },
-  "geospatial_context": {
+"geospatial_context": {
     "terrain_type": "urban",
+    "region_type": "metropolitan",
     "vegetation_density": 0.3,
-    "distance_to_water_m": 45000.0
+    "distance_to_water_m": 45000.0,
+    "nearby_roads": [],
+    "nearby_settlements": [],
+    "nearby_hospitals": [],
+    "nearby_police_stations": [],
+    "nearby_fire_stations": [
+      {
+        "name": "Jerusalem Central Fire Station",
+        "type": "fire_station",
+        "latitude": 31.784,
+        "longitude": 35.211
+      }
+    ],
+    "nearby_green_areas": [],
+    "nearby_water_sources": []
   },
   "weather": {
     "current": {
