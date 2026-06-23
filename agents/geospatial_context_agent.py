@@ -5,6 +5,8 @@ This agent is responsible for collecting basic geospatial context
 around a given coordinate using OpenStreetMap through the Overpass API.
 """
 
+from datetime import datetime, timezone
+
 
 class GeospatialContextAgent:
     """
@@ -48,7 +50,7 @@ class GeospatialContextAgent:
                 "nearby_green_areas",
                 "nearby_water_sources",
             ],
-            "collection_status": "not_implemented"
+            "collection_status": "not_implemented",
         }
 
     def build_roads_query(self, latitude, longitude, radius_km=2):
@@ -470,12 +472,12 @@ out center tags;
 
         return list(unique_fire_stations.values())
 
-    def get_missing_layers(self, context):
+    def get_missing_layers(self, geospatial_context):
         """
-        Identify geospatial layers that are missing or empty.
+        Identify geospatial context layers that are missing or empty.
 
         Args:
-            context (dict): Structured geospatial context.
+            geospatial_context (dict): Geospatial context section.
 
         Returns:
             list: Names of layers that are missing or contain no data.
@@ -493,7 +495,7 @@ out center tags;
         missing_layers = []
 
         for layer_key in layer_keys:
-            layer_value = context.get(layer_key)
+            layer_value = geospatial_context.get(layer_key)
 
             if not layer_value:
                 missing_layers.append(layer_key)
@@ -516,7 +518,7 @@ out center tags;
 
         This method receives raw Overpass element lists for each supported
         geospatial layer, normalizes them, handles missing layers, and returns
-        one unified context object.
+        one unified context object according to the project API contract.
 
         Args:
             latitude (float): Location latitude.
@@ -543,11 +545,13 @@ out center tags;
         nearby_police_stations = self.normalize_police_stations(police_stations_elements)
         nearby_fire_stations = self.normalize_fire_stations(fire_stations_elements)
 
-        context = {
-            "source": self.source_name,
-            "latitude": latitude,
-            "longitude": longitude,
-            "radius_km": radius_km,
+        current_timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        geospatial_context = {
+            "terrain_type": None,
+            "region_type": None,
+            "vegetation_density": None,
+            "distance_to_water_m": None,
             "nearby_roads": nearby_roads,
             "nearby_settlements": nearby_settlements,
             "nearby_hospitals": nearby_hospitals,
@@ -555,6 +559,27 @@ out center tags;
             "nearby_fire_stations": nearby_fire_stations,
             "nearby_green_areas": [],
             "nearby_water_sources": [],
+        }
+
+        missing_layers = self.get_missing_layers(geospatial_context)
+
+        if missing_layers:
+            collection_status = "partial"
+        else:
+            collection_status = "success"
+
+        return {
+            "metadata": {
+                "timestamp": current_timestamp,
+                "data_source": self.source_name,
+                "collection_status": collection_status,
+            },
+            "location": {
+                "latitude": latitude,
+                "longitude": longitude,
+                "radius_km": radius_km,
+            },
+            "geospatial_context": geospatial_context,
             "summary": {
                 "nearby_roads_count": len(nearby_roads),
                 "nearby_settlements_count": len(nearby_settlements),
@@ -564,15 +589,5 @@ out center tags;
                 "nearby_green_areas_count": 0,
                 "nearby_water_sources_count": 0,
             },
+            "missing_layers": missing_layers,
         }
-
-        missing_layers = self.get_missing_layers(context)
-
-        context["missing_layers"] = missing_layers
-
-        if missing_layers:
-            context["collection_status"] = "completed_with_missing_data"
-        else:
-            context["collection_status"] = "completed"
-
-        return context
