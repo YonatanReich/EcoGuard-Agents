@@ -1,0 +1,987 @@
+{
+  "service": "multi-location-collection-service",
+  "locations_count": 2,
+  "results_count": 2,
+  "summary": {
+    "total_locations": 2,
+    "successful_locations": 0,
+    "partial_locations": 2,
+    "failed_locations": 0
+  },
+  "results": [
+    {
+      "location": {
+        "name": "Givat Shmuel",
+        "region_type": "city",
+        "latitude": 32.0786,
+        "longitude": 34.8483,
+        "scan_radius_km": 2
+      },
+      "data": {
+        "weather": {
+          "metadata": {
+            "timestamp": "2026-06-23T08:45:14Z",
+            "data_source": "open-meteo",
+            "collection_status": "success"
+          },
+          "location": {
+            "latitude": 32.0786,
+            "longitude": 34.8483
+          },
+          "geospatial_context": {
+            "terrain_type": null,
+            "region_type": null,
+            "vegetation_density": null,
+            "distance_to_water_m": null,
+            "nearby_roads": [],
+            "nearby_settlements": [],
+            "nearby_hospitals": [],
+            "nearby_police_stations": [],
+            "nearby_fire_stations": [],
+            "nearby_green_areas": [],
+            "nearby_water_sources": []
+          },
+          "weather": {
+            "current": {
+              "temperature_c": 28.4,
+              "humidity_percent": 54,
+              "wind_speed_kmh": 11.8,
+              "precipitation_mm": 0.0,
+              "weather_code": 1
+            },
+            "forecast": {
+              "daily": {
+                "max_temp_c": [
+                  29.1,
+                  29.9,
+                  29.8,
+                  29.9,
+                  30.0,
+                  29.3,
+                  29.5
+                ],
+                "min_temp_c": [
+                  20.8,
+                  20.4,
+                  21.7,
+                  21.9,
+                  22.1,
+                  22.6,
+                  21.9
+                ],
+                "max_wind_speed_kmh": [
+                  13.8,
+                  13.3,
+                  14.4,
+                  13.8,
+                  14.1,
+                  13.7,
+                  13.9
+                ],
+                "precipitation_sum_mm": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              }
+            }
+          }
+        },
+        "geospatial": {
+          "metadata": {
+            "timestamp": "2026-06-23T08:45:28Z",
+            "data_source": "OpenStreetMap / Overpass API",
+            "collection_status": "partial"
+          },
+          "location": {
+            "latitude": 32.0786,
+            "longitude": 34.8483,
+            "radius_km": 2
+          },
+          "geospatial_context": {
+            "terrain_type": null,
+            "region_type": null,
+            "vegetation_density": null,
+            "distance_to_water_m": null,
+            "nearby_roads": [
+              {
+                "name": "העצמאות",
+                "ref": null,
+                "type": "secondary",
+                "latitude": 32.0742337,
+                "longitude": 34.8676119
+              },
+              {
+                "name": "כביש מכבית",
+                "ref": "471",
+                "type": "motorway_link",
+                "latitude": 32.0637684,
+                "longitude": 34.8406856
+              },
+              {
+                "name": "כיכר קולסקי",
+                "ref": null,
+                "type": "secondary",
+                "latitude": 32.0735102,
+                "longitude": 34.865267
+              },
+              {
+                "name": "לוי אשכול",
+                "ref": null,
+                "type": "secondary",
+                "latitude": 32.0657768,
+                "longitude": 34.8606099
+              },
+              {
+                "name": "כביש גהה",
+                "ref": "4",
+                "type": "trunk",
+                "latitude": 32.0945245,
+                "longitude": 34.846041
+              },
+              {
+                "name": "רפאל איתן",
+                "ref": "4612",
+                "type": "secondary",
+                "latitude": 32.0656017,
+                "longitude": 34.8449701
+              },
+              {
+                "name": "יצחק רבין",
+                "ref": null,
+                "type": "secondary",
+                "latitude": 32.0714767,
+                "longitude": 34.8601239
+              },
+              {
+                "name": "דוד בן גוריון",
+                "ref": null,
+                "type": "secondary",
+                "latitude": 32.0619516,
+                "longitude": 34.8461148
+              },
+              {
+                "name": "זאב ז'בוטינסקי",
+                "ref": "481",
+                "type": "primary",
+                "latitude": 32.0923667,
+                "longitude": 34.8341513
+              },
+              {
+                "name": "יצחק נבון",
+                "ref": null,
+                "type": "secondary",
+                "latitude": 32.0621111,
+                "longitude": 34.8461081
+              }
+            ],
+            "nearby_settlements": [
+              {
+                "name": "בני ברק",
+                "type": "town",
+                "osm_type": "relation",
+                "osm_id": 1382817,
+                "population": "214578",
+                "latitude": 32.0887183,
+                "longitude": 34.8353594
+              },
+              {
+                "name": "נווה עוז",
+                "type": "suburb",
+                "osm_type": "node",
+                "osm_id": 530260602,
+                "population": null,
+                "latitude": 32.0788609,
+                "longitude": 34.8660064
+              },
+              {
+                "name": "קריית מטלון",
+                "type": "suburb",
+                "osm_type": "node",
+                "osm_id": 530261324,
+                "population": null,
+                "latitude": 32.090258,
+                "longitude": 34.8499516
+              },
+              {
+                "name": "רמת אילן",
+                "type": "suburb",
+                "osm_type": "node",
+                "osm_id": 1316075788,
+                "population": null,
+                "latitude": 32.0690646,
+                "longitude": 34.8462437
+              },
+              {
+                "name": "נווה גנים",
+                "type": "suburb",
+                "osm_type": "node",
+                "osm_id": 2201332648,
+                "population": null,
+                "latitude": 32.0857858,
+                "longitude": 34.8666767
+              },
+              {
+                "name": "רמת סיב",
+                "type": "suburb",
+                "osm_type": "node",
+                "osm_id": 2452662588,
+                "population": null,
+                "latitude": 32.0883173,
+                "longitude": 34.8577948
+              },
+              {
+                "name": "גבעת שמואל",
+                "type": "town",
+                "osm_type": "relation",
+                "osm_id": 16123578,
+                "population": null,
+                "latitude": 32.0779066,
+                "longitude": 34.8516757
+              },
+              {
+                "name": "גיורא",
+                "type": "suburb",
+                "osm_type": "node",
+                "osm_id": 6483804835,
+                "population": null,
+                "latitude": 32.0817049,
+                "longitude": 34.8496373
+              },
+              {
+                "name": "רמת הדר",
+                "type": "suburb",
+                "osm_type": "node",
+                "osm_id": 6483804836,
+                "population": null,
+                "latitude": 32.0767847,
+                "longitude": 34.8546985
+              },
+              {
+                "name": "השחר",
+                "type": "suburb",
+                "osm_type": "node",
+                "osm_id": 6483805676,
+                "population": null,
+                "latitude": 32.0744835,
+                "longitude": 34.8449373
+              },
+              {
+                "name": "נאות אריאל שרון",
+                "type": "suburb",
+                "osm_type": "node",
+                "osm_id": 9571134086,
+                "population": null,
+                "latitude": 32.063196,
+                "longitude": 34.8420344
+              },
+              {
+                "name": "מרום נווה",
+                "type": "suburb",
+                "osm_type": "node",
+                "osm_id": 10948949443,
+                "population": "7693",
+                "latitude": 32.072611,
+                "longitude": 34.8288918
+              },
+              {
+                "name": "כפר אז\"ר",
+                "type": "suburb",
+                "osm_type": "way",
+                "osm_id": 84088480,
+                "population": null,
+                "latitude": 32.0565451,
+                "longitude": 34.8404476
+              },
+              {
+                "name": "קרית אונו",
+                "type": "town",
+                "osm_type": "way",
+                "osm_id": 84620736,
+                "population": null,
+                "latitude": 32.0581528,
+                "longitude": 34.8525791
+              },
+              {
+                "name": "קרית קריניצי",
+                "type": "suburb",
+                "osm_type": "way",
+                "osm_id": 84620760,
+                "population": "2572",
+                "latitude": 32.0560067,
+                "longitude": 34.8475339
+              },
+              {
+                "name": "פתח תקווה",
+                "type": "town",
+                "osm_type": "way",
+                "osm_id": 242464393,
+                "population": "236169",
+                "latitude": 32.0907177,
+                "longitude": 34.8830638
+              },
+              {
+                "name": "רמת יצחק",
+                "type": "suburb",
+                "osm_type": "way",
+                "osm_id": 542561800,
+                "population": null,
+                "latitude": 32.0747783,
+                "longitude": 34.8228836
+              },
+              {
+                "name": "עליות",
+                "type": "suburb",
+                "osm_type": "way",
+                "osm_id": 797692544,
+                "population": null,
+                "latitude": 32.0785841,
+                "longitude": 34.8265788
+              },
+              {
+                "name": "רמת עמידר",
+                "type": "suburb",
+                "osm_type": "way",
+                "osm_id": 797692548,
+                "population": "8683",
+                "latitude": 32.0680488,
+                "longitude": 34.8367628
+              },
+              {
+                "name": "נווה יהושע",
+                "type": "suburb",
+                "osm_type": "way",
+                "osm_id": 799138649,
+                "population": "10492",
+                "latitude": 32.0607444,
+                "longitude": 34.83346
+              },
+              {
+                "name": "בר אילן",
+                "type": "suburb",
+                "osm_type": "way",
+                "osm_id": 799175794,
+                "population": null,
+                "latitude": 32.0697202,
+                "longitude": 34.8437211
+              },
+              {
+                "name": "רמת גן",
+                "type": "town",
+                "osm_type": "relation",
+                "osm_id": 1382493,
+                "population": "164764",
+                "latitude": 32.0708345,
+                "longitude": 34.8268585
+              }
+            ],
+            "nearby_hospitals": [
+              {
+                "name": "מרכז רפואי רבין – קמפוס ביילינסון",
+                "type": "hospital",
+                "osm_type": "way",
+                "osm_id": 30750762,
+                "latitude": 32.0889382,
+                "longitude": 34.8673965
+              },
+              {
+                "name": "מרכז לבריאות הנפש גהה",
+                "type": "hospital",
+                "osm_type": "way",
+                "osm_id": 177434184,
+                "latitude": 32.0892206,
+                "longitude": 34.8649094
+              },
+              {
+                "name": "בית חולים מעייני הישועה",
+                "type": "hospital",
+                "osm_type": "way",
+                "osm_id": 295024958,
+                "latitude": 32.0848662,
+                "longitude": 34.844595
+              }
+            ],
+            "nearby_police_stations": [],
+            "nearby_fire_stations": [
+              {
+                "name": "תחנת כיבוי אש בני ברק",
+                "type": "fire_station",
+                "osm_type": "node",
+                "osm_id": 1430686521,
+                "latitude": 32.0909621,
+                "longitude": 34.8393915
+              },
+              {
+                "name": "Ramat Gan Fire Station",
+                "type": "fire_station",
+                "osm_type": "node",
+                "osm_id": 1693941208,
+                "latitude": 32.0675385,
+                "longitude": 34.8329591
+              }
+            ],
+            "nearby_green_areas": [],
+            "nearby_water_sources": []
+          },
+          "summary": {
+            "nearby_roads_count": 10,
+            "nearby_settlements_count": 22,
+            "nearby_hospitals_count": 3,
+            "nearby_police_stations_count": 0,
+            "nearby_fire_stations_count": 2,
+            "nearby_green_areas_count": 0,
+            "nearby_water_sources_count": 0
+          },
+          "missing_layers": [
+            "nearby_police_stations",
+            "nearby_green_areas",
+            "nearby_water_sources"
+          ]
+        }
+      },
+      "collection_status": "partial"
+    },
+    {
+      "location": {
+        "name": "Tel Aviv",
+        "region_type": "city",
+        "latitude": 32.0853,
+        "longitude": 34.7818,
+        "scan_radius_km": 2
+      },
+      "data": {
+        "weather": {
+          "metadata": {
+            "timestamp": "2026-06-23T08:45:28Z",
+            "data_source": "open-meteo",
+            "collection_status": "success"
+          },
+          "location": {
+            "latitude": 32.0853,
+            "longitude": 34.7818
+          },
+          "geospatial_context": {
+            "terrain_type": null,
+            "region_type": null,
+            "vegetation_density": null,
+            "distance_to_water_m": null,
+            "nearby_roads": [],
+            "nearby_settlements": [],
+            "nearby_hospitals": [],
+            "nearby_police_stations": [],
+            "nearby_fire_stations": [],
+            "nearby_green_areas": [],
+            "nearby_water_sources": []
+          },
+          "weather": {
+            "current": {
+              "temperature_c": 27.8,
+              "humidity_percent": 57,
+              "wind_speed_kmh": 11.3,
+              "precipitation_mm": 0.0,
+              "weather_code": 1
+            },
+            "forecast": {
+              "daily": {
+                "max_temp_c": [
+                  28.5,
+                  29.1,
+                  29.1,
+                  29.3,
+                  29.3,
+                  28.8,
+                  29.0
+                ],
+                "min_temp_c": [
+                  21.9,
+                  21.8,
+                  22.3,
+                  22.4,
+                  22.8,
+                  23.1,
+                  22.9
+                ],
+                "max_wind_speed_kmh": [
+                  12.6,
+                  12.0,
+                  13.3,
+                  13.0,
+                  12.8,
+                  15.3,
+                  15.4
+                ],
+                "precipitation_sum_mm": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              }
+            }
+          }
+        },
+        "geospatial": {
+          "metadata": {
+            "timestamp": "2026-06-23T08:45:39Z",
+            "data_source": "OpenStreetMap / Overpass API",
+            "collection_status": "partial"
+          },
+          "location": {
+            "latitude": 32.0853,
+            "longitude": 34.7818,
+            "radius_km": 2
+          },
+          "geospatial_context": {
+            "terrain_type": null,
+            "region_type": null,
+            "vegetation_density": null,
+            "distance_to_water_m": null,
+            "nearby_roads": [
+              {
+                "name": "פנקס",
+                "ref": null,
+                "type": "secondary",
+                "latitude": 32.0908026,
+                "longitude": 34.7847174
+              },
+              {
+                "name": "אליעזר קפלן",
+                "ref": null,
+                "type": "secondary",
+                "latitude": 32.0734365,
+                "longitude": 34.7876409
+              },
+              {
+                "name": "דרך נמיר",
+                "ref": null,
+                "type": "secondary",
+                "latitude": 32.0975624,
+                "longitude": 34.7938755
+              },
+              {
+                "name": "איילון צפון",
+                "ref": "20",
+                "type": "motorway",
+                "latitude": 32.0871223,
+                "longitude": 34.7999412
+              },
+              {
+                "name": "שדרות רוקח",
+                "ref": null,
+                "type": "secondary",
+                "latitude": 32.0998457,
+                "longitude": 34.7932854
+              },
+              {
+                "name": "מנחם בגין",
+                "ref": "481",
+                "type": "primary",
+                "latitude": 32.0814961,
+                "longitude": 34.7978696
+              },
+              {
+                "name": "התערוכה",
+                "ref": null,
+                "type": "secondary",
+                "latitude": 32.097581,
+                "longitude": 34.776539
+              },
+              {
+                "name": "אבן גבירול",
+                "ref": null,
+                "type": "secondary",
+                "latitude": 32.0963545,
+                "longitude": 34.7836626
+              },
+              {
+                "name": "ש''י עגנון",
+                "ref": null,
+                "type": "secondary",
+                "latitude": 32.1022003,
+                "longitude": 34.7849987
+              },
+              {
+                "name": "מנחם בגין",
+                "ref": null,
+                "type": "secondary",
+                "latitude": 32.0733757,
+                "longitude": 34.7904461
+              },
+              {
+                "name": "הרב שלמה גורן",
+                "ref": null,
+                "type": "secondary",
+                "latitude": 32.0899898,
+                "longitude": 34.8004486
+              },
+              {
+                "name": "אליעזר פרי",
+                "ref": null,
+                "type": "secondary",
+                "latitude": 32.0855983,
+                "longitude": 34.7698335
+              },
+              {
+                "name": "דרך נמיר",
+                "ref": "2",
+                "type": "trunk",
+                "latitude": 32.1010692,
+                "longitude": 34.7932316
+              },
+              {
+                "name": "הרברט סמואל",
+                "ref": null,
+                "type": "secondary",
+                "latitude": 32.0790877,
+                "longitude": 34.7672451
+              },
+              {
+                "name": "הירקון",
+                "ref": null,
+                "type": "secondary",
+                "latitude": 32.0834761,
+                "longitude": 34.7691899
+              },
+              {
+                "name": "גבעת התחמושת",
+                "ref": null,
+                "type": "secondary",
+                "latitude": 32.0729642,
+                "longitude": 34.7926995
+              },
+              {
+                "name": "השלום",
+                "ref": null,
+                "type": "secondary",
+                "latitude": 32.0721398,
+                "longitude": 34.7958994
+              },
+              {
+                "name": "ביאליק",
+                "ref": null,
+                "type": "secondary",
+                "latitude": 32.0886151,
+                "longitude": 34.803736
+              }
+            ],
+            "nearby_settlements": [
+              {
+                "name": "תל אביב–יפו",
+                "type": "city",
+                "osm_type": "node",
+                "osm_id": 278472603,
+                "population": "467880",
+                "latitude": 32.0852997,
+                "longitude": 34.7818064
+              },
+              {
+                "name": "מונטיפיורי",
+                "type": "suburb",
+                "osm_type": "relation",
+                "osm_id": 17399097,
+                "population": null,
+                "latitude": 32.070065,
+                "longitude": 34.788582
+              },
+              {
+                "name": "נחלת יצחק",
+                "type": "suburb",
+                "osm_type": "way",
+                "osm_id": 819219038,
+                "population": null,
+                "latitude": 32.0750115,
+                "longitude": 34.7982415
+              },
+              {
+                "name": "כוכב הצפון",
+                "type": "suburb",
+                "osm_type": "way",
+                "osm_id": 819855107,
+                "population": null,
+                "latitude": 32.1010005,
+                "longitude": 34.7875305
+              },
+              {
+                "name": "הצפון החדש",
+                "type": "suburb",
+                "osm_type": "node",
+                "osm_id": 5124052753,
+                "population": null,
+                "latitude": 32.086852,
+                "longitude": 34.7896426
+              },
+              {
+                "name": "גני שרונה",
+                "type": "suburb",
+                "osm_type": "way",
+                "osm_id": 819219037,
+                "population": null,
+                "latitude": 32.0722615,
+                "longitude": 34.7871475
+              },
+              {
+                "name": "הצפון החדש - החלק הצפוני",
+                "type": "suburb",
+                "osm_type": "relation",
+                "osm_id": 12121551,
+                "population": null,
+                "latitude": 32.0944305,
+                "longitude": 34.7890655
+              },
+              {
+                "name": "הצפון החדש - סביבת ככר המדינה",
+                "type": "suburb",
+                "osm_type": "relation",
+                "osm_id": 12121552,
+                "population": null,
+                "latitude": 32.0869465,
+                "longitude": 34.788667
+              },
+              {
+                "name": "הצפון החדש - החלק הדרומי",
+                "type": "suburb",
+                "osm_type": "relation",
+                "osm_id": 12121553,
+                "population": null,
+                "latitude": 32.080399,
+                "longitude": 34.7879271
+              },
+              {
+                "name": "הבורסה",
+                "type": "suburb",
+                "osm_type": "way",
+                "osm_id": 720020257,
+                "population": null,
+                "latitude": 32.0860277,
+                "longitude": 34.8023977
+              },
+              {
+                "name": "חרוזים",
+                "type": "suburb",
+                "osm_type": "way",
+                "osm_id": 721022542,
+                "population": null,
+                "latitude": 32.0903102,
+                "longitude": 34.8052476
+              },
+              {
+                "name": "הראשונים",
+                "type": "neighbourhood",
+                "osm_type": "way",
+                "osm_id": 797594603,
+                "population": "5499",
+                "latitude": 32.0814453,
+                "longitude": 34.8041123
+              },
+              {
+                "name": "הצפון הישן - החלק הצפוני",
+                "type": "suburb",
+                "osm_type": "way",
+                "osm_id": 803404213,
+                "population": null,
+                "latitude": 32.0895335,
+                "longitude": 34.774962
+              },
+              {
+                "name": "נמל תל-אביב",
+                "type": "suburb",
+                "osm_type": "way",
+                "osm_id": 803404214,
+                "population": null,
+                "latitude": 32.0986441,
+                "longitude": 34.7748226
+              },
+              {
+                "name": "כרם התימנים",
+                "type": "suburb",
+                "osm_type": "way",
+                "osm_id": 803468679,
+                "population": null,
+                "latitude": 32.0702915,
+                "longitude": 34.766199
+              },
+              {
+                "name": "הצפון הישן - החלק הדרומי",
+                "type": "suburb",
+                "osm_type": "way",
+                "osm_id": 803468680,
+                "population": null,
+                "latitude": 32.078223,
+                "longitude": 34.7741035
+              },
+              {
+                "name": "צמרות איילון",
+                "type": "suburb",
+                "osm_type": "way",
+                "osm_id": 803479639,
+                "population": null,
+                "latitude": 32.084912,
+                "longitude": 34.7971765
+              },
+              {
+                "name": "בבלי",
+                "type": "suburb",
+                "osm_type": "way",
+                "osm_id": 803479640,
+                "population": null,
+                "latitude": 32.0950241,
+                "longitude": 34.7988855
+              },
+              {
+                "name": "ביצרון ורמת ישראל",
+                "type": "suburb",
+                "osm_type": "way",
+                "osm_id": 819219040,
+                "population": null,
+                "latitude": 32.0682635,
+                "longitude": 34.796552
+              },
+              {
+                "name": "אזור שדה דב",
+                "type": "suburb",
+                "osm_type": "way",
+                "osm_id": 819842554,
+                "population": null,
+                "latitude": 32.1127956,
+                "longitude": 34.7807279
+              },
+              {
+                "name": "שכונת למד",
+                "type": "suburb",
+                "osm_type": "way",
+                "osm_id": 819843803,
+                "population": null,
+                "latitude": 32.107266,
+                "longitude": 34.7870475
+              },
+              {
+                "name": "אוניברסיטת ת\"א",
+                "type": "suburb",
+                "osm_type": "way",
+                "osm_id": 819848529,
+                "population": null,
+                "latitude": 32.109025,
+                "longitude": 34.8017655
+              },
+              {
+                "name": "בורוכוב",
+                "type": "suburb",
+                "osm_type": "way",
+                "osm_id": 893334101,
+                "population": null,
+                "latitude": 32.0775747,
+                "longitude": 34.8081818
+              },
+              {
+                "name": "סיטי",
+                "type": "suburb",
+                "osm_type": "way",
+                "osm_id": 893349040,
+                "population": null,
+                "latitude": 32.0800488,
+                "longitude": 34.7997759
+              },
+              {
+                "name": "רמת גן",
+                "type": "town",
+                "osm_type": "relation",
+                "osm_id": 1382493,
+                "population": "164764",
+                "latitude": 32.0708345,
+                "longitude": 34.8268585
+              },
+              {
+                "name": "גבעתיים",
+                "type": "town",
+                "osm_type": "relation",
+                "osm_id": 1382923,
+                "population": "62546",
+                "latitude": 32.070152,
+                "longitude": 34.8092978
+              },
+              {
+                "name": "לב תל-אביב",
+                "type": "suburb",
+                "osm_type": "relation",
+                "osm_id": 17399098,
+                "population": null,
+                "latitude": 32.070064,
+                "longitude": 34.7739105
+              }
+            ],
+            "nearby_hospitals": [
+              {
+                "name": "מרפאות טופ איכיפוב",
+                "type": "hospital",
+                "osm_type": "node",
+                "osm_id": 12946222126,
+                "latitude": 32.0814443,
+                "longitude": 34.7897265
+              },
+              {
+                "name": "בי\"ח איכילוב",
+                "type": "hospital",
+                "osm_type": "way",
+                "osm_id": 26599740,
+                "latitude": 32.0803252,
+                "longitude": 34.7901815
+              }
+            ],
+            "nearby_police_stations": [
+              {
+                "name": "תחנת לב תל אביב",
+                "type": "police",
+                "osm_type": "way",
+                "osm_id": 1009728923,
+                "latitude": 32.0821181,
+                "longitude": 34.7969731
+              },
+              {
+                "name": "מבנה 10",
+                "type": "police",
+                "osm_type": "way",
+                "osm_id": 1180784288,
+                "latitude": 32.0978359,
+                "longitude": 34.7742698
+              }
+            ],
+            "nearby_fire_stations": [
+              {
+                "name": "כיבוי אש רמת גן - בורסה",
+                "type": "fire_station",
+                "osm_type": "node",
+                "osm_id": 5084345846,
+                "latitude": 32.085244,
+                "longitude": 34.8007655
+              }
+            ],
+            "nearby_green_areas": [],
+            "nearby_water_sources": []
+          },
+          "summary": {
+            "nearby_roads_count": 18,
+            "nearby_settlements_count": 27,
+            "nearby_hospitals_count": 2,
+            "nearby_police_stations_count": 2,
+            "nearby_fire_stations_count": 1,
+            "nearby_green_areas_count": 0,
+            "nearby_water_sources_count": 0
+          },
+          "missing_layers": [
+            "nearby_green_areas",
+            "nearby_water_sources"
+          ]
+        }
+      },
+      "collection_status": "partial"
+    }
+  ],
+  "collection_status": "partial"
+}

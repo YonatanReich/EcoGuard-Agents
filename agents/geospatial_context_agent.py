@@ -7,6 +7,8 @@ around a given coordinate using OpenStreetMap through the Overpass API.
 
 from datetime import datetime, timezone
 
+import requests
+
 
 class GeospatialContextAgent:
     """
@@ -19,7 +21,11 @@ class GeospatialContextAgent:
 
     def fetch_nearby_context(self, latitude, longitude, radius_km=2):
         """
-        Fetch basic geospatial context around a given coordinate.
+        Fetch real geospatial context around a given coordinate using
+        OpenStreetMap through the Overpass API.
+
+        This version uses one combined Overpass query for all supported
+        geospatial layers in order to reduce API load and avoid rate limits.
 
         Args:
             latitude (float): Location latitude.
@@ -29,29 +35,188 @@ class GeospatialContextAgent:
         Returns:
             dict: Structured geospatial context.
         """
-        return {
-            "source": self.source_name,
-            "latitude": latitude,
-            "longitude": longitude,
-            "radius_km": radius_km,
-            "nearby_roads": [],
-            "nearby_settlements": [],
-            "nearby_hospitals": [],
-            "nearby_police_stations": [],
-            "nearby_fire_stations": [],
-            "nearby_green_areas": [],
-            "nearby_water_sources": [],
-            "missing_layers": [
-                "nearby_roads",
-                "nearby_settlements",
-                "nearby_hospitals",
-                "nearby_police_stations",
-                "nearby_fire_stations",
-                "nearby_green_areas",
-                "nearby_water_sources",
-            ],
-            "collection_status": "not_implemented",
+        try:
+            combined_query = self.build_combined_context_query(
+                latitude=latitude,
+                longitude=longitude,
+                radius_km=radius_km,
+            )
+
+            elements = self.execute_overpass_query(combined_query)
+
+            categorized_elements = self.categorize_overpass_elements(elements)
+
+            return self.build_structured_context(
+                latitude=latitude,
+                longitude=longitude,
+                radius_km=radius_km,
+                roads_elements=categorized_elements["roads"],
+                settlements_elements=categorized_elements["settlements"],
+                hospitals_elements=categorized_elements["hospitals"],
+                police_stations_elements=categorized_elements["police_stations"],
+                fire_stations_elements=categorized_elements["fire_stations"],
+            )
+
+        except Exception as error:
+            current_timestamp = datetime.now(timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
+
+            return {
+                "metadata": {
+                    "timestamp": current_timestamp,
+                    "data_source": self.source_name,
+                    "collection_status": "failed",
+                },
+                "location": {
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "radius_km": radius_km,
+                },
+                "geospatial_context": {
+                    "terrain_type": None,
+                    "region_type": None,
+                    "vegetation_density": None,
+                    "distance_to_water_m": None,
+                    "nearby_roads": [],
+                    "nearby_settlements": [],
+                    "nearby_hospitals": [],
+                    "nearby_police_stations": [],
+                    "nearby_fire_stations": [],
+                    "nearby_green_areas": [],
+                    "nearby_water_sources": [],
+                },
+                "summary": {
+                    "nearby_roads_count": 0,
+                    "nearby_settlements_count": 0,
+                    "nearby_hospitals_count": 0,
+                    "nearby_police_stations_count": 0,
+                    "nearby_fire_stations_count": 0,
+                    "nearby_green_areas_count": 0,
+                    "nearby_water_sources_count": 0,
+                },
+                "missing_layers": [
+                    "nearby_roads",
+                    "nearby_settlements",
+                    "nearby_hospitals",
+                    "nearby_police_stations",
+                    "nearby_fire_stations",
+                    "nearby_green_areas",
+                    "nearby_water_sources",
+                ],
+                "error": str(error),
+            }
+
+    def build_combined_context_query(self, latitude, longitude, radius_km=2):
+        """
+        Build one combined Overpass query for all supported geospatial layers.
+
+        Args:
+            latitude (float): Location latitude.
+            longitude (float): Location longitude.
+            radius_km (int): Search radius in kilometers.
+
+        Returns:
+            str: Combined Overpass QL query.
+        """
+        radius_meters = radius_km * 1000
+
+        return f"""
+[out:json][timeout:45];
+
+(
+  way["highway"~"motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link"](around:{radius_meters},{latitude},{longitude});
+
+  node["place"~"city|town|village|suburb|neighbourhood"](around:{radius_meters},{latitude},{longitude});
+  way["place"~"city|town|village|suburb|neighbourhood"](around:{radius_meters},{latitude},{longitude});
+  relation["place"~"city|town|village|suburb|neighbourhood"](around:{radius_meters},{latitude},{longitude});
+
+  node["amenity"="hospital"](around:{radius_meters},{latitude},{longitude});
+  way["amenity"="hospital"](around:{radius_meters},{latitude},{longitude});
+  relation["amenity"="hospital"](around:{radius_meters},{latitude},{longitude});
+
+  node["amenity"="police"](around:{radius_meters},{latitude},{longitude});
+  way["amenity"="police"](around:{radius_meters},{latitude},{longitude});
+  relation["amenity"="police"](around:{radius_meters},{latitude},{longitude});
+
+  node["amenity"="fire_station"](around:{radius_meters},{latitude},{longitude});
+  way["amenity"="fire_station"](around:{radius_meters},{latitude},{longitude});
+  relation["amenity"="fire_station"](around:{radius_meters},{latitude},{longitude});
+);
+
+out center tags;
+"""
+
+    def categorize_overpass_elements(self, elements):
+        """
+        Categorize raw Overpass elements into supported geospatial layers.
+
+        Args:
+            elements (list): Raw Overpass elements.
+
+        Returns:
+            dict: Categorized Overpass elements.
+        """
+        categorized_elements = {
+            "roads": [],
+            "settlements": [],
+            "hospitals": [],
+            "police_stations": [],
+            "fire_stations": [],
         }
+
+        for element in elements:
+            tags = element.get("tags", {})
+
+            if tags.get("highway"):
+                categorized_elements["roads"].append(element)
+
+            if tags.get("place") in [
+                "city",
+                "town",
+                "village",
+                "suburb",
+                "neighbourhood",
+            ]:
+                categorized_elements["settlements"].append(element)
+
+            if tags.get("amenity") == "hospital":
+                categorized_elements["hospitals"].append(element)
+
+            if tags.get("amenity") == "police":
+                categorized_elements["police_stations"].append(element)
+
+            if tags.get("amenity") == "fire_station":
+                categorized_elements["fire_stations"].append(element)
+
+        return categorized_elements
+
+    def execute_overpass_query(self, query):
+        """
+        Execute an Overpass API query and return the raw elements list.
+
+        Args:
+            query (str): Overpass QL query.
+
+        Returns:
+            list: Raw Overpass elements.
+        """
+        headers = {
+            "User-Agent": "EcoGuard-Agents/1.0 student-final-project"
+        }
+
+        response = requests.post(
+            self.overpass_url,
+            data={"data": query},
+            headers=headers,
+            timeout=45,
+        )
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        return data.get("elements", [])
 
     def build_roads_query(self, latitude, longitude, radius_km=2):
         """
@@ -542,7 +707,9 @@ out center tags;
         nearby_roads = self.normalize_roads(roads_elements)
         nearby_settlements = self.normalize_settlements(settlements_elements)
         nearby_hospitals = self.normalize_hospitals(hospitals_elements)
-        nearby_police_stations = self.normalize_police_stations(police_stations_elements)
+        nearby_police_stations = self.normalize_police_stations(
+            police_stations_elements
+        )
         nearby_fire_stations = self.normalize_fire_stations(fire_stations_elements)
 
         current_timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
