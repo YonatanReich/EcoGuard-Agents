@@ -17,11 +17,56 @@ export type RiskEvent = {
   explanation: string
 }
 
+export type EnvironmentalData = {
+  metadata: {
+    timestamp: string
+    collection_status: string
+    services: {
+      weather: { status: string; source: string }
+      geospatial: { status: string; source: string }
+    }
+  }
+  location: {
+    latitude: number
+    longitude: number
+  }
+  geospatial_context: {
+    terrain_type: string
+    region_type: string
+    vegetation_density: number
+    distance_to_water_m: number
+    [key: string]: any
+  }
+  weather: {
+    current: {
+      temperature_c: number
+      humidity_percent: number
+      wind_speed_kmh: number
+      precipitation_mm: number
+      weather_code: number
+    }
+    forecast: {
+      daily: {
+        max_temp_c: number[]
+        min_temp_c: number[]
+        max_wind_speed_kmh: number[]
+        precipitation_sum_mm: number[]
+      }
+    }
+  }
+}
+
 function Dashboard() {
   //Track environmental events happening now
   const [events, setEvents] = useState<RiskEvent[]>([])
   //This state tracks if the user has logged out, if so, it triggers the leaving CSS effects
   const [leaving, setLeaving] = useState(false)
+  // Store environmental data
+  const [envData, setEnvData] = useState<EnvironmentalData | null>(null)
+  const [isLoadingEnvData, setIsLoadingEnvData] = useState(false)
+  const [envDataError, setEnvDataError] = useState<string | null>(null)
+  const [selectedEvent, setSelectedEvent] = useState<RiskEvent | null>(null)
+  const [isPopupOpen, setIsPopupOpen] = useState(false)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -41,15 +86,31 @@ function Dashboard() {
     setTimeout(() => navigate('/'), 700)
   }
 
-  const fetchEnvironmentalData = (latitude: number, longitude: number) => {
+    const fetchEnvironmentalData = (latitude: number, longitude: number) => {
     const url = `/api/environmental-data?latitude=${latitude}&longitude=${longitude}`
     
     return fetch(url)
       .then((response) => {
         if (!response.ok) {
-          throw new Error(`שגיאת רשת: ${response.status}`)
+          throw new Error(`${response.status}`)
         }
         return response.json()
+      })
+  }
+
+  const loadEnvironmentalData = (latitude: number, longitude: number) => {
+    setIsLoadingEnvData(true)
+    setEnvDataError(null)
+
+    fetchEnvironmentalData(latitude, longitude)
+      .then((data) => {
+        setEnvData(data)
+      })
+      .catch((error) => {
+        setEnvDataError(error.message || 'Error loading data')
+      })
+      .finally(() => {
+        setIsLoadingEnvData(false)
       })
   }
 
