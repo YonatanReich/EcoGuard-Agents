@@ -36,12 +36,12 @@ The response must be a JSON object containing the following root sections:
     * `precipitation_mm` (Float): Current precipitation in millimeters.
     * `weather_code` (Integer): Standardized WMO weather code.
 
-### 1.5 Forecast
-* **`daily`** (Object):
-    * `max_temp_c` (Array of Floats): Max temperatures for the upcoming days.
-    * `min_temp_c` (Array of Floats): Min temperatures for the upcoming days.
-    * `max_wind_speed_kmh`** (Array of Floats): Maximum wind speeds for the upcoming days.
-    * `precipitation_sum_mm` (Array of Floats): Total expected precipitation per day.
+* **`forecast`** (Object):
+    * **`daily`** (Object):
+        * `max_temp_c` (Array of Floats): Max temperatures for the upcoming days.
+        * `min_temp_c` (Array of Floats): Min temperatures for the upcoming days.
+        * `max_wind_speed_kmh` (Array of Floats): Maximum wind speeds for the upcoming days.
+        * `precipitation_sum_mm` (Array of Floats): Total expected precipitation per day.
 
 ---
 
