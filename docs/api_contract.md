@@ -57,8 +57,18 @@ The response must be a JSON object containing the following root sections:
 {
   "metadata": {
     "timestamp": "2026-06-21T21:18:57Z",
-    "data_source": "open-meteo",
-    "collection_status": "success"
+    "system_status": "success",
+    "services": {
+      "weather": {
+        "status": "success",
+        "source": "open-meteo"
+      },
+      "geospatial": {
+        "status": "partial",
+        "source": "OpenStreetMap",
+      }
+    }
+  },
   },
   "location": {
     "latitude": 31.783333,
