@@ -61,7 +61,19 @@ def get_detected_events():
     }
 
 @app.get("/api/environmental-data")
-def get_environmental_data(latitude: float = 31.783333, longitude: float = 35.216667):  
+def get_environmental_data(
+    latitude: float = Query(
+        default=31.783333, 
+        ge=29.45, 
+        le=33.35, 
+        description="Latitude must be within Israel's borders"
+    ),
+    longitude: float = Query(
+        default=35.216667, 
+        ge=34.26, 
+        le=35.90, 
+        description="Longitude must be within Israel's borders"
+    )):  
     logging.info(f"Received environmental data request for lat={latitude}, lon={longitude}")
     
     try:
@@ -87,14 +99,22 @@ def get_environmental_data(latitude: float = 31.783333, longitude: float = 35.21
         unified_data = {
             "metadata": {
                 "timestamp": weather_response.get("metadata", {}).get("timestamp"),
-                "weather_source": { weather_response.get("metadata", {}).get("data_source"), weather_status },
-                "geospatial_source": { geo_response.get("metadata", {}).get("data_source"), geo_status },
-                "collection_status": collection_status
+                
+                "collection_status": collection_status,
+                "services": {
+                    "weather": {
+                        "status": weather_status,
+                        "source": weather_response.get("metadata", {}).get("data_source", "open-meteo")
+                    },
+                    "geospatial": {
+                        "status": geo_status,
+                        "source": geo_response.get("metadata", {}).get("data_source", "OpenStreetMap")
+                    }
+                }
             },
             "location": {
                 "latitude": latitude,
                 "longitude": longitude,
-                "radius_km": geo_response.get("location", {}).get("radius_km", 2)
             },
             "geospatial_context": geo_response.get("geospatial_context", {}),
             "weather": weather_response.get("weather", {}),

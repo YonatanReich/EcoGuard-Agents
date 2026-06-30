@@ -8,13 +8,13 @@ The response must be a JSON object containing the following root sections:
 
 ### 1.1 Metadata
 * **`timestamp`** (String/ISO 8601): The exact time the data was collected.
-* **`system_status`** (String): The overall technical health of the fetch operation. Allowed values: `"success"`, `"partial_service_failure"`, `"failure"`.
+* **`collection_status`** (String): The overall technical health of the fetch operation. Allowed values: `"success"`, `"partial_service_failure"`, `"failed"`.
 * **`services`** (Object): Detailed status breakdown per external provider.
     * **`weather`** (Object):
-        * `status` (String): `"success"` or `"failure"`.
+        * `status` (String): `"success"` or `"failed"`.
         * `source` (String): The name of the API (e.g., "open-meteo").
     * **`geospatial`** (Object):
-        * `status` (String): `"success"`, `"partial"` or `"failure"`.
+        * `status` (String): `"success"`, `"partial"` or `"failed"`.
         * `source` (String): The name of the API (e.g., "OpenStreetMap").
 
 ### 1.2 Location
@@ -51,13 +51,13 @@ The response must be a JSON object containing the following root sections:
 
 ---
 
-## 2. Example JSON Response (Covers EA-128)
+## 2. Example JSON Response
 
 ```json
 {
   "metadata": {
     "timestamp": "2026-06-21T21:18:57Z",
-    "system_status": "success",
+    "collection_status": "success",
     "services": {
       "weather": {
         "status": "success",
@@ -65,10 +65,9 @@ The response must be a JSON object containing the following root sections:
       },
       "geospatial": {
         "status": "partial",
-        "source": "OpenStreetMap",
+        "source": "OpenStreetMap"
       }
     }
-  },
   },
   "location": {
     "latitude": 31.783333,
