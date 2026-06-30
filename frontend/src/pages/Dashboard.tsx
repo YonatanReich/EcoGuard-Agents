@@ -41,6 +41,18 @@ function Dashboard() {
     setTimeout(() => navigate('/'), 700)
   }
 
+  const fetchEnvironmentalData = (latitude: number, longitude: number) => {
+    const url = `/api/environmental-data?latitude=${latitude}&longitude=${longitude}`
+    
+    return fetch(url)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`שגיאת רשת: ${response.status}`)
+        }
+        return response.json()
+      })
+  }
+
   return (
     <main className={`dashboard${leaving ? ' dashboard--leaving' : ''}`}>
       <header className="dashboard__header">
