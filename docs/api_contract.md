@@ -8,8 +8,14 @@ The response must be a JSON object containing the following root sections:
 
 ### 1.1 Metadata
 * **`timestamp`** (String/ISO 8601): The exact time the data was collected.
-* **`data_source`** (String): The name of the external API or source (e.g., "open-meteo", "israel-gov-data").
-* **`collection_status`** (String): The status of the fetch operation. Allowed values: `"success"`, `"failed"`, `"partial"`.
+* **`system_status`** (String): The overall technical health of the fetch operation. Allowed values: `"success"`, `"partial_service_failure"`, `"failure"`.
+* **`services`** (Object): Detailed status breakdown per external provider.
+    * **`weather`** (Object):
+        * `status` (String): `"success"` or `"failure"`.
+        * `source` (String): The name of the API (e.g., "open-meteo").
+    * **`geospatial`** (Object):
+        * `status` (String): `"success"`, `"partial"` or `"failure"`.
+        * `source` (String): The name of the API (e.g., "OpenStreetMap").
 
 ### 1.2 Location
 * **`latitude`** (Float): Geographical latitude.
