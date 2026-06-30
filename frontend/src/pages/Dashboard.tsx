@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import MapView from '../components/MapView'
+import EnvironmentalDataModal from '../components/EnvironmentalDataModal'
 import './visuals/dashboard.css'
 
 export type RiskEvent = {
@@ -61,12 +62,15 @@ function Dashboard() {
   const [events, setEvents] = useState<RiskEvent[]>([])
   //This state tracks if the user has logged out, if so, it triggers the leaving CSS effects
   const [leaving, setLeaving] = useState(false)
-  // Store environmental data
+// Store environmental data and related states
   const [envData, setEnvData] = useState<EnvironmentalData | null>(null)
   const [isLoadingEnvData, setIsLoadingEnvData] = useState(false)
   const [envDataError, setEnvDataError] = useState<string | null>(null)
-  const [selectedEvent, setSelectedEvent] = useState<RiskEvent | null>(null)
+  
+  // Track the clicked location on the map and modal state
+  const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lng: number } | null>(null)
   const [isPopupOpen, setIsPopupOpen] = useState(false)
+
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -86,16 +90,16 @@ function Dashboard() {
     setTimeout(() => navigate('/'), 700)
   }
 
-    const fetchEnvironmentalData = (latitude: number, longitude: number) => {
-    const url = `/api/environmental-data?latitude=${latitude}&longitude=${longitude}`
-    
-    return fetch(url)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`${response.status}`)
-        }
-        return response.json()
-      })
+  const fetchEnvironmentalData = (latitude: number, longitude: number) => {
+  const url = `/api/environmental-data?latitude=${latitude}&longitude=${longitude}`
+  
+  return fetch(url)
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`${response.status}`)
+      }
+      return response.json()
+    })
   }
 
   const loadEnvironmentalData = (latitude: number, longitude: number) => {
@@ -114,6 +118,15 @@ function Dashboard() {
       })
   }
 
+  const handleMapClick = (e: any) => {
+    if (!e.lngLat) return
+
+    const { lat, lng } = e.lngLat
+    setSelectedLocation({ lat, lng })
+    setIsPopupOpen(true)
+    loadEnvironmentalData(lat, lng)
+  }
+
   return (
     <main className={`dashboard${leaving ? ' dashboard--leaving' : ''}`}>
       <header className="dashboard__header">
@@ -126,7 +139,21 @@ function Dashboard() {
       </header>
       <div className="dashboard__body">
         <main className="dashboard__map">
-          <MapView events={events} />
+          <MapView 
+            events={events}
+            onClick={handleMapClick}
+            selectedLocation={selectedLocation} 
+          >
+            <EnvironmentalDataModal 
+              isOpen={isPopupOpen}
+              onClose={() => setIsPopupOpen(false)}
+              latitude={selectedLocation?.lat ?? null}
+              longitude={selectedLocation?.lng ?? null}
+              envData={envData}
+              isLoading={isLoadingEnvData}
+              error={envDataError}
+            />
+          </MapView>
         </main>
         <aside className="dashboard__sidebar">
           <div className="Event-summary-header">

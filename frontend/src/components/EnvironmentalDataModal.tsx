@@ -1,34 +1,49 @@
+import { Popup } from 'react-map-gl/maplibre'
 import { type EnvironmentalData } from '../pages/Dashboard'
+import '../pages/visuals/environmentaldatamodal.css'
 
 type ModalProps = {
   isOpen: boolean
   onClose: () => void
-  eventTitle?: string
+  latitude: number | null
+  longitude: number | null
   envData: EnvironmentalData | null
   isLoading: boolean
   error: string | null
 }
 
-export default function EnvironmentalDataModal({ 
-  isOpen, 
-  onClose, 
-  eventTitle, 
-  envData, 
-  isLoading, 
-  error 
+export default function EnvironmentalDataModal({
+  isOpen,
+  onClose,
+  latitude,
+  longitude,
+  envData,
+  isLoading,
+  error
 }: ModalProps) {
-  
-  if (!isOpen) return null
+
+  if (!isOpen || latitude === null || longitude === null) return null
+
+  const locationTitle = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`
 
   return (
-    <div className="env-data-modal-overlay">
+    <Popup
+      latitude={latitude}
+      longitude={longitude}
+      closeButton={false}
+      closeOnClick={false}
+      onClose={onClose}
+      anchor="bottom"
+      offset={25}
+    >
+      {/* We removed the .env-data-modal-overlay div entirely! */}
       <div className="env-data-modal-content">
-        
+
         <div className="env-data-modal-header">
-          <h3 className="env-data-modal-title">Environmental Data: {eventTitle}</h3>
-          <button 
+          <h3 className="env-data-modal-title">Data for: {locationTitle}</h3>
+          <button
             className="env-data-modal-close-btn"
-            onClick={onClose} 
+            onClick={onClose}
             aria-label="Close modal"
           >
             ❌
@@ -59,6 +74,6 @@ export default function EnvironmentalDataModal({
           </div>
         )}
       </div>
-    </div>
+    </Popup>
   )
 }
