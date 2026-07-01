@@ -1,49 +1,98 @@
-/* The content container inside the map popup */
+/* ===== Popup container ===== */
+
 .env-data-modal-content {
   color: #333;
-  min-width: 240px;
-  padding: 4px; /* Cleaned up padding */
+  min-width: 320px;
+  max-width: 380px;
+  padding: 12px;
+  box-sizing: border-box;
+  font-family: inherit;
 }
 
-/* Modal header */
+/* ===== Header ===== */
+
 .env-data-modal-header {
   margin-bottom: 12px;
-  border-bottom: 1px solid #eee;
   padding-bottom: 8px;
-  padding-right: 16px; /* Leaves a little space for the built-in X */
+  padding-right: 24px;
+  border-bottom: 1px solid #eee;
 }
 
 .env-data-modal-title {
   margin: 0;
   font-size: 14px;
+  font-weight: 600;
   color: #0a1f44;
+  line-height: 1.4;
+
+  /* מונע גלישה של קואורדינטות ארוכות */
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
-/* Loading and error states */
+/* ===== Loading ===== */
+
 .env-data-modal-loading {
   text-align: center;
-  padding: 10px 0;
+  padding: 12px 0;
 }
 
+.env-data-modal-loading p {
+  margin: 0;
+}
+
+/* ===== Error box ===== */
+
 .env-data-modal-error {
+  width: 100%;
+  margin-top: 8px;
+  padding: 12px;
+
   background-color: #fee2e2;
   color: #b91c1c;
-  padding: 8px;
-  border-radius: 6px;
-  margin-bottom: 8px;
+
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+
+  box-sizing: border-box;
+
+  overflow-wrap: break-word;
+  word-break: break-word;
+  white-space: normal;
 }
 
 .env-data-modal-error p {
   margin: 0;
   font-size: 13px;
+  line-height: 1.5;
 }
 
-/* Environmental stats section */
+/* ===== Stats ===== */
+
 .env-data-modal-stats {
-  margin-bottom: 4px;
+  margin-top: 8px;
 }
 
 .env-data-modal-stats p {
   margin: 6px 0;
   font-size: 13px;
+  line-height: 1.4;
+
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* ===== MapLibre popup overrides ===== */
+
+.maplibregl-popup-content {
+  min-width: 340px;
+  max-width: 400px;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 10px;
+}
+
+.maplibregl-popup-close-button {
+  font-size: 18px;
+  padding: 4px 8px;
 }

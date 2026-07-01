@@ -91,12 +91,24 @@ function Dashboard() {
   }
 
   const fetchEnvironmentalData = (latitude: number, longitude: number) => {
-  const url = `/api/environmental-data?latitude=${latitude}&longitude=${longitude}`
-  
-  return fetch(url)
-    .then((response) => {
+    const url = `/api/environmental-data?latitude=${latitude}&longitude=${longitude}`
+    
+    return fetch(url).then(async (response) => {
       if (!response.ok) {
-        throw new Error(`${response.status}`)
+        let errorMessage = `Error ${response.status}`
+        
+        try {
+          // FastAPI packages the error message inside a "detail" property
+          const errorData = await response.json()
+          if (errorData.detail) {
+            // Extracting the specific message from the backend
+            errorMessage = errorData.detail
+          }
+        } catch (e) {
+          // If the server didn't send JSON (e.g., a total crash), we keep the status code
+        }
+        
+        throw new Error(errorMessage)
       }
       return response.json()
     })
@@ -128,7 +140,7 @@ function Dashboard() {
       console.warn('Clicked outside Israel borders. Ignoring.')
       return
     }
-    
+
     setSelectedLocation({ lat, lng })
     setIsPopupOpen(true)
     loadEnvironmentalData(lat, lng)
