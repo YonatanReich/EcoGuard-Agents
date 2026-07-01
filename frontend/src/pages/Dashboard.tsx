@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import MapView from '../components/MapView'
+import EnvironmentalDataModal from '../components/EnvironmentalDataModal'
 import './visuals/dashboard.css'
 
 export type RiskEvent = {
@@ -17,11 +18,59 @@ export type RiskEvent = {
   explanation: string
 }
 
+export type EnvironmentalData = {
+  metadata: {
+    timestamp: string
+    collection_status: string
+    services: {
+      weather: { status: string; source: string }
+      geospatial: { status: string; source: string }
+    }
+  }
+  location: {
+    latitude: number
+    longitude: number
+  }
+  geospatial_context: {
+    terrain_type: string
+    region_type: string
+    vegetation_density: number
+    distance_to_water_m: number
+    [key: string]: any
+  }
+  weather: {
+    current: {
+      temperature_c: number
+      humidity_percent: number
+      wind_speed_kmh: number
+      precipitation_mm: number
+      weather_code: number
+    }
+    forecast: {
+      daily: {
+        max_temp_c: number[]
+        min_temp_c: number[]
+        max_wind_speed_kmh: number[]
+        precipitation_sum_mm: number[]
+      }
+    }
+  }
+}
+
 function Dashboard() {
   //Track environmental events happening now
   const [events, setEvents] = useState<RiskEvent[]>([])
   //This state tracks if the user has logged out, if so, it triggers the leaving CSS effects
   const [leaving, setLeaving] = useState(false)
+// Store environmental data and related states
+  const [envData, setEnvData] = useState<EnvironmentalData | null>(null)
+  const [isLoadingEnvData, setIsLoadingEnvData] = useState(false)
+  const [envDataError, setEnvDataError] = useState<string | null>(null)
+  
+  // Track the clicked location on the map and modal state
+  const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lng: number } | null>(null)
+  const [isPopupOpen, setIsPopupOpen] = useState(false)
+
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -41,6 +90,62 @@ function Dashboard() {
     setTimeout(() => navigate('/'), 700)
   }
 
+  const fetchEnvironmentalData = (latitude: number, longitude: number) => {
+    const url = `/api/environmental-data?latitude=${latitude}&longitude=${longitude}`
+    
+    return fetch(url).then(async (response) => {
+      if (!response.ok) {
+        let errorMessage = `Error ${response.status}`
+        
+        try {
+          // FastAPI packages the error message inside a "detail" property
+          const errorData = await response.json()
+          if (errorData.detail) {
+            // Extracting the specific message from the backend
+            errorMessage = errorData.detail
+          }
+        } catch (e) {
+          // If the server didn't send JSON (e.g., a total crash), we keep the status code
+        }
+        
+        throw new Error(errorMessage)
+      }
+      return response.json()
+    })
+  }
+
+  const loadEnvironmentalData = (latitude: number, longitude: number) => {
+    setIsLoadingEnvData(true)
+    setEnvDataError(null)
+    setEnvData(null)
+
+    fetchEnvironmentalData(latitude, longitude)
+      .then((data) => {
+        setEnvData(data)
+      })
+      .catch((error) => {
+        setEnvDataError(error.message || 'Error loading data')
+      })
+      .finally(() => {
+        setIsLoadingEnvData(false)
+      })
+  }
+
+  const handleMapClick = (e: any) => {
+    if (!e.lngLat) return
+
+    const { lat, lng } = e.lngLat
+
+    if (lat < 29.45 || lat > 33.35 || lng < 34.26 || lng > 35.90) {
+      console.warn('Clicked outside Israel borders. Ignoring.')
+      return
+    }
+
+    setSelectedLocation({ lat, lng })
+    setIsPopupOpen(true)
+    loadEnvironmentalData(lat, lng)
+  }
+
   return (
     <main className={`dashboard${leaving ? ' dashboard--leaving' : ''}`}>
       <header className="dashboard__header">
@@ -53,7 +158,21 @@ function Dashboard() {
       </header>
       <div className="dashboard__body">
         <main className="dashboard__map">
-          <MapView events={events} />
+          <MapView 
+            events={events}
+            onClick={handleMapClick}
+            selectedLocation={selectedLocation} 
+          >
+            <EnvironmentalDataModal 
+              isOpen={isPopupOpen}
+              onClose={() => setIsPopupOpen(false)}
+              latitude={selectedLocation?.lat ?? null}
+              longitude={selectedLocation?.lng ?? null}
+              envData={envData}
+              isLoading={isLoadingEnvData}
+              error={envDataError}
+            />
+          </MapView>
         </main>
         <aside className="dashboard__sidebar">
           <div className="Event-summary-header">
