@@ -30,7 +30,7 @@ export default function EnvironmentalDataModal({
     <Popup
       latitude={latitude}
       longitude={longitude}
-      closeButton={false}
+      closeButton={true}
       closeOnClick={false}
       onClose={onClose}
       anchor="bottom"
@@ -41,13 +41,6 @@ export default function EnvironmentalDataModal({
 
         <div className="env-data-modal-header">
           <h3 className="env-data-modal-title">Data for: {locationTitle}</h3>
-          <button
-            className="env-data-modal-close-btn"
-            onClick={onClose}
-            aria-label="Close modal"
-          >
-            ❌
-          </button>
         </div>
 
         {isLoading && (

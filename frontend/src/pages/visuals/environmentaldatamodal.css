@@ -1,31 +1,22 @@
 /* The content container inside the map popup */
 .env-data-modal-content {
   color: #333;
-  min-width: 250px;
+  min-width: 240px;
+  padding: 4px; /* Cleaned up padding */
 }
 
-/* Modal header and close button */
+/* Modal header */
 .env-data-modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   margin-bottom: 12px;
   border-bottom: 1px solid #eee;
   padding-bottom: 8px;
+  padding-right: 16px; /* Leaves a little space for the built-in X */
 }
 
 .env-data-modal-title {
   margin: 0;
   font-size: 14px;
   color: #0a1f44;
-}
-
-.env-data-modal-close-btn {
-  cursor: pointer;
-  background: none;
-  border: none;
-  font-size: 14px;
-  padding: 0;
 }
 
 /* Loading and error states */
@@ -39,10 +30,12 @@
   color: #b91c1c;
   padding: 8px;
   border-radius: 6px;
+  margin-bottom: 8px;
 }
 
 .env-data-modal-error p {
   margin: 0;
+  font-size: 13px;
 }
 
 /* Environmental stats section */

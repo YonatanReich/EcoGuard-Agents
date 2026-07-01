@@ -105,6 +105,7 @@ function Dashboard() {
   const loadEnvironmentalData = (latitude: number, longitude: number) => {
     setIsLoadingEnvData(true)
     setEnvDataError(null)
+    setEnvData(null)
 
     fetchEnvironmentalData(latitude, longitude)
       .then((data) => {
@@ -122,6 +123,12 @@ function Dashboard() {
     if (!e.lngLat) return
 
     const { lat, lng } = e.lngLat
+
+    if (lat < 29.45 || lat > 33.35 || lng < 34.26 || lng > 35.90) {
+      console.warn('Clicked outside Israel borders. Ignoring.')
+      return
+    }
+    
     setSelectedLocation({ lat, lng })
     setIsPopupOpen(true)
     loadEnvironmentalData(lat, lng)
