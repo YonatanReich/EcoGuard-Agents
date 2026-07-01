@@ -56,3 +56,34 @@ Expected response:
   "status": "success"
 }
 ```
+
+## API Endpoints
+
+### 1. Get Unified Environmental Data
+`GET /api/environmental-data`
+
+#### Description
+Fetches, normalizes, and unifies real-time weather forecasts and regional geospatial context around a specific coordinate. The endpoint communicates internally with the `WeatherDataAgent` and `GeospatialContextAgent`, validating inputs strictly within Israel's boundaries to prevent resource exhaustion and unauthorized out-of-bounds scanning.
+
+#### Query Parameters
+
+| Parameter | Type | Required | Default | Validation / Restrictions | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `latitude` | Float | No | `31.783333` (Jerusalem) | Must be between `29.45` and `33.35` | Geographical latitude within Israel's borders (South to North). |
+| `longitude` | Float | No | `35.216667` (Jerusalem) | Must be between `34.26` and `35.90` | Geographical longitude within Israel's borders (West to East). |
+
+#### HTTP Response Status Codes
+
+* **`200 OK`**
+  The request was successful. A unified JSON object containing metadata, services health status, core weather tracking, and geospatial elements is returned.
+  
+* **`422 Unprocessable Entity`**
+  Input validation failed. This happens automatically if the coordinates are missing, malformed, or fall completely outside Israel's bounding box.
+  
+* **`502 Bad Gateway`**
+  Service failure. Triggered when both external downstream environmental providers (Open-Meteo and OpenStreetMap Overpass API) fail or time out simultaneously.
+  
+* **`500 Internal Server Error`**
+  An unexpected server-side error occurred. For security and to prevent information disclosure vulnerabilities, the detailed stack trace is masked from the client and securely logged on the backend console.
+
+---

@@ -8,8 +8,14 @@ The response must be a JSON object containing the following root sections:
 
 ### 1.1 Metadata
 * **`timestamp`** (String/ISO 8601): The exact time the data was collected.
-* **`data_source`** (String): The name of the external API or source (e.g., "open-meteo", "israel-gov-data").
-* **`collection_status`** (String): The status of the fetch operation. Allowed values: `"success"`, `"failed"`, `"partial"`.
+* **`collection_status`** (String): The overall technical health of the fetch operation. Allowed values: `"success"`, `"partial_service_failure"`, `"failed"`.
+* **`services`** (Object): Detailed status breakdown per external provider.
+    * **`weather`** (Object):
+        * `status` (String): `"success"` or `"failed"`.
+        * `source` (String): The name of the API (e.g., "open-meteo").
+    * **`geospatial`** (Object):
+        * `status` (String): `"success"`, `"partial"` or `"failed"`.
+        * `source` (String): The name of the API (e.g., "OpenStreetMap").
 
 ### 1.2 Location
 * **`latitude`** (Float): Geographical latitude.
@@ -36,23 +42,32 @@ The response must be a JSON object containing the following root sections:
     * `precipitation_mm` (Float): Current precipitation in millimeters.
     * `weather_code` (Integer): Standardized WMO weather code.
 
-### 1.5 Forecast
-* **`daily`** (Object):
-    * `max_temp_c` (Array of Floats): Max temperatures for the upcoming days.
-    * `min_temp_c` (Array of Floats): Min temperatures for the upcoming days.
-    * `max_wind_speed_kmh`** (Array of Floats): Maximum wind speeds for the upcoming days.
-    * `precipitation_sum_mm` (Array of Floats): Total expected precipitation per day.
+* **`forecast`** (Object):
+    * **`daily`** (Object):
+        * `max_temp_c` (Array of Floats): Max temperatures for the upcoming days.
+        * `min_temp_c` (Array of Floats): Min temperatures for the upcoming days.
+        * `max_wind_speed_kmh` (Array of Floats): Maximum wind speeds for the upcoming days.
+        * `precipitation_sum_mm` (Array of Floats): Total expected precipitation per day.
 
 ---
 
-## 2. Example JSON Response (Covers EA-128)
+## 2. Example JSON Response
 
 ```json
 {
   "metadata": {
     "timestamp": "2026-06-21T21:18:57Z",
-    "data_source": "open-meteo",
-    "collection_status": "success"
+    "collection_status": "success",
+    "services": {
+      "weather": {
+        "status": "success",
+        "source": "open-meteo"
+      },
+      "geospatial": {
+        "status": "partial",
+        "source": "OpenStreetMap"
+      }
+    }
   },
   "location": {
     "latitude": 31.783333,
