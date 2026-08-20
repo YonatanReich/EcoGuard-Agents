@@ -1,3 +1,7 @@
+/* This CSS sheet handles styling for the environmental data popup that opens
+   when a point on the map is clicked. It styles the maplibre Popup chrome as
+   well as the content EnvironmentalDataModal renders inside it. */
+
 /* ===== Popup container ===== */
 
 .env-data-modal-content {

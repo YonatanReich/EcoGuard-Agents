@@ -1,8 +1,36 @@
 """
 Geospatial Context Agent
 
-This agent is responsible for collecting basic geospatial context
-around a given coordinate using OpenStreetMap through the Overpass API.
+Responsible for collecting basic geospatial context around a given
+coordinate using OpenStreetMap through the Overpass API: nearby main roads,
+settlements, hospitals, police stations and fire stations.
+
+How it works:
+    1. build_combined_context_query builds one Overpass QL query covering
+       every layer, so a single HTTP round trip replaces five.
+    2. execute_overpass_query POSTs it to the public Overpass instance.
+    3. categorize_overpass_elements splits the flat element list by tag.
+    4. normalize_* dedupe each layer, since OpenStreetMap stores the same
+       real-world object as multiple nodes, ways and relations.
+    5. build_structured_context assembles the unified output.
+
+Performance note: the public overpass-api.de instance is a shared free
+service with a job queue, and this query has been measured at 30+ seconds
+under load. It is the dominant cost of the /api/environmental-data
+endpoint. Caching results per rounded coordinate is the intended fix.
+
+Failure behaviour: like WeatherDataAgent, this agent never raises. On error
+it returns the same structure with collection_status "failed", empty layers
+and an "error" key.
+
+The per-layer build_*_query methods (build_roads_query,
+build_settlements_query, and so on) predate the combined query and are no
+longer called by fetch_nearby_context. They are kept because the
+corresponding normalize_* methods are still used, and because they are
+useful for querying a single layer in isolation while debugging.
+
+Consumed by: backend.main.get_environmental_data,
+             services.multi_location_collection_service
 """
 
 from datetime import datetime, timezone
@@ -13,6 +41,12 @@ import requests
 class GeospatialContextAgent:
     """
     Collects nearby geographic objects around a given latitude and longitude.
+
+    Attributes:
+        source_name (str): Provider label copied into metadata.data_source.
+        overpass_url (str): Overpass API endpoint. Can be pointed at a mirror
+            or a self-hosted instance to avoid the public queue, though the
+            common mirrors reject this query.
     """
 
     def __init__(self):
@@ -121,6 +155,12 @@ class GeospatialContextAgent:
         """
         radius_meters = radius_km * 1000
 
+        # Each layer is queried as node/way/relation because OpenStreetMap
+        # models the same feature differently depending on how it was mapped:
+        # a small clinic may be a single node while a hospital campus is a
+        # relation. Roads are ways only.
+        # "out center tags" returns one representative lat/lon per element
+        # instead of full geometry, which keeps the response small.
         return f"""
 [out:json][timeout:45];
 
@@ -199,8 +239,16 @@ out center tags;
             query (str): Overpass QL query.
 
         Returns:
-            list: Raw Overpass elements.
+            list: Raw Overpass elements. Elements from every requested layer
+                arrive mixed together in one flat list; use
+                categorize_overpass_elements to split them apart.
+
+        Raises:
+            requests.HTTPError: If Overpass returns a non-2xx status. Callers
+                are expected to catch this (fetch_nearby_context does).
         """
+        # Overpass asks clients to identify themselves so abusive traffic can
+        # be traced; an anonymous request risks being throttled or blocked.
         headers = {
             "User-Agent": "EcoGuard-Agents/1.0 student-final-project"
         }

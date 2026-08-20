@@ -1,3 +1,20 @@
+"""
+Weather Data Agent
+
+Responsible for collecting real-time weather observations and a short-range
+forecast for a single coordinate, using the Open-Meteo public API.
+
+Open-Meteo is free and requires no API key. Typical response time is under
+two seconds.
+
+The agent never raises on network failure. Instead it returns the same
+unified structure with metadata.collection_status set to "failed", so
+callers can merge results from several agents without special-casing errors.
+
+Consumed by: backend.main.get_environmental_data,
+             services.multi_location_collection_service
+"""
+
 import requests
 import logging
 import json
@@ -7,6 +24,15 @@ from datetime import datetime, timezone
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 class WeatherDataAgent:
+    """
+    Fetches and normalizes weather data for a coordinate.
+
+    Attributes:
+        source_name (str): Provider label copied into metadata.data_source
+            so consumers can tell which service produced the reading.
+        base_url (str): Open-Meteo forecast endpoint.
+    """
+
     def __init__(self):
         # Base URL for the Open-Meteo API
         self.source_name = "open-meteo"
@@ -14,10 +40,34 @@ class WeatherDataAgent:
 
     def fetch_weather_data(self, latitude: float, longitude: float) -> dict:
         """
-        Fetches weather data from the API for given latitude and longitude 
+        Fetches weather data from the API for given latitude and longitude
         and returns a structured dictionary according to the Unified API Contract.
+
+        Args:
+            latitude (float): Location latitude in decimal degrees.
+            longitude (float): Location longitude in decimal degrees.
+
+        Returns:
+            dict: Unified environmental record containing:
+                - metadata: timestamp, data_source, collection_status
+                  ("success" or "failed").
+                - location: the coordinates that were requested.
+                - geospatial_context: always empty here. This agent does not
+                  produce geospatial data, but the key is present so the
+                  shape matches GeospatialContextAgent's output and the two
+                  can be merged without key checks.
+                - weather.current: temperature_c, humidity_percent,
+                  wind_speed_kmh, precipitation_mm, weather_code.
+                - weather.forecast.daily: parallel arrays, one entry per
+                  forecast day, for max/min temp, max wind and total
+                  precipitation.
+
+            On failure the same shape is returned with collection_status
+            "failed" and empty weather sections. No exception propagates.
         """
         # Define query parameters: current data and daily forecast (including max wind speed)
+        # timezone=auto makes Open-Meteo align the daily buckets to local
+        # midnight at the requested coordinate rather than UTC.
         params = {
             "latitude": latitude,
             "longitude": longitude,
@@ -86,8 +136,10 @@ class WeatherDataAgent:
 
         except requests.exceptions.RequestException as e:
             logging.error(f"Failed to fetch weather data from API: {e}")
-            
-            # Return a valid unified format with a 'failed' status
+
+            # Degrade gracefully rather than raising: the caller merges this
+            # with the geospatial agent's result and can still serve a partial
+            # response if only one of the two providers is down.
             return {
                 "metadata": {
                     "timestamp": current_timestamp,
