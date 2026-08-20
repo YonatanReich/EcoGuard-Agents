@@ -1,3 +1,18 @@
+/**
+ * MapView — the interactive map of Israel.
+ *
+ * Responsible for rendering the MapLibre map, its navigation controls, a
+ * marker per detected risk event, and a marker for the point the user last
+ * clicked. Presentational: it holds no application data and fetches nothing.
+ * Clicks are reported upward to Dashboard, which owns the response.
+ *
+ * Tiles come from MapTiler and require VITE_MAPTILER_KEY. Without it the
+ * component renders an explanatory placeholder instead of a broken map.
+ *
+ * The map is deliberately constrained to Israel: bounded panning, a zoom
+ * floor, and rotation disabled to keep the view north-up.
+ */
+
 import { useState, type CSSProperties } from 'react'
 import Map, {
   NavigationControl,
@@ -12,11 +27,19 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { type RiskEvent } from '../pages/Dashboard'
 
 
+// Hebrew and Arabic place names are right-to-left; without this plugin
+// MapLibre renders their characters in reverse order. Loaded lazily so it is
+// only fetched when RTL labels actually appear.
 maplibregl.setRTLTextPlugin(
   'https://unpkg.com/@mapbox/mapbox-gl-rtl-text@0.2.3/mapbox-gl-rtl-text.min.js',
   /* lazy */ true,
 )
 
+/**
+ * MapTiler API key, read from the Vite environment at build time.
+ * Set VITE_MAPTILER_KEY in frontend/.env.local — the map cannot render
+ * without it.
+ */
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY
 
 // Geographic framing for Israel. maplibre bounds are [west, south, east, north].
@@ -25,6 +48,7 @@ const ISRAEL_CENTER = { longitude: 35.0, latitude: 31.4 } as const
 const ISRAEL_MAX_BOUNDS: [number, number, number, number] = [33.5, 29.0, 36.5, 33.6]
 
 type MapViewProps = {
+  /** Detected events to plot. Marker colour is derived from risk_level. */
   events: RiskEvent[]
   /** Inline style for the wrapping container. Defaults to filling its parent. */
   style?: CSSProperties
@@ -34,10 +58,17 @@ type MapViewProps = {
   initialZoom?: number
   /** Extra child layers/markers to render inside the map. */
   children?: React.ReactNode
+  /** Called with the clicked coordinate, both for map clicks and marker clicks. */
   onClick?: (e: any) => void
+  /** Coordinate to highlight with the blue marker, or null for none. */
   selectedLocation?: { lat: number; lng: number } | null
 } & Pick<MapProps, 'onLoad' | 'onClick'>
 
+/**
+ * Render the map. See MapViewProps for the individual options.
+ *
+ * Returns a placeholder instead of a map when the MapTiler key is absent.
+ */
 function MapView({
   events,
   style,
@@ -118,7 +149,12 @@ function MapView({
             latitude={event.latitude}
             color={event.risk_level === 'High' ? 'red' : 'orange'}
             onClick={(e) => {
+              // Stop the click reaching the map underneath, which would fire
+              // onClick a second time with the raw map coordinate instead of
+              // the event's own position.
               e.originalEvent.stopPropagation()
+              // Forward the event's coordinates in the same {lngLat} shape a
+              // real map click produces, so Dashboard needs only one handler.
               if (onClick) {
                 onClick({
                   lngLat: { lat: event.latitude, lng: event.longitude }
@@ -134,6 +170,7 @@ function MapView({
   )
 }
 
+/** Styling for the missing-key placeholder shown in place of the map. */
 const messageStyle: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
@@ -145,6 +182,7 @@ const messageStyle: CSSProperties = {
   borderRadius: 12,
 }
 
+/** Styling for the tile-load failure banner overlaid on the map. */
 const errorBannerStyle: CSSProperties = {
   position: 'absolute',
   top: 8,

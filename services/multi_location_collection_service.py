@@ -1,8 +1,27 @@
 """
 Multi-Location Collection Service
 
-This service is responsible for running data collection agents
-on multiple predefined locations in Israel.
+Responsible for running the data collection agents across a batch of
+predefined locations in Israel, rather than the single ad-hoc coordinate
+the API endpoint handles.
+
+Where backend.main serves one coordinate on demand for the dashboard, this
+service is the batch path: load a location list from disk, sweep every
+enabled location, and report per-location plus aggregate status. It is
+intended to back periodic background scanning.
+
+Fault isolation is the core guarantee: one location failing never aborts the
+sweep. Its result is recorded as "failed" with the error attached and the
+loop continues.
+
+Status vocabulary:
+    Per location — "success", "partial" (one provider degraded),
+                   "failed" (both providers down, or an exception).
+    Per run      — "completed", "partial", "completed_with_failures".
+
+Note: collection is sequential and each location's geospatial lookup can
+take tens of seconds, so a full sweep of ten locations is slow by design
+rather than by accident.
 """
 
 import json
@@ -14,6 +33,14 @@ from agents.geospatial_context_agent import GeospatialContextAgent
 class MultiLocationCollectionService:
     """
     Runs environmental data collection for multiple locations.
+
+    Attributes:
+        service_name (str): Identifier echoed in the result payload so a
+            consumer can tell which service produced a batch.
+        weather_agent (WeatherDataAgent): Shared weather agent instance.
+        geospatial_agent (GeospatialContextAgent): Shared geospatial agent
+            instance. Both are stateless, so one instance serves every
+            location in the sweep.
     """
 
     def __init__(self):
@@ -29,7 +56,14 @@ class MultiLocationCollectionService:
             file_path (str): Path to the locations JSON file.
 
         Returns:
-            list: List of enabled location dictionaries.
+            list: Location dictionaries whose "enabled" flag is not False.
+                A location missing the flag entirely is treated as enabled,
+                so the field only ever needs to be written to switch one off.
+
+        Raises:
+            FileNotFoundError: If the locations file does not exist. Note the
+                default path is relative, so this must be called with the
+                repository root as the working directory.
         """
         with open(file_path, "r", encoding="utf-8") as file:
             data = json.load(file)
@@ -52,7 +86,13 @@ class MultiLocationCollectionService:
             geospatial_data (dict): Geospatial agent result.
 
         Returns:
-            str: Location collection status.
+            str: "failed" if both providers failed, "partial" if either one
+                failed or the geospatial agent returned only some of its
+                layers, otherwise "success".
+
+        Note the asymmetry: the geospatial agent has its own "partial" state
+        (some layers empty) which propagates here, while the weather agent is
+        all-or-nothing.
         """
         weather_status = weather_data.get("metadata", {}).get("collection_status")
         geospatial_status = geospatial_data.get("metadata", {}).get(
@@ -150,7 +190,10 @@ class MultiLocationCollectionService:
             locations (list): List of location dictionaries.
 
         Returns:
-            dict: Multi-location collection result with summary.
+            dict: Batch result containing the service name, the requested and
+                returned counts, a summary of how many locations succeeded,
+                were partial or failed, the per-location results, and an
+                overall collection_status for the whole run.
         """
         results = []
 
@@ -181,6 +224,10 @@ class MultiLocationCollectionService:
                     ),
                 )
 
+            # Catch everything: a malformed entry in the locations file or a
+            # provider raising unexpectedly must not abort the remaining
+            # locations. The error is recorded on the result and the sweep
+            # moves on.
             except Exception as error:
                 location_result = self.normalize_location_result(
                     location=location,
