@@ -10,10 +10,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@deck.gl/core": "^9.3.10",
+    "@deck.gl/layers": "^9.3.10",
+    "@deck.gl/mapbox": "^9.3.10",
     "@fontsource/plus-jakarta-sans": "^5.2.8",
     "@turf/convex": "^7.3.5",
     "@turf/union": "^7.3.5",
     "maplibre-gl": "^5.24.0",
+    "maplibre-gl-wind": "^0.2.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-map-gl": "^8.1.1",
