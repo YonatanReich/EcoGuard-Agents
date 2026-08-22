@@ -22,52 +22,128 @@ import Map, {
   Marker,
   type MapProps,
 } from 'react-map-gl/maplibre'
+
 import maplibregl from 'maplibre-gl'
+
 import 'maplibre-gl/dist/maplibre-gl.css'
+
 import { type RiskEvent } from '../pages/Dashboard'
 
 
-// Hebrew and Arabic place names are right-to-left; without this plugin
-// MapLibre renders their characters in reverse order. Loaded lazily so it is
-// only fetched when RTL labels actually appear.
-maplibregl.setRTLTextPlugin(
-  'https://unpkg.com/@mapbox/mapbox-gl-rtl-text@0.2.3/mapbox-gl-rtl-text.min.js',
-  /* lazy */ true,
-)
+/**
+ * Hebrew and Arabic place names are right-to-left.
+ *
+ * Vite hot reload can execute this module more than once during development.
+ * MapLibre throws an error when setRTLTextPlugin is called repeatedly, so
+ * register the plugin only while it is still unavailable.
+ */
+if (
+  maplibregl.getRTLTextPluginStatus() ===
+  'unavailable'
+) {
+  maplibregl.setRTLTextPlugin(
+    'https://unpkg.com/@mapbox/mapbox-gl-rtl-text@0.2.3/mapbox-gl-rtl-text.min.js',
+    /* lazy */ true,
+  )
+}
+
 
 /**
  * MapTiler API key, read from the Vite environment at build time.
- * Set VITE_MAPTILER_KEY in frontend/.env.local — the map cannot render
- * without it.
+ *
+ * Set VITE_MAPTILER_KEY in frontend/.env.local.
  */
-const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY
+const MAPTILER_KEY =
+  import.meta.env.VITE_MAPTILER_KEY
 
-// Geographic framing for Israel. maplibre bounds are [west, south, east, north].
-// Padded slightly beyond the borders so the country isn't pinned to the viewport edge.
-const ISRAEL_CENTER = { longitude: 35.0, latitude: 31.4 } as const
-const ISRAEL_MAX_BOUNDS: [number, number, number, number] = [33.5, 29.0, 36.5, 33.6]
-
-type MapViewProps = {
-  /** Detected events to plot. Marker colour is derived from risk_level. */
-  events: RiskEvent[]
-  /** Inline style for the wrapping container. Defaults to filling its parent. */
-  style?: CSSProperties
-  /** MapTiler style id, e.g. "streets-v2", "satellite", "hybrid", "topo-v2". */
-  mapStyleId?: string
-  /** Initial zoom level. */
-  initialZoom?: number
-  /** Extra child layers/markers to render inside the map. */
-  children?: React.ReactNode
-  /** Called with the clicked coordinate, both for map clicks and marker clicks. */
-  onClick?: (e: any) => void
-  /** Coordinate to highlight with the blue marker, or null for none. */
-  selectedLocation?: { lat: number; lng: number } | null
-} & Pick<MapProps, 'onLoad' | 'onClick'>
 
 /**
- * Render the map. See MapViewProps for the individual options.
+ * Geographic framing for Israel.
  *
- * Returns a placeholder instead of a map when the MapTiler key is absent.
+ * MapLibre bounds:
+ * [west, south, east, north]
+ */
+const ISRAEL_CENTER = {
+  longitude: 35.0,
+  latitude: 31.4,
+} as const
+
+
+const ISRAEL_MAX_BOUNDS: [
+  number,
+  number,
+  number,
+  number
+] = [
+  33.5,
+  29.0,
+  36.5,
+  33.6,
+]
+
+
+type MapViewProps = {
+  /**
+   * Detected events to plot.
+   *
+   * Marker colour is derived from risk_level.
+   */
+  events: RiskEvent[]
+
+  /**
+   * Inline style for the wrapping container.
+   *
+   * Defaults to filling its parent.
+   */
+  style?: CSSProperties
+
+  /**
+   * MapTiler style id.
+   *
+   * Examples:
+   * streets-v2
+   * satellite
+   * hybrid
+   * topo-v2
+   */
+  mapStyleId?: string
+
+  /**
+   * Initial zoom level.
+   */
+  initialZoom?: number
+
+  /**
+   * Extra child layers or markers to render inside the map.
+   */
+  children?: React.ReactNode
+
+  /**
+   * Called with the clicked coordinate for both
+   * map clicks and event-marker clicks.
+   */
+  onClick?: (
+    e: any
+  ) => void
+
+  /**
+   * Coordinate highlighted with the blue marker.
+   */
+  selectedLocation?: {
+    lat: number
+    lng: number
+  } | null
+} & Pick<
+  MapProps,
+  'onLoad' | 'onClick'
+>
+
+
+/**
+ * Render the interactive EcoGuard map.
+ *
+ * Returns a placeholder instead of the map when
+ * the MapTiler API key is missing.
  */
 function MapView({
   events,
@@ -79,8 +155,16 @@ function MapView({
   selectedLocation,
   ...mapProps
 }: MapViewProps) {
-  // Surface a missing-key error once instead of letting MapTiler return broken tiles.
-  const [hadError, setHadError] = useState(false)
+
+  /**
+   * Surface a map-tile loading error once instead
+   * of leaving the user with a silently broken map.
+   */
+  const [
+    hadError,
+    setHadError,
+  ] = useState(false)
+
 
   const containerStyle: CSSProperties = {
     position: 'relative',
@@ -89,110 +173,243 @@ function MapView({
     ...style,
   }
 
+
   if (!MAPTILER_KEY) {
     return (
-      <div style={{ ...containerStyle, ...messageStyle }}>
+      <div
+        style={{
+          ...containerStyle,
+          ...messageStyle,
+        }}
+      >
         <p>
-          Map unavailable: set <code>VITE_MAPTILER_KEY</code> in a{' '}
-          <code>frontend/.env</code> file (see <code>.env.example</code>).
+          Map unavailable: set{' '}
+          <code>
+            VITE_MAPTILER_KEY
+          </code>{' '}
+          in a{' '}
+          <code>
+            frontend/.env
+          </code>{' '}
+          file (see{' '}
+          <code>
+            .env.example
+          </code>
+          ).
         </p>
       </div>
     )
   }
 
-  const styleUrl = `https://api.maptiler.com/maps/${mapStyleId}/style.json?key=${MAPTILER_KEY}`
+
+  const styleUrl =
+    `https://api.maptiler.com/maps/` +
+    `${mapStyleId}/style.json` +
+    `?key=${MAPTILER_KEY}`
+
 
   return (
-    <div style={containerStyle}>
+    <div
+      style={containerStyle}
+    >
+
       {hadError && (
-        <div style={errorBannerStyle}>
-          Failed to load map tiles — check your MapTiler key and network.
+        <div
+          style={errorBannerStyle}
+        >
+          Failed to load map tiles — check your
+          MapTiler key and network.
         </div>
       )}
+
+
       <Map
         initialViewState={{
           ...ISRAEL_CENTER,
           zoom: initialZoom,
         }}
+
         minZoom={6}
+
         maxZoom={18}
-        maxBounds={ISRAEL_MAX_BOUNDS}
-        mapStyle={styleUrl}
-        // Interaction: drag-pan, scroll/pinch zoom, drag-rotate and touch are
-        // all enabled by default in maplibre; keep rotation off for a cleaner
-        // north-up dashboard map.
+
+        maxBounds={
+          ISRAEL_MAX_BOUNDS
+        }
+
+        mapStyle={
+          styleUrl
+        }
+
+        /**
+         * Keep the map north-up.
+         */
         dragRotate={false}
+
         touchZoomRotate
-        attributionControl={{ compact: true }}
-        onError={() => setHadError(true)}
-        style={{ width: '100%', height: '100%' }}
-        onClick={onClick}
+
+        attributionControl={{
+          compact: true,
+        }}
+
+        onError={() =>
+          setHadError(true)
+        }
+
+        style={{
+          width: '100%',
+          height: '100%',
+        }}
+
+        onClick={
+          onClick
+        }
+
         {...mapProps}
       >
-        <NavigationControl position="top-right" visualizePitch={false} />
-        <GeolocateControl position="top-right" trackUserLocation />
-        <FullscreenControl position="top-right" />
-        <ScaleControl position="bottom-left" unit="metric" />
+
+        <NavigationControl
+          position="top-right"
+          visualizePitch={false}
+        />
+
+
+        <GeolocateControl
+          position="top-right"
+          trackUserLocation
+        />
+
+
+        <FullscreenControl
+          position="top-right"
+        />
+
+
+        <ScaleControl
+          position="bottom-left"
+          unit="metric"
+        />
+
 
         {selectedLocation && (
           <Marker
-            longitude={selectedLocation.lng}
-            latitude={selectedLocation.lat}
-            color="#005eff" 
+            longitude={
+              selectedLocation.lng
+            }
+            latitude={
+              selectedLocation.lat
+            }
+            color="#005eff"
           />
         )}
 
-        {events.map((event) => (
-          <Marker
-            key={event.id}
-            longitude={event.longitude}
-            latitude={event.latitude}
-            color={event.risk_level === 'High' ? 'red' : 'orange'}
-            onClick={(e) => {
-              // Stop the click reaching the map underneath, which would fire
-              // onClick a second time with the raw map coordinate instead of
-              // the event's own position.
-              e.originalEvent.stopPropagation()
-              // Forward the event's coordinates in the same {lngLat} shape a
-              // real map click produces, so Dashboard needs only one handler.
-              if (onClick) {
-                onClick({
-                  lngLat: { lat: event.latitude, lng: event.longitude }
-                })
+
+        {events.map(
+          (event) => (
+            <Marker
+              key={
+                event.id
               }
-            }}
-          />
-        ))}
+
+              longitude={
+                event.longitude
+              }
+
+              latitude={
+                event.latitude
+              }
+
+              color={
+                event.risk_level ===
+                'High'
+                  ? 'red'
+                  : 'orange'
+              }
+
+              onClick={(e) => {
+                /**
+                 * Prevent the marker click from
+                 * also triggering the underlying map.
+                 */
+                e.originalEvent
+                  .stopPropagation()
+
+                /**
+                 * Forward the marker coordinates
+                 * in the same shape as a normal
+                 * MapLibre map click.
+                 */
+                if (onClick) {
+                  onClick({
+                    lngLat: {
+                      lat:
+                        event.latitude,
+
+                      lng:
+                        event.longitude,
+                    },
+                  })
+                }
+              }}
+            />
+          )
+        )}
+
 
         {children}
+
       </Map>
+
     </div>
   )
 }
 
-/** Styling for the missing-key placeholder shown in place of the map. */
+
+/**
+ * Missing-key placeholder.
+ */
 const messageStyle: CSSProperties = {
   display: 'flex',
+
   alignItems: 'center',
+
   justifyContent: 'center',
+
   textAlign: 'center',
+
   padding: '1.5rem',
+
   background: '#0a1f44',
+
   color: '#9fb3d1',
+
   borderRadius: 12,
 }
 
-/** Styling for the tile-load failure banner overlaid on the map. */
+
+/**
+ * Tile-load error banner.
+ */
 const errorBannerStyle: CSSProperties = {
   position: 'absolute',
+
   top: 8,
+
   left: 8,
+
   zIndex: 2,
-  background: 'rgba(180, 30, 30, 0.92)',
+
+  background:
+    'rgba(180, 30, 30, 0.92)',
+
   color: '#fff',
+
   padding: '6px 10px',
+
   borderRadius: 6,
+
   fontSize: '0.85rem',
 }
+
 
 export default MapView
