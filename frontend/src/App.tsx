@@ -15,12 +15,16 @@
 import { Routes, Route } from 'react-router-dom'
 import Home from './pages/Home'
 import Dashboard from './pages/Dashboard'
+import Incident3DView from './components/Incident3DView'
 
 function App() {
   return (
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/dashboard" element={<Dashboard />} />
+
+      {/* Experimental 3D incident view */}
+      <Route path="/incident-3d" element={<Incident3DView />} />
     </Routes>
   )
 }

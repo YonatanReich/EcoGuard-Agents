@@ -430,6 +430,43 @@ function Dashboard() {
   }
 
 
+  const handleEventClick = (
+    event: RiskEvent
+  ) => {
+    const params =
+      new URLSearchParams({
+        lat:
+          String(
+            event.latitude
+          ),
+
+        lng:
+          String(
+            event.longitude
+          ),
+
+        eventId:
+          String(
+            event.id
+          ),
+
+        riskScore:
+          String(
+            event.risk_score
+          ),
+
+        riskLevel:
+          event.risk_level,
+
+        title:
+          event.title,
+      })
+
+    window.location.href =
+      `/incident-3d?${params.toString()}`
+  }
+
+
   const handleMapClick = (
     e: any
   ) => {
@@ -645,6 +682,7 @@ function Dashboard() {
           <MapView
             events={events}
             onClick={handleMapClick}
+            onEventClick={handleEventClick}
             selectedLocation={selectedLocation}
           >
 

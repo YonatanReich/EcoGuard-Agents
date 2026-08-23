@@ -14,6 +14,7 @@
  */
 
 import { useState, type CSSProperties } from 'react'
+
 import Map, {
   NavigationControl,
   ScaleControl,
@@ -43,15 +44,13 @@ if (
 ) {
   maplibregl.setRTLTextPlugin(
     'https://unpkg.com/@mapbox/mapbox-gl-rtl-text@0.2.3/mapbox-gl-rtl-text.min.js',
-    /* lazy */ true,
+    true,
   )
 }
 
 
 /**
- * MapTiler API key, read from the Vite environment at build time.
- *
- * Set VITE_MAPTILER_KEY in frontend/.env.local.
+ * MapTiler API key.
  */
 const MAPTILER_KEY =
   import.meta.env.VITE_MAPTILER_KEY
@@ -59,9 +58,6 @@ const MAPTILER_KEY =
 
 /**
  * Geographic framing for Israel.
- *
- * MapLibre bounds:
- * [west, south, east, north]
  */
 const ISRAEL_CENTER = {
   longitude: 35.0,
@@ -83,52 +79,32 @@ const ISRAEL_MAX_BOUNDS: [
 
 
 type MapViewProps = {
-  /**
-   * Detected events to plot.
-   *
-   * Marker colour is derived from risk_level.
-   */
   events: RiskEvent[]
 
-  /**
-   * Inline style for the wrapping container.
-   *
-   * Defaults to filling its parent.
-   */
   style?: CSSProperties
 
-  /**
-   * MapTiler style id.
-   *
-   * Examples:
-   * streets-v2
-   * satellite
-   * hybrid
-   * topo-v2
-   */
   mapStyleId?: string
 
-  /**
-   * Initial zoom level.
-   */
   initialZoom?: number
 
-  /**
-   * Extra child layers or markers to render inside the map.
-   */
   children?: React.ReactNode
 
   /**
-   * Called with the clicked coordinate for both
-   * map clicks and event-marker clicks.
+   * Regular map click.
    */
   onClick?: (
     e: any
   ) => void
 
   /**
-   * Coordinate highlighted with the blue marker.
+   * Detected-event marker click.
+   *
+   * Used by Dashboard to open the 3D incident view.
    */
+  onEventClick?: (
+    event: RiskEvent
+  ) => void
+
   selectedLocation?: {
     lat: number
     lng: number
@@ -139,12 +115,6 @@ type MapViewProps = {
 >
 
 
-/**
- * Render the interactive EcoGuard map.
- *
- * Returns a placeholder instead of the map when
- * the MapTiler API key is missing.
- */
 function MapView({
   events,
   style,
@@ -152,26 +122,24 @@ function MapView({
   initialZoom = 7,
   children,
   onClick,
+  onEventClick,
   selectedLocation,
   ...mapProps
 }: MapViewProps) {
 
-  /**
-   * Surface a map-tile loading error once instead
-   * of leaving the user with a silently broken map.
-   */
   const [
     hadError,
     setHadError,
   ] = useState(false)
 
 
-  const containerStyle: CSSProperties = {
-    position: 'relative',
-    width: '100%',
-    height: '100%',
-    ...style,
-  }
+  const containerStyle:
+    CSSProperties = {
+      position: 'relative',
+      width: '100%',
+      height: '100%',
+      ...style,
+    }
 
 
   if (!MAPTILER_KEY) {
@@ -184,18 +152,18 @@ function MapView({
       >
         <p>
           Map unavailable: set{' '}
+
           <code>
             VITE_MAPTILER_KEY
           </code>{' '}
+
           in a{' '}
+
           <code>
             frontend/.env
           </code>{' '}
-          file (see{' '}
-          <code>
-            .env.example
-          </code>
-          ).
+
+          file.
         </p>
       </div>
     )
@@ -210,15 +178,20 @@ function MapView({
 
   return (
     <div
-      style={containerStyle}
+      style={
+        containerStyle
+      }
     >
 
       {hadError && (
         <div
-          style={errorBannerStyle}
+          style={
+            errorBannerStyle
+          }
         >
-          Failed to load map tiles — check your
-          MapTiler key and network.
+          Failed to load map tiles —
+          check your MapTiler key and
+          network.
         </div>
       )}
 
@@ -226,12 +199,17 @@ function MapView({
       <Map
         initialViewState={{
           ...ISRAEL_CENTER,
-          zoom: initialZoom,
+          zoom:
+            initialZoom,
         }}
 
-        minZoom={6}
+        minZoom={
+          6
+        }
 
-        maxZoom={18}
+        maxZoom={
+          18
+        }
 
         maxBounds={
           ISRAEL_MAX_BOUNDS
@@ -241,24 +219,29 @@ function MapView({
           styleUrl
         }
 
-        /**
-         * Keep the map north-up.
-         */
-        dragRotate={false}
+        dragRotate={
+          false
+        }
 
         touchZoomRotate
 
         attributionControl={{
-          compact: true,
+          compact:
+            true,
         }}
 
         onError={() =>
-          setHadError(true)
+          setHadError(
+            true,
+          )
         }
 
         style={{
-          width: '100%',
-          height: '100%',
+          width:
+            '100%',
+
+          height:
+            '100%',
         }}
 
         onClick={
@@ -296,9 +279,11 @@ function MapView({
             longitude={
               selectedLocation.lng
             }
+
             latitude={
               selectedLocation.lat
             }
+
             color="#005eff"
           />
         )}
@@ -306,6 +291,7 @@ function MapView({
 
         {events.map(
           (event) => (
+
             <Marker
               key={
                 event.id
@@ -327,19 +313,36 @@ function MapView({
               }
 
               onClick={(e) => {
+
                 /**
-                 * Prevent the marker click from
-                 * also triggering the underlying map.
+                 * Do not allow the event-marker click
+                 * to also trigger the normal map click.
                  */
                 e.originalEvent
                   .stopPropagation()
 
+
                 /**
-                 * Forward the marker coordinates
-                 * in the same shape as a normal
-                 * MapLibre map click.
+                 * Open the dedicated incident flow
+                 * when Dashboard provided a handler.
                  */
-                if (onClick) {
+                if (
+                  onEventClick
+                ) {
+                  onEventClick(
+                    event,
+                  )
+
+                  return
+                }
+
+
+                /**
+                 * Fallback to the old behaviour.
+                 */
+                if (
+                  onClick
+                ) {
                   onClick({
                     lngLat: {
                       lat:
@@ -350,8 +353,10 @@ function MapView({
                     },
                   })
                 }
+
               }}
             />
+
           )
         )}
 
@@ -368,48 +373,68 @@ function MapView({
 /**
  * Missing-key placeholder.
  */
-const messageStyle: CSSProperties = {
-  display: 'flex',
+const messageStyle:
+  CSSProperties = {
 
-  alignItems: 'center',
+    display:
+      'flex',
 
-  justifyContent: 'center',
+    alignItems:
+      'center',
 
-  textAlign: 'center',
+    justifyContent:
+      'center',
 
-  padding: '1.5rem',
+    textAlign:
+      'center',
 
-  background: '#0a1f44',
+    padding:
+      '1.5rem',
 
-  color: '#9fb3d1',
+    background:
+      '#0a1f44',
 
-  borderRadius: 12,
-}
+    color:
+      '#9fb3d1',
+
+    borderRadius:
+      12,
+  }
 
 
 /**
  * Tile-load error banner.
  */
-const errorBannerStyle: CSSProperties = {
-  position: 'absolute',
+const errorBannerStyle:
+  CSSProperties = {
 
-  top: 8,
+    position:
+      'absolute',
 
-  left: 8,
+    top:
+      8,
 
-  zIndex: 2,
+    left:
+      8,
 
-  background:
-    'rgba(180, 30, 30, 0.92)',
+    zIndex:
+      2,
 
-  color: '#fff',
+    background:
+      'rgba(180, 30, 30, 0.92)',
 
-  padding: '6px 10px',
+    color:
+      '#fff',
 
-  borderRadius: 6,
+    padding:
+      '6px 10px',
 
-  fontSize: '0.85rem',
-}
+    borderRadius:
+      6,
+
+    fontSize:
+      '0.85rem',
+  }
 
 
 export default MapView
