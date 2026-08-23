@@ -129,13 +129,17 @@ weather, and geospatial information from additional live sources.
 The fire detection process follows this sequence:
 
 1. NASA FIRMS is queried for recent satellite thermal hotspots.
-2. If no hotspots are found, the agent returns `detected: false`.
-3. If hotspots are found, the most recent hotspot is selected.
-4. The selected hotspot coordinates become the event location.
-5. GWIS/EFFIS FWI is collected for the detected location.
-6. Open-Meteo weather information is collected for the detected location.
-7. OpenStreetMap geospatial context is collected around the detected location.
-8. All available evidence is combined into one `DetectedFireEvent`.
+2. For point-based detection, Haversine distance is calculated from the
+   requested point to each returned hotspot. Hotspots outside the configured
+   relevance radius are excluded.
+3. If no geographically relevant hotspots remain, the agent returns
+   `detected: false`.
+4. If relevant hotspots remain, the most recent relevant hotspot is selected.
+5. The selected hotspot coordinates become the event location.
+6. GWIS/EFFIS FWI is collected for the detected location.
+7. Open-Meteo weather information is collected for the detected location.
+8. OpenStreetMap geospatial context is collected around the detected location.
+9. All available evidence is combined into one `DetectedFireEvent`.
 
 The detection agent does not calculate the final operational risk score.
 Final risk analysis belongs to the downstream `RiskAnalysisAgent`.
@@ -146,8 +150,11 @@ Final risk analysis belongs to the downstream `RiskAnalysisAgent`.
   Currently `"fire"`.
 
 * **`detected`** (Boolean or null):
-  * `true` — NASA FIRMS detected at least one thermal hotspot.
-  * `false` — NASA FIRMS successfully returned zero hotspots.
+  * `true` — NASA FIRMS detected at least one geographically relevant thermal
+    hotspot within the configured point-detection radius.
+  * `false` — NASA FIRMS successfully returned no geographically relevant
+    hotspots. This includes a successful response containing only distant
+    hotspots outside the configured radius.
   * `null` — detection could not be completed because the primary detection
     source failed.
 
@@ -177,10 +184,13 @@ fire detection.
 Fields include:
 
 * **`source`**: `"NASA FIRMS"`
-* **`hotspots_count`**: Number of hotspots returned in the search area.
-* **`selected_hotspot`**: Most recent hotspot selected as the detected event.
-* **`hotspots`**: Complete list of hotspots returned by the query when an
-  event is detected.
+* **`hotspots_count`**: Number of geographically relevant hotspots remaining
+  after point-distance filtering.
+* **`selected_hotspot`**: Most recent geographically relevant hotspot selected
+  as the detected event.
+* **`hotspots`**: Complete list of geographically relevant hotspots when an
+  event is detected. Distant hotspots returned by the broader FIRMS query are
+  not included as evidence for that requested point.
 
 A selected hotspot may contain:
 
@@ -364,7 +374,8 @@ detection.
 
 ### 3.9 No Fire Detected
 
-A successful NASA FIRMS query containing zero hotspots is represented as:
+A successful NASA FIRMS query containing no geographically relevant hotspots
+is represented as:
 
 ```json
 {

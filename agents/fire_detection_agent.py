@@ -54,8 +54,12 @@ Consumed by:
 """
 
 from datetime import datetime, timezone
+import math
+
+import requests
 
 from agents.firms_data_agent import FirmsDataAgent
+from agents.firms_data_agent import FirmsProviderError
 from agents.fire_danger_agent import FireDangerAgent
 from agents.weather_data_agent import WeatherDataAgent
 from agents.geospatial_context_agent import GeospatialContextAgent
@@ -162,6 +166,57 @@ class FireDetectionAgent:
             key=hotspot_datetime
         )
 
+    def calculate_distance_km(
+        self,
+        latitude_a: float,
+        longitude_a: float,
+        latitude_b: float,
+        longitude_b: float,
+    ) -> float:
+        """Calculate great-circle distance between two coordinates."""
+        earth_radius_km = 6371.0088
+        latitude_a_radians = math.radians(latitude_a)
+        latitude_b_radians = math.radians(latitude_b)
+        latitude_delta = math.radians(latitude_b - latitude_a)
+        longitude_delta = math.radians(longitude_b - longitude_a)
+
+        haversine_value = (
+            math.sin(latitude_delta / 2) ** 2
+            + math.cos(latitude_a_radians)
+            * math.cos(latitude_b_radians)
+            * math.sin(longitude_delta / 2) ** 2
+        )
+        return 2 * earth_radius_km * math.asin(
+            min(1.0, math.sqrt(haversine_value))
+        )
+
+    def filter_relevant_hotspots(
+        self,
+        hotspots: list[dict],
+        latitude: float,
+        longitude: float,
+        max_distance_km: float,
+    ) -> list[dict]:
+        """Keep only hotspots within the point-detection relevance radius."""
+        relevant_hotspots = []
+        for hotspot in hotspots:
+            try:
+                hotspot_latitude = float(hotspot["latitude"])
+                hotspot_longitude = float(hotspot["longitude"])
+                distance_km = self.calculate_distance_km(
+                    latitude,
+                    longitude,
+                    hotspot_latitude,
+                    hotspot_longitude,
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+
+            if distance_km <= max_distance_km:
+                relevant_hotspots.append(hotspot)
+
+        return relevant_hotspots
+
     def collect_fire_danger(
         self,
         latitude: float,
@@ -215,10 +270,56 @@ class FireDetectionAgent:
         Returns:
             dict: Unified weather response.
         """
-        return self.weather_agent.fetch_weather_data(
-            latitude=latitude,
-            longitude=longitude
-        )
+        try:
+            return self.weather_agent.fetch_weather_data(
+                latitude=latitude,
+                longitude=longitude
+            )
+        except Exception:
+            current_timestamp = datetime.now(
+                timezone.utc
+            ).strftime("%Y-%m-%dT%H:%M:%SZ")
+            return {
+                "metadata": {
+                    "timestamp": current_timestamp,
+                    "data_source": "open-meteo",
+                    "collection_status": "failed",
+                },
+                "location": {
+                    "latitude": latitude,
+                    "longitude": longitude,
+                },
+                "weather": {"current": {}, "forecast": {"daily": {}}},
+                "error": "unexpected provider error",
+            }
+
+    def sanitize_firms_error(self, error: Exception) -> str:
+        """Return a useful FIRMS error category without request details."""
+        if isinstance(error, FirmsProviderError):
+            error_kind = str(error)
+            if error_kind in {
+                "authentication error",
+                "HTTP error",
+                "timeout",
+                "network error",
+                "malformed response",
+            }:
+                return error_kind
+            return "provider error"
+        if isinstance(error, requests.exceptions.Timeout):
+            return "timeout"
+        if isinstance(error, requests.exceptions.HTTPError):
+            status_code = getattr(error.response, "status_code", None)
+            return (
+                "authentication error"
+                if status_code in (401, 403)
+                else "HTTP error"
+            )
+        if isinstance(error, requests.exceptions.RequestException):
+            return "network error"
+        if isinstance(error, (KeyError, TypeError, ValueError)):
+            return "malformed response"
+        return "provider error"
 
     def collect_geospatial_context(
         self,
@@ -253,15 +354,15 @@ class FireDetectionAgent:
         longitude: float
     ) -> dict:
         """
-        Build the response returned when NASA FIRMS finds no hotspots.
+        Build the response returned when FIRMS finds no relevant hotspots.
 
         Args:
             latitude (float): Original search latitude.
             longitude (float): Original search longitude.
 
         Returns:
-            dict: Structured result indicating that no fire event was
-                detected.
+            dict: Structured result indicating that no geographically relevant
+                fire event was detected for the requested point.
         """
         current_timestamp = datetime.now(
             timezone.utc
@@ -332,7 +433,7 @@ class FireDetectionAgent:
             "satellite_evidence": {
                 "source": "NASA FIRMS",
                 "collection_status": "failed",
-                "error": str(error),
+                "error": self.sanitize_firms_error(error),
             },
             "fire_danger": None,
             "weather_context": None,
@@ -471,7 +572,8 @@ class FireDetectionAgent:
         longitude: float,
         firms_delta: float = 0.5,
         day_range: int = 5,
-        geospatial_radius_km: int = 2
+        geospatial_radius_km: int = 2,
+        max_hotspot_distance_km: float = 5.0,
     ) -> dict:
         """
         Detect and enrich a possible fire event around a requested location.
@@ -480,12 +582,12 @@ class FireDetectionAgent:
 
         Detection flow:
             1. Search NASA FIRMS around the requested location.
-            2. Stop with detected=False when FIRMS successfully returns
-               zero hotspots.
-            3. Select the most recent hotspot when detections exist.
-            4. Use that hotspot's coordinates as the event location.
-            5. Collect FWI, weather and geospatial context there.
-            6. Return one combined DetectedFireEvent.
+            2. Keep only hotspots within the configured Haversine distance.
+            3. Stop with detected=False when no relevant hotspots remain.
+            4. Select the most recent geographically relevant hotspot.
+            5. Use that hotspot's coordinates as the event location.
+            6. Collect FWI, weather and geospatial context there.
+            7. Return one combined DetectedFireEvent.
 
         Args:
             latitude (float): Center latitude of the initial search.
@@ -494,6 +596,8 @@ class FireDetectionAgent:
             day_range (int): Number of recent FIRMS days to inspect.
             geospatial_radius_km (int): OSM enrichment radius around the
                 selected hotspot.
+            max_hotspot_distance_km (float): Maximum Haversine distance from
+                the requested point for a FIRMS hotspot to be relevant.
 
         Returns:
             dict: DetectedFireEvent, explicit no-event result, or failed
@@ -524,7 +628,14 @@ class FireDetectionAgent:
             []
         )
 
-        if not hotspots:
+        relevant_hotspots = self.filter_relevant_hotspots(
+            hotspots=hotspots,
+            latitude=latitude,
+            longitude=longitude,
+            max_distance_km=max_hotspot_distance_km,
+        )
+
+        if not relevant_hotspots:
             return self.build_no_event_response(
                 latitude=latitude,
                 longitude=longitude
@@ -533,7 +644,7 @@ class FireDetectionAgent:
         # Environmental enrichment is performed around the actual satellite
         # hotspot rather than around the center of the original search area.
         selected_hotspot = self.select_most_recent_hotspot(
-            hotspots
+            relevant_hotspots
         )
 
         hotspot_latitude = selected_hotspot["latitude"]
@@ -557,7 +668,7 @@ class FireDetectionAgent:
 
         return self.build_detected_event(
             hotspot=selected_hotspot,
-            hotspots=hotspots,
+            hotspots=relevant_hotspots,
             fire_danger=fire_danger,
             weather_response=weather_response,
             geospatial_response=geospatial_response

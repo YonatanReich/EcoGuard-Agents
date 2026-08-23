@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock
 
+import requests
+
 from agents.fire_detection_agent import FireDetectionAgent
 
 
@@ -80,8 +82,8 @@ def test_detect_fire_when_hotspot_exists():
     }
 
     result = agent.detect_fire(
-        latitude=32.0853,
-        longitude=34.7818
+        latitude=31.918,
+        longitude=34.897
     )
 
     assert result["detected"] is True
@@ -136,8 +138,8 @@ def test_detect_fire_when_nasa_firms_fails():
     )
 
     result = agent.detect_fire(
-        latitude=32.0853,
-        longitude=34.7818
+        latitude=31.918,
+        longitude=34.897
     )
 
     assert result["detected"] is None
@@ -192,10 +194,165 @@ def test_detect_fire_survives_gwis_failure():
     }
 
     result = agent.detect_fire(
-        latitude=32.0853,
-        longitude=34.7818
+        latitude=31.918,
+        longitude=34.897
     )
 
     assert result["detected"] is True
     assert result["fire_weather_severity"] == "unknown"
     assert result["source_status"]["gwis_effis"] == "failed"
+
+
+def test_detected_fire_survives_unexpected_weather_failure():
+    agent = build_agent()
+    agent.firms_agent.fetch_hotspots.return_value = {
+        "fire_satellite_data": {
+            "hotspots": [
+                {
+                    "latitude": 31.91995,
+                    "longitude": 34.89613,
+                    "acquisition_date": "2026-08-21",
+                    "acquisition_time": "0026",
+                    "confidence": "n",
+                }
+            ]
+        }
+    }
+    agent.fire_danger_agent.get_fire_danger.return_value = {
+        "danger_level": "high"
+    }
+    agent.weather_agent.fetch_weather_data.side_effect = RuntimeError(
+        "unexpected parser failure"
+    )
+    agent.geospatial_agent.fetch_nearby_context.return_value = {
+        "metadata": {"collection_status": "success"},
+        "geospatial_context": {},
+    }
+
+    result = agent.detect_fire(latitude=31.918, longitude=34.897)
+
+    assert result["detected"] is True
+    assert result["source_status"]["weather"] == "failed"
+    assert result["weather_context"] == {
+        "current": {},
+        "forecast": {"daily": {}},
+    }
+
+
+def test_firms_failure_response_redacts_api_key_from_request_error():
+    agent = build_agent()
+    api_key = "sensitive-firms-key"
+    response = MagicMock(status_code=403)
+    request = requests.Request(
+        "GET",
+        f"https://firms.example/api/area/csv/{api_key}/source/area/1",
+    ).prepare()
+    agent.firms_agent.fetch_hotspots.side_effect = requests.exceptions.HTTPError(
+        f"403 Client Error for url: {request.url}",
+        response=response,
+        request=request,
+    )
+
+    result = agent.detect_fire(latitude=32.0853, longitude=34.7818)
+
+    assert result["detected"] is None
+    assert result["satellite_evidence"]["error"] == "authentication error"
+    assert api_key not in str(result)
+
+
+def configure_enrichment(agent):
+    agent.fire_danger_agent.get_fire_danger.return_value = {
+        "danger_level": "high"
+    }
+    agent.weather_agent.fetch_weather_data.return_value = {
+        "metadata": {"collection_status": "success"},
+        "weather": {"current": {}},
+    }
+    agent.geospatial_agent.fetch_nearby_context.return_value = {
+        "metadata": {"collection_status": "success"},
+        "geospatial_context": {},
+    }
+
+
+def hotspot(latitude, longitude, acquisition_time):
+    return {
+        "latitude": latitude,
+        "longitude": longitude,
+        "acquisition_date": "2026-08-21",
+        "acquisition_time": acquisition_time,
+        "confidence": "n",
+    }
+
+
+def test_nearby_hotspot_is_selected_over_newer_distant_hotspot():
+    agent = build_agent()
+    configure_enrichment(agent)
+    nearby = hotspot(31.91995, 34.89613, "0900")
+    distant = hotspot(31.58132, 34.5376, "1100")
+    agent.firms_agent.fetch_hotspots.return_value = {
+        "fire_satellite_data": {"hotspots": [nearby, distant]}
+    }
+
+    result = agent.detect_fire(latitude=31.918, longitude=34.897)
+
+    assert result["detected"] is True
+    assert result["location"] == {
+        "latitude": nearby["latitude"],
+        "longitude": nearby["longitude"],
+    }
+    assert result["satellite_evidence"]["hotspots"] == [nearby]
+
+
+def test_newest_hotspot_is_selected_among_multiple_nearby_hotspots():
+    agent = build_agent()
+    configure_enrichment(agent)
+    older = hotspot(31.91995, 34.89613, "0900")
+    newer = hotspot(31.91484, 34.91708, "1030")
+    agent.firms_agent.fetch_hotspots.return_value = {
+        "fire_satellite_data": {"hotspots": [newer, older]}
+    }
+
+    result = agent.detect_fire(latitude=31.918, longitude=34.897)
+
+    assert result["detected"] is True
+    assert result["location"] == {
+        "latitude": newer["latitude"],
+        "longitude": newer["longitude"],
+    }
+
+
+def test_only_distant_hotspots_returns_no_detection():
+    agent = build_agent()
+    agent.firms_agent.fetch_hotspots.return_value = {
+        "fire_satellite_data": {
+            "hotspots": [hotspot(31.58132, 34.5376, "1100")]
+        }
+    }
+
+    result = agent.detect_fire(latitude=31.918, longitude=34.897)
+
+    assert result["detected"] is False
+    agent.fire_danger_agent.get_fire_danger.assert_not_called()
+    agent.weather_agent.fetch_weather_data.assert_not_called()
+    agent.geospatial_agent.fetch_nearby_context.assert_not_called()
+
+
+def test_exact_hotspot_location_is_detected():
+    agent = build_agent()
+    configure_enrichment(agent)
+    exact = hotspot(31.918, 34.897, "1100")
+    agent.firms_agent.fetch_hotspots.return_value = {
+        "fire_satellite_data": {"hotspots": [exact]}
+    }
+
+    result = agent.detect_fire(
+        latitude=31.918,
+        longitude=34.897,
+        max_hotspot_distance_km=0.1,
+    )
+
+    assert result["detected"] is True
+    assert result["location"] == {
+        "latitude": exact["latitude"],
+        "longitude": exact["longitude"],
+    }

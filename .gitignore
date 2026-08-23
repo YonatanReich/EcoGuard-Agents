@@ -4,3 +4,17 @@ backend/__pycache__/
 *.pyc
 .env
 .pytest_cache/
+
+# Telethon authentication sessions
+*.session
+*.session-journal
+*.session-shm
+*.session-wal
+.telegram-sessions/
+
+# Generated data.gov.il location cache
+data/generated/israel_locations.sqlite3*
+data/generated/israel_locations.manifest.json
+
+# Generated Nominatim response cache
+data/generated/nominatim_geocode_cache.sqlite3*
