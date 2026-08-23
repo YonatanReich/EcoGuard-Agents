@@ -17,7 +17,6 @@ Consumed by: backend.main.get_environmental_data,
 
 import requests
 import logging
-import json
 from datetime import datetime, timezone
 
 # Configure logging to easily track the agent's operations
@@ -37,6 +36,41 @@ class WeatherDataAgent:
         # Base URL for the Open-Meteo API
         self.source_name = "open-meteo"
         self.base_url = "https://api.open-meteo.com/v1/forecast"
+
+    def build_failed_response(
+        self,
+        latitude: float,
+        longitude: float,
+        timestamp: str,
+        error: str,
+    ) -> dict:
+        """Return unavailable weather data without inventing observations."""
+        return {
+            "metadata": {
+                "timestamp": timestamp,
+                "data_source": self.source_name,
+                "collection_status": "failed",
+            },
+            "location": {
+                "latitude": latitude,
+                "longitude": longitude,
+            },
+            "geospatial_context": {
+                "terrain_type": None,
+                "region_type": None,
+                "vegetation_density": None,
+                "distance_to_water_m": None,
+                "nearby_roads": [],
+                "nearby_settlements": [],
+                "nearby_hospitals": [],
+                "nearby_police_stations": [],
+                "nearby_fire_stations": [],
+                "nearby_green_areas": [],
+                "nearby_water_sources": [],
+            },
+            "weather": {"current": {}, "forecast": {"daily": {}}},
+            "error": error,
+        }
 
     def fetch_weather_data(self, latitude: float, longitude: float) -> dict:
         """
@@ -81,12 +115,39 @@ class WeatherDataAgent:
 
         try:
             # Send request to the API
-            response = requests.get(self.base_url, params=params)
+            response = requests.get(self.base_url, params=params, timeout=15)
             response.raise_for_status()
-            
-            data = response.json()
-            current_data = data.get("current", {})
-            forecast_data = data.get("daily", {})
+
+            try:
+                data = response.json()
+            except (TypeError, ValueError) as error:
+                raise ValueError("malformed response") from error
+
+            if not isinstance(data, dict):
+                raise ValueError("malformed response")
+
+            current_data = data.get("current")
+            forecast_data = data.get("daily")
+            required_current_fields = {
+                "temperature_2m",
+                "relative_humidity_2m",
+                "precipitation",
+                "weather_code",
+                "wind_speed_10m",
+            }
+            required_forecast_fields = {
+                "temperature_2m_max",
+                "temperature_2m_min",
+                "wind_speed_10m_max",
+                "precipitation_sum",
+            }
+            if (
+                not isinstance(current_data, dict)
+                or not required_current_fields.issubset(current_data)
+                or not isinstance(forecast_data, dict)
+                or not required_forecast_fields.issubset(forecast_data)
+            ):
+                raise ValueError("malformed response")
 
             # Build the response according to the Unified Environmental Data Format
             unified_data = {
@@ -134,34 +195,21 @@ class WeatherDataAgent:
             logging.info(f"Successfully fetched unified weather data for coordinates ({latitude}, {longitude})")
             return unified_data
 
-        except requests.exceptions.RequestException as e:
-            logging.error(f"Failed to fetch weather data from API: {e}")
+        except requests.exceptions.Timeout:
+            error_kind = "timeout"
+        except requests.exceptions.HTTPError:
+            error_kind = "HTTP error"
+        except requests.exceptions.RequestException:
+            error_kind = "network error"
+        except ValueError:
+            error_kind = "malformed response"
+        except Exception:
+            error_kind = "unexpected provider error"
 
-            # Degrade gracefully rather than raising: the caller merges this
-            # with the geospatial agent's result and can still serve a partial
-            # response if only one of the two providers is down.
-            return {
-                "metadata": {
-                    "timestamp": current_timestamp,
-                    "data_source": self.source_name,
-                    "collection_status": "failed"
-                },
-                "location": {
-                    "latitude": latitude,
-                    "longitude": longitude
-                },
-                "geospatial_context": {
-                    "terrain_type": None,
-                    "region_type": None,
-                    "vegetation_density": None,
-                    "distance_to_water_m": None,
-                    "nearby_roads": [],
-                    "nearby_settlements": [],
-                    "nearby_hospitals": [],
-                    "nearby_police_stations": [],
-                    "nearby_fire_stations": [],
-                    "nearby_green_areas": [],
-                    "nearby_water_sources": []
-                },
-                "weather": {"current": {}, "forecast": {"daily": {}}}
-            }
+        logging.error("Failed to fetch weather data from API: %s", error_kind)
+        return self.build_failed_response(
+            latitude=latitude,
+            longitude=longitude,
+            timestamp=current_timestamp,
+            error=error_kind,
+        )

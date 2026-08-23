@@ -42,6 +42,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+class FirmsProviderError(RuntimeError):
+    """Credential-safe FIRMS failure with a provider-level error category."""
+
+
 class FirmsDataAgent:
     """
     Fetches and normalizes NASA FIRMS active-fire hotspot observations.
@@ -213,9 +217,7 @@ class FirmsDataAgent:
             result.
         """
         if not self.api_key:
-            raise ValueError(
-                "NASA_FIRMS_API_KEY is missing from the environment."
-            )
+            raise FirmsProviderError("authentication error")
 
         bounding_box = self.build_bounding_box(
             latitude=latitude,
@@ -231,16 +233,31 @@ class FirmsDataAgent:
             f"{day_range}"
         )
 
-        response = requests.get(
-            url,
-            timeout=30
-        )
+        try:
+            response = requests.get(
+                url,
+                timeout=30
+            )
+            response.raise_for_status()
+        except requests.exceptions.Timeout:
+            raise FirmsProviderError("timeout") from None
+        except requests.exceptions.HTTPError as error:
+            status_code = getattr(error.response, "status_code", None)
+            error_kind = (
+                "authentication error"
+                if status_code in (401, 403)
+                else "HTTP error"
+            )
+            raise FirmsProviderError(error_kind) from None
+        except requests.exceptions.RequestException:
+            raise FirmsProviderError("network error") from None
 
-        response.raise_for_status()
-
-        hotspots = self.parse_hotspots_csv(
-            response.text
-        )
+        try:
+            hotspots = self.parse_hotspots_csv(
+                response.text
+            )
+        except (KeyError, TypeError, ValueError, csv.Error):
+            raise FirmsProviderError("malformed response") from None
 
         return self.build_unified_response(
             latitude=latitude,
