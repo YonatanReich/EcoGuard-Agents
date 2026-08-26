@@ -267,7 +267,6 @@ def analyze_location(
             }
         }
     
-    # החזרת שגיאה מסודרת או הודעת "לא נמצא אירוע" ללקוח
     elif pipeline_result.get("status") == "no_event":
         return {"status": "no_event", "message": pipeline_result.get("message")}
     else:

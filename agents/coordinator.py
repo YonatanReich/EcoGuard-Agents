@@ -49,6 +49,17 @@ class FireCoordinator:
             longitude=longitude
         )
 
+        # TODO: Hardcoded data for testing. remove
+        # from agents.geospatial_context_agent import GeospatialContextAgent
+        # temp_geo_agent = GeospatialContextAgent()
+        # geo_data = temp_geo_agent.fetch_nearby_context(latitude, longitude, radius_km=5) # הרחבתי קצת את הרדיוס כדי שבטוח נתפוס תחנות
+        
+        # detection_result = {
+        #     "detected": True,
+        #     "location": {"latitude": latitude, "longitude": longitude},
+        #     "geospatial_context": geo_data.get("geospatial_context", {})
+        # }
+
         is_detected = detection_result.get("detected")
 
         # Handle null case - unable to detect fire
@@ -87,6 +98,10 @@ class FireCoordinator:
             required_resources["fire_station"] = 2
         if "police" in recommended_units:
             required_resources["police_station"] = 1
+        if "hospital" in recommended_units:
+                    required_resources["hospital"] = 1
+                
+        required_resources["road"] = 3
             
         risk_result["required_resources"] = required_resources
 

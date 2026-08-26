@@ -5,16 +5,16 @@ Resource Allocation Agent
 
 Responsible for selecting the nearest available emergency response units 
 (such as fire stations, hospitals, and police stations) based on protocol 
-requirements and real-world geographic proximity[cite: 1].
+requirements and real-world geographic proximity.
 
 This agent connects the protocol-grounded output of the Risk Analysis Agent 
-with the real-world geospatial data collected early in the pipeline[cite: 1].
+with the real-world geospatial data collected early in the pipeline.
 
 How it works:
     1. allocate_resources parses the required unit types and counts from the 
        Risk Analysis assessment.
     2. _haversine_distance calculates the great-circle distance in kilometers 
-       between the detected event location and each nearby facility[cite: 2].
+       between the detected event location and each nearby facility.
     3. _find_closest_facilities sorts the available facilities of the required 
        type by distance and selects the exact number mandated by the protocol.
     4. The agent returns a structured JSON response mapping each required 
@@ -77,7 +77,8 @@ class ResourceAllocationAgent:
         allocated_units = {
             "fire_stations": [],
             "hospitals": [],
-            "police_stations": []
+            "police_stations": [],
+            "roads": []
         }
 
         # Allocate Fire Stations
@@ -105,6 +106,15 @@ class ResourceAllocationAgent:
                 event_lon, 
                 geospatial_context.get("nearby_police_stations", []), 
                 required_resources["police_station"]
+            )
+
+        # Allocate Roads
+        if "road" in required_resources:
+            allocated_units["roads"] = self._find_closest_facilities(
+                event_lat, 
+                event_lon, 
+                geospatial_context.get("nearby_roads", []), 
+                required_resources["road"]
             )
 
         return {
