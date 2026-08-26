@@ -24,6 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from agents.risk_analysis_agent import analyze_event
 from agents.weather_data_agent import WeatherDataAgent
 from agents.geospatial_context_agent import GeospatialContextAgent
+from agents.coordinator import FireCoordinator
 
 logging.basicConfig(
     level=logging.INFO,
@@ -55,6 +56,7 @@ app.add_middleware(
 # each is enough for the whole process — no need to build them per request.
 weather_agent = WeatherDataAgent()
 geo_agent = GeospatialContextAgent()
+fire_coordinator = FireCoordinator()
 
 @app.get("/")
 def read_root():
@@ -224,4 +226,52 @@ def get_environmental_data(
         raise HTTPException(
             status_code=500, 
             detail="Internal server error. Please try again later."
+        )
+
+@app.get("/api/analyze-location")
+def analyze_location(
+    latitude: float = Query(
+        default=31.783333, 
+        ge=29.45, 
+        le=33.35, 
+        description="Latitude must be within Israel's borders"
+    ),
+    longitude: float = Query(
+        default=35.216667, 
+        ge=34.26, 
+        le=35.90, 
+        description="Longitude must be within Israel's borders"
+    )
+):
+    """
+    On-demand execution of the full fire detection pipeline for a specific coordinate.
+    Typically triggered when a user clicks on the dashboard map.
+    """
+    logging.info(f"Running on-demand fire pipeline for lat={latitude}, lon={longitude}")
+    
+    # Envoke coordinator
+    pipeline_result = fire_coordinator.run_event_pipeline(latitude, longitude)
+    
+    if pipeline_result.get("status") == "success":
+        return {
+            "status": "success",
+            "event_data": {
+                "type": pipeline_result["event_type"],
+                "latitude": pipeline_result["location"]["latitude"],
+                "longitude": pipeline_result["location"]["longitude"],
+                "risk_score": pipeline_result["risk_assessment"]["score"],
+                "risk_level": pipeline_result["risk_assessment"]["level"],
+                "explanation": pipeline_result["risk_assessment"]["explanation"],
+                "allocated_resources": pipeline_result["allocated_resources"],
+                "response_plan": pipeline_result["response_plan"]
+            }
+        }
+    
+    # החזרת שגיאה מסודרת או הודעת "לא נמצא אירוע" ללקוח
+    elif pipeline_result.get("status") == "no_event":
+        return {"status": "no_event", "message": pipeline_result.get("message")}
+    else:
+        raise HTTPException(
+            status_code=500, 
+            detail=pipeline_result.get("message", "Internal pipeline error")
         )

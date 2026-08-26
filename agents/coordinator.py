@@ -30,7 +30,7 @@ class FireCoordinator:
         self.fire_detection_agent = FireDetectionAgent()
         self.resource_allocation_agent = ResourceAllocationAgent()
 
-    def run_fire_pipeline(self, latitude: float, longitude: float, event_type: str = "fire"):
+    def run_event_pipeline(self, latitude: float, longitude: float, event_type: str = "fire"):
         """
         Runs the full 5-stage pipeline for a fire event.
         """
