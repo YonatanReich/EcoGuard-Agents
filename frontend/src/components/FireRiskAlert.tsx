@@ -4,11 +4,12 @@ import type { FireRiskCluster } from './fireRiskClusters'
 type Props = {
   clusters: FireRiskCluster[]
   evaluationTime: string
+  snapshotStale: boolean
   onViewOnMap: (cluster: FireRiskCluster) => void
   onDismiss: () => void
 }
 
-function FireRiskAlert({ clusters, evaluationTime, onViewOnMap, onDismiss }: Props) {
+function FireRiskAlert({ clusters, evaluationTime, snapshotStale, onViewOnMap, onDismiss }: Props) {
   if (clusters.length === 0) return null
   return (
     <div role="status" style={containerStyle}>
@@ -20,6 +21,7 @@ function FireRiskAlert({ clusters, evaluationTime, onViewOnMap, onDismiss }: Pro
         <div style={noteStyle}>
           Conditions-based estimate, not an actual fire detection · {new Date(evaluationTime).toLocaleString()}
         </div>
+        {snapshotStale && <div style={staleStyle}>Data may be outdated</div>}
         <div style={areaListStyle}>
           {clusters.map((cluster, index) => (
             <button key={cluster.cluster_id} type="button" style={buttonStyle} onClick={() => onViewOnMap(cluster)}>
@@ -40,6 +42,7 @@ const containerStyle: CSSProperties = { position: 'absolute', top: 12, left: '50
 const titleStyle: CSSProperties = { color: '#991b1b', fontSize: '.94rem' }
 const detailStyle: CSSProperties = { marginTop: 3, fontWeight: 600 }
 const noteStyle: CSSProperties = { marginTop: 2, color: '#7f1d1d', opacity: .82, fontSize: '.74rem' }
+const staleStyle: CSSProperties = { marginTop: 3, color: '#92400e', fontWeight: 700, fontSize: '.76rem' }
 const buttonStyle: CSSProperties = { flexShrink: 0, border: 0, borderRadius: 7, padding: '8px 11px', cursor: 'pointer',
   background: '#b91c1c', color: '#fff', fontWeight: 700 }
 const areaListStyle: CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 8, maxHeight: 92, overflowY: 'auto' }

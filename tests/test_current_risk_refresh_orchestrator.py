@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import threading
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock
 
 from services.current_risk_refresh_orchestrator import CurrentRiskRefreshOrchestrator
 
@@ -68,7 +70,9 @@ def test_latest_snapshot_is_reused_without_weather_or_scan(tmp_path):
     service=orchestrator(tmp_path); expected=scan_result();
     from services.current_risk_refresh_orchestrator import _atomic_json
     _atomic_json(service.snapshot_path,expected)
-    assert service.latest_snapshot()==expected
+    latest = service.latest_snapshot(now=NOW)
+    assert latest["cells"]==expected["cells"]
+    assert latest["refresh_metadata"]["snapshot_evaluation_time"]==expected["evaluation_time"]
     assert service.weather_cache.calls==[] and service.scan_service.calls==[]
 
 
@@ -77,3 +81,53 @@ def test_default_cadence_is_conservative(monkeypatch,tmp_path):
     service=CurrentRiskRefreshOrchestrator(weather_cache=Weather(),weather_client_factory=lambda:object(),scan_service=Scanner(),
         grid_path=tmp_path/"grid",snapshot_path=tmp_path/"scan",status_path=tmp_path/"status")
     assert service.cadence_minutes==180
+
+
+def test_start_returns_without_waiting_for_immediate_refresh_and_preserves_snapshot(tmp_path):
+    entered,release=threading.Event(),threading.Event()
+    service=orchestrator(tmp_path,Weather(entered=entered,release=release),Scanner())
+    from services.current_risk_refresh_orchestrator import _atomic_json
+    _atomic_json(service.snapshot_path,scan_result())
+
+    started=time.monotonic(); service.start(); elapsed=time.monotonic()-started
+    assert elapsed < 0.2
+    assert entered.wait(1)
+    assert service.latest_snapshot(now=NOW)["cells"]==scan_result()["cells"]
+    release.set(); service.stop()
+
+
+def test_loop_runs_immediately_then_retains_configured_interval(tmp_path):
+    service=orchestrator(tmp_path)
+    service.refresh=MagicMock()
+    stop=MagicMock()
+    stop.wait.return_value=True
+    service._stop=stop
+
+    service._loop()
+
+    service.refresh.assert_called_once_with()
+    stop.wait.assert_called_once_with(180*60)
+
+
+def test_snapshot_freshness_uses_evaluation_time_without_completed_refresh(tmp_path):
+    service=orchestrator(tmp_path)
+    snapshot=scan_result()
+
+    fresh=service.with_freshness(snapshot,now=datetime(2026,8,29,20,59,tzinfo=timezone.utc))
+    stale=service.with_freshness(snapshot,now=datetime(2026,8,29,21,1,tzinfo=timezone.utc))
+
+    assert fresh["refresh_metadata"]["stale"] is False
+    assert stale["refresh_metadata"]["stale"] is True
+    assert fresh["refresh_metadata"]["last_successful_refresh_at_utc"] is None
+    assert fresh["refresh_metadata"]["stale_after_minutes"]==180
+
+
+def test_snapshot_freshness_prefers_last_successful_refresh(tmp_path):
+    service=orchestrator(tmp_path)
+    completed=NOW.isoformat().replace("+00:00","Z")
+    snapshot={**scan_result(),"refresh_metadata":{"status":"success","completed_at_utc":completed}}
+
+    result=service.with_freshness(snapshot,now=NOW+timedelta(minutes=179))
+
+    assert result["refresh_metadata"]["stale"] is False
+    assert result["refresh_metadata"]["last_successful_refresh_at_utc"]==completed

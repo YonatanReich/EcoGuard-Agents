@@ -16,7 +16,13 @@ export type NationalRiskScan = {
   cells: NationalRiskCell[]
   unavailable_cells: unknown[]
   semantics: string
-  refresh_metadata: Record<string, unknown> | null
+  refresh_metadata: (Record<string, unknown> & {
+    snapshot_evaluation_time?: string
+    last_successful_refresh_at_utc?: string | null
+    freshness_reference_time_utc?: string | null
+    stale_after_minutes?: number
+    stale?: boolean
+  }) | null
 }
 
 /** Map the current backend transport shape explicitly from response.cells. */
