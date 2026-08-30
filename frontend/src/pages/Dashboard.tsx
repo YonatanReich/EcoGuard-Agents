@@ -308,23 +308,38 @@ function Dashboard() {
   }, [])
 
   useEffect(() => {
-    const controller = new AbortController()
-    fetch('/api/fire-risk/national-scan', { signal: controller.signal })
-      .then((response) => {
+    let active = true
+    let requestInFlight = false
+    let controller: AbortController | null = null
+
+    const loadNationalRiskScan = async () => {
+      if (requestInFlight) return
+      requestInFlight = true
+      controller = new AbortController()
+      try {
+        const response = await fetch('/api/fire-risk/national-scan', { signal: controller.signal })
         if (!response.ok) throw new Error('National risk scan is unavailable')
-        return response.json() as Promise<unknown>
-      })
-      .then((payload) => {
-        const scan = normalizeNationalRiskScanResponse(payload)
-        setNationalRiskScan(scan)
-        setNationalRiskError(null)
-      })
-      .catch((reason: unknown) => {
-        if (!controller.signal.aborted) {
+        const scan = normalizeNationalRiskScanResponse(await response.json() as unknown)
+        if (active) {
+          setNationalRiskScan(scan)
+          setNationalRiskError(null)
+        }
+      } catch (reason: unknown) {
+        if (active && !controller.signal.aborted) {
           setNationalRiskError(reason instanceof Error ? reason.message : 'National risk scan is unavailable')
         }
-      })
-    return () => controller.abort()
+      } finally {
+        requestInFlight = false
+      }
+    }
+
+    void loadNationalRiskScan()
+    const intervalId = window.setInterval(() => void loadNationalRiskScan(), 5 * 60 * 1000)
+    return () => {
+      active = false
+      controller?.abort()
+      window.clearInterval(intervalId)
+    }
   }, [])
 
   const highRiskClusters = useMemo(
@@ -700,6 +715,7 @@ function Dashboard() {
               <FireRiskAlert
                 clusters={highRiskClusters}
                 evaluationTime={nationalRiskScan.evaluation_time}
+                snapshotStale={nationalRiskScan.refresh_metadata?.stale === true}
                 onViewOnMap={viewHighRiskOnMap}
                 onDismiss={() => setDismissedFireRiskSnapshot(nationalRiskScan.evaluation_time)}
               />

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -35,6 +35,18 @@ def _utc(value: datetime | None = None) -> datetime:
 
 def _text(value: datetime | None = None) -> str:
     return (value or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _parse_utc(value: object) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(timezone.utc)
 
 
 def _atomic_json(path: Path, value: dict[str, Any]) -> None:
@@ -99,12 +111,35 @@ class CurrentRiskRefreshOrchestrator:
         finally:
             self._run_lock.release()
 
-    def latest_snapshot(self) -> dict[str, Any] | None:
+    def with_freshness(
+        self, snapshot: dict[str, Any], *, now: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Add response-time freshness without modifying the persisted snapshot."""
+        current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+        metadata = dict(snapshot.get("refresh_metadata") or {})
+        evaluation_text = snapshot.get("evaluation_time")
+        completed_text = metadata.get("completed_at_utc")
+        completed = _parse_utc(completed_text)
+        evaluation = _parse_utc(evaluation_text)
+        usable_refresh = metadata.get("status") in {"success", "partial"} and completed is not None
+        reference = completed if usable_refresh else evaluation
+        metadata.update({
+            "snapshot_evaluation_time": evaluation_text,
+            "last_successful_refresh_at_utc": completed_text if usable_refresh else None,
+            "freshness_reference_time_utc": _text(reference) if reference else None,
+            "stale_after_minutes": self.cadence_minutes,
+            "stale": reference is None or current - reference > timedelta(minutes=self.cadence_minutes),
+        })
+        return {**snapshot, "refresh_metadata": metadata}
+
+    def latest_snapshot(self, *, now: datetime | None = None) -> dict[str, Any] | None:
         if not self.snapshot_path.exists():
             return None
         try:
             value = json.loads(self.snapshot_path.read_text(encoding="utf-8"))
-            return value if isinstance(value, dict) and isinstance(value.get("cells"), list) else None
+            if not isinstance(value, dict) or not isinstance(value.get("cells"), list):
+                return None
+            return self.with_freshness(value, now=now)
         except (OSError, json.JSONDecodeError):
             return None
 
@@ -127,6 +162,7 @@ class CurrentRiskRefreshOrchestrator:
         if self._thread and self._thread.is_alive(): self._thread.join(timeout=5)
 
     def _loop(self) -> None:
+        self.refresh()
         interval = self.cadence_minutes * 60
         while not self._stop.wait(interval):
             self.refresh()

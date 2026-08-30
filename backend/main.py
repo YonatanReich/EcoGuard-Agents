@@ -179,7 +179,9 @@ def national_fire_risk_scan(evaluation_time: datetime | None = Query(default=Non
     if evaluation_time is not None:
         return national_risk_scan_service.scan(evaluation_time)
     latest = current_risk_refresh.latest_snapshot()
-    return latest if latest is not None else national_risk_scan_service.scan_and_save()
+    if latest is not None:
+        return latest
+    return current_risk_refresh.with_freshness(national_risk_scan_service.scan_and_save())
 
 
 @app.get("/api/detected-events")

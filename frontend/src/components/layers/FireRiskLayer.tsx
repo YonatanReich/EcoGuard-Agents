@@ -28,6 +28,7 @@ export function fireRiskFeatureCollection(cells: NationalRiskCell[]) {
 function FireRiskLayer({ scan, error, visible, focusedCluster, onClearFocusedCluster }: FireRiskLayerProps) {
   const { current: map } = useMap()
   const [selected, setSelected] = useState<NationalRiskCell | null>(null)
+  const snapshotIsStale = scan?.refresh_metadata?.stale === true
 
   const geojson = useMemo(
     () => fireRiskFeatureCollection(visible ? scan?.cells ?? [] : []),
@@ -115,6 +116,7 @@ function FireRiskLayer({ scan, error, visible, focusedCluster, onClearFocusedClu
         ))}
         {!scan && !error && <div style={statusStyle}>Loading…</div>}
         {error && <div style={errorStyle}>{error}</div>}
+        {snapshotIsStale && <div style={staleStyle}>Data may be outdated</div>}
       </div>}
 
       {selected && (
@@ -132,6 +134,7 @@ function FireRiskLayer({ scan, error, visible, focusedCluster, onClearFocusedClu
             <strong>{selected.risk_level.toUpperCase()} Current Risk</strong>
             <div>Risk score: {(selected.risk_score * 100).toFixed(1)}%</div>
             <div>Evaluated: {new Date(selected.evaluation_time).toLocaleString()}</div>
+            {snapshotIsStale && <div style={staleStyle}>Data may be outdated</div>}
             {focusedCluster && <div>Selected HIGH area: {focusedCluster.cell_count} {focusedCluster.cell_count === 1 ? 'cell' : 'cells'}</div>}
           </div>
         </Popup>
@@ -147,6 +150,7 @@ const legendRowStyle: CSSProperties = { display: 'flex', alignItems: 'center', g
 const swatchStyle: CSSProperties = { width: 18, height: 12, borderRadius: 2, border: '1px solid rgba(0,0,0,.15)' }
 const statusStyle: CSSProperties = { marginTop: 7, color: '#475569' }
 const errorStyle: CSSProperties = { marginTop: 7, color: '#b91c1c', maxWidth: 200 }
+const staleStyle: CSSProperties = { marginTop: 5, color: '#92400e', fontWeight: 700 }
 const popupStyle: CSSProperties = { color: '#111827', display: 'grid', gap: 4, minWidth: 190 }
 
 export default FireRiskLayer
