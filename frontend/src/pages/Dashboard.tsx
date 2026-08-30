@@ -7,6 +7,7 @@
 import {
   useState,
   useEffect,
+  useMemo,
   type CSSProperties,
 } from 'react'
 
@@ -19,9 +20,13 @@ import RainRadarLayer, {
 } from '../components/layers/RainRadarLayer'
 
 import FireDangerLayer from '../components/layers/FireDangerLayer'
+import FireRiskLayer from '../components/layers/FireRiskLayer'
 import WindParticleLayer from '../components/layers/WindParticleLayer'
 
 import FireDangerLegend from '../components/FireDangerLegend'
+import FireRiskAlert from '../components/FireRiskAlert'
+import { clusterHighRiskCells, type FireRiskCluster } from '../components/fireRiskClusters'
+import { normalizeNationalRiskScanResponse, type NationalRiskScan } from '../components/fireRiskScan'
 import InfrastructureLayer from '../components/InfrastructureLayer'
 import LayersControl from '../components/LayersControl'
 import EnvironmentalDataModal from '../components/EnvironmentalDataModal'
@@ -154,6 +159,11 @@ function Dashboard() {
   ] = useState(false)
 
   const [
+    showFireRisk,
+    setShowFireRisk,
+  ] = useState(false)
+
+  const [
     showWind,
     setShowWind,
   ] = useState(false)
@@ -162,6 +172,15 @@ function Dashboard() {
     showInfrastructure,
     setShowInfrastructure,
   ] = useState(true)
+
+  const [nationalRiskScan, setNationalRiskScan] =
+    useState<NationalRiskScan | null>(null)
+  const [nationalRiskError, setNationalRiskError] =
+    useState<string | null>(null)
+  const [focusedFireRiskCluster, setFocusedFireRiskCluster] =
+    useState<FireRiskCluster | null>(null)
+  const [dismissedFireRiskSnapshot, setDismissedFireRiskSnapshot] =
+    useState<string | null>(null)
 
 
   // =========================================================
@@ -287,6 +306,35 @@ function Dashboard() {
         )
       )
   }, [])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    fetch('/api/fire-risk/national-scan', { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error('National risk scan is unavailable')
+        return response.json() as Promise<unknown>
+      })
+      .then((payload) => {
+        const scan = normalizeNationalRiskScanResponse(payload)
+        setNationalRiskScan(scan)
+        setNationalRiskError(null)
+      })
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted) {
+          setNationalRiskError(reason instanceof Error ? reason.message : 'National risk scan is unavailable')
+        }
+      })
+    return () => controller.abort()
+  }, [])
+
+  const highRiskClusters = useMemo(
+    () => clusterHighRiskCells(nationalRiskScan?.cells ?? []),
+    [nationalRiskScan],
+  )
+
+  const viewHighRiskOnMap = (cluster: FireRiskCluster) => {
+    setFocusedFireRiskCluster(cluster)
+  }
 
 
   // =========================================================
@@ -648,6 +696,15 @@ function Dashboard() {
             selectedLocation={selectedLocation}
           >
 
+            {nationalRiskScan && highRiskClusters.length > 0 && dismissedFireRiskSnapshot !== nationalRiskScan.evaluation_time && (
+              <FireRiskAlert
+                clusters={highRiskClusters}
+                evaluationTime={nationalRiskScan.evaluation_time}
+                onViewOnMap={viewHighRiskOnMap}
+                onDismiss={() => setDismissedFireRiskSnapshot(nationalRiskScan.evaluation_time)}
+              />
+            )}
+
             {/* ================================================= */}
             {/* Rain Radar                                        */}
             {/* ================================================= */}
@@ -959,6 +1016,16 @@ function Dashboard() {
               <FireDangerLegend />
             )}
 
+            {(showFireRisk || focusedFireRiskCluster) && (
+              <FireRiskLayer
+                scan={nationalRiskScan}
+                error={nationalRiskError}
+                visible={showFireRisk}
+                focusedCluster={focusedFireRiskCluster}
+                onClearFocusedCluster={() => setFocusedFireRiskCluster(null)}
+              />
+            )}
+
 
             {/* ================================================= */}
             {/* Nearby infrastructure                             */}
@@ -1009,6 +1076,16 @@ function Dashboard() {
               }
               onToggleFireDanger={() =>
                 setShowFireDanger(
+                  (current) =>
+                    !current
+                )
+              }
+
+              showFireRisk={
+                showFireRisk
+              }
+              onToggleFireRisk={() =>
+                setShowFireRisk(
                   (current) =>
                     !current
                 )
