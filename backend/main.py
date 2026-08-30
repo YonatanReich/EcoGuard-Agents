@@ -18,12 +18,18 @@ Run locally with:
 """
 
 import logging
+from datetime import datetime
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from agents.risk_analysis_agent import analyze_event
 from agents.weather_data_agent import WeatherDataAgent
 from agents.geospatial_context_agent import GeospatialContextAgent
+from backend.fire_risk_schemas import FireRiskRequest, FireRiskResponse, NationalRiskScanResponse
+from agents.fire_risk_prediction_agent import FireRiskPredictionAgent
+from services.current_risk_feature_builder import CurrentRiskFeatureBuilder
+from services.national_current_risk_scan_service import NationalCurrentRiskScanService
+from services.current_risk_refresh_orchestrator import CurrentRiskRefreshOrchestrator
 
 logging.basicConfig(
     level=logging.INFO,
@@ -55,6 +61,20 @@ app.add_middleware(
 # each is enough for the whole process — no need to build them per request.
 weather_agent = WeatherDataAgent()
 geo_agent = GeospatialContextAgent()
+current_risk_feature_builder = CurrentRiskFeatureBuilder()
+fire_risk_prediction_agent = FireRiskPredictionAgent()
+national_risk_scan_service = NationalCurrentRiskScanService()
+current_risk_refresh = CurrentRiskRefreshOrchestrator(scan_service=national_risk_scan_service)
+
+
+@app.on_event("startup")
+def start_current_risk_refresh():
+    current_risk_refresh.start()
+
+
+@app.on_event("shutdown")
+def stop_current_risk_refresh():
+    current_risk_refresh.stop()
 
 @app.get("/")
 def read_root():
@@ -68,6 +88,98 @@ def read_root():
         "message": "EcoGuard Agents API is running",
         "status": "success"
     }
+
+
+@app.post("/api/fire-risk", response_model=FireRiskResponse)
+def assess_fire_risk(request: FireRiskRequest):
+    """Return Current Risk without asserting that a fire was detected."""
+    features = request.current_features
+    build_result = None
+
+    if features is None:
+        build_result = current_risk_feature_builder.build(
+            latitude=request.latitude,
+            longitude=request.longitude,
+        )
+        if build_result.get("status") == "success":
+            features = build_result.get("features")
+
+    if features is None:
+        reason = (
+            build_result.get("reason")
+            if build_result is not None
+            else "complete_44_feature_payload_not_provided"
+        )
+        return {
+            "status": "unavailable",
+            "location": {"latitude": request.latitude, "longitude": request.longitude},
+            "current_risk": {
+                "status": "unavailable",
+                "score": None,
+                "level": None,
+                "semantics": "estimated_fire_risk",
+                "main_factors": [],
+                "reason": reason,
+                "missing_runtime_inputs": (
+                    [] if build_result is not None else ["complete_44_feature_payload"]
+                ),
+                "model_version": None,
+            },
+            "actual_fire_detection": {
+                "included": False,
+                "semantics": "separate_firms_or_telegram_evidence",
+            },
+        }
+
+    prediction = fire_risk_prediction_agent.predict(features)
+    if prediction.get("status") != "ok":
+        error = prediction.get("error") or {}
+        return {
+            "status": "error",
+            "location": {"latitude": request.latitude, "longitude": request.longitude},
+            "current_risk": {
+                "status": "error",
+                "score": None,
+                "level": None,
+                "semantics": "estimated_fire_risk",
+                "main_factors": [],
+                "reason": error.get("code", "prediction_failed"),
+                "missing_runtime_inputs": error.get("missing_features", []),
+                "model_version": None,
+            },
+            "actual_fire_detection": {
+                "included": False,
+                "semantics": "separate_firms_or_telegram_evidence",
+            },
+        }
+
+    return {
+        "status": "available",
+        "location": {"latitude": request.latitude, "longitude": request.longitude},
+        "current_risk": {
+            "status": "available",
+            "score": prediction["risk_score"],
+            "level": prediction["risk_level"],
+            "semantics": prediction["risk_semantics"],
+            "main_factors": prediction.get("main_factors", []),
+            "reason": None,
+            "missing_runtime_inputs": [],
+            "model_version": prediction.get("model_version"),
+        },
+        "actual_fire_detection": {
+            "included": False,
+            "semantics": "separate_firms_or_telegram_evidence",
+        },
+    }
+
+
+@app.get("/api/fire-risk/national-scan", response_model=NationalRiskScanResponse)
+def national_fire_risk_scan(evaluation_time: datetime | None = Query(default=None)):
+    """Return the persisted latest scan; an explicit timestamp performs a deterministic local scan."""
+    if evaluation_time is not None:
+        return national_risk_scan_service.scan(evaluation_time)
+    latest = current_risk_refresh.latest_snapshot()
+    return latest if latest is not None else national_risk_scan_service.scan_and_save()
 
 
 @app.get("/api/detected-events")
