@@ -1,15 +1,44 @@
-# Fire Response Protocol Corpus
+# Response Protocol Corpus
 
-This directory holds the protocol documents that ground the risk analysis and response
-planning agents. `ProtocolRetriever` (see `services/protocol_retrieval_service.py`)
-chunks every `.md` file here at import time and retrieves passages by BM25 score. The
-language model is only permitted to cite text that was actually retrieved from these
-files, and every citation it returns is verified against the source chunk in Python
-before it reaches the API response.
+This directory holds the protocol documents that ground the risk analysis, response
+planning and judging agents. The language model is only permitted to cite text that was
+actually retrieved from these files, and every citation it returns is verified against
+the source chunk in Python before it reaches the API response.
 
-`manifest.json` is the machine-readable index: document ids, titles, source URLs,
-licences, retrieval dates and SHA-256 hashes. The hashes let you confirm a document has
-not drifted from what was reviewed.
+## Hazards
+
+The corpus is indexed by hazard, one directory per hazard, each with its own
+`manifest.json`:
+
+```
+data/protocols/
+  README.md          ← this file, covers the whole filebase
+  fire/
+    manifest.json
+    *.md
+  flood/             ← when there are documents to put in it
+  earthquake/        ← likewise
+```
+
+`ProtocolRetriever(hazard="fire")` reads `data/protocols/fire`. One retriever instance
+per hazard, constructed where the hazard is already known — the hazards deliberately do
+**not** share one index, because a shared index would score fire queries against flood
+chunks and degrade BM25's term weighting on a corpus this small.
+
+A hazard directory that does not exist yet is not an error. The retriever reports
+`available is False` and returns nothing, and the agents translate that into
+`"protocol corpus unavailable"`. So `ProtocolRetriever(hazard="flood")` can be
+constructed today and will simply have nothing to say until the corpus is added — it
+will never fall back to fire doctrine, which would be worse than answering nothing.
+
+Do not create empty hazard directories in advance.
+
+## Manifests
+
+`manifest.json` is the machine-readable index for one hazard: the hazard name, corpus
+version, and per document the id, title, source URL, licence, retrieval date and
+SHA-256 hash. The hashes let you confirm a document has not drifted from what was
+reviewed.
 
 ## Why these three
 
@@ -19,8 +48,13 @@ halves of the sprint requirement — classifying risk and planning a response.
 | Document | Role |
 | --- | --- |
 | `effis-fire-weather-index.md` | Fire danger classification. Defines the FWI bands the pipeline already collects. |
-| `nwcg-standard-orders-watchouts.md` | Engagement safety doctrine. Governs whether and how responders may engage. |
-| `usfa-structure-triage.md` | Response actions. Which structures to defend, and when not to. |
+| `nwcg-standard-orders-watchouts.md` | Wildland engagement safety. Governs whether and how responders may engage a fireline. |
+| `usfa-structure-triage.md` | Wildland/urban interface. Which structures to defend from an approaching fire, and when not to. |
+| `usfa-risk-management-structure-fire.md` | Structural fires. The offensive/defensive decision — whether to send crews *into* a building. |
+
+The first three are wildland-oriented; the fourth covers fires in buildings, so an
+apartment or commercial fire has doctrine to ground against rather than falling back on
+defensible-space guidance that does not apply to it.
 
 The EFFIS document is deliberately the same authority that `agents/fire_danger_agent.py`
 reads its `danger_level` from, so a citation about a danger class refers to the exact
@@ -83,14 +117,26 @@ chunker can split it on meaningful boundaries. Two rules govern that editing:
 1. Confirm the licence permits redistribution, and record it.
 2. Convert to Markdown with `##`/`###` headings; the chunker splits on those, so heading
    quality directly determines retrieval quality.
-3. Save as `<document-id>.md` using a lowercase, hyphenated id.
+3. Save as `<hazard>/<document-id>.md` using a lowercase, hyphenated id.
 4. Append the attribution block at the bottom of the file.
-5. Add an entry to `manifest.json`, including the SHA-256:
+5. Add an entry to that hazard's `manifest.json`, including the SHA-256:
    ```
-   python -c "import hashlib,pathlib; p=pathlib.Path('data/protocols/<file>.md'); print(hashlib.sha256(p.read_bytes()).hexdigest())"
+   python -c "import hashlib,pathlib; p=pathlib.Path('data/protocols/fire/<file>.md'); print(hashlib.sha256(p.read_bytes()).hexdigest())"
    ```
 6. Run `pytest tests/test_protocol_retrieval_service.py` — one test asserts every
    `document_id` on disk has a manifest entry and that chunk ids stay unique.
+
+## Adding a hazard
+
+1. Create `data/protocols/<hazard>/` with at least one document and a `manifest.json`
+   carrying `"hazard": "<hazard>"`.
+2. Nothing else is required to retrieve from it — `ProtocolRetriever(hazard=...)` and
+   `ResponsePlanJudgeAgent(hazard=...)` work immediately.
+3. Be aware of the limit: the **judge** is hazard-agnostic, but the **risk and planning
+   agents are not**. `analyze_event` returns `skipped/unsupported_event` for any
+   `event_type` other than `"fire"`, and both system prompts are fire-specific. Adding a
+   flood corpus makes the judge ready for flood; it does not make the pipeline produce
+   flood plans.
 
 The corpus is English-only. The retriever's tokenizer matches `[a-z0-9]+`, so a Hebrew
 document would tokenise to nothing and be silently unretrievable. Adding one requires

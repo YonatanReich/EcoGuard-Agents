@@ -47,7 +47,21 @@ import re
 from collections import Counter
 from pathlib import Path
 
-DEFAULT_PROTOCOLS_DIR = Path(__file__).resolve().parents[1] / "data" / "protocols"
+# The corpus is indexed by hazard: data/protocols/<hazard>/*.md, each with its
+# own manifest.json. One retriever instance per hazard, constructed where the
+# hazard is already known.
+#
+# Rejected alternative: a single flat index carrying a hazard field, filtered in
+# .retrieve(). It would score every fire query against flood chunks, degrading
+# BM25's IDF on a small corpus, and — decisively — it would add a parameter to
+# .retrieve(), breaking the swap seam documented in the module docstring.
+PROTOCOLS_ROOT = Path(__file__).resolve().parents[1] / "data" / "protocols"
+
+DEFAULT_HAZARD = "fire"
+
+# Name retained so existing callers and tests keep working; it now resolves to
+# the fire subdirectory rather than the corpus root.
+DEFAULT_PROTOCOLS_DIR = PROTOCOLS_ROOT / DEFAULT_HAZARD
 
 TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
 
@@ -248,7 +262,16 @@ class ProtocolRetriever:
     afterwards and safe to share across requests, which is how backend.main uses
     this class.
 
+    Selecting a corpus:
+        ``ProtocolRetriever(hazard="flood")`` reads ``data/protocols/flood``.
+        A hazard directory that does not exist yet is not an error — the
+        retriever reports ``available is False`` and returns no results, and the
+        agents translate that into "protocol corpus unavailable". That is the
+        forward-compatibility guarantee: a flood judge can be constructed today
+        and will simply have nothing to say until the corpus is added.
+
     Attributes:
+        hazard (str): Which hazard's corpus this instance holds.
         corpus_path (Path): Directory holding the protocol markdown and manifest.
         chunks (list[dict]): Every indexed chunk, in document order.
         documents (dict): Manifest metadata keyed by document_id.
@@ -257,13 +280,20 @@ class ProtocolRetriever:
     def __init__(
         self,
         *,
-        corpus_path: Path | str = DEFAULT_PROTOCOLS_DIR,
+        corpus_path: Path | str | None = None,
+        hazard: str = DEFAULT_HAZARD,
         k1: float = DEFAULT_K1,
         b: float = DEFAULT_B,
         max_chunk_chars: int = DEFAULT_MAX_CHUNK_CHARS,
         chunk_overlap_chars: int = DEFAULT_CHUNK_OVERLAP_CHARS,
     ) -> None:
-        self.corpus_path = Path(corpus_path)
+        self.hazard = hazard
+
+        # An explicit path wins over the hazard, which is what lets tests point
+        # at a temporary corpus without inventing a hazard name for it.
+        self.corpus_path = (
+            Path(corpus_path) if corpus_path is not None else PROTOCOLS_ROOT / hazard
+        )
         self.k1 = k1
         self.b = b
         self.max_chunk_chars = max_chunk_chars

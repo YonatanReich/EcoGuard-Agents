@@ -1,6 +1,7 @@
 {
-  "corpus_version": "1.0.0",
-  "description": "Fire response protocol corpus used to ground risk analysis and response planning. Every document is openly licensed and attributed. See README.md for licence terms.",
+  "hazard": "fire",
+  "corpus_version": "1.1.0",
+  "description": "Fire response protocol corpus used to ground risk analysis and response planning. Every document is openly licensed and attributed. See ../README.md for licence terms.",
   "documents": [
     {
       "document_id": "nwcg-standard-orders-watchouts",
@@ -23,6 +24,17 @@
       "retrieved_at": "2026-08-27",
       "sha256": "e020feeee432edf625c10363cbbddb57fde9e58731e41cd66780be4aa02933bf",
       "covers": ["fire danger classification", "FWI thresholds", "severity interpretation"]
+    },
+    {
+      "document_id": "usfa-risk-management-structure-fire",
+      "filename": "usfa-risk-management-structure-fire.md",
+      "title": "Operational Risk Management and Rules of Engagement for Structure Fires",
+      "publisher": "U.S. Fire Administration / FEMA",
+      "source_url": "https://www.usfa.fema.gov/downloads/pdf/publications/risk_management_practices.pdf",
+      "license": "Public domain (work of the U.S. federal government)",
+      "retrieved_at": "2026-09-03",
+      "sha256": "b8cb7a1de68f8b0bc600a4c02308c9a279d562f863548f16e36c38ee8cf6168d",
+      "covers": ["structure fire", "offensive defensive decision", "acceptable risk", "incident command", "occupancy"]
     },
     {
       "document_id": "usfa-structure-triage",

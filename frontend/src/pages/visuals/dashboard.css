@@ -91,15 +91,17 @@
     flex-direction: column;
 }
 
-.dashboard-footer {
-    flex: 0 0 120px;
+.dashboard__agents {
+    flex: 0 0 240px;
     background: var(--bg-cards);
     border-radius: 10px;
     border: 2px solid transparent;
     transition: border-color 0.3s ease;
+    display: flex;
+    flex-direction: column;
 }
 
-.dashboard-footer:hover,
+.dashboard__agents:hover,
 .dashboard__sidebar:hover {
     border-color: white;
 }
@@ -157,7 +159,7 @@
     transition: width 0.4s ease;
 }
 
-.dashboard-footer:hover .agent-status-header::after {
+.dashboard__agents:hover .agent-status-header::after {
     width: 100%;
 }
 

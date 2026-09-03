@@ -585,6 +585,67 @@ def test_normalize_for_match_collapses_whitespace():
 # --------------------------------------------------------------------------
 
 
+# --------------------------------------------------------------------------
+# Hazard selection
+# --------------------------------------------------------------------------
+
+
+def test_default_resolves_to_the_fire_corpus():
+    """The no-argument constructor keeps working after the hazard move."""
+    retriever = ProtocolRetriever()
+
+    assert retriever.hazard == "fire"
+    assert retriever.available
+    assert len(retriever.chunks) > 20
+
+
+def test_hazard_selects_the_corpus_directory():
+    explicit = ProtocolRetriever(hazard="fire")
+    default = ProtocolRetriever()
+
+    assert [c["chunk_id"] for c in explicit.chunks] == [
+        c["chunk_id"] for c in default.chunks
+    ]
+
+
+def test_missing_hazard_corpus_degrades_without_raising():
+    """
+    The forward-compatibility guarantee.
+
+    A flood judge can be constructed today and will simply have nothing to say
+    until data/protocols/flood exists. Constructing it must not raise, and it
+    must not silently fall back to the fire corpus — answering flood questions
+    from fire doctrine would be worse than answering nothing.
+    """
+    retriever = ProtocolRetriever(hazard="flood")
+
+    assert retriever.available is False
+    assert retriever.chunks == []
+    assert retriever.retrieve("water rescue evacuation", top_k=5) == []
+
+
+def test_explicit_corpus_path_overrides_hazard(make_retriever):
+    """Tests point at a temporary corpus without inventing a hazard name."""
+    retriever = make_retriever({"test-doc": SIMPLE_DOC}, hazard="flood")
+
+    assert retriever.available is True
+    assert any("escape-routes" in c["chunk_id"] for c in retriever.chunks)
+
+
+def test_hazards_do_not_share_an_index():
+    """
+    Each hazard is its own BM25 index.
+
+    A shared index would score fire queries against flood chunks and degrade
+    IDF on a small corpus.
+    """
+    fire = ProtocolRetriever(hazard="fire")
+    flood = ProtocolRetriever(hazard="flood")
+
+    assert fire.corpus_path != flood.corpus_path
+    assert fire.chunks and not flood.chunks
+
+
 def test_real_corpus_loads_and_is_internally_consistent():
     """
     Guards the committed corpus itself.

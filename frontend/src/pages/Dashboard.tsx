@@ -909,6 +909,19 @@ function Dashboard() {
 
       <div className="dashboard__body">
 
+        <aside className="dashboard__agents">
+
+          <div className="agent-status-header">
+            Agent status
+          </div>
+
+          <div className="agent-status-container">
+            There are no agents active at the moment
+          </div>
+
+        </aside>
+
+
         <main className="dashboard__map">
 
           <MapView
@@ -1385,23 +1398,6 @@ function Dashboard() {
           ))}
 
         </aside>
-
-      </div>
-
-
-      <div className="dashboard-footer">
-
-        <footer>
-
-          <div className="agent-status-header">
-            Agent status
-          </div>
-
-          <div className="agent-status-container">
-            There are no agents active at the moment
-          </div>
-
-        </footer>
 
       </div>
 

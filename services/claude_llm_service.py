@@ -33,6 +33,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from urllib.parse import urlparse
 
 import anthropic
 from dotenv import load_dotenv
@@ -48,6 +49,34 @@ DEFAULT_MAX_TOKENS = 4096
 DEFAULT_EFFORT = "medium"
 DEFAULT_TIMEOUT_SECONDS = 60.0
 DEFAULT_MAX_RETRIES = 1
+
+# How many times a server-tool turn paused at the API's 10-iteration ceiling may
+# be resumed before we give up. Three is generous: a bounded lookup that has not
+# finished after four attempts is not going to.
+DEFAULT_MAX_CONTINUATIONS = 3
+
+# Web search, used by the risk agent to fill gaps the collection layer could not.
+#
+# The allowlist is a safety control, not an optimisation. This system produces
+# emergency response plans, and a population figure taken from a forum post would
+# carry exactly the same visual weight in the output as one from the Central
+# Bureau of Statistics. Restricting at the API means the model cannot read an
+# unlisted source in the first place.
+WEB_SEARCH_ALLOWED_DOMAINS = [
+    "cbs.gov.il",          # Central Bureau of Statistics — settlement populations
+    "gov.il",              # government portals
+    "oref.org.il",         # Home Front Command — civil defence guidance
+    "openstreetmap.org",   # mapping, consistent with our own geospatial source
+    "wikipedia.org",       # settlement basics where nothing official exists
+]
+
+DEFAULT_MAX_SEARCHES = 3
+
+# The dynamic-filtering variant, supported on Sonnet 5. It runs its own code
+# execution internally to filter results before they reach the context window,
+# which is why the standalone code_execution tool must NOT also be declared —
+# a second execution environment confuses the model.
+WEB_SEARCH_TOOL_TYPE = "web_search_20260209"
 
 # Closed vocabulary, extending the set already used by the FIRMS and weather
 # agents. Anything outside this set must never reach a caller.
@@ -109,6 +138,13 @@ class ClaudeLLMService:
         self.effort = effort
         self.last_usage: dict | None = None
 
+        # What the most recent request actually did, counted from the response
+        # blocks rather than taken from the model's account of itself.
+        # last_web_searches is the number to report to a user; the other
+        # includes the code execution that dynamic filtering runs internally.
+        self.last_server_tool_uses: int = 0
+        self.last_web_searches: int = 0
+
         if client is not None:
             self.client = client
         elif self._api_key:
@@ -144,6 +180,8 @@ class ClaudeLLMService:
         system_blocks: list[dict],
         user_text: str,
         output_format: type[BaseModel],
+        tools: list[dict] | None = None,
+        max_continuations: int = DEFAULT_MAX_CONTINUATIONS,
     ) -> BaseModel:
         """
         Run one structured Claude call and return the validated result.
@@ -153,6 +191,15 @@ class ClaudeLLMService:
         parameters are sent — ``temperature``/``top_p``/``top_k`` were removed
         from the SDK in 1.x and are rejected by the model besides.
 
+        Server-side tools (see build_web_search_tool) run inside the API's own
+        sampling loop, so there is no client-side tool loop to write. That loop
+        does have a ceiling, though: at 10 iterations the API returns
+        ``stop_reason: "pause_turn"`` with the work unfinished. Resuming means
+        re-sending with the assistant turn appended and NO extra user message —
+        the server sees the trailing server_tool_use block and picks up where it
+        left off. Without that, a paused turn would surface here as a missing
+        parsed output and be misreported as a malformed response.
+
         Args:
             system_blocks (list[dict]): System content blocks. The stable prefix
                 should carry ``cache_control`` — see build_system_blocks.
@@ -160,6 +207,12 @@ class ClaudeLLMService:
                 excerpts and event evidence belong here, AFTER the cached
                 prefix, so caching is not invalidated on every call.
             output_format (type[BaseModel]): Schema the response must satisfy.
+            tools (list[dict] | None): Tool definitions. Omitted from the
+                request entirely when None, so a call without tools is byte
+                identical to one made before tools existed and the prompt cache
+                is unaffected.
+            max_continuations (int): How many times a paused turn may be
+                resumed before giving up.
 
         Returns:
             BaseModel: A validated instance of output_format.
@@ -172,33 +225,63 @@ class ClaudeLLMService:
         if self.client is None:
             raise ClaudeProviderError("missing credentials") from None
 
-        try:
-            response = self.client.messages.parse(
-                model=self.model,
-                max_tokens=self.max_tokens,
-                system=system_blocks,
-                messages=[{"role": "user", "content": user_text}],
-                thinking={"type": "adaptive"},
-                output_config={"effort": self.effort},
-                output_format=output_format,
-            )
-            parsed = response.parsed_output
-        except Exception as error:
-            raise ClaudeProviderError(self.sanitize_error(error)) from None
+        messages: list[dict] = [{"role": "user", "content": user_text}]
 
-        # A refusal or a truncated response can yield no parsed output at all.
-        # Treat that as malformed rather than returning None to a caller that
-        # expects a model instance.
+        # Only present when tools were supplied, so the legacy call shape is
+        # preserved exactly.
+        extra: dict = {"tools": tools} if tools else {}
+
+        response = None
+
+        for _ in range(max_continuations + 1):
+            try:
+                response = self.client.messages.parse(
+                    model=self.model,
+                    max_tokens=self.max_tokens,
+                    system=system_blocks,
+                    messages=messages,
+                    thinking={"type": "adaptive"},
+                    output_config={"effort": self.effort},
+                    output_format=output_format,
+                    **extra,
+                )
+            except Exception as error:
+                raise ClaudeProviderError(self.sanitize_error(error)) from None
+
+            if getattr(response, "stop_reason", None) != "pause_turn":
+                break
+
+            # Append the paused assistant turn and go round again. Adding a
+            # "continue" user message here would break the server's resume
+            # detection, so deliberately do not.
+            messages = messages + [
+                {"role": "assistant", "content": response.content}
+            ]
+        else:
+            # Ran out of continuations with the turn still paused.
+            raise ClaudeProviderError("provider error") from None
+
+        # A safety refusal returns HTTP 200 with no usable output. Report it as
+        # malformed rather than letting a None reach a caller expecting a model.
+        if getattr(response, "stop_reason", None) == "refusal":
+            raise ClaudeProviderError("malformed response") from None
+
+        parsed = response.parsed_output
+
+        # A truncated response can also yield no parsed output at all.
         if not isinstance(parsed, output_format):
             raise ClaudeProviderError("malformed response") from None
 
         self.last_usage = self.read_usage(response)
+        self.last_server_tool_uses = count_server_tool_uses(response)
+        self.last_web_searches = count_server_tool_uses(response, name="web_search")
 
         logging.info(
-            "Claude call complete: model=%s effort=%s cache_read=%s",
+            "Claude call complete: model=%s effort=%s cache_read=%s searches=%s",
             self.model,
             self.effort,
             (self.last_usage or {}).get("cache_read_input_tokens"),
+            self.last_web_searches,
         )
 
         return parsed
@@ -273,6 +356,133 @@ class ClaudeLLMService:
             ),
             "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", None),
         }
+
+
+def build_web_search_tool(
+    *,
+    max_uses: int = DEFAULT_MAX_SEARCHES,
+    allowed_domains: list[str] | None = None,
+) -> dict:
+    """
+    Build the server-side web search tool definition.
+
+    Args:
+        max_uses (int): Hard ceiling on searches per request. Bounds both cost
+            and latency on a pipeline that is already slow.
+        allowed_domains (list[str] | None): Hosts the model may read. Defaults
+            to WEB_SEARCH_ALLOWED_DOMAINS.
+
+    Returns:
+        dict: A tool definition for the ``tools`` list.
+    """
+    return {
+        "type": WEB_SEARCH_TOOL_TYPE,
+        "name": "web_search",
+        "max_uses": max_uses,
+        "allowed_domains": list(
+            WEB_SEARCH_ALLOWED_DOMAINS if allowed_domains is None else allowed_domains
+        ),
+    }
+
+
+def count_server_tool_uses(response: object, *, name: str | None = None) -> int:
+    """
+    Count server-side tool calls in a response, optionally for one tool.
+
+    Read from the response blocks rather than asked of the model, for the same
+    reason citations are verified rather than trusted: a self-report of what a
+    model did is not evidence of what it did.
+
+    **Pass a name if you are reporting a search count.** The
+    ``web_search_20260209`` variant performs dynamic filtering by running code
+    execution internally, and those calls appear as ``server_tool_use`` blocks
+    too. One observed lookup produced one ``web_search`` block alongside three
+    ``code_execution`` blocks, so an unfiltered count reported four searches
+    where one had happened.
+
+    Args:
+        response (object): The SDK response object.
+        name (str | None): Tool name to count, e.g. ``"web_search"``. None
+            counts every server tool call.
+
+    Returns:
+        int: Matching block count. Zero when the response has no readable
+            content.
+    """
+    content = getattr(response, "content", None)
+
+    if not isinstance(content, (list, tuple)):
+        return 0
+
+    return sum(
+        1
+        for block in content
+        if getattr(block, "type", None) == "server_tool_use"
+        and (name is None or getattr(block, "name", None) == name)
+    )
+
+
+def host_is_allowed(url: str, allowed_domains: list[str]) -> bool:
+    """
+    Whether a URL's host is the allowlist or a subdomain of it.
+
+    Args:
+        url (str): URL to check.
+        allowed_domains (list[str]): Permitted registrable domains.
+
+    Returns:
+        bool: True when the host matches or is a subdomain of an entry.
+    """
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except ValueError:
+        return False
+
+    if not host:
+        return False
+
+    # Suffix match on a dot boundary, so "cbs.gov.il" admits "www.cbs.gov.il"
+    # but "evil-gov.il" does not match "gov.il".
+    return any(
+        host == domain or host.endswith(f".{domain}")
+        for domain in (d.lower() for d in allowed_domains)
+    )
+
+
+def verify_web_findings(
+    findings: list[dict], allowed_domains: list[str] | None = None
+) -> tuple[list[dict], int]:
+    """
+    Drop any web finding whose source is not on the allowlist.
+
+    The API already restricts which hosts can be *read*, but the model is the
+    one that reports what it found, and a fabricated or misattributed URL must
+    not reach an operator. Same shape and same reasoning as verify_citations:
+    check the claim rather than trusting it.
+
+    Args:
+        findings (list[dict]): Model-reported findings, each with a source_url.
+        allowed_domains (list[str] | None): Defaults to the module allowlist.
+
+    Returns:
+        tuple[list[dict], int]: Surviving findings, and the number dropped.
+    """
+    domains = WEB_SEARCH_ALLOWED_DOMAINS if allowed_domains is None else allowed_domains
+
+    verified: list[dict] = []
+    dropped = 0
+
+    for finding in findings or []:
+        if not isinstance(finding, dict):
+            dropped += 1
+            continue
+
+        if host_is_allowed(finding.get("source_url", ""), domains):
+            verified.append(finding)
+        else:
+            dropped += 1
+
+    return verified, dropped
 
 
 def build_system_blocks(prompt: str) -> list[dict]:
