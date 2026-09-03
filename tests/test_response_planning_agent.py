@@ -303,6 +303,105 @@ def test_unknown_unit_id_is_rejected_by_the_schema():
 # --------------------------------------------------------------------------
 
 
+def test_assessment_summary_renders_situational_context():
+    llm = FakeLLM(build_valid_plan())
+    agent = build_agent(llm=llm)
+
+    assessment = successful_assessment(
+        situational_context={
+            "area_type": "urban_residential",
+            "area_type_basis": "A town with residential roads and a hospital nearby.",
+            "population_band": "10k_to_100k",
+            "population_basis": "osm_population_tag",
+            "evacuation_consideration": "localised_evacuation",
+            "context_gaps": [],
+        }
+    )
+    agent.plan_response(detected_event(), assessment)
+
+    user_text = llm.calls[0]["user_text"]
+
+    assert "urban_residential" in user_text
+    assert "10k_to_100k" in user_text
+    assert "osm_population_tag" in user_text
+
+
+def test_assessment_summary_tolerates_a_missing_situational_context():
+    """
+    Guards replaying an assessment authored before this field existed.
+
+    The evaluation harness feeds frozen assessments straight to the planner, so
+    an older case file must not crash it.
+    """
+    agent = build_agent()
+
+    assessment = successful_assessment()
+    assessment.pop("situational_context", None)
+
+    result = agent.plan_response(detected_event(), assessment)
+
+    assert result["metadata"]["planning_status"] == "success"
+
+
+def test_web_findings_are_flagged_as_weaker_evidence():
+    """A looked-up fact must be visibly distinct from a collected one."""
+    llm = FakeLLM(build_valid_plan())
+    agent = build_agent(llm=llm)
+
+    assessment = successful_assessment(
+        web_findings=[
+            {
+                "query": "Yakir population",
+                "fact": "Yakir had a population of 2,742 in 2024.",
+                "source_url": "https://en.wikipedia.org/wiki/Yakir",
+                "source_title": "Yakir — Wikipedia",
+                "informs": "population_band",
+            }
+        ]
+    )
+    agent.plan_response(detected_event(), assessment)
+
+    user_text = llm.calls[0]["user_text"]
+
+    assert "looked up externally" in user_text
+    assert "2,742" in user_text
+
+
+@pytest.mark.parametrize(
+    "area_type,expected_term",
+    [
+        ("urban_residential", "interior operations"),
+        ("industrial", "interior operations"),
+        ("wildland_urban_interface", "defensible space"),
+        ("open_natural", "anchor point"),
+    ],
+)
+def test_query_reflects_the_area_type(area_type, expected_term):
+    """
+    Area type steers the second retrieval to the right half of the corpus.
+
+    A fire in a building needs the offensive/defensive doctrine; a fire in the
+    open needs containment and triage. Retrieving the wrong half is how a plan
+    ends up citing defensible space at an apartment fire.
+    """
+    retriever = FakeRetriever()
+    agent = build_agent(retriever=retriever)
+
+    assessment = successful_assessment(
+        situational_context={
+            "area_type": area_type,
+            "area_type_basis": "x" * 25,
+            "population_band": "1k_to_10k",
+            "population_basis": "settlement_type_inference",
+            "evacuation_consideration": "not_indicated",
+            "context_gaps": [],
+        }
+    )
+    agent.plan_response(detected_event(), assessment)
+
+    assert expected_term in retriever.queries[0]
+
+
 def test_query_targets_action_sections_not_classification():
     """
     The whole justification for a second model call.

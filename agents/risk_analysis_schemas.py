@@ -112,10 +112,13 @@ class ProtocolCitation(BaseModel):
 
     chunk_id: str = Field(min_length=1, max_length=200)
     document_title: str = Field(min_length=1, max_length=200)
-    # Upper bound is deliberately generous: a chunk can be 1200 characters and a
-    # model quoting a long protocol passage in full is behaving correctly. See
-    # the note on length limits at the bottom of this module.
-    quoted_text: str = Field(min_length=20, max_length=1400)
+    # Both bounds are deliberately loose. Upper: a chunk can be 1200 characters
+    # and quoting a long passage in full is correct behaviour. Lower: protocol
+    # text includes table rows, and "Low | below 11.2" is a legitimate verbatim
+    # citation of the FWI class table at 16 characters. A floor of 20 rejected
+    # three assessments in four on a low-danger event — see the note at the
+    # bottom of this module.
+    quoted_text: str = Field(min_length=10, max_length=1400)
     supports: str = Field(min_length=1, max_length=500)
 
     @field_validator("chunk_id", "document_title", "quoted_text", "supports")
@@ -123,6 +126,121 @@ class ProtocolCitation(BaseModel):
     def _strip_whitespace(cls, value: str) -> str:
         """Trim surrounding whitespace so chunk ids compare cleanly."""
         return value.strip()
+
+
+AreaType = Literal[
+    "urban_dense",
+    "urban_residential",
+    "rural_settlement",
+    "agricultural",
+    "open_natural",
+    "industrial",
+    "wildland_urban_interface",
+    "unknown",
+]
+
+PopulationBand = Literal[
+    "none_nearby",
+    "under_1k",
+    "1k_to_10k",
+    "10k_to_100k",
+    "over_100k",
+    "unknown",
+]
+
+# Ordered by how much weight a reader should give the number. An OSM tag is a
+# recorded fact; a web lookup is a real source but one we did not collect
+# ourselves; a settlement-type inference is a guess from "it is tagged as a
+# village"; no_basis means we do not know.
+PopulationBasis = Literal[
+    "osm_population_tag",
+    "web_search",
+    "settlement_type_inference",
+    "no_basis",
+]
+
+EvacuationConsideration = Literal[
+    "not_indicated",
+    "shelter_in_place_candidate",
+    "localised_evacuation",
+    "large_scale_evacuation",
+    "unknown",
+]
+
+
+class WebFinding(BaseModel):
+    """
+    One fact the agent looked up because the collection layer did not supply it.
+
+    Web findings are the only part of an assessment not derived from data we
+    gathered ourselves, so each one carries its source and says which field it
+    fills. ``services.claude_llm_service.verify_web_findings`` drops any whose
+    host is off the allowlist before this reaches a caller: the API restricts
+    what can be *read*, but the model is what *reports*, and a fabricated URL
+    must not reach an operator.
+
+    Attributes:
+        query: What was searched for.
+        fact: What was learned, in one sentence.
+        source_url: Where it came from. Verified against the allowlist.
+        source_title: The page or publication name.
+        informs: Which part of the assessment this fills — the audit trail from
+            a conclusion back to the lookup that supports it.
+    """
+
+    query: str = Field(min_length=3, max_length=300)
+    fact: str = Field(min_length=10, max_length=600)
+    source_url: str = Field(min_length=8, max_length=600)
+    source_title: str = Field(min_length=1, max_length=300)
+    informs: str = Field(min_length=3, max_length=300)
+
+
+class SituationalContext(BaseModel):
+    """
+    What kind of place this is, and who is nearby.
+
+    The response depends on this at least as much as on the fire itself: an
+    identical hotspot warrants a different plan beside an apartment block than
+    in open desert. The counts feeding these judgements are computed in Python
+    (``build_situational_facts``); the model supplies only what needs judgement.
+
+    Two anti-fabrication devices, both structural rather than requested:
+
+    - ``area_type_basis`` is required **even when the type is "unknown"**. An
+      unknown must say what it could not distinguish. This is the analogue of
+      ``ProtocolCitation.supports``.
+    - ``population_basis`` must name where a population figure came from, and
+      the validator makes "no basis, but a confident band" impossible to
+      express — the same technique as ``ResponsePlan._units_cover_actions``.
+
+    Note that ``"unknown"`` is a member of each vocabulary rather than the field
+    being optional. Inside an answer, not knowing must be an *active statement*;
+    an optional field invites silent omission instead. The house rule that
+    failures return ``None`` is satisfied by the agent's ``_build_empty`` path,
+    which sets this whole block to ``None``.
+    """
+
+    area_type: AreaType
+    area_type_basis: str = Field(min_length=20, max_length=600)
+    population_band: PopulationBand
+    population_basis: PopulationBasis
+    evacuation_consideration: EvacuationConsideration
+    context_gaps: list[str] = Field(default_factory=list, max_length=6)
+
+    @model_validator(mode="after")
+    def _population_band_requires_a_basis(self) -> "SituationalContext":
+        """
+        Reject a confident population band with nothing behind it.
+
+        Raises:
+            ValueError: If population_basis is "no_basis" but the band is not
+                "unknown" — a figure asserted with no stated source.
+        """
+        if self.population_basis == "no_basis" and self.population_band != "unknown":
+            raise ValueError(
+                "population_band must be 'unknown' when population_basis is 'no_basis'"
+            )
+        return self
 
 
 class RiskAssessment(BaseModel):
@@ -142,18 +260,25 @@ class RiskAssessment(BaseModel):
         primary_drivers: The specific signals that drove it, so a reviewer can
             check the reasoning against the evidence.
         explanation: Plain-language justification for an operator.
+        situational_context: What kind of place this is and who is nearby. The
+            response depends on this as much as on the fire itself.
         evidence_gaps: What the model could not determine. Populated when
             enrichment sources failed — this is how a degraded pipeline stays
             visible instead of being smoothed over.
         protocol_citations: At least one. An uncited assessment fails validation.
+        web_findings: Facts looked up because the collection layer did not
+            supply them. Empty on the ordinary path; every entry carries its
+            source so a reader can tell a collected fact from a retrieved one.
     """
 
     risk_score: int = Field(ge=0, le=100)
     confidence: Confidence
+    situational_context: SituationalContext
     primary_drivers: list[str] = Field(min_length=1, max_length=8)
     explanation: str = Field(min_length=40, max_length=3000)
     evidence_gaps: list[str] = Field(default_factory=list, max_length=8)
     protocol_citations: list[ProtocolCitation] = Field(min_length=1, max_length=8)
+    web_findings: list[WebFinding] = Field(default_factory=list, max_length=6)
 
 
 class ResponseAction(BaseModel):
@@ -222,9 +347,23 @@ class ResponsePlan(BaseModel):
 # ---------------------------------------------------------------------------
 # A note on the length limits above — read before tightening any of them.
 #
-# Their purpose is to bound runaway output, NOT to enforce brevity. Brevity is
-# a style instruction and belongs in the system prompt, where failing to follow
-# it costs nothing.
+# Their purpose is to bound runaway output, NOT to enforce brevity or to police
+# quality. Brevity is a style instruction and belongs in the system prompt,
+# where failing to follow it costs nothing. Quality is enforced by verifying
+# citations against the corpus, which is a real check; a character count is not.
+#
+# This has now bitten twice, in both directions:
+#
+#   explanation  max_length=1200 rejected roughly one live answer in three.
+#   quoted_text  min_length=20   rejected three in four on a low-danger event,
+#                                because the model was correctly quoting a row
+#                                of the FWI class table — "Low | below 11.2" is
+#                                16 characters and is exactly the right
+#                                citation for that event.
+#
+# Both failures are silent and expensive: the model is billed, the answer is
+# correct and well-grounded, and the schema destroys it. In the second case the
+# operator saw "malformed response" for a fire that had been assessed properly.
 #
 # The first versions of these limits were guesses, and they bound on real
 # output. `explanation` was capped at 1200 characters; live runs produced 989,
@@ -238,12 +377,19 @@ class ResponsePlan(BaseModel):
 #
 # So each cap is now set well above anything observed:
 #
-#   field           observed max   cap     purpose of the cap
-#   explanation     ~1300          3000    stop a pathological essay
-#   plan_summary    ~600           2000    same
-#   action          ~200           600     same
-#   quoted_text     ~250           1400    a chunk is at most ~1200 chars, and
-#                                          quoting one in full is correct
+#   field           observed        cap        purpose of the cap
+#   explanation     ~1300 max       3000 max   stop a pathological essay
+#   plan_summary    ~600 max        2000 max   same
+#   action          ~200 max        600 max    same
+#   quoted_text     16 min, ~250    10 min,    a table row is a valid citation;
+#                                   1400 max   a chunk is at most ~1200 chars
 #
 # If you find yourself wanting shorter output, change the prompt, not these.
+# If you find yourself wanting to reject weak citations, strengthen
+# verify_citations, which checks the quote against the source text — that is
+# evidence. A character count is not.
+#
+# When a schema rejection does happen, ClaudeLLMService.log_validation_detail
+# logs the failing field names at WARNING, so the next instance of this is
+# findable in one run rather than guessed at.
 # ---------------------------------------------------------------------------

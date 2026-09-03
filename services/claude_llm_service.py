@@ -246,6 +246,7 @@ class ClaudeLLMService:
                     **extra,
                 )
             except Exception as error:
+                self.log_validation_detail(error)
                 raise ClaudeProviderError(self.sanitize_error(error)) from None
 
             if getattr(response, "stop_reason", None) != "pause_turn":
@@ -285,6 +286,39 @@ class ClaudeLLMService:
         )
 
         return parsed
+
+    @staticmethod
+    def log_validation_detail(error: Exception) -> None:
+        """
+        Log which schema fields a rejected response failed on.
+
+        Schema violations are reported to callers as the single opaque category
+        ``"malformed response"``, which is right for a caller but useless for
+        diagnosis — a schema that intermittently rejects good answers looks
+        identical to a provider fault. This logs the failing field names and
+        error types so the cause is findable.
+
+        Only field paths and pydantic's own error codes are logged, never the
+        rejected values. The values came from the model's reading of the prompt
+        and may carry event data, so they stay out of the log for the same
+        reason the cause chain is suppressed.
+
+        Args:
+            error (Exception): The exception raised by the parse call.
+        """
+        if not isinstance(error, ValidationError):
+            return
+
+        failures = [
+            f"{'.'.join(str(part) for part in item['loc'])}={item['type']}"
+            for item in error.errors()
+        ]
+
+        logging.warning(
+            "Structured output rejected by the schema on %s field(s): %s",
+            len(failures),
+            ", ".join(failures),
+        )
 
     def sanitize_error(self, error: Exception) -> str:
         """

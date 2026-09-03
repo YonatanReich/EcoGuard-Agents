@@ -42,13 +42,17 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 from datetime import datetime, timezone
 
 from agents.risk_analysis_schemas import RiskAssessment, risk_level_for_score
 from services.claude_llm_service import (
+    DEFAULT_MAX_SEARCHES,
     ClaudeLLMService,
     ClaudeProviderError,
     build_system_blocks,
+    build_web_search_tool,
+    verify_web_findings,
 )
 from services.protocol_retrieval_service import ProtocolRetriever, verify_citations
 
@@ -77,6 +81,13 @@ STRONG_WIND_KMH = 30.0
 LOW_HUMIDITY_PERCENT = 30.0
 HIGH_TEMPERATURE_C = 35.0
 HIGH_FRP = 50.0
+
+# FireDetectionAgent collects geospatial context at this radius but does not
+# record it on the event, so it cannot be read back. Stated here and in the
+# prompt because a population figure is meaningless without the radius it was
+# gathered over — "no settlement within 2 km" is a different claim from "no
+# settlement nearby".
+DEFAULT_GEOSPATIAL_RADIUS_KM = 2
 
 RISK_SYSTEM_PROMPT = """\
 You are the risk analysis component of EcoGuard Agents, a multi-agent system for
@@ -150,6 +161,82 @@ citation whose id was not supplied, or whose quote does not appear in that
 chunk, is discarded, and an assessment left with no surviving citation is
 rejected in full. Quoting accurately is therefore not a formality.
 
+## Situational context
+
+Alongside the score, report what kind of place this is and who is nearby. The response
+depends on this as much as on the fire: an identical hotspot warrants a different plan
+beside an apartment block than in open desert.
+
+**What you may infer from.** Settlement records and their `place=` type (city, town,
+village, suburb, neighbourhood); road classes (trunk and primary indicate a major
+corridor, residential does not); the presence or absence of hospitals and fire stations;
+and the derived counts supplied in the evidence. Nothing else.
+
+**What you do not have.** Terrain, land cover, vegetation, slope and imagery are not
+collected by this pipeline. You cannot see the ground. If the available records do not
+distinguish two area types, answer `unknown` for `area_type` and say in
+`area_type_basis` which two you could not separate. `area_type_basis` is required even
+when the answer is `unknown` — an unknown must state what it could not tell apart.
+
+**A count of 0 means the search ran and found none. A count of null means the search did
+not run. These are different facts.** `population_band: none_nearby` is permitted only
+when `geospatial_available` is true and `settlements_count` is 0. When
+`geospatial_available` is false, `population_band` is `unknown` and `population_basis`
+is `no_basis`.
+
+**The radius caveat.** The geospatial search covers roughly 2 km around the event.
+Absence of a settlement within 2 km is not evidence that nobody lives at 5 km. Never
+widen a band on that basis, and never narrow one either.
+
+**Population precedence.** Use `tagged_population_total` when present and report
+`osm_population_tag`. Otherwise, if you looked the figure up, report `web_search`.
+Otherwise you may place a band from settlement type alone — village to `under_1k`, town
+to `1k_to_10k` or `10k_to_100k`, city to `over_100k` — and must report
+`settlement_type_inference`, which a reader treats as weak. If none of those apply,
+`unknown` with `no_basis`. **Never state a population number you were not given and did
+not look up.**
+
+**Evacuation.** Judge `evacuation_consideration` from exposure and assessed severity,
+not from whether units happen to be available. `not_indicated` is a legitimate and
+common answer.
+
+## Filling gaps
+
+You have a web search tool. It exists so the picture of an event is not limited to
+whatever our APIs happened to return.
+
+**Search only when both of these hold:**
+
+1. The detection evidence is already credible — high or nominal satellite confidence, or
+   multiple corroborating reports from independent channels.
+2. A specific, named gap would materially change the **response** — a settlement named
+   with no population figure, or a coordinate with no geospatial context at all.
+
+**Never search to decide whether a fire exists.** That is the detection layer's job and
+the web cannot answer it. **Never search on weak, stale or uncorroborated detection** —
+spend nothing on an event that may not be real. **Never search for live fire news or
+incident reports**; you are assessing evidence that has already been collected, not
+gathering new reports of the fire itself.
+
+Worked examples of a good search:
+
+- Reports name a fire beside the settlement "Yakir" and the geospatial layer returned
+  the name but no population tag. How many people live there changes whether this is a
+  monitoring job or an evacuation. Look it up.
+- A high-intensity hotspot has no geospatial context at all. What is actually at that
+  coordinate — open scrub, an industrial estate, a village — changes everything. Look it
+  up.
+
+Examples of a search you must not make: confirming a fire is burning; finding today's
+weather (already collected); looking for news coverage; checking whether a fire station
+exists when the geospatial layer already reported one.
+
+Every fact you take from a search goes in `web_findings` with the query, the fact, the
+real source URL, the source title, and which part of the assessment it informs. A finding
+whose source is outside the permitted domains is discarded before anyone sees it, so
+report the source honestly rather than guessing at a plausible URL. A search that returns
+nothing useful is a normal outcome — record the gap and move on.
+
 ## Handling incomplete evidence
 
 The enrichment sources can fail independently. The evidence summary states which
@@ -192,10 +279,30 @@ class RiskAnalysisAgent:
         llm_service: object | None = None,
         retriever: object | None = None,
         top_k: int = DEFAULT_TOP_K,
+        enable_web_search: bool = True,
+        max_searches: int = DEFAULT_MAX_SEARCHES,
     ) -> None:
         self.llm_service = llm_service if llm_service is not None else ClaudeLLMService()
         self.retriever = retriever if retriever is not None else ProtocolRetriever()
         self.top_k = top_k
+        self.enable_web_search = enable_web_search
+        self.max_searches = max_searches
+
+    def build_tools(self) -> list[dict] | None:
+        """
+        Tool definitions for the assessment call.
+
+        Returns None rather than an empty list when search is disabled, so the
+        request omits ``tools`` entirely and stays byte-identical to one made
+        before the capability existed.
+
+        Returns:
+            list[dict] | None: The web search tool, or None.
+        """
+        if not self.enable_web_search:
+            return None
+
+        return [build_web_search_tool(max_uses=self.max_searches)]
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -265,6 +372,7 @@ class RiskAnalysisAgent:
                 system_blocks=system_blocks,
                 user_text=user_text,
                 output_format=RiskAssessment,
+                tools=self.build_tools(),
             )
         except ClaudeProviderError as error:
             logging.error("Risk analysis model call failed: %s", error)
@@ -273,6 +381,16 @@ class RiskAnalysisAgent:
         payload = assessment.model_dump(mode="json")
 
         verified, dropped = verify_citations(payload["protocol_citations"], chunks)
+
+        # Web findings are verified the same way and for the same reason: the
+        # API restricts which hosts can be read, but the model is what reports
+        # what it found, and a fabricated source must not reach an operator.
+        web_verified, web_dropped = verify_web_findings(payload.get("web_findings", []))
+
+        if web_dropped:
+            logging.warning(
+                "Dropped %s web finding(s) sourced outside the allowlist", web_dropped
+            )
 
         if not verified:
             # The model answered but could not show its work against the text it
@@ -289,6 +407,8 @@ class RiskAnalysisAgent:
             chunks=chunks,
             citations=verified,
             dropped=dropped,
+            web_findings=web_verified,
+            web_dropped=web_dropped,
         )
 
     # ------------------------------------------------------------------
@@ -418,6 +538,8 @@ class RiskAnalysisAgent:
         chunks: list[dict],
         citations: list[dict],
         dropped: int,
+        web_findings: list[dict] | None = None,
+        web_dropped: int = 0,
     ) -> dict:
         """
         Build a successful assessment from a validated model response.
@@ -433,6 +555,11 @@ class RiskAnalysisAgent:
             dict: The unified risk assessment.
         """
         risk_score = payload["risk_score"]
+        findings = web_findings or []
+
+        situational = self.build_situational_context(
+            payload=payload, detected_event=detected_event, web_findings=findings
+        )
 
         return {
             "metadata": {
@@ -450,12 +577,58 @@ class RiskAnalysisAgent:
             "risk_level": risk_level_for_score(risk_score),
             "risk_semantics": RISK_SEMANTICS,
             "confidence": payload["confidence"],
+            "situational_context": situational,
             "primary_drivers": payload["primary_drivers"],
             "explanation": payload["explanation"],
             "evidence_gaps": payload["evidence_gaps"],
-            "grounding": self.build_grounding(chunks, citations, dropped),
+            "web_findings": findings,
+            "grounding": self.build_grounding(
+                chunks, citations, dropped, web_dropped=web_dropped,
+                web_findings_verified=len(findings),
+            ),
             "error": None,
         }
+
+    def build_situational_context(
+        self, *, payload: dict, detected_event: dict, web_findings: list[dict]
+    ) -> dict:
+        """
+        Merge the model's judgement with the Python-computed facts.
+
+        Also downgrades an unsupported population basis. The model may claim
+        ``web_search`` as its basis while every finding that would have
+        supported it was dropped for being off the allowlist — leaving a
+        confident band resting on nothing. Rather than let that stand, the basis
+        falls back to a weaker one and the gap is recorded, so a reader sees the
+        band is now an inference rather than a sourced figure.
+
+        Args:
+            payload (dict): The validated model output.
+            detected_event (dict): The event, for the derived facts.
+            web_findings (list[dict]): Findings that survived verification.
+
+        Returns:
+            dict: The situational context block.
+        """
+        situational = dict(payload["situational_context"])
+
+        if situational.get("population_basis") == "web_search":
+            supported = any(
+                "population" in str(finding.get("informs", "")).lower()
+                for finding in web_findings
+            )
+            if not supported:
+                situational["population_basis"] = "settlement_type_inference"
+                gaps = list(situational.get("context_gaps") or [])
+                gaps.append(
+                    "Population was reported as web-sourced, but no verified "
+                    "finding supports it; treated as an inference instead."
+                )
+                situational["context_gaps"] = gaps[:8]
+
+        situational["derived"] = build_situational_facts(detected_event)
+
+        return situational
 
     def build_skipped_assessment(self, detected_event: dict, reason: str) -> dict:
         """
@@ -490,15 +663,23 @@ class RiskAnalysisAgent:
         return self._build_empty(detected_event, status="failed", reason=None, error=error)
 
     def build_grounding(
-        self, chunks: list[dict], citations: list[dict], dropped: int
+        self,
+        chunks: list[dict],
+        citations: list[dict],
+        dropped: int,
+        *,
+        web_dropped: int = 0,
+        web_findings_verified: int = 0,
     ) -> dict:
         """
-        Describe what was retrieved and what survived verification.
+        Describe what was retrieved, looked up, and what survived verification.
 
         Args:
             chunks (list[dict]): Retrieved chunks.
             citations (list[dict]): Verified citations.
             dropped (int): Citations discarded during verification.
+            web_dropped (int): Web findings discarded for an off-allowlist source.
+            web_findings_verified (int): Web findings that survived.
 
         Returns:
             dict: The grounding record attached to the assessment.
@@ -508,6 +689,14 @@ class RiskAnalysisAgent:
             "retrieved_chunk_ids": [chunk["chunk_id"] for chunk in chunks],
             "citations": citations,
             "unverified_citation_count": dropped,
+            "web_search": {
+                "enabled": self.enable_web_search,
+                # Counted from the response blocks, filtered to actual searches
+                # — dynamic filtering emits its own server tool calls.
+                "searches_used": getattr(self.llm_service, "last_web_searches", 0),
+                "findings_verified": web_findings_verified,
+                "findings_dropped": web_dropped,
+            },
         }
 
     # ------------------------------------------------------------------
@@ -535,14 +724,25 @@ class RiskAnalysisAgent:
             # risk is absent rather than guessing.
             "risk_semantics": RISK_SEMANTICS,
             "confidence": None,
+            # None, never {}. No assessment was produced, so there is no
+            # judgement about the area either — an empty object would read as
+            # "we looked and found nothing notable".
+            "situational_context": None,
             "primary_drivers": [],
             "explanation": None,
             "evidence_gaps": [],
+            "web_findings": [],
             "grounding": {
                 "retriever": "bm25",
                 "retrieved_chunk_ids": [],
                 "citations": [],
                 "unverified_citation_count": 0,
+                "web_search": {
+                    "enabled": self.enable_web_search,
+                    "searches_used": 0,
+                    "findings_verified": 0,
+                    "findings_dropped": 0,
+                },
             },
             "error": error,
         }
@@ -640,6 +840,210 @@ def section(source: dict, key: str) -> dict:
 
     value = source.get(key)
     return value if isinstance(value, dict) else {}
+
+
+def parse_population_tag(value: object) -> int | None:
+    """
+    Read an OpenStreetMap population tag, which is a free-text string.
+
+    Real tags include ``"12000"``, ``"~5,000"``, ``"1,234"`` and ranges like
+    ``"5000-6000"``. Take the first run of digits after removing separators; for
+    a range that yields the lower bound, which is the conservative reading.
+
+    Args:
+        value (object): Raw tag value, usually a string, sometimes absent.
+
+    Returns:
+        int | None: The parsed count, or None when nothing numeric is present.
+            None rather than 0 — an unparseable tag is not a population of zero.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+
+    if isinstance(value, int):
+        return value if value >= 0 else None
+
+    cleaned = str(value).replace(",", "").replace(" ", "")
+    match = re.search(r"\d+", cleaned)
+
+    return int(match.group()) if match else None
+
+
+def build_situational_facts(detected_event: dict) -> dict:
+    """
+    Compute the situational facts that are already present in the evidence.
+
+    Split from the model's judgement deliberately: settlement counts, road
+    classes and OSM population tags are facts sitting in the event, and asking a
+    language model to restate a fact invites drift and costs tokens. The model is
+    asked only for the parts that need judgement — what kind of area this is, and
+    what that implies for evacuation.
+
+    **The empty-versus-absent rule.** When the geospatial layer did not run,
+    every count is ``None``, not ``0``. Zero means the search ran and found
+    nothing; ``None`` means it never looked. That is the same True/False/None
+    discipline ``analyze_event`` applies to ``detected``, one level down, and
+    conflating the two would let "we never checked for settlements" be read as
+    "there are no settlements nearby".
+
+    Args:
+        detected_event (dict): A FireDetectionAgent result.
+
+    Returns:
+        dict: Facts for the prompt and for the assessment's derived block.
+    """
+    geospatial = detected_event.get("geospatial_context")
+    available = isinstance(geospatial, dict) and bool(geospatial)
+
+    if not available:
+        return {
+            "geospatial_available": False,
+            "search_radius_km": DEFAULT_GEOSPATIAL_RADIUS_KM,
+            "settlements_count": None,
+            "settlement_types": None,
+            "settlements_with_population_tag": None,
+            "tagged_population_total": None,
+            "hospitals_count": None,
+            "fire_stations_count": None,
+            "police_stations_count": None,
+            "roads_count": None,
+            "road_classes": None,
+        }
+
+    def entries(key: str) -> list[dict]:
+        items = geospatial.get(key) or []
+        return [item for item in items if isinstance(item, dict)]
+
+    settlements = entries("nearby_settlements")
+    roads = entries("nearby_roads")
+
+    populations = [
+        parsed
+        for parsed in (parse_population_tag(s.get("population")) for s in settlements)
+        if parsed is not None
+    ]
+
+    return {
+        "geospatial_available": True,
+        # Not recoverable from the event: build_detected_event keeps the
+        # geospatial context but drops the radius it was collected at. This is
+        # the documented default, and the prompt says so, because a population
+        # figure means nothing without the radius it was gathered over.
+        "search_radius_km": DEFAULT_GEOSPATIAL_RADIUS_KM,
+        "settlements_count": len(settlements),
+        "settlement_types": sorted(
+            {s["type"] for s in settlements if s.get("type")}
+        ),
+        "settlements_with_population_tag": len(populations),
+        # None, never 0, when nothing carried a tag. A zero here would read as
+        # "nobody lives in any of them".
+        "tagged_population_total": sum(populations) if populations else None,
+        "hospitals_count": len(entries("nearby_hospitals")),
+        "fire_stations_count": len(entries("nearby_fire_stations")),
+        "police_stations_count": len(entries("nearby_police_stations")),
+        "roads_count": len(roads),
+        "road_classes": sorted({r["type"] for r in roads if r.get("type")}),
+    }
+
+
+def render_situational_facts(facts: dict) -> str:
+    """
+    Render the derived facts for the prompt, preserving the null/zero split.
+
+    Args:
+        facts (dict): build_situational_facts output.
+
+    Returns:
+        str: Markdown lines.
+    """
+    if not facts.get("geospatial_available"):
+        return (
+            "- Geospatial layer: DID NOT RUN. Counts below are unavailable, which is "
+            "not the same as zero — nothing was searched for."
+        )
+
+    def count(label: str, key: str) -> str:
+        return f"- {label}: {facts[key]}"
+
+    lines = [
+        f"- Geospatial search radius: approximately {facts['search_radius_km']} km",
+        count("Settlements found", "settlements_count"),
+    ]
+
+    if facts["settlement_types"]:
+        lines.append(f"- Settlement types: {', '.join(facts['settlement_types'])}")
+
+    if facts["tagged_population_total"] is not None:
+        lines.append(
+            f"- Tagged population total: {facts['tagged_population_total']} "
+            f"(from {facts['settlements_with_population_tag']} of "
+            f"{facts['settlements_count']} settlements carrying a population tag)"
+        )
+    else:
+        lines.append(
+            "- Tagged population total: no settlement carried a population tag"
+        )
+
+    lines.extend(
+        [
+            count("Hospitals found", "hospitals_count"),
+            count("Fire stations found", "fire_stations_count"),
+            count("Police stations found", "police_stations_count"),
+            count("Main roads found", "roads_count"),
+        ]
+    )
+
+    if facts["road_classes"]:
+        lines.append(f"- Road classes: {', '.join(facts['road_classes'])}")
+
+    return "\n".join(lines)
+
+
+def render_report_evidence(detected_event: dict) -> str:
+    """
+    Render non-satellite report evidence, when the event carries any.
+
+    Some events are reported by public channels rather than detected by
+    satellite. Without this the block would be invisible to the model and such
+    an event would look like a detection with no evidence behind it at all.
+
+    Args:
+        detected_event (dict): A detected event.
+
+    Returns:
+        str: Markdown lines, or "" when there is no report evidence.
+    """
+    report = section(detected_event, "report_evidence")
+
+    if not report:
+        return ""
+
+    lines = [f"- Source: {report.get('source', 'unknown')}"]
+
+    for label, key in (
+        ("Reports received", "reports_count"),
+        ("Distinct channels", "channels"),
+        ("First report", "first_report_at"),
+        ("Most recent report", "latest_report_at"),
+        ("Text-classifier confidence", "candidate_confidence"),
+        ("Matched terms", "matched_terms"),
+        ("Location precision", "location_precision"),
+        ("Geocoding confidence", "geocode_confidence"),
+    ):
+        value = report.get(key)
+        if value in (None, "", [], {}):
+            continue
+        if isinstance(value, list):
+            value = ", ".join(str(item) for item in value)
+        lines.append(f"- {label}: {value}")
+
+    corroborated = report.get("corroborated_by_satellite")
+    if corroborated is not None:
+        lines.append(
+            f"- Corroborated by satellite: {'yes' if corroborated else 'NO'}"
+        )
+
+    return "\n".join(lines)
 
 
 def describe_unavailable_sources(detected_event: dict) -> list[str]:
@@ -755,8 +1159,35 @@ def build_evidence_summary(detected_event: dict) -> str:
 
     geospatial = section(detected_event, "geospatial_context")
     if geospatial:
+        # Settlements render with type and population where OSM carried them.
+        # Names alone are not enough: the population tag is the only grounded
+        # basis the model has for a population band, so dropping it here would
+        # guarantee the band was either unknown or invented.
+        settlements = [
+            item
+            for item in (geospatial.get("nearby_settlements") or [])
+            if isinstance(item, dict) and item.get("name")
+        ]
+        if settlements:
+            rendered = []
+            for item in settlements[:5]:
+                detail = [item["name"]]
+                extras = []
+                if item.get("type"):
+                    extras.append(str(item["type"]))
+                population = parse_population_tag(item.get("population"))
+                if population is not None:
+                    extras.append(f"population {population}")
+                if extras:
+                    detail.append(f"({', '.join(extras)})")
+                rendered.append(" ".join(detail))
+            lines.append(
+                f"- Nearby settlements ({len(settlements)}): {'; '.join(rendered)}"
+            )
+        else:
+            lines.append("- Nearby settlements: none found within the search radius")
+
         for label, key in (
-            ("settlements", "nearby_settlements"),
             ("hospitals", "nearby_hospitals"),
             ("fire stations", "nearby_fire_stations"),
             ("police stations", "nearby_police_stations"),
@@ -768,6 +1199,16 @@ def build_evidence_summary(detected_event: dict) -> str:
                 lines.append(f"- Nearby {label} ({len(items)}): {', '.join(names[:5])}")
             else:
                 lines.append(f"- Nearby {label}: none found within the search radius")
+
+    report_lines = render_report_evidence(detected_event)
+    if report_lines:
+        lines.append("")
+        lines.append("Non-satellite report evidence:")
+        lines.append(report_lines)
+
+    lines.append("")
+    lines.append("Derived counts:")
+    lines.append(render_situational_facts(build_situational_facts(detected_event)))
 
     unavailable = describe_unavailable_sources(detected_event)
     if unavailable:

@@ -29,11 +29,32 @@ VALID_CITATION = {
 }
 
 
+VALID_SITUATIONAL_CONTEXT = {
+    "area_type": "wildland_urban_interface",
+    "area_type_basis": (
+        "A settlement tagged place=town sits within the search radius beside "
+        "open ground; no agricultural or industrial indication is present."
+    ),
+    "population_band": "1k_to_10k",
+    "population_basis": "settlement_type_inference",
+    "evacuation_consideration": "localised_evacuation",
+    "context_gaps": [],
+}
+
+
+def build_situational(**overrides) -> dict:
+    """Return a valid SituationalContext payload with optional overrides."""
+    payload = dict(VALID_SITUATIONAL_CONTEXT)
+    payload.update(overrides)
+    return payload
+
+
 def build_assessment(**overrides) -> dict:
     """Return a valid RiskAssessment payload with optional overrides."""
     payload = {
         "risk_score": 78,
         "confidence": "medium",
+        "situational_context": build_situational(),
         "primary_drivers": ["very high FWI danger class", "wind speed 34 km/h"],
         "explanation": (
             "Fire weather conditions are in the very high danger class and wind "
@@ -130,6 +151,20 @@ def test_single_word_quote_is_rejected():
         ProtocolCitation(**{**VALID_CITATION, "quoted_text": "fire"})
 
 
+def test_a_short_table_row_is_a_valid_citation():
+    """
+    Regression guard: min_length=20 rejected three assessments in four.
+
+    Protocol text includes tables, and a row of the FWI class table is exactly
+    the right citation for a low-danger event. The floor exists to stop
+    single-word citations, not to reject short-but-real ones — the grounding
+    guarantee comes from verify_citations checking the quote against the source.
+    """
+    citation = ProtocolCitation(**{**VALID_CITATION, "quoted_text": "Low | below 11.2"})
+
+    assert citation.quoted_text == "Low | below 11.2"
+
+
 def test_empty_chunk_id_is_rejected():
     with pytest.raises(ValidationError):
         ProtocolCitation(**{**VALID_CITATION, "chunk_id": ""})
@@ -188,6 +223,127 @@ def test_assessment_has_no_risk_level_field():
     returns with it.
     """
     assert "risk_level" not in RiskAssessment.model_fields
+
+
+# --------------------------------------------------------------------------
+# SituationalContext
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "area_type",
+    ["urban_dense", "urban_residential", "rural_settlement", "agricultural",
+     "open_natural", "industrial", "wildland_urban_interface", "unknown"],
+)
+def test_every_area_type_is_accepted(area_type):
+    from agents.risk_analysis_schemas import SituationalContext
+
+    assert SituationalContext(**build_situational(area_type=area_type)).area_type == area_type
+
+
+def test_unlisted_area_type_is_rejected():
+    from agents.risk_analysis_schemas import SituationalContext
+
+    with pytest.raises(ValidationError):
+        SituationalContext(**build_situational(area_type="volcanic"))
+
+
+def test_confident_population_band_without_a_basis_is_rejected():
+    """
+    The anti-fabrication device for population.
+
+    A band asserted with nothing behind it is exactly the failure this whole
+    design exists to prevent, so it is made structurally impossible to express
+    rather than discouraged in a prompt.
+    """
+    from agents.risk_analysis_schemas import SituationalContext
+
+    with pytest.raises(ValidationError, match="no_basis"):
+        SituationalContext(
+            **build_situational(population_basis="no_basis", population_band="10k_to_100k")
+        )
+
+
+def test_no_basis_with_unknown_band_is_accepted():
+    """Not knowing, stated honestly, is always allowed."""
+    from agents.risk_analysis_schemas import SituationalContext
+
+    context = SituationalContext(
+        **build_situational(population_basis="no_basis", population_band="unknown")
+    )
+
+    assert context.population_band == "unknown"
+
+
+def test_unknown_area_type_still_requires_a_basis():
+    """
+    An unknown must say what it could not tell apart.
+
+    Without this, "unknown" becomes a free pass rather than a statement.
+    """
+    from agents.risk_analysis_schemas import SituationalContext
+
+    with pytest.raises(ValidationError):
+        SituationalContext(**build_situational(area_type="unknown", area_type_basis=""))
+
+
+def test_long_area_type_basis_is_accepted():
+    """Guards the length-cap lesson recorded at the bottom of the schema module."""
+    from agents.risk_analysis_schemas import SituationalContext
+
+    context = SituationalContext(**build_situational(area_type_basis="A" * 600))
+
+    assert len(context.area_type_basis) == 600
+
+
+def test_assessment_requires_situational_context():
+    payload = build_assessment()
+    payload.pop("situational_context")
+
+    with pytest.raises(ValidationError):
+        RiskAssessment(**payload)
+
+
+# --------------------------------------------------------------------------
+# WebFinding
+# --------------------------------------------------------------------------
+
+
+VALID_FINDING = {
+    "query": "Yakir Israel population",
+    "fact": "Yakir had a population of 2,742 in 2024.",
+    "source_url": "https://en.wikipedia.org/wiki/Yakir",
+    "source_title": "Yakir — Wikipedia",
+    "informs": "population_band",
+}
+
+
+def test_valid_web_finding_parses():
+    from agents.risk_analysis_schemas import WebFinding
+
+    assert WebFinding(**VALID_FINDING).informs == "population_band"
+
+
+@pytest.mark.parametrize("field", ["source_url", "fact", "informs", "source_title"])
+def test_web_finding_requires_its_provenance_fields(field):
+    """
+    A finding without a source is not a finding.
+
+    The whole point is that a looked-up fact is distinguishable from a
+    collected one, which requires knowing where it came from.
+    """
+    from agents.risk_analysis_schemas import WebFinding
+
+    payload = dict(VALID_FINDING)
+    payload[field] = ""
+
+    with pytest.raises(ValidationError):
+        WebFinding(**payload)
+
+
+def test_web_findings_default_to_empty():
+    """The ordinary path makes no lookups at all."""
+    assert RiskAssessment(**build_assessment()).web_findings == []
 
 
 def test_realistic_length_output_is_accepted():

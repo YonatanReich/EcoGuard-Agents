@@ -261,6 +261,28 @@ class ResponsePlanningAgent:
         if level in {"high", "critical"}:
             terms.append("write off structures scarce resources hard decisions defend")
 
+        # Area type steers the second retrieval toward the right half of the
+        # corpus: a fire in a building needs the offensive/defensive doctrine,
+        # a fire in the open needs containment and triage.
+        situational = self._section(risk_assessment, "situational_context")
+        area_type = situational.get("area_type")
+
+        if area_type in {"urban_dense", "urban_residential", "industrial"}:
+            terms.append(
+                "structure fire offensive defensive interior operations occupants "
+                "building acceptable risk"
+            )
+        elif area_type == "wildland_urban_interface":
+            terms.append("wildland urban interface structure triage defensible space")
+        elif area_type in {"open_natural", "agricultural"}:
+            terms.append("open natural fuels containment flank anchor point")
+
+        if situational.get("evacuation_consideration") in {
+            "localised_evacuation",
+            "large_scale_evacuation",
+        }:
+            terms.append("evacuation public warning relocation sheltering")
+
         geospatial = self._section(detected_event, "geospatial_context")
 
         if geospatial.get("nearby_settlements"):
@@ -340,6 +362,35 @@ class ResponsePlanningAgent:
             f"- Risk level: {risk_assessment.get('risk_level')}",
             f"- Assessment confidence: {risk_assessment.get('confidence')}",
         ]
+
+        # Absent on an assessment produced before this field existed, so read it
+        # defensively rather than assuming it is there.
+        situational = self._section(risk_assessment, "situational_context")
+        if situational:
+            lines.append("- Situational context:")
+            lines.append(f"  - Area type: {situational.get('area_type')}")
+            if situational.get("area_type_basis"):
+                lines.append(f"    ({situational['area_type_basis']})")
+            lines.append(
+                f"  - Population nearby: {situational.get('population_band')} "
+                f"(basis: {situational.get('population_basis')})"
+            )
+            lines.append(
+                f"  - Evacuation consideration: "
+                f"{situational.get('evacuation_consideration')}"
+            )
+            for gap in situational.get("context_gaps") or []:
+                lines.append(f"  - Context gap: {gap}")
+
+        # Facts looked up rather than collected. Flagged separately so the
+        # planner can weigh them accordingly.
+        findings = risk_assessment.get("web_findings") or []
+        if findings:
+            lines.append("- Facts looked up externally (weaker than collected data):")
+            for finding in findings:
+                lines.append(
+                    f"  - {finding.get('fact')} [{finding.get('source_title')}]"
+                )
 
         drivers = risk_assessment.get("primary_drivers") or []
         if drivers:

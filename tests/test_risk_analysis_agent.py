@@ -84,11 +84,25 @@ class FakeLLM:
         return self.result
 
 
+VALID_SITUATIONAL_CONTEXT = {
+    "area_type": "wildland_urban_interface",
+    "area_type_basis": (
+        "One settlement tagged place=town within the search radius, beside open "
+        "ground, with a trunk road running past it."
+    ),
+    "population_band": "1k_to_10k",
+    "population_basis": "settlement_type_inference",
+    "evacuation_consideration": "localised_evacuation",
+    "context_gaps": [],
+}
+
+
 def build_valid_assessment(**overrides) -> RiskAssessment:
     """A schema-valid assessment whose citation quotes the fake chunk verbatim."""
     payload = {
         "risk_score": 78,
         "confidence": "medium",
+        "situational_context": dict(VALID_SITUATIONAL_CONTEXT),
         "primary_drivers": ["very high FWI class", "wind 34 km/h"],
         "explanation": (
             "Conditions are in the very high fire danger class with wind supporting "
@@ -566,6 +580,184 @@ def test_section_helper_tolerates_explicit_none():
     assert section({"a": {"b": 1}}, "a") == {"b": 1}
 
 
+# --------------------------------------------------------------------------
+# Situational facts — Python-computed, no model involved
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "tag,expected",
+    [
+        ("12000", 12000),
+        ("~5,000", 5000),          # OSM tags are free text
+        ("1,234", 1234),
+        ("5000-6000", 5000),       # a range yields the conservative lower bound
+        ("approx 800", 800),
+        (7500, 7500),
+        ("n/a", None),
+        ("", None),
+        (None, None),
+        (True, None),              # a bool is not a population
+        (-5, None),
+    ],
+)
+def test_population_tag_parsing(tag, expected):
+    """A junk tag yields None, never 0 — it is unparseable, not empty."""
+    from agents.risk_analysis_agent import parse_population_tag
+
+    assert parse_population_tag(tag) == expected
+
+
+@pytest.mark.parametrize("geospatial", [None, {}, "not a dict"])
+def test_absent_geospatial_yields_null_counts_not_zero(geospatial):
+    """
+    The single most important assertion in this file.
+
+    Zero means the search ran and found nothing. None means it never looked.
+    Collapsing the two would let "we never checked for settlements" be read as
+    "there are no settlements nearby" — which, in a response plan, is the
+    difference between evacuating a town and not knowing it is there.
+    """
+    from agents.risk_analysis_agent import build_situational_facts
+
+    facts = build_situational_facts({"geospatial_context": geospatial})
+
+    assert facts["geospatial_available"] is False
+
+    for key in (
+        "settlements_count", "hospitals_count", "fire_stations_count",
+        "police_stations_count", "roads_count", "tagged_population_total",
+        "settlement_types", "road_classes", "settlements_with_population_tag",
+    ):
+        assert facts[key] is None, f"{key} must be None when nothing was searched"
+
+
+def test_geospatial_that_ran_and_found_nothing_yields_zero():
+    """The other half of the distinction: a real empty result is 0, not None."""
+    from agents.risk_analysis_agent import build_situational_facts
+
+    facts = build_situational_facts(
+        {"geospatial_context": {"nearby_settlements": [], "nearby_roads": []}}
+    )
+
+    assert facts["geospatial_available"] is True
+    assert facts["settlements_count"] == 0
+    assert facts["roads_count"] == 0
+    # Still None: no settlement carried a tag, which is not a population of zero.
+    assert facts["tagged_population_total"] is None
+
+
+def test_situational_facts_count_and_summarise():
+    from agents.risk_analysis_agent import build_situational_facts
+
+    facts = build_situational_facts(detected_event())
+
+    assert facts["settlements_count"] == 1
+    assert facts["settlement_types"] == ["town"]
+    assert facts["fire_stations_count"] == 0
+    assert facts["road_classes"] == ["trunk"]
+
+
+def test_tagged_population_sums_only_what_parsed():
+    """Settlements without a usable tag are excluded from both the sum and the count."""
+    from agents.risk_analysis_agent import build_situational_facts
+
+    facts = build_situational_facts(
+        {
+            "geospatial_context": {
+                "nearby_settlements": [
+                    {"name": "A", "type": "town", "population": "21,000"},
+                    {"name": "B", "type": "village", "population": "junk"},
+                    {"name": "C", "type": "village"},
+                ]
+            }
+        }
+    )
+
+    assert facts["tagged_population_total"] == 21000
+    assert facts["settlements_with_population_tag"] == 1
+    assert facts["settlements_count"] == 3
+
+
+def test_evidence_summary_renders_settlement_type_and_population():
+    """
+    Without this the model cannot ground a population estimate at all.
+
+    The summary previously rendered names only, so the OSM population tag —
+    the one grounded basis available — never reached the prompt.
+    """
+    summary = build_evidence_summary(detected_event())
+
+    assert "Givat Shmuel" in summary
+    assert "town" in summary
+
+
+def test_evidence_summary_carries_the_derived_counts():
+    summary = build_evidence_summary(detected_event())
+
+    assert "Derived counts:" in summary
+    assert "Fire stations found: 0" in summary
+
+
+def test_evidence_summary_states_when_geospatial_never_ran():
+    """The prompt must distinguish 'searched, found none' from 'did not search'."""
+    summary = build_evidence_summary(detected_event(geospatial_context=None))
+
+    assert "DID NOT RUN" in summary
+    assert "not the same as zero" in summary
+
+
+# --------------------------------------------------------------------------
+# Non-satellite report evidence
+# --------------------------------------------------------------------------
+
+
+REPORT_EVIDENCE = {
+    "source": "Telegram public channels",
+    "reports_count": 6,
+    "channels": ["fireisrael7777", "Israel_Police_100"],
+    "first_report_at": "2026-08-30T12:14:00Z",
+    "latest_report_at": "2026-08-30T13:47:00Z",
+    "candidate_confidence": 0.95,
+    "matched_terms": ["שריפה", "מתפשטת"],
+    "location_precision": "settlement",
+    "geocode_confidence": 0.7,
+    "corroborated_by_satellite": False,
+}
+
+
+def test_report_evidence_is_rendered_when_present():
+    """
+    Otherwise a reported event looks like a detection with no evidence at all.
+
+    The satellite block is truthfully empty for such an event, so without this
+    the model would see nothing supporting it.
+    """
+    summary = build_evidence_summary(detected_event(report_evidence=REPORT_EVIDENCE))
+
+    assert "Telegram public channels" in summary
+    assert "Reports received: 6" in summary
+    assert "Corroborated by satellite: NO" in summary
+
+
+def test_report_evidence_is_absent_for_a_satellite_event():
+    """No empty section for the ordinary case."""
+    summary = build_evidence_summary(detected_event())
+
+    assert "Non-satellite report evidence" not in summary
+
+
+def test_report_evidence_tolerates_partial_fields():
+    from agents.risk_analysis_agent import render_report_evidence
+
+    rendered = render_report_evidence(
+        {"report_evidence": {"source": "Telegram", "reports_count": 2}}
+    )
+
+    assert "Telegram" in rendered
+    assert "Reports received: 2" in rendered
+
+
 def test_evidence_summary_handles_a_bare_event():
     """An event with nothing usable still renders rather than raising."""
     summary = build_evidence_summary({"event_type": "fire", "detected": True})
@@ -607,6 +799,175 @@ def test_success_result_has_every_documented_key():
         "grounding", "error",
     ):
         assert key in result
+
+
+# --------------------------------------------------------------------------
+# Gap-filling web search
+# --------------------------------------------------------------------------
+
+
+def test_search_tool_is_offered_by_default():
+    llm = FakeLLM(build_valid_assessment())
+    agent = build_agent(llm=llm)
+
+    agent.analyze_event(detected_event())
+
+    tools = llm.calls[0]["tools"]
+
+    assert tools[0]["type"] == "web_search_20260209"
+    assert tools[0]["max_uses"] == 3
+    assert "cbs.gov.il" in tools[0]["allowed_domains"]
+
+
+def test_search_can_be_disabled_and_then_no_tools_are_sent():
+    """
+    None rather than an empty list.
+
+    An empty `tools` list would still change the request shape; None omits the
+    parameter entirely, which is what keeps a search-free call identical to one
+    made before the capability existed.
+    """
+    llm = FakeLLM(build_valid_assessment())
+    agent = RiskAnalysisAgent(
+        llm_service=llm, retriever=FakeRetriever(), enable_web_search=False
+    )
+
+    agent.analyze_event(detected_event())
+
+    assert llm.calls[0]["tools"] is None
+
+
+def test_verified_web_findings_reach_the_assessment():
+    assessment = build_valid_assessment(
+        web_findings=[
+            {
+                "query": "Yakir population",
+                "fact": "Yakir had a population of 2,742 in 2024.",
+                "source_url": "https://en.wikipedia.org/wiki/Yakir",
+                "source_title": "Yakir — Wikipedia",
+                "informs": "population_band",
+            }
+        ]
+    )
+    agent = build_agent(llm=FakeLLM(assessment))
+
+    result = agent.analyze_event(detected_event())
+
+    assert len(result["web_findings"]) == 1
+    assert result["grounding"]["web_search"]["findings_verified"] == 1
+    assert result["grounding"]["web_search"]["findings_dropped"] == 0
+
+
+def test_off_allowlist_findings_are_dropped_from_the_assessment():
+    """
+    The API restricts what can be read; the model reports what it found.
+
+    A finding attributed to a source outside the allowlist must not reach an
+    operator, whether it came from a misattribution or an invention.
+    """
+    assessment = build_valid_assessment(
+        web_findings=[
+            {
+                "query": "population",
+                "fact": "A forum post claims 40,000 residents.",
+                "source_url": "https://randomforum.example/thread/12",
+                "source_title": "Forum",
+                "informs": "population_band",
+            }
+        ]
+    )
+    agent = build_agent(llm=FakeLLM(assessment))
+
+    result = agent.analyze_event(detected_event())
+
+    assert result["web_findings"] == []
+    assert result["grounding"]["web_search"]["findings_dropped"] == 1
+
+
+def test_web_sourced_population_without_a_surviving_finding_is_downgraded():
+    """
+    A confident band must not outlive the evidence that supported it.
+
+    The model claims a web-sourced population, but the finding behind it was
+    dropped for an off-allowlist source. Leaving the basis as `web_search` would
+    present an unsupported figure as a sourced one.
+    """
+    assessment = build_valid_assessment(
+        situational_context={
+            **VALID_SITUATIONAL_CONTEXT,
+            "population_band": "10k_to_100k",
+            "population_basis": "web_search",
+        },
+        web_findings=[
+            {
+                "query": "population",
+                "fact": "Claimed 40,000 residents from an unlisted source.",
+                "source_url": "https://randomforum.example/thread/12",
+                "source_title": "Forum",
+                "informs": "population_band",
+            }
+        ],
+    )
+    agent = build_agent(llm=FakeLLM(assessment))
+
+    context = agent.analyze_event(detected_event())["situational_context"]
+
+    assert context["population_basis"] == "settlement_type_inference"
+    assert any("no verified finding" in gap for gap in context["context_gaps"])
+
+
+def test_web_sourced_population_with_a_supporting_finding_is_kept():
+    assessment = build_valid_assessment(
+        situational_context={
+            **VALID_SITUATIONAL_CONTEXT,
+            "population_basis": "web_search",
+        },
+        web_findings=[
+            {
+                "query": "Yakir population",
+                "fact": "Yakir had a population of 2,742 in 2024.",
+                "source_url": "https://en.wikipedia.org/wiki/Yakir",
+                "source_title": "Yakir — Wikipedia",
+                "informs": "population_band",
+            }
+        ],
+    )
+    agent = build_agent(llm=FakeLLM(assessment))
+
+    context = agent.analyze_event(detected_event())["situational_context"]
+
+    assert context["population_basis"] == "web_search"
+
+
+# --------------------------------------------------------------------------
+# Situational context on the assessment
+# --------------------------------------------------------------------------
+
+
+def test_successful_assessment_carries_situational_context_and_derived_facts():
+    agent = build_agent()
+
+    context = agent.analyze_event(detected_event())["situational_context"]
+
+    assert context["area_type"] == "wildland_urban_interface"
+    assert context["derived"]["settlements_count"] == 1
+    assert context["derived"]["fire_stations_count"] == 0
+
+
+@pytest.mark.parametrize("event_builder", [no_event, failed_detection])
+def test_skipped_assessment_has_no_situational_context(event_builder):
+    """
+    None, not {}.
+
+    No assessment was produced, so there is no judgement about the area either.
+    An empty object would read as "we looked and found nothing notable".
+    """
+    agent = build_agent()
+
+    result = agent.analyze_event(event_builder())
+
+    assert result["situational_context"] is None
+    assert result["web_findings"] == []
 
 
 def test_risk_semantics_distinguishes_this_score_from_the_ml_prediction():

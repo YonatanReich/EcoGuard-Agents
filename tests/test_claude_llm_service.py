@@ -360,6 +360,41 @@ def test_timeout_is_not_reported_as_a_generic_network_error():
     assert str(excinfo.value) == "timeout"
 
 
+def test_schema_rejection_logs_the_failing_fields(caplog):
+    """
+    An intermittent schema rejection must be diagnosable.
+
+    Callers get the opaque category "malformed response", which is correct for
+    them but indistinguishable from a provider fault when you are trying to work
+    out why one call in three fails. The field names go to the log; the rejected
+    values do not, because they may carry event data.
+    """
+    import logging as _logging
+
+    class Strict(BaseModel):
+        value: int = Field(ge=0, le=10)
+
+    try:
+        Strict(value=99)
+    except ValidationError as error:
+        with caplog.at_level(_logging.WARNING):
+            ClaudeLLMService.log_validation_detail(error)
+
+    assert "value" in caplog.text
+    assert "less_than_equal" in caplog.text
+    # The offending value must not be logged.
+    assert "99" not in caplog.text
+
+
+def test_non_validation_errors_log_nothing(caplog):
+    import logging as _logging
+
+    with caplog.at_level(_logging.WARNING):
+        ClaudeLLMService.log_validation_detail(RuntimeError("boom"))
+
+    assert caplog.text == ""
+
+
 def test_schema_validation_failure_is_a_malformed_response():
     """
     An uncited or out-of-range answer surfaces as malformed.
