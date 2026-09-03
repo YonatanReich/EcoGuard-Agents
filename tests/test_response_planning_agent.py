@@ -68,10 +68,14 @@ def successful_assessment(**overrides) -> dict:
             "model": "claude-sonnet-5",
             "reason": None,
         },
+        "event_id": "a3f19c2b8d04",
         "event_type": "fire",
         "location": {"latitude": 31.9, "longitude": 34.8},
         "risk_score": 78,
         "risk_level": "high",
+        # Labels which kind of risk this is; FireRiskPredictionAgent emits the
+        # same field names on a 0.0-1.0 scale with different meaning.
+        "risk_semantics": "detected_event_operational_risk",
         "confidence": "medium",
         "primary_drivers": ["very high FWI class", "wind 34 km/h"],
         "explanation": "Very high fire danger with wind supporting rapid spread.",
@@ -410,3 +414,85 @@ def test_result_is_plain_json_serialisable():
 
     json.dumps(agent.plan_response(detected_event(), successful_assessment()))
     json.dumps(agent.plan_response(detected_event(), {}))
+
+
+# --------------------------------------------------------------------------
+# Handoff contract for a downstream resource allocation agent
+# --------------------------------------------------------------------------
+
+
+def test_plan_stands_alone_as_a_handoff():
+    """
+    A plan must be meaningful without the event that produced it.
+
+    A resource allocation agent may receive only the plan. If it cannot tell
+    which fire the plan is for, or how severe that fire was judged, the plan is
+    unusable on its own and only works when it happens to arrive in the same
+    payload as the event. "Arrived together" is not a contract.
+    """
+    from agents.risk_analysis_agent import build_event_id
+
+    agent = build_agent()
+    event = detected_event()
+
+    plan = agent.plan_response(event, successful_assessment())
+
+    assert plan["event_id"] == build_event_id(event)
+    assert plan["event_type"] == "fire"
+    assert plan["location"] == {"latitude": 31.9, "longitude": 34.8}
+
+
+def test_plan_records_the_risk_it_is_responding_to():
+    """
+    The plan carries the assessment that justified it, semantics included.
+
+    Without risk_semantics a downstream agent cannot tell whether the 78 it is
+    reading is a 0-100 severity or something else entirely.
+    """
+    agent = build_agent()
+
+    plan = agent.plan_response(detected_event(), successful_assessment())
+
+    assert plan["responding_to"]["risk_score"] == 78
+    assert plan["responding_to"]["risk_level"] == "high"
+    assert plan["responding_to"]["risk_semantics"] == "detected_event_operational_risk"
+
+
+def test_skipped_plan_still_identifies_its_event():
+    """
+    An empty plan names what it declined to plan for.
+
+    Otherwise a consumer receives an anonymous empty object and cannot tell
+    which event has no plan.
+    """
+    agent = build_agent()
+    event = detected_event()
+
+    assessment = successful_assessment()
+    assessment["metadata"]["analysis_status"] = "failed"
+
+    plan = agent.plan_response(event, assessment)
+
+    assert plan["metadata"]["planning_status"] == "skipped"
+    assert plan["event_id"] is not None
+    assert plan["responding_to"]["risk_score"] is None
+
+
+def test_failed_plan_still_identifies_its_event():
+    agent = build_agent(llm=FakeLLM(ClaudeProviderError("timeout")))
+    event = detected_event()
+
+    plan = agent.plan_response(event, successful_assessment())
+
+    assert plan["metadata"]["planning_status"] == "failed"
+    assert plan["event_id"] is not None
+
+
+def test_plan_with_no_event_context_does_not_raise():
+    """Defensive: an unknown event yields a null id rather than an exception."""
+    agent = build_agent()
+
+    plan = agent.plan_response({}, {})
+
+    assert plan["metadata"]["planning_status"] == "skipped"
+    assert plan["event_id"] is None

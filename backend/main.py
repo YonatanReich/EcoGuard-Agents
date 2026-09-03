@@ -18,7 +18,6 @@ Run locally with:
     uvicorn backend.main:app --reload
 """
 
-import hashlib
 import logging
 from datetime import datetime
 
@@ -29,7 +28,7 @@ from agents.fire_detection_agent import FireDetectionAgent
 from agents.fire_risk_prediction_agent import FireRiskPredictionAgent
 from agents.geospatial_context_agent import GeospatialContextAgent
 from agents.response_planning_agent import ResponsePlanningAgent
-from agents.risk_analysis_agent import RiskAnalysisAgent
+from agents.risk_analysis_agent import RiskAnalysisAgent, build_event_id
 from agents.weather_data_agent import WeatherDataAgent
 from backend.fire_risk_schemas import (
     FireRiskRequest,
@@ -318,7 +317,7 @@ def get_detected_events(
             # Detection only. Build the skipped shapes directly rather than
             # calling the agents, so no retrieval or model work happens at all.
             risk = risk_agent.build_skipped_assessment(event, "analysis_not_requested")
-            plan = planning_agent.build_skipped_plan("analysis_not_requested")
+            plan = planning_agent.build_skipped_plan("analysis_not_requested", event)
 
         return build_detected_events_response(
             event=event,
@@ -345,37 +344,6 @@ def get_detected_events(
             status_code=500,
             detail="Internal server error. Please try again later.",
         )
-
-
-def build_event_id(event: dict) -> str:
-    """
-    Build a stable id for a detected fire.
-
-    Derived from the hotspot's coordinates and acquisition time so the same fire
-    keeps the same id across repeated scans, which keeps React's list keys
-    stable and stops markers being torn down and rebuilt on every poll.
-
-    Args:
-        event (dict): A FireDetectionAgent result.
-
-    Returns:
-        str: Twelve hex characters.
-    """
-    satellite = event.get("satellite_evidence") or {}
-    hotspot = satellite.get("selected_hotspot") or {}
-    location = event.get("location") or {}
-
-    seed = "|".join(
-        str(part)
-        for part in (
-            hotspot.get("latitude", location.get("latitude")),
-            hotspot.get("longitude", location.get("longitude")),
-            hotspot.get("acquisition_date", ""),
-            hotspot.get("acquisition_time", ""),
-        )
-    )
-
-    return hashlib.sha1(seed.encode("utf-8")).hexdigest()[:12]
 
 
 def build_event_title(event: dict) -> str:

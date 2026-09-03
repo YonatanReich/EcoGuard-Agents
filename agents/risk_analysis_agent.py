@@ -40,6 +40,7 @@ Consumed by: backend.main.get_detected_events
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from datetime import datetime, timezone
 
@@ -54,6 +55,20 @@ from services.protocol_retrieval_service import ProtocolRetriever, verify_citati
 AGENT_NAME = "RiskAnalysisAgent"
 
 DEFAULT_TOP_K = 5
+
+# Disambiguates this score from FireRiskPredictionAgent's, which shares the
+# field names `risk_score` and `risk_level` but means something different and
+# uses a different scale:
+#
+#   estimated_fire_risk               0.0-1.0 probability that a fire STARTS
+#                                     here, low/medium/high, from the ML model
+#   detected_event_operational_risk   0-100 severity of a fire that ALREADY
+#                                     EXISTS, low/medium/high/critical, here
+#
+# A consumer that confuses 0.85 with 85 would be off by two orders of
+# magnitude, so every consumer must branch on this field rather than on the
+# score alone.
+RISK_SEMANTICS = "detected_event_operational_risk"
 
 # Thresholds used only to steer retrieval toward the right protocol sections.
 # They are not scoring rules — the model does the judging, against the evidence
@@ -427,11 +442,13 @@ class RiskAnalysisAgent:
                 "model": getattr(self.llm_service, "model", None),
                 "reason": None,
             },
+            "event_id": build_event_id(detected_event),
             "event_type": "fire",
             "location": self._section(detected_event, "location"),
             "risk_score": risk_score,
             # Derived here, never asked of the model, so the two cannot disagree.
             "risk_level": risk_level_for_score(risk_score),
+            "risk_semantics": RISK_SEMANTICS,
             "confidence": payload["confidence"],
             "primary_drivers": payload["primary_drivers"],
             "explanation": payload["explanation"],
@@ -509,10 +526,14 @@ class RiskAnalysisAgent:
                 "model": None,
                 "reason": reason,
             },
+            "event_id": build_event_id(detected_event),
             "event_type": detected_event.get("event_type", "fire"),
             "location": self._section(detected_event, "location"),
             "risk_score": None,
             "risk_level": None,
+            # Present even with no score, so a consumer can tell which kind of
+            # risk is absent rather than guessing.
+            "risk_semantics": RISK_SEMANTICS,
             "confidence": None,
             "primary_drivers": [],
             "explanation": None,
@@ -556,6 +577,46 @@ class RiskAnalysisAgent:
     def _timestamp() -> str:
         """UTC timestamp in the format every other agent in this project uses."""
         return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def build_event_id(detected_event: dict) -> str:
+    """
+    Build a stable identifier for a detected fire.
+
+    Derived from the hotspot's coordinates and acquisition time, so the same
+    fire keeps the same id across repeated scans. That is what lets the risk
+    assessment, the response plan and the dashboard marker all refer to one
+    event without a shared database.
+
+    It is also the join key for anything downstream. A resource allocation
+    agent receiving a response plan on its own must be able to tell which fire
+    the plan is for; without this it would only work when the plan happened to
+    arrive in the same payload as the event.
+
+    Args:
+        detected_event (dict): A FireDetectionAgent result. Tolerates the
+            no-event and failed shapes, which have no hotspot.
+
+    Returns:
+        str: Twelve hex characters. Stable for a given hotspot, and stable for
+            a given coordinate when no hotspot exists.
+    """
+    satellite = section(detected_event, "satellite_evidence")
+    hotspot = satellite.get("selected_hotspot")
+    hotspot = hotspot if isinstance(hotspot, dict) else {}
+    location = section(detected_event, "location")
+
+    seed = "|".join(
+        str(part)
+        for part in (
+            hotspot.get("latitude", location.get("latitude")),
+            hotspot.get("longitude", location.get("longitude")),
+            hotspot.get("acquisition_date", ""),
+            hotspot.get("acquisition_time", ""),
+        )
+    )
+
+    return hashlib.sha1(seed.encode("utf-8")).hexdigest()[:12]
 
 
 def section(source: dict, key: str) -> dict:

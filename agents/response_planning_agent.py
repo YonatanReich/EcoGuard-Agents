@@ -33,7 +33,12 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from agents.risk_analysis_agent import build_evidence_summary, render_excerpts
+from agents.risk_analysis_agent import (
+    build_event_id,
+    build_evidence_summary,
+    render_excerpts,
+    section,
+)
 from agents.risk_analysis_schemas import ResponsePlan
 from services.claude_llm_service import (
     ClaudeLLMService,
@@ -170,7 +175,7 @@ class ResponsePlanningAgent:
                 units and actions rather than a generic fallback plan.
         """
         if not isinstance(risk_assessment, dict):
-            return self.build_skipped_plan("risk_analysis_unavailable")
+            return self.build_skipped_plan("risk_analysis_unavailable", detected_event)
 
         status = self._section(risk_assessment, "metadata").get("analysis_status")
 
@@ -178,10 +183,10 @@ class ResponsePlanningAgent:
         # anyway would hand an operator actions justified by nothing. This also
         # avoids a model call on every no-event scan, which is most of them.
         if status != "success":
-            return self.build_skipped_plan("risk_analysis_unavailable")
+            return self.build_skipped_plan("risk_analysis_unavailable", detected_event)
 
         if not getattr(self.llm_service, "available", False):
-            return self.build_failed_plan("missing credentials")
+            return self.build_failed_plan("missing credentials", detected_event)
 
         query = self.build_query(detected_event, risk_assessment)
         chunks = self.retriever.retrieve(query, top_k=self.top_k)
@@ -190,7 +195,7 @@ class ResponsePlanningAgent:
             corpus_loaded = getattr(self.retriever, "available", True)
             error = "no protocol match" if corpus_loaded else "protocol corpus unavailable"
             logging.error("Response planning aborted before the model call: %s", error)
-            return self.build_failed_plan(error)
+            return self.build_failed_plan(error, detected_event)
 
         system_blocks, user_text = self.build_prompt(
             detected_event, risk_assessment, chunks
@@ -204,7 +209,7 @@ class ResponsePlanningAgent:
             )
         except ClaudeProviderError as error:
             logging.error("Response planning model call failed: %s", error)
-            return self.build_failed_plan(str(error))
+            return self.build_failed_plan(str(error), detected_event)
 
         payload = plan.model_dump(mode="json")
 
@@ -214,10 +219,15 @@ class ResponsePlanningAgent:
             logging.error(
                 "Response plan discarded: no citation verified (%s dropped)", dropped
             )
-            return self.build_failed_plan("ungrounded response")
+            return self.build_failed_plan("ungrounded response", detected_event)
 
         return self.build_response_plan(
-            payload=payload, chunks=chunks, citations=verified, dropped=dropped
+            payload=payload,
+            detected_event=detected_event,
+            risk_assessment=risk_assessment,
+            chunks=chunks,
+            citations=verified,
+            dropped=dropped,
         )
 
     # ------------------------------------------------------------------
@@ -360,7 +370,14 @@ class ResponsePlanningAgent:
     # ------------------------------------------------------------------
 
     def build_response_plan(
-        self, *, payload: dict, chunks: list[dict], citations: list[dict], dropped: int
+        self,
+        *,
+        payload: dict,
+        detected_event: dict,
+        risk_assessment: dict,
+        chunks: list[dict],
+        citations: list[dict],
+        dropped: int,
     ) -> dict:
         """
         Build a successful plan from a validated model response.
@@ -371,6 +388,8 @@ class ResponsePlanningAgent:
 
         Args:
             payload (dict): ResponsePlan.model_dump(mode="json").
+            detected_event (dict): The event planned for, used for identity.
+            risk_assessment (dict): The assessment this plan answers.
             chunks (list[dict]): Chunks that were retrieved.
             citations (list[dict]): Citations that survived verification.
             dropped (int): Citations that failed verification.
@@ -386,6 +405,19 @@ class ResponsePlanningAgent:
                 "model": getattr(self.llm_service, "model", None),
                 "reason": None,
             },
+            # Identity, so this plan is meaningful on its own. A resource
+            # allocation agent receiving only the plan must be able to tell
+            # which fire it is for and how severe that fire was judged to be;
+            # correlating by "arrived in the same HTTP response" is not a
+            # contract.
+            "event_id": build_event_id(detected_event),
+            "event_type": detected_event.get("event_type", "fire"),
+            "location": section(detected_event, "location"),
+            "responding_to": {
+                "risk_score": risk_assessment.get("risk_score"),
+                "risk_level": risk_assessment.get("risk_level"),
+                "risk_semantics": risk_assessment.get("risk_semantics"),
+            },
             "recommended_units": payload["recommended_units"],
             "response_actions": payload["actions"],
             "plan_summary": payload["plan_summary"],
@@ -399,19 +431,24 @@ class ResponsePlanningAgent:
             "error": None,
         }
 
-    def build_skipped_plan(self, reason: str) -> dict:
+    def build_skipped_plan(self, reason: str, detected_event: dict | None = None) -> dict:
         """
         Build a plan for an event that was never a planning candidate.
 
         Args:
-            reason (str): Currently always "risk_analysis_unavailable".
+            reason (str): "risk_analysis_unavailable" or
+                "analysis_not_requested".
+            detected_event (dict | None): The event, when known, so the empty
+                plan still carries the identity of what it declined to plan for.
 
         Returns:
             dict: A skipped plan with no units and no actions.
         """
-        return self._build_empty(status="skipped", reason=reason, error=None)
+        return self._build_empty(
+            status="skipped", reason=reason, error=None, detected_event=detected_event
+        )
 
-    def build_failed_plan(self, error: str) -> dict:
+    def build_failed_plan(self, error: str, detected_event: dict | None = None) -> dict:
         """
         Build a plan for an event we tried and failed to plan for.
 
@@ -419,24 +456,40 @@ class ResponsePlanningAgent:
             error (str): A category from the closed error vocabulary, or
                 "ungrounded response" / "no protocol match" /
                 "protocol corpus unavailable".
+            detected_event (dict | None): The event, when known.
 
         Returns:
             dict: A failed plan with no units and no actions.
         """
-        return self._build_empty(status="failed", reason=None, error=error)
+        return self._build_empty(
+            status="failed", reason=None, error=error, detected_event=detected_event
+        )
 
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
 
-    def _build_empty(self, *, status: str, reason: str | None, error: str | None) -> dict:
+    def _build_empty(
+        self,
+        *,
+        status: str,
+        reason: str | None,
+        error: str | None,
+        detected_event: dict | None = None,
+    ) -> dict:
         """
         Shared shape for skipped and failed plans.
 
         Empty lists, never a generic "monitor the area" fallback. A plausible
         default plan is indistinguishable from a real one at the API boundary,
         which is exactly why there isn't one.
+
+        The identity block is still populated when the event is known, so a
+        consumer can tell *which* event has no plan rather than receiving an
+        anonymous empty object.
         """
+        event = detected_event if isinstance(detected_event, dict) else {}
+
         return {
             "metadata": {
                 "timestamp": self._timestamp(),
@@ -444,6 +497,14 @@ class ResponsePlanningAgent:
                 "planning_status": status,
                 "model": None,
                 "reason": reason,
+            },
+            "event_id": build_event_id(event) if event else None,
+            "event_type": event.get("event_type", "fire"),
+            "location": section(event, "location"),
+            "responding_to": {
+                "risk_score": None,
+                "risk_level": None,
+                "risk_semantics": None,
             },
             "recommended_units": [],
             "response_actions": [],

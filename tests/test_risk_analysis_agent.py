@@ -609,6 +609,78 @@ def test_success_result_has_every_documented_key():
         assert key in result
 
 
+def test_risk_semantics_distinguishes_this_score_from_the_ml_prediction():
+    """
+    Guards against a genuinely dangerous confusion.
+
+    FireRiskPredictionAgent also emits `risk_score` and `risk_level`, but its
+    score is a 0.0-1.0 probability that a fire *starts*, on a three-level scale.
+    This agent's score is 0-100 severity of a fire that *already exists*, on a
+    four-level scale. A consumer that mistook 0.85 for 85 would be wrong by two
+    orders of magnitude, so both agents must label their semantics.
+    """
+    from agents.risk_analysis_agent import RISK_SEMANTICS
+
+    agent = build_agent()
+    result = agent.analyze_event(detected_event())
+
+    assert result["risk_semantics"] == "detected_event_operational_risk"
+    assert RISK_SEMANTICS != "estimated_fire_risk"
+
+
+@pytest.mark.parametrize("event_builder", [no_event, failed_detection])
+def test_risk_semantics_is_present_even_without_a_score(event_builder):
+    """A consumer must be able to tell which kind of risk is missing."""
+    agent = build_agent()
+
+    result = agent.analyze_event(event_builder())
+
+    assert result["risk_score"] is None
+    assert result["risk_semantics"] == "detected_event_operational_risk"
+
+
+def test_assessment_carries_a_stable_event_id():
+    """
+    The join key for everything downstream.
+
+    Same hotspot means same id across scans, so the assessment, the plan and
+    the map marker all refer to one event without a shared database.
+    """
+    agent = build_agent()
+
+    first = agent.analyze_event(detected_event())
+    second = agent.analyze_event(detected_event())
+
+    assert isinstance(first["event_id"], str)
+    assert first["event_id"] == second["event_id"]
+
+
+def test_event_id_changes_with_the_hotspot():
+    """Two different fires must not collide onto one id."""
+    from agents.risk_analysis_agent import build_event_id
+
+    other = detected_event()
+    other["satellite_evidence"] = {
+        **other["satellite_evidence"],
+        "selected_hotspot": {
+            **other["satellite_evidence"]["selected_hotspot"],
+            "latitude": 30.1,
+            "longitude": 34.9,
+        },
+    }
+
+    assert build_event_id(detected_event()) != build_event_id(other)
+
+
+def test_event_id_tolerates_the_no_event_and_failed_shapes():
+    """Those shapes have no hotspot; deriving an id must not raise."""
+    from agents.risk_analysis_agent import build_event_id
+
+    assert isinstance(build_event_id(no_event()), str)
+    assert isinstance(build_event_id(failed_detection()), str)
+    assert isinstance(build_event_id({}), str)
+
+
 def test_risk_agent_does_not_emit_planning_fields():
     """Units and plans belong to the planning agent; keep the split clean."""
     agent = build_agent()

@@ -496,11 +496,38 @@ error`, `rate limited`, `invalid request`, `HTTP error`, `timeout`, `network
 error`, `malformed response`, `missing credentials`, `provider error`, plus
 `no protocol match`, `protocol corpus unavailable`, and `ungrounded response`.
 
+### 5.2a Two Different Meanings of "Risk" — Read This First
+
+The system contains **two** components that emit `risk_score` and `risk_level`,
+and they are not interchangeable:
+
+| | `FireRiskPredictionAgent` | `RiskAnalysisAgent` |
+|---|---|---|
+| Question | Might a fire **start** here? | How bad is this fire that **exists**? |
+| Method | ML model over weather, terrain, land cover | LLM reasoning over detected evidence + protocols |
+| `risk_score` | Float **0.0-1.0** (calibrated probability) | Integer **0-100** (operational severity) |
+| `risk_level` | `low` \| `medium` \| `high` | `low` \| `medium` \| `high` \| `critical` |
+| `risk_semantics` | `"estimated_fire_risk"` | `"detected_event_operational_risk"` |
+| Endpoint | `POST /api/fire-risk`, `GET /api/fire-risk/national-scan` | `GET /api/detected-events` |
+
+**Every consumer must branch on `risk_semantics`, never on the score alone.**
+Reading a `0.85` probability as an `85` severity — or vice versa — is a
+two-order-of-magnitude error, and both fields are populated even when the score
+is null so the distinction survives failure paths.
+
+The two are complementary, not competing: prediction answers *where to watch*,
+analysis answers *what to do about what is already burning*.
+
 ### 5.3 RiskAssessment Fields
 
 * **`metadata.analysis_status`** (String): `success` | `failed` | `skipped`.
 * **`metadata.model`** (String or null): Model id, null when no call was made.
 * **`metadata.reason`** (String or null): Skip reason, see 5.2.
+* **`event_id`** (String): Stable 12-character hash of the hotspot's position
+  and acquisition time. The join key between the assessment, the plan and the
+  map marker — the same fire keeps the same id across repeated scans.
+* **`risk_semantics`** (String): Always `"detected_event_operational_risk"`.
+  Present even when the score is null. See 5.2a.
 * **`risk_score`** (Integer or null): Operational risk, 0-100.
 * **`risk_level`** (String or null): `low` | `medium` | `high` | `critical`.
   **Derived in Python from `risk_score`**, never requested from the model, so
@@ -520,7 +547,19 @@ Note this object deliberately carries **no** `recommended_units` and no
 
 ### 5.4 ResponsePlan Fields
 
+The plan is designed to be **self-contained**, so that a downstream resource
+allocation agent receiving only the plan can act on it. The identity block below
+is what makes that true; correlating a plan to an event by "they arrived in the
+same HTTP response" is not a contract.
+
 * **`metadata.planning_status`** (String): `success` | `failed` | `skipped`.
+* **`event_id`** (String or null): Same id as the corresponding assessment.
+  Null only when the plan was built with no event context at all.
+* **`event_type`** (String): `"fire"`.
+* **`location`** (Object): The event's coordinates.
+* **`responding_to`** (Object): The assessment this plan answers —
+  `risk_score`, `risk_level` and `risk_semantics`, all null on non-success
+  paths. Carries the semantics so a consumer knows which scale the score is on.
 * **`recommended_units`** (Array of Strings): From a closed vocabulary —
   `fire_department`, `police`, `medical_services`, `municipal_emergency_team`,
   `home_front_command`, `aerial_firefighting`, `forestry_service`,
