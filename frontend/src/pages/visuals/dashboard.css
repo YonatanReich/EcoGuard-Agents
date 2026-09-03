@@ -166,3 +166,120 @@
     margin-top: 30px;
     font-family: "Plus Jakarta Sans", sans-serif;
 }
+
+/* ===== Event summary cards =====
+   One card per detected event in the sidebar. The citation blocks are the
+   point of this section: they show the verbatim protocol text the reasoning
+   was grounded in, so a reader can verify the analysis rather than trust it. */
+
+.event-card {
+    margin: 14px 10px;
+    padding: 12px 14px;
+    background: var(--bg-cards);
+    border: 1px solid var(--card-border);
+    border-radius: 10px;
+    font-family: "Plus Jakarta Sans", sans-serif;
+    font-size: 0.85rem;
+    text-align: left;
+    line-height: 1.45;
+}
+
+.event-card__header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+}
+
+.event-card__title {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+
+.event-card__badge {
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+    color: #fff;
+    background: #6b7280;
+}
+
+/* Colours mirror RISK_LEVEL_COLORS in MapView.tsx so the sidebar badge and
+   the map marker agree. Keep the two in step. */
+.event-card__badge--critical { background: #7f1d1d; }
+.event-card__badge--high     { background: #dc2626; }
+.event-card__badge--medium   { background: #f59e0b; color: #1c1300; }
+.event-card__badge--low      { background: #16a34a; }
+.event-card__badge--unknown  { background: #6b7280; }
+
+.event-card__warning {
+    margin: 0 0 8px;
+    padding: 6px 8px;
+    border-left: 3px solid #6b7280;
+    background: rgba(107, 114, 128, 0.18);
+    color: var(--text-muted);
+}
+
+.event-card__text {
+    margin: 0 0 8px;
+}
+
+.event-card__subheading {
+    margin: 12px 0 6px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+}
+
+.event-card__drivers,
+.event-card__gaps,
+.event-card__actions {
+    margin: 0 0 8px;
+    padding-left: 18px;
+}
+
+.event-card__drivers li,
+.event-card__gaps li,
+.event-card__actions li {
+    margin-bottom: 4px;
+}
+
+.event-card__timeframe {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(0, 98, 255, 0.25);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.event-card__citation {
+    margin: 0 0 8px;
+    padding: 8px 10px;
+    border-left: 3px solid var(--card-border);
+    background: rgba(0, 98, 255, 0.08);
+    border-radius: 0 6px 6px 0;
+}
+
+.event-card__quote {
+    margin: 0 0 4px;
+    font-style: italic;
+}
+
+.event-card__source {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.event-card__source a {
+    color: var(--card-border);
+}
