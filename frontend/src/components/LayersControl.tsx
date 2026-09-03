@@ -31,6 +31,12 @@ type LayersControlProps = {
   /** Toggle the GWIS/EFFIS FWI overlay. */
   onToggleFireDanger: () => void
 
+  /** Whether the national Current Risk grid is visible. */
+  showFireRisk: boolean
+
+  /** Toggle the national Current Risk grid. */
+  onToggleFireRisk: () => void
+
   /** Whether the animated wind layer is currently visible. */
   showWind: boolean
 
@@ -49,6 +55,8 @@ function LayersControl({
   onToggleRainRadar,
   showFireDanger,
   onToggleFireDanger,
+  showFireRisk,
+  onToggleFireRisk,
   showWind,
   onToggleWind,
   showInfrastructure,
@@ -57,6 +65,15 @@ function LayersControl({
   return (
     <div style={containerStyle}>
       <div style={titleStyle}>Map Layers</div>
+
+      <label style={rowStyle}>
+        <input
+          type="checkbox"
+          checked={showFireRisk}
+          onChange={onToggleFireRisk}
+        />
+        <span>Fire Risk</span>
+      </label>
 
       <label style={rowStyle}>
         <input
