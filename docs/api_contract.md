@@ -414,42 +414,54 @@ The `DetectedFloodEvent` represents a flood event detected by
 
 Unlike the general environmental data structure above, this object is
 event-oriented. Flood detection is based on combined near-real-time
-precipitation and hydrological evidence rather than on a single provider or a
-single hardcoded rainfall threshold.
+hydrological and precipitation evidence, with catchment-aware geographic
+mapping. It must not rely on a single hardcoded rainfall threshold.
 
-The current detection sources are:
+The current flood-detection sources are:
 
-* Israel Meteorological Service (IMS) rainfall observations.
-* Radar precipitation data. IMS Radar is preferred when programmatic access is
-  available; an approved fallback provider such as RainViewer may be used. # TODO: update which radar is chosen
-* Israel Water Authority / Hydrological Service observations, when recent
-  water-level and/or discharge data is available.
-* Existing geospatial context, when available, for spatial association and
-  downstream enrichment.
+* **Israel Hydrological Service API** (`hydro.water.gov.il`) for current/recent
+  river and stream observations such as water level and/or discharge, when
+  available.
+* **Israel Meteorological Service (IMS)** for recent ground-based rainfall
+  observations. This requires a new full IMS integration for the flood pipeline;
+  the system's existing Open-Meteo weather integration is not the IMS
+  integration and must not be treated as a replacement for it.
+* **Radar precipitation data** for spatial precipitation coverage. IMS Radar is
+  preferred when programmatic access is available; a configured fallback such
+  as RainViewer may be used if required.
+* **GovMap drainage basins** (`opendata:Nikuz`) for catchment mapping. The layer
+  is downloaded from the GovMap WFS and stored locally as GeoJSON in
+  `EPSG:4326` for runtime point-in-polygon lookup.
+
 ### 4.1 Detection Flow
 
 The flood detection process follows this sequence:
 
-1. The agent receives a requested geographic location.
-2. The existing IMS integration is queried for recent rainfall observations
-   from geographically relevant weather stations.
-3. The configured radar provider is queried for recent precipitation coverage
-   around the requested area. IMS Radar is preferred when available; a
-   configured fallback may be used when IMS radar access is unavailable.
-4. The hydrological data source is queried for relevant river/stream monitoring
-   stations and recent water-level and/or discharge observations.
-5. Observation timestamps are checked so stale data is not interpreted as
+1. The agent receives a requested geographic location (`latitude`,
+   `longitude`).
+2. The locally stored GovMap `opendata:Nikuz` layer is queried using
+   point-in-polygon lookup to identify the drainage basin containing the
+   requested point.
+3. The identified catchment is used to support selection of relevant
+   hydrological stations and to spatially scope precipitation evidence.
+4. The Israel Hydrological Service API is queried for current/recent
+   observations from relevant hydrometric stations.
+5. The dedicated IMS rainfall integration is queried for recent rainfall
+   observations from geographically relevant IMS stations.
+6. The configured radar provider is queried for recent spatial precipitation
+   coverage over the requested area/catchment when radar data is available.
+7. Observation timestamps are checked so stale data is not interpreted as
    current evidence.
-6. Available precipitation and hydrological evidence is geographically aligned
-   with the requested area and, when available, the relevant river/catchment.
-7. The agent combines the available evidence to determine whether there is
+8. Available hydrological, rainfall, and radar evidence is aligned with the
+   requested location and drainage basin.
+9. The agent combines the available evidence to determine whether there is
    sufficient evidence of an ongoing flood.
-8. If providers return successfully but the combined evidence does not support
-   an ongoing flood, the agent returns `detected: false`.
-9. If the minimum evidence required for a reliable decision is unavailable due
-   to provider failure, the agent returns `detected: null` rather than
-   fabricating a negative result.
-10. All available evidence is combined into one `DetectedFloodEvent`.
+10. If the required providers return successfully but the evidence does not
+    support an ongoing flood, the agent returns `detected: false`.
+11. If the minimum evidence required for a reliable decision is unavailable due
+    to provider failure, the agent returns `detected: null` rather than
+    fabricating a negative result.
+12. All available evidence is combined into one `DetectedFloodEvent`.
 
 The detection agent does not calculate the final operational risk score.
 Final risk analysis belongs to the downstream `RiskAnalysisAgent`.
@@ -462,15 +474,16 @@ Final risk analysis belongs to the downstream `RiskAnalysisAgent`.
 * **`detected`** (Boolean or null):
   * `true` — the combined available evidence supports that a flood is currently
     occurring in or near the requested area.
-  * `false` — the relevant detection sources were queried successfully and the
-    combined evidence does not support an ongoing flood.
+  * `false` — the minimum required sources were queried successfully and the
+    available evidence does not support an ongoing flood.
   * `null` — detection could not be completed reliably because the minimum
     evidence required by the implementation was unavailable due to provider
     failure.
 
-* **`location`** (Object): The requested geographic location used for flood
-  detection. When available, the object may also include the associated river
-  or catchment identifier.
+* **`location`** (Object): The original geographic location supplied to the
+  detector.
+  * `latitude`
+  * `longitude`
 
 * **`detection_confidence`** (String or null): Normalized confidence category
   produced by `FloodDetectionAgent` from the combined available evidence.
@@ -481,8 +494,8 @@ Final risk analysis belongs to the downstream `RiskAnalysisAgent`.
   * `"high"`
 
   Unlike fire detection confidence, this value is not copied from a single
-  external provider. It represents agreement, freshness, and strength of the
-  available flood-detection evidence.
+  external provider. It represents the strength, freshness, and agreement of
+  the available flood-detection evidence.
 
 * **`flood_severity`** (String or null): Detection-stage estimate of the
   physical severity of the observed flood conditions.
@@ -494,27 +507,25 @@ Final risk analysis belongs to the downstream `RiskAnalysisAgent`.
   * `"extreme"`
   * `"unknown"`
 
-  `flood_severity` describes the observed event conditions and must remain
+  `flood_severity` describes observed physical conditions and must remain
   separate from the final operational `risk_score` / `risk_level` calculated
   by `RiskAnalysisAgent`.
 
-### 4.3 Precipitation Evidence
+### 4.3 IMS Rainfall Evidence
 
-The **`precipitation_evidence`** object contains current precipitation evidence
-used by the agent.
+The **`ims_rainfall`** object contains recent ground-based rainfall
+observations retrieved from the Israel Meteorological Service.
 
-It may contain two provider-specific sections:
-
-#### IMS Rainfall
-
-The **`ims_rainfall`** object contains ground-based rainfall observations
-retrieved through the existing IMS integration.
+This is a **new dedicated flood data integration**. The existing Open-Meteo
+weather integration remains the provider for the generic `weather_context`
+used elsewhere in the system and must not be used as a substitute for IMS
+rainfall evidence.
 
 Fields include:
 
-* **`source`**: `"IMS"`
-* **`stations_count`**: Number of geographically relevant stations with usable
-  recent rainfall observations.
+* **`source`**: `"Israel Meteorological Service (IMS)"`
+* **`stations_count`**: Number of geographically relevant IMS stations with
+  usable recent rainfall observations.
 * **`observations`**: Array of relevant station observations.
 
 Each station observation may contain:
@@ -528,20 +539,20 @@ Each station observation may contain:
 * `measurement_interval_minutes`
 * `distance_from_requested_location_km`
 
-The original observation timestamp must be preserved. Missing rainfall values
-must not be converted to zero unless the source explicitly reports a valid zero
+The original IMS observation timestamp must be preserved. Missing rainfall
+values must not be converted to zero unless IMS explicitly reports a valid zero
 measurement.
 
-#### Radar #TODO: update this part once i have radar data
+### 4.4 Radar Evidence
 
-The **`radar`** object contains spatial precipitation evidence from the
-configured radar provider.
+The **`radar_evidence`** object contains recent spatial precipitation evidence
+from the configured radar provider.
 
 Fields may include:
 
 * **`source`**: Provider name, for example `"IMS Radar"` or `"RainViewer"`.
+* **`provider`**: Concrete radar provider used for the request.
 * **`observation_time`**: Timestamp of the radar frame used for detection.
-* **`provider`**: Concrete radar provider used for this request.
 * **`available`**: Whether a usable radar observation was available.
 * **`precipitation_intensity_mm_h`**: Quantitative precipitation intensity when
   exposed by the provider or derived by the approved radar adapter.
@@ -553,22 +564,26 @@ Fields may include:
 The flood agent consumes a normalized radar representation and must not depend
 on provider-specific response formats.
 
-### 4.4 Hydrological Evidence
+Radar is supporting spatial precipitation evidence. The exact production radar
+provider may be changed without changing the `DetectedFloodEvent` contract.
 
-The **`hydrological_evidence`** object contains available river/stream response
-information from the Israel Water Authority / Hydrological Service.
+### 4.5 Hydrological Evidence
+
+The **`hydrological_evidence`** object contains current/recent river or stream
+observations from the official Israel Hydrological Service API.
 
 Fields include:
 
-* **`source`**: `"Israel Water Authority"`
-* **`stations_count`**: Number of geographically relevant hydrological stations
-  with usable observations.
+* **`source`**: `"Israel Hydrological Service"`
+* **`provider`**: `"Israel Water Authority"`
+* **`stations_count`**: Number of geographically relevant hydrometric stations
+  with usable current/recent observations.
 * **`selected_station`**: Most relevant station used as hydrological evidence,
   when available.
 * **`stations`**: Optional list of all geographically relevant stations used by
   the detector.
 
-A hydrological station observation may contain:
+A hydrological station observation may contain, according to API availability:
 
 * `station_id`
 * `station_name`
@@ -583,18 +598,54 @@ A hydrological station observation may contain:
 * `change_interval_minutes`
 
 Change fields are included only when enough recent observations exist to
-calculate them. Missing real-time hydrological measurements must remain `null`
-or unavailable; historical measurements must not be presented as current
-observations.
+calculate them. Missing live measurements must remain `null` or unavailable;
+historical measurements must never be presented as current observations.
 
-Hydrological evidence is the most direct evidence of river response when it is
-available. However, lack of a hydrological station at a location does not by
-itself mean that no flood exists.
+Hydrological observations are the most direct available evidence of actual
+river response. However, absence of a relevant hydrometric station does not by
+itself prove that no flood exists.
 
-### 4.5 Geospatial Context
+### 4.6 Catchment Context
+
+The **`catchment_context`** object contains the drainage-basin mapping used by
+`FloodDetectionAgent`.
+
+The source is the official GovMap WFS drainage-basin layer:
+
+* **WFS layer**: `opendata:Nikuz`
+* **Feature type**: `WATER_BASIN`
+* **Native CRS**: `EPSG:2039`
+* **Runtime/local GeoJSON CRS**: `EPSG:4326`
+
+The layer is static geographic data. It should be downloaded and cached/stored
+locally rather than fetched from GovMap for every flood-detection request.
+
+At runtime, the requested longitude/latitude is matched to a basin polygon
+using point-in-polygon lookup.
+
+The event should include the identifying attributes required downstream, not
+the full basin polygon geometry.
+
+Fields include:
+
+* **`source`**: `"GovMap"`
+* **`layer`**: `"opendata:Nikuz"`
+* **`unique_id`**: Value from GovMap `UNIQ_ID`.
+* **`basin_code`**: Value from GovMap `BASIN_CODE`.
+* **`basin_name`**: Value from GovMap `FNAME`.
+* **`drain_to`**: Value from GovMap `DRAIN_TO`, when present.
+* **`to_basin`**: Value from GovMap `TO_BASIN`, when present.
+* **`area_m2`**: Value from GovMap `ORIG_AREA`.
+* **`data_year`**: Value from GovMap `DATA_YEAR`, when present.
+* **`product_version`**: Value from GovMap `PRDCT_VER`, when present.
+
+If the requested point cannot be associated with a basin, the catchment lookup
+must return `no_data` rather than fabricating a basin assignment.
+
+### 4.7 Optional Geospatial Enrichment
 
 The **`geospatial_context`** object follows the structure defined in Section
-1.3 when geospatial enrichment is requested.
+1.3 when OpenStreetMap enrichment is requested.
 
 It may contain nearby:
 
@@ -606,25 +657,22 @@ It may contain nearby:
 * Green areas
 * Water sources
 
-For flood detection, geospatial information may also be used to associate the
-requested location and observations with a nearby river or drainage area when
-such information is available.
+This OpenStreetMap-derived context is distinct from `catchment_context`.
+OpenStreetMap is used for operational/geographic enrichment; GovMap is used for
+drainage-basin mapping.
 
-Geospatial context provides supporting spatial information and does not
-independently determine whether a flood was detected.
+### 4.8 Source Status
 
-### 4.6 Source Status
-
-The **`source_status`** object records the status of each provider used to
-construct the event.
+The **`source_status`** object records the status of each source used to
+construct the flood event.
 
 Recommended status values are:
 
-* `"success"` — provider returned usable observations.
-* `"partial"` — provider returned usable but incomplete observations.
-* `"no_data"` — provider request succeeded but no relevant/current observation
-  was available.
-* `"failed"` — provider could not be queried successfully.
+* `"success"` — source returned usable data.
+* `"partial"` — source returned usable but incomplete data.
+* `"no_data"` — source access succeeded but no relevant/current data was
+  available.
+* `"failed"` — source could not be queried or loaded successfully.
 
 Example:
 
@@ -632,20 +680,22 @@ Example:
 {
   "ims_rainfall": "success",
   "radar": "success",
-  "hydrological": "partial",
-  "geospatial": "success"
+  "hydrological_service": "success",
+  "catchment": "success",
+  "geospatial": "partial"
 }
 ```
 
-Flood detection does not assume that one provider is always the sole primary
-source. The agent combines the available evidence and records provider
-availability explicitly.
+The hydrological source is the most direct current-event evidence when a
+relevant station is available. IMS rainfall and radar provide supporting
+precipitation evidence and improve coverage when direct hydrological
+measurements are incomplete or unavailable.
 
-Failure of one source does not automatically invalidate a flood detection when
-other sufficiently strong evidence is available. Conversely, provider failure
-must not be interpreted as evidence that no flood exists.
+Failure of one supporting source does not automatically invalidate a flood
+detection when other sufficiently strong evidence is available. Conversely,
+provider failure must not be interpreted as evidence that no flood exists.
 
-### 4.7 Example DetectedFloodEvent
+### 4.9 Example DetectedFloodEvent
 
 ```json
 {
@@ -656,50 +706,61 @@ must not be interpreted as evidence that no flood exists.
   "event_type": "flood",
   "detected": true,
   "location": {
-    "latitude": 31.15,
-    "longitude": 35.36,
-    "river_name": "example_stream",
-    "catchment_id": "example_catchment"
+    "latitude": 32.50,
+    "longitude": 35.50
   },
   "detection_confidence": "high",
   "flood_severity": "high",
 
-  "precipitation_evidence": {
-    "ims_rainfall": {
-      "source": "IMS",
-      "stations_count": 2,
-      "observations": [
-        {
-          "station_id": "IMS-EXAMPLE-001",
-          "station_name": "Example Rain Station",
-          "latitude": 31.18,
-          "longitude": 35.32,
-          "observation_time": "2026-01-18T08:40:00Z",
-          "precipitation_mm": 8.4,
-          "measurement_interval_minutes": 10,
-          "distance_from_requested_location_km": 5.8
-        }
-      ]
-    },
-    "radar": {
-      "source": "RainViewer",
-      "provider": "RainViewer",
-      "observation_time": "2026-01-18T08:40:00Z",
-      "available": true,
-      "precipitation_intensity_mm_h": 34.2,
-      "intensity_category": "high"
-    }
+  "catchment_context": {
+    "source": "GovMap",
+    "layer": "opendata:Nikuz",
+    "unique_id": 64845678,
+    "basin_code": 18,
+    "basin_name": "בית שאן - בזק",
+    "drain_to": 21,
+    "to_basin": 44,
+    "area_m2": 214626431.176,
+    "data_year": 2021,
+    "product_version": "2021-06"
+  },
+
+  "ims_rainfall": {
+    "source": "Israel Meteorological Service (IMS)",
+    "stations_count": 2,
+    "observations": [
+      {
+        "station_id": "IMS-EXAMPLE-001",
+        "station_name": "Example Rain Station",
+        "latitude": 32.48,
+        "longitude": 35.46,
+        "observation_time": "2026-01-18T08:40:00Z",
+        "precipitation_mm": 8.4,
+        "measurement_interval_minutes": 10,
+        "distance_from_requested_location_km": 4.8
+      }
+    ]
+  },
+
+  "radar_evidence": {
+    "source": "RainViewer",
+    "provider": "RainViewer",
+    "observation_time": "2026-01-18T08:40:00Z",
+    "available": true,
+    "precipitation_intensity_mm_h": 34.2,
+    "intensity_category": "high"
   },
 
   "hydrological_evidence": {
-    "source": "Israel Water Authority",
+    "source": "Israel Hydrological Service",
+    "provider": "Israel Water Authority",
     "stations_count": 1,
     "selected_station": {
       "station_id": "HYDRO-EXAMPLE-001",
-      "station_name": "Example Hydrological Station",
+      "station_name": "Example Hydrometric Station",
       "river_name": "example_stream",
-      "latitude": 31.14,
-      "longitude": 35.35,
+      "latitude": 32.49,
+      "longitude": 35.51,
       "observation_time": "2026-01-18T08:40:00Z",
       "water_level_m": 2.18,
       "discharge_m3_s": 42.7,
@@ -722,16 +783,18 @@ must not be interpreted as evidence that no flood exists.
   "source_status": {
     "ims_rainfall": "success",
     "radar": "success",
-    "hydrological": "success",
-    "geospatial": "success"
+    "hydrological_service": "success",
+    "catchment": "success",
+    "geospatial": "partial"
   }
 }
 ```
 
 The IDs and numeric values in this example are illustrative and do not
-represent a specific real event.
+represent a specific real flood event. The GovMap field names and example
+values reflect the current `opendata:Nikuz` schema observed during integration.
 
-### 4.8 No Flood Detected
+### 4.10 No Flood Detected
 
 A successful flood-detection cycle in which the available current evidence does
 not support an ongoing flood is represented as:
@@ -750,30 +813,45 @@ not support an ongoing flood is represented as:
   },
   "detection_confidence": null,
   "flood_severity": null,
-  "precipitation_evidence": {
-    "ims_rainfall": {
-      "source": "IMS",
-      "stations_count": 1,
-      "observations": [
-        {
-          "station_id": "IMS-EXAMPLE-002",
-          "observation_time": "2026-01-18T10:10:00Z",
-          "precipitation_mm": 0.0,
-          "measurement_interval_minutes": 10
-        }
-      ]
-    },
-    "radar": {
-      "source": "IMS Radar",
-      "provider": "IMS Radar",
-      "observation_time": "2026-01-18T10:05:00Z",
-      "available": true,
-      "precipitation_intensity_mm_h": 0.0,
-      "intensity_category": "none"
-    }
+
+  "catchment_context": {
+    "source": "GovMap",
+    "layer": "opendata:Nikuz",
+    "unique_id": 64845678,
+    "basin_code": 18,
+    "basin_name": "בית שאן - בזק",
+    "drain_to": 21,
+    "to_basin": 44,
+    "area_m2": 214626431.176,
+    "data_year": 2021,
+    "product_version": "2021-06"
   },
+
+  "ims_rainfall": {
+    "source": "Israel Meteorological Service (IMS)",
+    "stations_count": 1,
+    "observations": [
+      {
+        "station_id": "IMS-EXAMPLE-002",
+        "observation_time": "2026-01-18T10:10:00Z",
+        "precipitation_mm": 0.0,
+        "measurement_interval_minutes": 10
+      }
+    ]
+  },
+
+  "radar_evidence": {
+    "source": "IMS Radar",
+    "provider": "IMS Radar",
+    "observation_time": "2026-01-18T10:05:00Z",
+    "available": true,
+    "precipitation_intensity_mm_h": 0.0,
+    "intensity_category": "none"
+  },
+
   "hydrological_evidence": {
-    "source": "Israel Water Authority",
+    "source": "Israel Hydrological Service",
+    "provider": "Israel Water Authority",
     "stations_count": 1,
     "selected_station": {
       "station_id": "HYDRO-EXAMPLE-002",
@@ -782,23 +860,26 @@ not support an ongoing flood is represented as:
       "discharge_m3_s": 0.8
     }
   },
+
   "geospatial_context": null,
+
   "source_status": {
     "ims_rainfall": "success",
     "radar": "success",
-    "hydrological": "success",
+    "hydrological_service": "success",
+    "catchment": "success",
     "geospatial": "no_data"
   }
 }
 ```
 
-This is different from a provider failure. If the data required to make a
+This is different from a source failure. If the data required to make a
 reliable detection decision cannot be obtained, the agent should return
-`detected: null` with the relevant provider marked as `"failed"`, rather than
+`detected: null` with the relevant source marked as `"failed"`, rather than
 incorrectly returning `detected: false`.
 
-
 ---
+
 
 ## 5. Detection vs. Risk Analysis
 
@@ -809,13 +890,15 @@ The following concepts must remain separate across the system:
 | `DetectedFireEvent.detected` | Whether a geographically relevant satellite thermal hotspot was found | NASA FIRMS / FireDetectionAgent |
 | `DetectedFireEvent.detection_confidence` | Confidence category of the satellite fire detection | NASA FIRMS |
 | `fire_weather_severity` | Severity of surrounding fire-weather conditions | GWIS/EFFIS FWI |
-| `DetectedFloodEvent.detected` | Whether combined current precipitation and hydrological evidence supports an ongoing flood | FloodDetectionAgent |
-| `DetectedFloodEvent.detection_confidence` | Confidence in the flood-detection decision based on the available evidence | FloodDetectionAgent |
+| `DetectedFloodEvent.detected` | Whether current hydrological and precipitation evidence supports an ongoing flood | FloodDetectionAgent |
+| `DetectedFloodEvent.detection_confidence` | Confidence in the flood-detection decision based on evidence strength, freshness, and agreement | FloodDetectionAgent |
 | `flood_severity` | Detection-stage estimate of the physical severity of observed flood conditions | FloodDetectionAgent |
-| `precipitation_evidence` | Current ground/radar precipitation evidence used for flood detection | IMS / Radar provider |
-| `hydrological_evidence` | Current water-level/discharge evidence used for flood detection | Israel Water Authority / Hydrological Service |
-| `weather_context` | Current and forecast environmental conditions used as fire-event context | Open-Meteo |
-| `geospatial_context` | Nearby population, infrastructure and geographic context | OpenStreetMap / configured geospatial provider |
+| `ims_rainfall` | Current/recent ground-based rainfall observations used by flood detection | Israel Meteorological Service (IMS) |
+| `radar_evidence` | Current spatial precipitation evidence used by flood detection | Configured radar provider (IMS Radar preferred; fallback may be used) |
+| `hydrological_evidence` | Current/recent water-level and/or discharge evidence | Israel Hydrological Service API / Israel Water Authority |
+| `catchment_context` | Drainage-basin association for the requested location | GovMap `opendata:Nikuz` |
+| `weather_context` | Generic current and forecast weather context currently used by the system | Open-Meteo |
+| `geospatial_context` | Nearby population, infrastructure, and geographic enrichment | OpenStreetMap |
 | `risk_score` / `risk_level` | Overall operational risk assessment | RiskAnalysisAgent |
 
 `FireDetectionAgent` and `FloodDetectionAgent` collect and structure the
@@ -824,4 +907,3 @@ available event evidence.
 `RiskAnalysisAgent` is responsible for interpreting a detected event, combining
 the available evidence with protocol-grounded analysis, and producing the final
 operational risk assessment.
-
