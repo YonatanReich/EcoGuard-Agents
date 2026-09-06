@@ -23,10 +23,16 @@ uvicorn==0.48.0
 requests==2.32.5
 Telethon==1.44.0
 python-dotenv==1.2.3
+Pillow==12.3.0
+
+# Fire risk prediction (ML) — national risk scan
 numpy==2.4.6
 scipy==1.17.1
 joblib==1.5.3
 threadpoolctl==3.6.0
-Pillow==12.3.0
 scikit-learn==1.7.2
 rasterio==1.4.4
+
+# Risk analysis and response planning (LLM + RAG)
+anthropic==1.1.0
+httpx2==2.12.0

@@ -94,3 +94,6 @@ data/generated/fire_forecast_risk_pilot_snapshots.csv
 data/generated/fire_forecast_risk_pilot_dataset.csv
 data/generated/forecast_risk_pilot_cache/
 data/generated/ml/forecast_risk_pilot/
+
+# Generated evaluation runs
+data/generated/evaluation/
