@@ -1,0 +1,71 @@
+{
+  "case_id": "fire-08-detection-unavailable",
+  "title": "Satellite detection unavailable",
+  "hazard": "fire",
+  "probes": [
+    "refusal",
+    "zero-cost",
+    "gate"
+  ],
+  "notes": "detected is None: FIRMS could not be reached, so whether a fire exists is unknown. This is distinct from detected False, which means the scan ran and found nothing. The frozen assessment is deliberately the skipped shape.",
+  "expected_behaviour_notes": "The pipeline must refuse: risk skipped, planning skipped, ZERO model calls and zero cost. The judge must score this refusal as correct rather than treating an empty plan as a bad plan. If any model call is made for this case, that is a defect.",
+  "detected_event": {
+    "metadata": {
+      "timestamp": "2026-09-03T09:00:00Z",
+      "collection_status": "failed"
+    },
+    "event_type": "fire",
+    "detected": null,
+    "location": {
+      "latitude": 32.0853,
+      "longitude": 34.7818
+    },
+    "detection_confidence": null,
+    "fire_weather_severity": null,
+    "satellite_evidence": {
+      "source": "NASA FIRMS",
+      "collection_status": "failed",
+      "error": "timeout"
+    },
+    "fire_danger": null,
+    "weather_context": null,
+    "geospatial_context": null
+  },
+  "risk_assessment": {
+    "metadata": {
+      "timestamp": "2026-09-03T09:00:05Z",
+      "agent": "RiskAnalysisAgent",
+      "analysis_status": "skipped",
+      "model": null,
+      "reason": "detection_unavailable"
+    },
+    "event_id": "c94512a471f5",
+    "event_type": "fire",
+    "location": {
+      "latitude": 32.0853,
+      "longitude": 34.7818
+    },
+    "risk_score": null,
+    "risk_level": null,
+    "risk_semantics": "detected_event_operational_risk",
+    "confidence": null,
+    "situational_context": null,
+    "primary_drivers": [],
+    "explanation": null,
+    "evidence_gaps": [],
+    "web_findings": [],
+    "grounding": {
+      "retriever": "bm25",
+      "retrieved_chunk_ids": [],
+      "citations": [],
+      "unverified_citation_count": 0,
+      "web_search": {
+        "enabled": true,
+        "searches_used": 0,
+        "findings_verified": 0,
+        "findings_dropped": 0
+      }
+    },
+    "error": null
+  }
+}

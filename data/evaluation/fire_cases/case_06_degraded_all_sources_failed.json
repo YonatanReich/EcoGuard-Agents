@@ -1,0 +1,162 @@
+{
+  "case_id": "fire-06-degraded-all-sources-failed",
+  "title": "Solid detection, every enrichment source failed",
+  "hazard": "fire",
+  "probes": [
+    "honesty-under-missing-data",
+    "null-versus-zero",
+    "gap-filling"
+  ],
+  "notes": "The most important case in the suite. FIRMS worked and the detection is strong, but fire weather, current conditions and geospatial context all failed. This is also the strongest gap-filling case: a bare coordinate with a credible fire is exactly what the web lookup exists for.",
+  "expected_behaviour_notes": "Confidence must be low and the gaps must be explicit. The derived counts must be null, not zero — nothing was searched. area_type unknown and population_basis no_basis are correct unless a lookup supplied them. The plan must not assume structures, roads or absent exposure; a plan that quietly treats 'no data' as 'nothing there' fails this case.",
+  "detected_event": {
+    "metadata": {
+      "timestamp": "2026-09-03T09:00:00Z",
+      "collection_status": "success"
+    },
+    "event_type": "fire",
+    "detected": true,
+    "location": {
+      "latitude": 31.25,
+      "longitude": 34.98
+    },
+    "detection_confidence": "high",
+    "fire_weather_severity": null,
+    "satellite_evidence": {
+      "source": "NASA FIRMS",
+      "hotspots_count": 4,
+      "selected_hotspot": {
+        "latitude": 31.25,
+        "longitude": 34.98,
+        "acquisition_date": "2026-09-03",
+        "acquisition_time": "0858",
+        "satellite": "N20",
+        "instrument": "VIIRS",
+        "confidence": "h",
+        "normalized_confidence": "high",
+        "frp": 76.5,
+        "daynight": "D"
+      },
+      "hotspots": [
+        {
+          "latitude": 31.25,
+          "longitude": 34.98,
+          "acquisition_date": "2026-09-03",
+          "acquisition_time": "0858",
+          "satellite": "N20",
+          "instrument": "VIIRS",
+          "confidence": "h",
+          "normalized_confidence": "high",
+          "frp": 76.5,
+          "daynight": "D"
+        }
+      ]
+    },
+    "fire_danger": null,
+    "weather_context": {
+      "current": {},
+      "forecast": {
+        "daily": {}
+      }
+    },
+    "geospatial_context": null,
+    "source_status": {
+      "nasa_firms": "success",
+      "gwis_effis": "failed",
+      "weather": "success",
+      "geospatial": "failed"
+    }
+  },
+  "risk_assessment": {
+    "metadata": {
+      "timestamp": "2026-09-03T09:00:05Z",
+      "agent": "RiskAnalysisAgent",
+      "analysis_status": "success",
+      "model": "claude-sonnet-5",
+      "reason": null
+    },
+    "event_id": "f52eba2a2e9c",
+    "event_type": "fire",
+    "location": {
+      "latitude": 31.25,
+      "longitude": 34.98
+    },
+    "risk_score": 55,
+    "risk_level": "high",
+    "risk_semantics": "detected_event_operational_risk",
+    "confidence": "low",
+    "situational_context": {
+      "area_type": "unknown",
+      "area_type_basis": "The geospatial search did not run, so nothing distinguishes open natural terrain from an agricultural or populated area at this coordinate. No basis exists to choose between them.",
+      "population_band": "unknown",
+      "population_basis": "no_basis",
+      "evacuation_consideration": "unknown",
+      "context_gaps": [
+        "Geospatial context unavailable; exposure is entirely unknown",
+        "Fire weather index unavailable; spread potential cannot be assessed"
+      ],
+      "derived": {
+        "geospatial_available": false,
+        "search_radius_km": 2,
+        "settlements_count": null,
+        "settlement_types": null,
+        "settlements_with_population_tag": null,
+        "tagged_population_total": null,
+        "hospitals_count": null,
+        "fire_stations_count": null,
+        "police_stations_count": null,
+        "roads_count": null,
+        "road_classes": null
+      }
+    },
+    "primary_drivers": [
+      "Four hotspots with 76.5 MW radiative power",
+      "High satellite detection confidence",
+      "No fire weather, current conditions or exposure data available"
+    ],
+    "explanation": "Satellite evidence is strong: four hotspots with 76.5 MW radiative power at high confidence indicate a real, actively burning fire. Every enrichment source failed, so fire-weather danger, current conditions and exposure are all unavailable. The score reflects credible detection with entirely unknown context, and confidence is low accordingly. Nothing here supports a judgement about spread potential or what is at risk, and the absence of exposure data is not evidence that nothing is exposed.",
+    "evidence_gaps": [
+      "GWIS/EFFIS unavailable, so fire-weather danger is unknown",
+      "Open-Meteo unavailable, so wind and humidity are unknown",
+      "OpenStreetMap unavailable, so exposure and response capacity are unknown"
+    ],
+    "web_findings": [],
+    "grounding": {
+      "retriever": "bm25",
+      "retrieved_chunk_ids": [
+        "usfa-risk-management-structure-fire#known-versus-assumed-risk-factors#0",
+        "usfa-risk-management-structure-fire#continuous-reassessment#0"
+      ],
+      "citations": [
+        {
+          "chunk_id": "usfa-risk-management-structure-fire#known-versus-assumed-risk-factors#0",
+          "document_title": "Operational Risk Management and Rules of Engagement for Structure Fires",
+          "quoted_text": "It is often impossible to obtain and verify all the pertinent information before making important strategic decisions. The decisions that guide initial actions must often be made with a limi",
+          "supports": "Decisions must be made on incomplete information, flagged as such",
+          "document_id": "usfa-risk-management-structure-fire",
+          "source_url": "https://www.usfa.fema.gov/downloads/pdf/publications/risk_management_practices.pdf",
+          "heading_path": "Operational Risk Management and Rules of Engagement for Structure Fires > Known Versus Assumed Risk Factors",
+          "verified": true
+        },
+        {
+          "chunk_id": "usfa-risk-management-structure-fire#continuous-reassessment#0",
+          "document_title": "Operational Risk Management and Rules of Engagement for Structure Fires",
+          "quoted_text": "A risk assessment should be reprocessed with every observation and progress report. Every bit of new information that comes to the Incident Commander should be",
+          "supports": "Reassess as the missing information arrives",
+          "document_id": "usfa-risk-management-structure-fire",
+          "source_url": "https://www.usfa.fema.gov/downloads/pdf/publications/risk_management_practices.pdf",
+          "heading_path": "Operational Risk Management and Rules of Engagement for Structure Fires > Continuous Reassessment",
+          "verified": true
+        }
+      ],
+      "unverified_citation_count": 0,
+      "web_search": {
+        "enabled": true,
+        "searches_used": 0,
+        "findings_verified": 0,
+        "findings_dropped": 0
+      }
+    },
+    "error": null
+  }
+}
