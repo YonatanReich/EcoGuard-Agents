@@ -30,12 +30,27 @@ import {
 } from 'cesium'
 
 import type { EnvironmentalData } from '../types/environmentalData'
+import {
+  attachFloodWaterRenderer,
+  type FloodWaterRenderer,
+  type PreparedFloodTimelineState,
+} from './flood/FloodWaterRenderer'
+import {
+  prepareFloodSurface,
+  type PreparedFloodSurface,
+} from './flood/floodSurfaceGeometry'
+import type { FloodVisualizationInput } from '../types/floodVisualization'
 import type { IncidentDetails } from '../types/incidents'
 import type {
   AllocatedResponseResource,
   IncidentRiskArea,
   ResponseResourceModelKey,
 } from '../types/responseResources'
+import {
+  assessFloodInfrastructureExposure,
+  contextExposureId,
+  type FloodExposureAssessment,
+} from '../utils/floodExposure'
 
 import './incident-3d-view.css'
 
@@ -44,6 +59,9 @@ export type OperationalIncident3DProps = {
   context: EnvironmentalData['geospatial_context'] | null
   allocatedResources?: readonly AllocatedResponseResource[]
   riskArea?: IncidentRiskArea | null
+  floodVisualization?: {
+    input: FloodVisualizationInput
+  } | null
 }
 
 type InfrastructureMarker = {
@@ -51,9 +69,23 @@ type InfrastructureMarker = {
   name: string
   latitude: number
   longitude: number
-  category: 'Fire station' | 'Police station' | 'Hospital'
+  category: 'Fire station' | 'Police station' | 'Hospital' | 'Road'
   color: Color
   symbol: string
+}
+
+const FLOOD_PLAYBACK_DURATION_SECONDS = 30
+
+function formatFloodTime(minutesFromNow: number) {
+  if (minutesFromNow <= 0) return 'CURRENT'
+  if (minutesFromNow < 60) return `+${Math.round(minutesFromNow)} MIN`
+  if (minutesFromNow % 60 === 0) {
+    const hours = minutesFromNow / 60
+    return `+${hours} ${hours === 1 ? 'HOUR' : 'HOURS'}`
+  }
+  const hours = Math.floor(minutesFromNow / 60)
+  const minutes = Math.round(minutesFromNow % 60)
+  return `+${hours}H ${minutes}M`
 }
 
 type InitializationStage =
@@ -61,6 +93,7 @@ type InitializationStage =
   | 'Google Photorealistic 3D Tiles creation'
   | 'Tileset primitive attachment'
   | 'Incident entity creation'
+  | 'Flood water primitive creation'
   | 'Infrastructure entity creation'
   | 'Allocated resource entity creation'
   | 'Camera positioning'
@@ -332,6 +365,7 @@ function sanitizeInitializationError(
 
 function asInfrastructureMarkers(
   context: EnvironmentalData['geospatial_context'] | null,
+  includeRoads = false,
 ): InfrastructureMarker[] {
   if (!context) return []
 
@@ -343,7 +377,7 @@ function asInfrastructureMarkers(
   ) => (items ?? [])
     .filter((item) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude))
     .map((item, index) => ({
-      id: `${category}-${item.osm_type ?? 'context'}-${item.osm_id ?? index}`,
+      id: contextExposureId(category, item, index),
       name: item.name || `Unnamed ${category.toLowerCase()}`,
       latitude: item.latitude,
       longitude: item.longitude,
@@ -352,11 +386,41 @@ function asInfrastructureMarkers(
       symbol,
     }))
 
-  return [
+  const facilities = [
     ...convert(context.nearby_fire_stations, 'Fire station', Color.ORANGE, 'F'),
     ...convert(context.nearby_police_stations, 'Police station', Color.DODGERBLUE, 'P'),
     ...convert(context.nearby_hospitals, 'Hospital', Color.LIMEGREEN, 'H'),
   ]
+  const roads = includeRoads ? (context.nearby_roads ?? []).flatMap((road, index) =>
+    Number.isFinite(road.latitude) && Number.isFinite(road.longitude) ? [{
+      id: contextExposureId('Road', road, index),
+      name: road.name || road.ref || 'Unnamed nearby road',
+      latitude: road.latitude as number,
+      longitude: road.longitude as number,
+      category: 'Road' as const,
+      color: Color.SLATEGRAY,
+      symbol: 'R',
+    }] : []) : []
+  return [...facilities, ...roads]
+}
+
+function setExposureMarkerVisibility(
+  viewer: Viewer,
+  assessments: readonly FloodExposureAssessment[],
+  minutesFromNow: number,
+) {
+  assessments.forEach(({ exposure }) => {
+    const marker = viewer.entities.getById(`flood-exposure-${exposure.id}`)
+    if (marker) {
+      marker.show = exposure.firstExposedMinutesFromNow !== undefined &&
+        minutesFromNow >= exposure.firstExposedMinutesFromNow
+    }
+  })
+}
+
+function exposureMarkerCoordinate(assessment: FloodExposureAssessment) {
+  const geometry = assessment.exposure.location ?? assessment.exposure.geometry
+  return geometry?.type === 'point' ? geometry.coordinate : null
 }
 
 function selectDemoResources(
@@ -398,6 +462,7 @@ function Incident3DView({
   context,
   allocatedResources = [],
   riskArea = null,
+  floodVisualization = null,
 }: OperationalIncident3DProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<Viewer | null>(null)
@@ -420,10 +485,51 @@ function Incident3DView({
   const [isSimulationPanelCollapsed, setIsSimulationPanelCollapsed] = useState(false)
   const [simulationSpeed, setSimulationSpeed] = useState<SimulationSpeed>(1)
   const simulationSpeedRef = useRef<SimulationSpeed>(1)
+  const floodRendererRef = useRef<FloodWaterRenderer | null>(null)
+  const preparedFloodStatesRef = useRef<PreparedFloodTimelineState[]>([])
+  const floodTimeRef = useRef(0)
+  const [floodTimeMinutes, setFloodTimeMinutes] = useState(0)
+  const [isFloodPlaying, setIsFloodPlaying] = useState(false)
+  const floodOrbitFrameRef = useRef(0)
+  const [isFloodOrbiting, setIsFloodOrbiting] = useState(false)
   const hasWebGl = useMemo(() => supportsWebGl(), [])
   const token = import.meta.env.VITE_CESIUM_ION_TOKEN?.trim()
-  const infrastructure = useMemo(() => asInfrastructureMarkers(context), [context])
+  const isFloodMode = floodVisualization !== null
+  const sceneIncident = useMemo<IncidentDetails>(() => isFloodMode
+    ? {
+        id: floodVisualization.input.incident.id ?? 'flood-visualization',
+        type: floodVisualization.input.incident.eventType,
+        title: 'Demo flood visualization',
+        latitude: floodVisualization.input.incident.latitude,
+        longitude: floodVisualization.input.incident.longitude,
+        risk_level: undefined,
+      }
+    : incident, [floodVisualization, incident, isFloodMode])
+  const infrastructure = useMemo(
+    () => asInfrastructureMarkers(context, isFloodMode),
+    [context, isFloodMode],
+  )
+  const floodStates = useMemo(
+    () => [...(floodVisualization?.input.states ?? [])]
+      .sort((left, right) => left.minutesFromNow - right.minutesFromNow),
+    [floodVisualization],
+  )
+  const floodMaxMinutes = floodStates.at(-1)?.minutesFromNow ?? 0
+  const exposureAssessments = useMemo(
+    () => floodVisualization
+      ? assessFloodInfrastructureExposure(floodVisualization.input, context)
+      : [],
+    [context, floodVisualization],
+  )
+  const displayedExposureAssessments = useMemo(() => [...exposureAssessments]
+    .sort((left, right) => {
+      const leftTime = left.exposure.firstExposedMinutesFromNow ?? Number.POSITIVE_INFINITY
+      const rightTime = right.exposure.firstExposedMinutesFromNow ?? Number.POSITIVE_INFINITY
+      return leftTime - rightTime
+    })
+    .slice(0, 12), [exposureAssessments])
   const activeResources = useMemo<RoutedResource[]>(() => {
+    if (isFloodMode) return []
     if (allocatedResources.length > 0) {
       return allocatedResources.map((resource) => ({
         ...resource,
@@ -432,7 +538,7 @@ function Incident3DView({
       }))
     }
     return demoActive ? selectDemoResources(context, incident) : []
-  }, [allocatedResources, context, demoActive, incident])
+  }, [allocatedResources, context, demoActive, incident, isFloodMode])
 
   useEffect(() => {
     if (!token || !hasWebGl || !containerRef.current) return
@@ -440,6 +546,8 @@ function Incident3DView({
     const generation = ++initializationGenerationRef.current
     let cancelled = false
     let viewer: Viewer | null = null
+    let floodRenderer: FloodWaterRenderer | null = null
+    let preparedFloodSurface: PreparedFloodSurface | null = null
     let initializationStage: InitializationStage = 'Cesium Viewer creation'
     const logLifecycle = (event: string) => {
       if (import.meta.env.DEV) {
@@ -469,8 +577,16 @@ function Incident3DView({
         })
         logLifecycle('viewer created')
         viewerRef.current = viewer
-        viewer.scene.screenSpaceCameraController.minimumZoomDistance = 80
-        viewer.scene.screenSpaceCameraController.maximumZoomDistance = 50_000
+        const cameraController = viewer.scene.screenSpaceCameraController
+        cameraController.minimumZoomDistance = 80
+        cameraController.maximumZoomDistance = 50_000
+        if (isFloodMode) {
+          cameraController.enableRotate = true
+          cameraController.enableTilt = true
+          cameraController.enableZoom = true
+          cameraController.enableTranslate = true
+          cameraController.enableLook = true
+        }
 
         initializationStage = 'Google Photorealistic 3D Tiles creation'
         let tilesetRequest = tilesetRequestRef.current
@@ -495,36 +611,70 @@ function Incident3DView({
         logLifecycle('tileset attached')
 
         initializationStage = 'Incident entity creation'
-        const incidentStyle = INCIDENT_STYLES[incident.type.toLowerCase()] ?? {
+        const incidentStyle = INCIDENT_STYLES[sceneIncident.type.toLowerCase()] ?? {
           color: Color.GOLD,
           symbol: '◆',
         }
         viewer.entities.add({
-          id: `incident-${incident.id}`,
-          name: incident.title || `${incident.type} incident`,
-          position: Cartesian3.fromDegrees(incident.longitude, incident.latitude, 18),
+          id: `incident-${sceneIncident.id}`,
+          name: sceneIncident.title || `${sceneIncident.type} incident`,
+          position: Cartesian3.fromDegrees(
+            sceneIncident.longitude,
+            sceneIncident.latitude,
+            18,
+          ),
           point: {
             color: incidentStyle.color,
             outlineColor: Color.WHITE,
-            outlineWidth: 3,
-            pixelSize: 18,
-            scaleByDistance: new NearFarScalar(500, 1.5, 30_000, 0.7),
+            outlineWidth: isFloodMode ? 2 : 3,
+            pixelSize: isFloodMode ? 10 : 18,
+            scaleByDistance: isFloodMode
+              ? new NearFarScalar(300, 1, 8_000, 0.45)
+              : new NearFarScalar(500, 1.5, 30_000, 0.7),
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
           label: {
-            text: `${incidentStyle.symbol} ${incident.type || 'Environmental'} incident\n${incident.risk_level || 'Severity not provided'}`,
-            font: 'bold 16px sans-serif',
+            text: isFloodMode
+              ? 'Origin'
+              : `${incidentStyle.symbol} ${incident.type || 'Environmental'} incident\n${incident.risk_level || 'Severity not provided'}`,
+            font: isFloodMode ? '11px sans-serif' : 'bold 16px sans-serif',
             fillColor: Color.WHITE,
             outlineColor: Color.BLACK,
-            outlineWidth: 4,
-            pixelOffset: new Cartesian2(0, -34),
-            scale: 0.8,
+            outlineWidth: isFloodMode ? 2 : 4,
+            pixelOffset: new Cartesian2(0, isFloodMode ? -20 : -34),
+            scale: isFloodMode ? 0.55 : 0.8,
             style: LabelStyle.FILL_AND_OUTLINE,
             verticalOrigin: VerticalOrigin.BOTTOM,
-            distanceDisplayCondition: new DistanceDisplayCondition(0, 50_000),
+            distanceDisplayCondition: new DistanceDisplayCondition(
+              0,
+              isFloodMode ? 3_500 : 50_000,
+            ),
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
         })
+
+        if (floodVisualization) {
+          initializationStage = 'Flood water primitive creation'
+          const preparedTimelineStates: PreparedFloodTimelineState[] = []
+          for (const state of floodStates) {
+            const surface = await prepareFloodSurface(viewer.scene, state)
+            if (!isCurrentGeneration() || viewer.isDestroyed()) return
+            if (surface) {
+              preparedTimelineStates.push({
+                minutesFromNow: state.minutesFromNow,
+                surface,
+              })
+            }
+          }
+          preparedFloodSurface = preparedTimelineStates[0]?.surface ?? null
+          if (!preparedFloodSurface || preparedTimelineStates.length === 0) {
+            throw new Error('The flood surface could not be aligned with the 3D scene.')
+          }
+          floodRenderer = attachFloodWaterRenderer(viewer.scene, preparedTimelineStates)
+          floodRenderer.setTimeMinutes(floodTimeRef.current)
+          floodRendererRef.current = floodRenderer
+          preparedFloodStatesRef.current = preparedTimelineStates
+        }
 
         if (riskArea && Number.isFinite(riskArea.radiusMeters) && riskArea.radiusMeters > 0) {
           viewer.entities.add({
@@ -546,7 +696,9 @@ function Incident3DView({
             ? new Cartesian2(-24, -22)
             : marker.category === 'Police station'
               ? new Cartesian2(24, -8)
-              : new Cartesian2(0, 20)
+              : marker.category === 'Hospital'
+                ? new Cartesian2(0, 20)
+                : new Cartesian2(18, 12)
           viewer?.entities.add({
             id: marker.id,
             name: marker.name,
@@ -578,6 +730,62 @@ function Incident3DView({
             },
           })
         })
+
+        if (isFloodMode) {
+          exposureAssessments.forEach((assessment) => {
+            const coordinate = exposureMarkerCoordinate(assessment)
+            if (!coordinate || !assessment.exposure.id) return
+            const hasInfrastructureMarker = infrastructure.some(
+              (marker) => marker.id === assessment.exposure.id,
+            )
+            if (assessment.source === 'demo-fixture' ||
+              (!hasInfrastructureMarker &&
+                assessment.exposure.firstExposedMinutesFromNow !== undefined)) {
+              const isDemoFixture = assessment.source === 'demo-fixture'
+              viewer?.entities.add({
+                id: `${isDemoFixture ? 'demo-fixture' : 'flood-context'}-${assessment.exposure.id}`,
+                name: isDemoFixture
+                  ? `${assessment.exposure.name ?? 'Demo infrastructure'} (demo fixture)`
+                  : assessment.exposure.name ?? 'Nearby infrastructure',
+                description: isDemoFixture
+                  ? 'Synthetic visualization fixture · not real infrastructure.'
+                  : 'Real geospatial context · exposure is estimated from a representative point.',
+                position: Cartesian3.fromDegrees(
+                  coordinate.longitude,
+                  coordinate.latitude,
+                  11,
+                ),
+                point: {
+                  color: isDemoFixture ? Color.MEDIUMPURPLE : Color.SLATEBLUE,
+                  outlineColor: Color.WHITE,
+                  outlineWidth: 1,
+                  pixelSize: 8,
+                  disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                },
+              })
+            }
+            viewer?.entities.add({
+              id: `flood-exposure-${assessment.exposure.id}`,
+              name: `${assessment.exposure.name ?? 'Infrastructure'} · potential demo exposure`,
+              description: 'Estimated geographic intersection only · not a closure or operational status.',
+              position: Cartesian3.fromDegrees(
+                coordinate.longitude,
+                coordinate.latitude,
+                14,
+              ),
+              show: assessment.exposure.firstExposedMinutesFromNow !== undefined &&
+                floodTimeRef.current >= assessment.exposure.firstExposedMinutesFromNow,
+              point: {
+                color: Color.TRANSPARENT,
+                outlineColor: Color.fromCssColorString('#fbbf24'),
+                outlineWidth: 4,
+                pixelSize: 23,
+                scaleByDistance: new NearFarScalar(300, 1.1, 20_000, 0.55),
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+              },
+            })
+          })
+        }
 
         initializationStage = 'Allocated resource entity creation'
         setSimulationSummaries(activeResources.map((resource) => ({
@@ -930,15 +1138,57 @@ function Incident3DView({
         }
 
         initializationStage = 'Camera positioning'
-        viewer.camera.flyTo({
-          destination: Cartesian3.fromDegrees(incident.longitude, incident.latitude, 3_000),
-          orientation: {
-            heading: 0,
-            pitch: CesiumMath.toRadians(-45),
-            roll: 0,
-          },
-          duration: 0,
-        })
+        if (preparedFloodSurface) {
+          const heading = routeBearing(
+            preparedFloodSurface.origin,
+            preparedFloodSurface.downstreamPoint,
+          )
+          const localFrame = Transforms.eastNorthUpToFixedFrame(preparedFloodSurface.origin)
+          const east = Math.sin(heading)
+          const north = Math.cos(heading)
+          const destination = Matrix4.multiplyByPoint(
+            localFrame,
+            new Cartesian3(-east * 225, -north * 225, 140),
+            new Cartesian3(),
+          )
+          const target = Matrix4.multiplyByPoint(
+            localFrame,
+            new Cartesian3(east * 235, north * 235, 5),
+            new Cartesian3(),
+          )
+          viewer.camera.flyTo({
+            destination,
+            orientation: {
+              direction: Cartesian3.normalize(
+                Cartesian3.subtract(target, destination, new Cartesian3()),
+                new Cartesian3(),
+              ),
+              up: Cartesian3.normalize(
+                Matrix4.multiplyByPointAsVector(
+                  localFrame,
+                  Cartesian3.UNIT_Z,
+                  new Cartesian3(),
+                ),
+                new Cartesian3(),
+              ),
+            },
+            duration: 0,
+          })
+        } else {
+          viewer.camera.flyTo({
+            destination: Cartesian3.fromDegrees(
+              sceneIncident.longitude,
+              sceneIncident.latitude,
+              3_000,
+            ),
+            orientation: {
+              heading: 0,
+              pitch: CesiumMath.toRadians(-45),
+              roll: 0,
+            },
+            duration: 0,
+          })
+        }
         setSceneState('ready')
       } catch (error: unknown) {
         if (isCurrentGeneration()) {
@@ -968,13 +1218,124 @@ function Incident3DView({
         tilesetRequestRef.current = null
       }
       logLifecycle('cleanup')
+      cancelAnimationFrame(floodOrbitFrameRef.current)
+      floodOrbitFrameRef.current = 0
       viewerRef.current = null
+      if (floodRendererRef.current === floodRenderer) floodRendererRef.current = null
+      preparedFloodStatesRef.current = []
       if (viewer && !viewer.isDestroyed()) {
+        floodRenderer?.destroy()
         viewer.destroy()
         logLifecycle('viewer destroyed')
       }
     }
-  }, [activeResources, hasWebGl, incident, infrastructure, retryRequestId, riskArea, token])
+  }, [
+    activeResources,
+    exposureAssessments,
+    floodVisualization,
+    floodStates,
+    hasWebGl,
+    incident,
+    infrastructure,
+    isFloodMode,
+    retryRequestId,
+    riskArea,
+    sceneIncident,
+    token,
+  ])
+
+  useEffect(() => {
+    if (!isFloodMode || !isFloodPlaying || sceneState !== 'ready' || floodMaxMinutes <= 0) {
+      return
+    }
+
+    let animationFrame = 0
+    let previousTimestamp: number | null = null
+    let lastUiUpdate = 0
+    const scenarioMinutesPerSecond = floodMaxMinutes / FLOOD_PLAYBACK_DURATION_SECONDS
+    const advance = (timestamp: number) => {
+      if (previousTimestamp === null) previousTimestamp = timestamp
+      const elapsedSeconds = Math.min(0.1, (timestamp - previousTimestamp) / 1_000)
+      previousTimestamp = timestamp
+      const nextTime = Math.min(
+        floodMaxMinutes,
+        floodTimeRef.current + elapsedSeconds * scenarioMinutesPerSecond,
+      )
+      floodTimeRef.current = nextTime
+      floodRendererRef.current?.setTimeMinutes(nextTime)
+      if (viewerRef.current) {
+        setExposureMarkerVisibility(viewerRef.current, exposureAssessments, nextTime)
+      }
+
+      if (timestamp - lastUiUpdate >= 80 || nextTime >= floodMaxMinutes) {
+        lastUiUpdate = timestamp
+        setFloodTimeMinutes(nextTime)
+      }
+      if (nextTime >= floodMaxMinutes) {
+        setIsFloodPlaying(false)
+        return
+      }
+      animationFrame = requestAnimationFrame(advance)
+    }
+    animationFrame = requestAnimationFrame(advance)
+    return () => cancelAnimationFrame(animationFrame)
+  }, [exposureAssessments, floodMaxMinutes, isFloodMode, isFloodPlaying, sceneState])
+
+  useEffect(() => {
+    if (!isFloodOrbiting || !isFloodMode || sceneState !== 'ready') return
+    const viewer = viewerRef.current
+    if (!viewer || viewer.isDestroyed()) return
+
+    let previousTimestamp: number | null = null
+    const stopFromManualInteraction = () => {
+      cancelAnimationFrame(floodOrbitFrameRef.current)
+      floodOrbitFrameRef.current = 0
+      if (!viewer.isDestroyed()) viewer.camera.lookAtTransform(Matrix4.IDENTITY)
+      setIsFloodOrbiting(false)
+    }
+    const orbit = (timestamp: number) => {
+      if (previousTimestamp === null) previousTimestamp = timestamp
+      const elapsedSeconds = Math.min(0.1, (timestamp - previousTimestamp) / 1_000)
+      previousTimestamp = timestamp
+      viewer.camera.rotateRight(elapsedSeconds * 0.055)
+      floodOrbitFrameRef.current = requestAnimationFrame(orbit)
+    }
+    const canvas = viewer.scene.canvas
+    canvas.addEventListener('pointerdown', stopFromManualInteraction)
+    canvas.addEventListener('wheel', stopFromManualInteraction, { passive: true })
+    canvas.addEventListener('touchstart', stopFromManualInteraction, { passive: true })
+    floodOrbitFrameRef.current = requestAnimationFrame(orbit)
+
+    return () => {
+      cancelAnimationFrame(floodOrbitFrameRef.current)
+      floodOrbitFrameRef.current = 0
+      canvas.removeEventListener('pointerdown', stopFromManualInteraction)
+      canvas.removeEventListener('wheel', stopFromManualInteraction)
+      canvas.removeEventListener('touchstart', stopFromManualInteraction)
+    }
+  }, [isFloodMode, isFloodOrbiting, sceneState])
+
+  const selectFloodTime = (minutesFromNow: number) => {
+    const resolvedTime = Math.min(floodMaxMinutes, Math.max(0, minutesFromNow))
+    floodTimeRef.current = resolvedTime
+    floodRendererRef.current?.setTimeMinutes(resolvedTime)
+    if (viewerRef.current) {
+      setExposureMarkerVisibility(viewerRef.current, exposureAssessments, resolvedTime)
+    }
+    setFloodTimeMinutes(resolvedTime)
+  }
+
+  const selectAdjacentFloodState = (direction: -1 | 1) => {
+    setIsFloodPlaying(false)
+    const nextState = direction < 0
+      ? [...floodStates].reverse().find(
+          (state) => state.minutesFromNow < floodTimeRef.current - 0.5,
+        ) ?? floodStates[0]
+      : floodStates.find(
+          (state) => state.minutesFromNow > floodTimeRef.current + 0.5,
+        ) ?? floodStates.at(-1)
+    if (nextState) selectFloodTime(nextState.minutesFromNow)
+  }
 
   const clearFollowMode = (viewer: Viewer) => {
     followedResourceIdRef.current = null
@@ -994,12 +1355,25 @@ function Incident3DView({
     setFollowedResourceId(null)
   }
 
+  const stopFloodOrbit = () => {
+    cancelAnimationFrame(floodOrbitFrameRef.current)
+    floodOrbitFrameRef.current = 0
+    const viewer = viewerRef.current
+    if (viewer && !viewer.isDestroyed()) viewer.camera.lookAtTransform(Matrix4.IDENTITY)
+    setIsFloodOrbiting(false)
+  }
+
   const focusIncident = (pitchDegrees: number, height: number) => {
+    stopFloodOrbit()
     if (viewerRef.current) {
       clearFollowMode(viewerRef.current)
     }
     viewerRef.current?.camera.flyTo({
-      destination: Cartesian3.fromDegrees(incident.longitude, incident.latitude, height),
+      destination: Cartesian3.fromDegrees(
+        sceneIncident.longitude,
+        sceneIncident.latitude,
+        height,
+      ),
       orientation: { heading: 0, pitch: CesiumMath.toRadians(pitchDegrees), roll: 0 },
       duration: 1,
     })
@@ -1008,6 +1382,7 @@ function Incident3DView({
   const zoomCamera = (factor: number) => {
     const viewer = viewerRef.current
     if (!viewer) return
+    stopFloodOrbit()
     clearFollowMode(viewer)
     const position = viewer.camera.positionCartographic
     const height = Math.min(50_000, Math.max(150, position.height * factor))
@@ -1025,6 +1400,7 @@ function Incident3DView({
   const resetNorth = () => {
     const viewer = viewerRef.current
     if (!viewer) return
+    stopFloodOrbit()
     clearFollowMode(viewer)
     viewer.camera.flyTo({
       destination: viewer.camera.position,
@@ -1036,15 +1412,120 @@ function Incident3DView({
   const fitOperationalArea = () => {
     const viewer = viewerRef.current
     if (!viewer) return
+    stopFloodOrbit()
     clearFollowMode(viewer)
     const points = [
-      Cartesian3.fromDegrees(incident.longitude, incident.latitude),
+      Cartesian3.fromDegrees(sceneIncident.longitude, sceneIncident.latitude),
       ...infrastructure.map((marker) => Cartesian3.fromDegrees(marker.longitude, marker.latitude)),
     ]
     viewer.camera.flyToBoundingSphere(BoundingSphere.fromPoints(points), {
       offset: new HeadingPitchRange(0, CesiumMath.toRadians(-45), 0),
       duration: 1,
     })
+  }
+
+  const activeFloodSurfaces = () => {
+    const states = preparedFloodStatesRef.current
+    if (states.length === 0) return []
+    const upperIndex = states.findIndex(
+      (state) => state.minutesFromNow >= floodTimeRef.current,
+    )
+    const resolvedUpperIndex = upperIndex < 0 ? states.length - 1 : upperIndex
+    const lowerIndex = Math.max(0, resolvedUpperIndex -
+      (states[resolvedUpperIndex].minutesFromNow > floodTimeRef.current ? 1 : 0))
+    return lowerIndex === resolvedUpperIndex
+      ? [states[lowerIndex].surface]
+      : [states[lowerIndex].surface, states[resolvedUpperIndex].surface]
+  }
+
+  const activeFloodBoundingSphere = () => {
+    const points = activeFloodSurfaces().flatMap((surface) => [
+      ...surface.waterHierarchies.flatMap((hierarchy) => hierarchy.positions),
+      ...surface.flowPaths.flat(),
+    ])
+    return points.length > 0 ? BoundingSphere.fromPoints(points) : null
+  }
+
+  const representativeFloodSurface = () => {
+    const states = preparedFloodStatesRef.current
+    return states.reduce<PreparedFloodTimelineState | null>((closest, state) =>
+      !closest || Math.abs(state.minutesFromNow - floodTimeRef.current) <
+        Math.abs(closest.minutesFromNow - floodTimeRef.current)
+        ? state
+        : closest, null)?.surface ?? null
+  }
+
+  const flyFloodCorridor = (useInitialSurface = false) => {
+    const viewer = viewerRef.current
+    const surface = useInitialSurface
+      ? preparedFloodStatesRef.current[0]?.surface ?? null
+      : representativeFloodSurface()
+    if (!viewer || !surface) return
+    stopFloodOrbit()
+    clearFollowMode(viewer)
+    const heading = routeBearing(surface.origin, surface.downstreamPoint)
+    const localFrame = Transforms.eastNorthUpToFixedFrame(surface.origin)
+    const east = Math.sin(heading)
+    const north = Math.cos(heading)
+    const destination = Matrix4.multiplyByPoint(
+      localFrame,
+      new Cartesian3(-east * 225, -north * 225, 140),
+      new Cartesian3(),
+    )
+    const target = Matrix4.multiplyByPoint(
+      localFrame,
+      new Cartesian3(east * 235, north * 235, 5),
+      new Cartesian3(),
+    )
+    viewer.camera.flyTo({
+      destination,
+      orientation: {
+        direction: Cartesian3.normalize(
+          Cartesian3.subtract(target, destination, new Cartesian3()),
+          new Cartesian3(),
+        ),
+        up: Cartesian3.normalize(
+          Matrix4.multiplyByPointAsVector(localFrame, Cartesian3.UNIT_Z, new Cartesian3()),
+          new Cartesian3(),
+        ),
+      },
+      duration: 1,
+    })
+  }
+
+  const flyToFloodExtent = (pitchDegrees: number, rangeFactor: number) => {
+    const viewer = viewerRef.current
+    const sphere = activeFloodBoundingSphere()
+    const surface = representativeFloodSurface()
+    if (!viewer || !sphere || !surface) return
+    stopFloodOrbit()
+    clearFollowMode(viewer)
+    viewer.camera.flyToBoundingSphere(sphere, {
+      offset: new HeadingPitchRange(
+        routeBearing(surface.origin, surface.downstreamPoint),
+        CesiumMath.toRadians(pitchDegrees),
+        Math.max(350, sphere.radius * rangeFactor),
+      ),
+      duration: 1,
+    })
+  }
+
+  const startFloodOrbit = () => {
+    const viewer = viewerRef.current
+    const sphere = activeFloodBoundingSphere()
+    const surface = representativeFloodSurface()
+    if (!viewer || !sphere || !surface) return
+    stopFloodOrbit()
+    clearFollowMode(viewer)
+    viewer.camera.lookAt(
+      sphere.center,
+      new HeadingPitchRange(
+        routeBearing(surface.origin, surface.downstreamPoint),
+        CesiumMath.toRadians(-38),
+        Math.max(500, sphere.radius * 2.4),
+      ),
+    )
+    setIsFloodOrbiting(true)
   }
 
   const followResource = (summary: SimulationSummary) => {
@@ -1091,7 +1572,11 @@ function Incident3DView({
 
   return (
     <div className="incident-3d-view">
-      <div ref={containerRef} className="incident-3d-view__canvas" aria-label="3D operational incident map" />
+      <div
+        ref={containerRef}
+        className="incident-3d-view__canvas"
+        aria-label={isFloodMode ? '3D demo flood visualization' : '3D operational incident map'}
+      />
 
       {sceneState === 'loading' && (
         <div className="incident-3d-view__loading" role="status">Loading Cesium and 3D tiles…</div>
@@ -1114,17 +1599,169 @@ function Incident3DView({
 
       {sceneState === 'ready' && (
         <div className="incident-3d-view__controls" aria-label="3D camera controls">
-          <button type="button" onClick={() => focusIncident(-45, 3_000)}>Incident focus</button>
-          <button type="button" onClick={() => zoomCamera(0.65)}>Zoom in</button>
-          <button type="button" onClick={resetNorth}>North reset</button>
-          <button type="button" onClick={() => focusIncident(-90, 5_000)}>Top view</button>
-          <button type="button" onClick={() => focusIncident(-35, 7_500)}>Oblique view</button>
-          <button type="button" onClick={() => zoomCamera(1.55)}>Zoom out</button>
-          <button type="button" onClick={fitOperationalArea}>Fit operational area</button>
+          {isFloodMode ? (
+            <>
+              <button type="button" onClick={() => flyFloodCorridor()}>Flood corridor view</button>
+              <button type="button" onClick={() => flyToFloodExtent(-90, 2.1)}>Top view</button>
+              <button type="button" onClick={() => flyToFloodExtent(-38, 2.35)}>Oblique view</button>
+              <button type="button" onClick={() => flyToFloodExtent(-52, 2.15)}>Fit flood extent</button>
+              <button type="button" onClick={() => flyFloodCorridor(true)}>Reset flood camera</button>
+              <button
+                type="button"
+                aria-pressed={isFloodOrbiting}
+                onClick={isFloodOrbiting ? stopFloodOrbit : startFloodOrbit}
+              >
+                {isFloodOrbiting ? 'Stop 360 orbit' : 'Orbit / 360 view'}
+              </button>
+              <button type="button" onClick={() => zoomCamera(0.65)}>Zoom in</button>
+              <button type="button" onClick={() => zoomCamera(1.55)}>Zoom out</button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={() => focusIncident(-45, 3_000)}>Incident focus</button>
+              <button type="button" onClick={() => zoomCamera(0.65)}>Zoom in</button>
+              <button type="button" onClick={resetNorth}>North reset</button>
+              <button type="button" onClick={() => focusIncident(-90, 5_000)}>Top view</button>
+              <button type="button" onClick={() => focusIncident(-35, 7_500)}>Oblique view</button>
+              <button type="button" onClick={() => zoomCamera(1.55)}>Zoom out</button>
+              <button type="button" onClick={fitOperationalArea}>Fit operational area</button>
+            </>
+          )}
         </div>
       )}
 
-      {sceneState === 'ready' && allocatedResources.length === 0 && !demoActive && (
+      {sceneState === 'ready' && isFloodMode && floodStates.length > 0 && (
+        <section className="incident-3d-view__flood-timeline" aria-label="Demo flood timeline">
+          <header>
+            <strong>
+              {floodTimeMinutes < 0.5
+                ? 'CURRENT · DEMO STATE'
+                : `FORECAST · ESTIMATED · ${formatFloodTime(floodTimeMinutes)}`}
+            </strong>
+            <span>Visual transition only · not a hydrological prediction</span>
+          </header>
+          <div className="incident-3d-view__flood-playback">
+            <button
+              type="button"
+              onClick={() => {
+                if (floodTimeRef.current >= floodMaxMinutes) selectFloodTime(0)
+                setIsFloodPlaying(true)
+              }}
+              disabled={isFloodPlaying}
+            >
+              Play
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsFloodPlaying(false)}
+              disabled={!isFloodPlaying}
+            >
+              Pause
+            </button>
+            <button type="button" onClick={() => selectAdjacentFloodState(-1)}>
+              Previous state
+            </button>
+            <button type="button" onClick={() => selectAdjacentFloodState(1)}>
+              Next state
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsFloodPlaying(false)
+                selectFloodTime(0)
+              }}
+            >
+              Reset to NOW
+            </button>
+          </div>
+          <label>
+            <span>Propagation time: {formatFloodTime(floodTimeMinutes)}</span>
+            <input
+              type="range"
+              min={0}
+              max={floodMaxMinutes}
+              step={1}
+              value={floodTimeMinutes}
+              onChange={(event) => {
+                setIsFloodPlaying(false)
+                selectFloodTime(Number(event.target.value))
+              }}
+            />
+          </label>
+          <div className="incident-3d-view__flood-state-markers" aria-label="Flood states">
+            {floodStates.map((state) => (
+              <button
+                key={state.minutesFromNow}
+                type="button"
+                aria-current={Math.abs(floodTimeMinutes - state.minutesFromNow) < 0.5
+                  ? 'step'
+                  : undefined}
+                onClick={() => {
+                  setIsFloodPlaying(false)
+                  selectFloodTime(state.minutesFromNow)
+                }}
+              >
+                {formatFloodTime(state.minutesFromNow)}
+              </button>
+            ))}
+          </div>
+          <details className="incident-3d-view__flood-exposure">
+            <summary>
+              Infrastructure exposure · {exposureAssessments.filter(({ exposure }) =>
+                exposure.firstExposedMinutesFromNow !== undefined &&
+                floodTimeMinutes >= exposure.firstExposedMinutesFromNow).length} potentially
+              exposed at selected state
+            </summary>
+            <p>Estimated geometry intersection only · no closure, availability, or dispatch status.</p>
+            {!exposureAssessments.some(({ source }) => source === 'geospatial-context') && (
+              <p>Real nearby infrastructure context is not currently available.</p>
+            )}
+            <ul>
+              {displayedExposureAssessments.map((assessment) => {
+                const { exposure } = assessment
+                const firstExposure = exposure.firstExposedMinutesFromNow
+                const currentlyExposed = firstExposure !== undefined &&
+                  floodTimeMinutes >= firstExposure
+                return (
+                  <li key={`${assessment.source}-${exposure.id}`}>
+                    <div>
+                      <strong>{exposure.name ?? `Unnamed ${exposure.type}`}</strong>
+                      <span>{exposure.type.replaceAll('-', ' ')}</span>
+                    </div>
+                    <span>
+                      {firstExposure === undefined
+                        ? 'Not exposed within scenario horizon'
+                        : currentlyExposed
+                          ? firstExposure === 0
+                            ? 'Current demo exposure'
+                            : 'Potentially exposed at selected state'
+                          : 'Not exposed at selected state'}
+                    </span>
+                    <small>
+                      {firstExposure === undefined
+                        ? 'No supplied demo state intersects this location'
+                        : `${firstExposure === 0 ? 'Current demo' : 'Forecast · estimated'} exposure: ${formatFloodTime(firstExposure)}`}
+                      {' · '}
+                      {assessment.assessmentBasis === 'point-in-polygon'
+                        ? 'representative point assessment'
+                        : assessment.assessmentBasis.replaceAll('-', ' ')}
+                      {assessment.source === 'demo-fixture' ? ' · synthetic demo fixture' : ' · OSM/geospatial context'}
+                    </small>
+                  </li>
+                )
+              })}
+            </ul>
+            {exposureAssessments.length > displayedExposureAssessments.length && (
+              <small>
+                Showing {displayedExposureAssessments.length} of {exposureAssessments.length} nearby items;
+                potentially exposed items are listed first.
+              </small>
+            )}
+          </details>
+        </section>
+      )}
+
+      {sceneState === 'ready' && !isFloodMode && allocatedResources.length === 0 && !demoActive && (
         <div className="incident-3d-view__demo-prompt">
           <strong>Demo Response Simulation</strong>
           <span>Visualization only · no resources are dispatched or allocated.</span>
@@ -1138,7 +1775,7 @@ function Incident3DView({
         </div>
       )}
 
-      {sceneState === 'ready' && simulationSummaries.length > 0 && (
+      {sceneState === 'ready' && !isFloodMode && simulationSummaries.length > 0 && (
         <section
           className={`incident-3d-view__simulation${isSimulationPanelCollapsed ? ' incident-3d-view__simulation--collapsed' : ''}`}
           aria-label="Response route simulation"
@@ -1202,13 +1839,24 @@ function Incident3DView({
 
       <div className="incident-3d-view__semantics">
         <span><i className="incident-3d-view__dot incident-3d-view__dot--incident" />Incident location</span>
+        {isFloodMode && (
+          <>
+            <span><i className="incident-3d-view__swatch incident-3d-view__swatch--flood" />Animated flood water</span>
+            <span><i className="incident-3d-view__line incident-3d-view__line--flow" />Estimated flow direction</span>
+          </>
+        )}
         <span><i className="incident-3d-view__dot incident-3d-view__dot--context" />Nearby infrastructure</span>
-        <span><i className="incident-3d-view__dot incident-3d-view__dot--allocated" />Verified allocation</span>
+        {!isFloodMode && (
+          <span><i className="incident-3d-view__dot incident-3d-view__dot--allocated" />Verified allocation</span>
+        )}
       </div>
 
       <div className="incident-3d-view__notices" aria-live="polite">
+        {isFloodMode && (
+          <strong>DEMO · ESTIMATED FLOOD PROPAGATION · NOT OPERATIONAL</strong>
+        )}
         {infrastructure.length === 0 && <span>No nearby infrastructure is available to display.</span>}
-        {allocatedResources.length === 0 && <span>No verified allocated resources.</span>}
+        {!isFloodMode && allocatedResources.length === 0 && <span>No verified allocated resources.</span>}
       </div>
     </div>
   )

@@ -14,6 +14,7 @@
 .incident-3d-view__loading,
 .incident-3d-view__error,
 .incident-3d-view__controls,
+.incident-3d-view__flood-timeline,
 .incident-3d-view__semantics,
 .incident-3d-view__notices {
   position: absolute;
@@ -23,6 +24,126 @@
   background: rgba(0, 14, 39, 0.92);
   color: #f8fafc;
   backdrop-filter: blur(7px);
+}
+
+.incident-3d-view__flood-timeline {
+  position: absolute;
+  z-index: 3;
+  top: 62px;
+  left: 12px;
+  display: grid;
+  gap: 0.5rem;
+  width: min(620px, calc(100% - 24px));
+  padding: 0.65rem;
+  border-color: rgba(103, 232, 249, 0.58);
+  background: rgba(8, 47, 73, 0.9);
+  font-size: 0.72rem;
+}
+
+.incident-3d-view__flood-timeline header,
+.incident-3d-view__flood-timeline label {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.incident-3d-view__flood-timeline header span {
+  color: #a5f3fc;
+}
+
+.incident-3d-view__flood-playback,
+.incident-3d-view__flood-state-markers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.incident-3d-view__flood-timeline button {
+  padding: 0.32rem 0.48rem;
+  border: 1px solid rgba(165, 243, 252, 0.68);
+  border-radius: 5px;
+  background: rgba(8, 47, 73, 0.76);
+  color: #ecfeff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+.incident-3d-view__flood-timeline button:hover,
+.incident-3d-view__flood-timeline button:focus-visible,
+.incident-3d-view__flood-state-markers button[aria-current='step'] {
+  background: #0e7490;
+}
+
+.incident-3d-view__flood-timeline button:focus-visible,
+.incident-3d-view__flood-timeline input:focus-visible {
+  outline: 3px solid #a5f3fc;
+  outline-offset: 2px;
+}
+
+.incident-3d-view__flood-timeline button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.incident-3d-view__flood-timeline input {
+  width: 100%;
+  accent-color: #22d3ee;
+}
+
+.incident-3d-view__flood-state-markers {
+  justify-content: space-between;
+}
+
+.incident-3d-view__flood-state-markers button {
+  flex: 1 1 auto;
+  font-size: 0.66rem;
+}
+
+.incident-3d-view__flood-exposure {
+  border-top: 1px solid rgba(165, 243, 252, 0.28);
+  padding-top: 0.4rem;
+}
+
+.incident-3d-view__flood-exposure summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.incident-3d-view__flood-exposure p {
+  margin: 0.35rem 0;
+  color: #bae6fd;
+}
+
+.incident-3d-view__flood-exposure ul {
+  display: grid;
+  gap: 0.3rem;
+  max-height: 210px;
+  margin: 0.4rem 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.incident-3d-view__flood-exposure li {
+  display: grid;
+  gap: 0.12rem;
+  padding: 0.35rem 0.4rem;
+  border-radius: 5px;
+  background: rgba(0, 14, 39, 0.38);
+}
+
+.incident-3d-view__flood-exposure li > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.incident-3d-view__flood-exposure li span {
+  color: #fde68a;
+}
+
+.incident-3d-view__flood-exposure small {
+  color: #bae6fd;
 }
 
 .incident-3d-view__demo-prompt,
@@ -240,9 +361,24 @@
   border-radius: 50%;
 }
 
+.incident-3d-view__swatch {
+  width: 0.85rem;
+  height: 0.65rem;
+  border: 1px solid #a5f3fc;
+  border-radius: 2px;
+}
+
+.incident-3d-view__line {
+  width: 1rem;
+  height: 0;
+  border-top: 3px solid;
+}
+
 .incident-3d-view__dot--incident { background: #f59e0b; }
 .incident-3d-view__dot--context { background: #3b82f6; }
 .incident-3d-view__dot--allocated { background: #22d3ee; }
+.incident-3d-view__swatch--flood { background: rgba(21, 151, 212, 0.65); }
+.incident-3d-view__line--flow { border-color: #22d3ee; }
 
 .incident-3d-view__notices {
   right: 12px;
@@ -292,7 +428,8 @@
   }
 
   .incident-3d-view__demo-prompt,
-  .incident-3d-view__simulation {
+  .incident-3d-view__simulation,
+  .incident-3d-view__flood-timeline {
     top: 108px;
     right: 8px;
     left: 8px;

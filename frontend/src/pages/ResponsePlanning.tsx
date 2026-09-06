@@ -5,6 +5,7 @@ import { fetchDetectedEvents } from '../api/detectedEvents'
 import { fetchEnvironmentalData } from '../api/environmentalData'
 import InfrastructureLayer, { type InfrastructureItem } from '../components/InfrastructureLayer'
 import MapView from '../components/MapView'
+import { demoFloodScenario } from '../data/demoFloodScenario'
 import type { EnvironmentalData } from '../types/environmentalData'
 import type { IncidentDetails } from '../types/incidents'
 import type { AllocatedResponseResource } from '../types/responseResources'
@@ -21,6 +22,9 @@ type VisualizationMode = '2d' | '3d'
 
 const Incident3DView = lazy(() => import('../components/Incident3DView'))
 const NO_ALLOCATED_RESOURCES: readonly AllocatedResponseResource[] = Object.freeze([])
+const DEMO_FLOOD_VISUALIZATION = {
+  input: demoFloodScenario,
+} as const
 const DEFAULT_VISUALIZATION_HEIGHT = 520
 const MIN_VISUALIZATION_HEIGHT = 420
 const MAX_VISUALIZATION_HEIGHT = 900
@@ -42,6 +46,12 @@ function ResponsePlanning() {
   const [environmentalError, setEnvironmentalError] = useState<string | null>(null)
   const [isLoadingContext, setIsLoadingContext] = useState(false)
   const [visualizationMode, setVisualizationMode] = useState<VisualizationMode>('2d')
+  const [showDemoFlood, setShowDemoFlood] = useState(false)
+  const [floodEnvironmentalData, setFloodEnvironmentalData] =
+    useState<EnvironmentalData | null>(null)
+  const [floodContextError, setFloodContextError] = useState<string | null>(null)
+  const [isLoadingFloodContext, setIsLoadingFloodContext] = useState(false)
+  const floodContextRequestRef = useRef(0)
   const [visualizationHeight, setVisualizationHeight] = useState(() => {
     const storedHeight = Number(sessionStorage.getItem(VISUALIZATION_HEIGHT_KEY))
     return Number.isFinite(storedHeight)
@@ -66,6 +76,33 @@ function ResponsePlanning() {
         )
       })
       .finally(() => setIsLoadingContext(false))
+  }, [])
+
+  const loadFloodContext = useCallback(() => {
+    const requestId = ++floodContextRequestRef.current
+    setIsLoadingFloodContext(true)
+    setFloodContextError(null)
+    void fetchEnvironmentalData(
+      demoFloodScenario.incident.latitude,
+      demoFloodScenario.incident.longitude,
+    )
+      .then((data) => {
+        if (floodContextRequestRef.current === requestId) setFloodEnvironmentalData(data)
+      })
+      .catch((reason: unknown) => {
+        if (floodContextRequestRef.current === requestId) {
+          setFloodContextError(
+            reason instanceof Error ? reason.message : 'Yarkon geospatial context is unavailable',
+          )
+        }
+      })
+      .finally(() => {
+        if (floodContextRequestRef.current === requestId) setIsLoadingFloodContext(false)
+      })
+  }, [])
+
+  useEffect(() => () => {
+    floodContextRequestRef.current += 1
   }, [])
 
   useEffect(() => {
@@ -97,6 +134,15 @@ function ResponsePlanning() {
   const selectIncident = (incident: IncidentDetails) => {
     setSelectedIncident(incident)
     loadContext(incident)
+  }
+
+  const toggleDemoFlood = () => {
+    if (showDemoFlood) {
+      setShowDemoFlood(false)
+      return
+    }
+    setShowDemoFlood(true)
+    if (!floodEnvironmentalData && !isLoadingFloodContext) loadFloodContext()
   }
 
   const provisionalActions = useMemo(() => {
@@ -442,12 +488,47 @@ function ResponsePlanning() {
                 role="tabpanel"
                 aria-labelledby="response-view-tab-3d"
               >
+                {import.meta.env.DEV && (
+                  <button
+                    className="response-flood-dev-toggle"
+                    type="button"
+                    onClick={toggleDemoFlood}
+                  >
+                    {showDemoFlood
+                      ? 'Return to incident 3D · demo flood active'
+                      : 'Preview demo flood state · not operational'}
+                  </button>
+                )}
+                {showDemoFlood && (
+                  isLoadingFloodContext ||
+                  floodContextError ||
+                  floodEnvironmentalData?.metadata.services.geospatial.status === 'partial'
+                ) && (
+                  <div className="response-flood-context-status" role="status">
+                    <span>
+                      {isLoadingFloodContext
+                        ? 'Loading Yarkon infrastructure context…'
+                        : floodContextError
+                          ? `Yarkon infrastructure context unavailable: ${floodContextError}`
+                          : `Partial Yarkon geospatial context${floodEnvironmentalData?.missing_layers?.length
+                            ? ` · unavailable layers: ${floodEnvironmentalData.missing_layers.join(', ')}`
+                            : ''}`}
+                    </span>
+                    {floodContextError && !isLoadingFloodContext && (
+                      <button type="button" onClick={loadFloodContext}>Retry context</button>
+                    )}
+                  </div>
+                )}
                 <Suspense fallback={<div className="response-3d-loading" role="status">Loading 3D viewer…</div>}>
                   <Incident3DView
+                    key={showDemoFlood ? 'demo-flood' : 'operational-incident'}
                     incident={selectedIncident}
-                    context={environmentalData?.geospatial_context ?? null}
+                    context={showDemoFlood
+                      ? floodEnvironmentalData?.geospatial_context ?? null
+                      : environmentalData?.geospatial_context ?? null}
                     allocatedResources={NO_ALLOCATED_RESOURCES}
                     riskArea={null}
+                    floodVisualization={showDemoFlood ? DEMO_FLOOD_VISUALIZATION : null}
                   />
                 </Suspense>
               </div>

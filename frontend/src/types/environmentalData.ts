@@ -29,6 +29,15 @@ export type EnvironmentalData = {
       latitude?: number | null
       longitude?: number | null
     }>
+    nearby_settlements?: Array<{
+      name: string
+      type: string
+      latitude: number
+      longitude: number
+      osm_type?: string
+      osm_id?: number
+      population?: string | null
+    }>
     nearby_hospitals?: Array<{
       name: string
       type: string
