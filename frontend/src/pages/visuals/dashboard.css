@@ -1,7 +1,7 @@
 /*This CSS sheet handles styling and effects for the dashboard screen*/
 .dashboard {
     width: 100%;
-    height: 100vh;
+    height: 100%;
     display: flex;
     flex-direction: column;
     padding: 1.5rem;
@@ -82,21 +82,25 @@
 }
 
 .dashboard__sidebar {
-    flex: 0 0 280px;
+    flex: 0 0 310px;
     background: var(--bg-cards);
     border-radius: 10px;
     border: 2px solid transparent;
     transition: border-color 0.3s ease;
     display: flex;
     flex-direction: column;
+    gap: 0.85rem;
+    padding: 0.9rem;
+    overflow-y: auto;
 }
 
 .dashboard-footer {
-    flex: 0 0 120px;
+    flex: 0 0 auto;
     background: var(--bg-cards);
     border-radius: 10px;
     border: 2px solid transparent;
     transition: border-color 0.3s ease;
+    padding: 0.8rem 1rem;
 }
 
 .dashboard-footer:hover,
@@ -104,65 +108,231 @@
     border-color: white;
 }
 
-.Event-summary-header {
-    position: relative;
-    text-align: center;
+.dashboard-summary {
+    padding-bottom: 0.85rem;
+    border-bottom: 1px solid rgba(159, 179, 209, 0.25);
+}
+
+.dashboard-summary:last-child {
+    padding-bottom: 0;
+    border-bottom: 0;
+}
+
+.dashboard-summary h2,
+.dashboard-footer h2 {
+    margin: 0;
     font-family: "Plus Jakarta Sans", sans-serif;
-    font-size: 1.1rem;
-    font-weight: 700;
-    padding-bottom: 6px;
+    font-size: 0.95rem;
 }
 
-.Event-summary-header::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    width: 0;
-    height: 2px;
-    background: white;
-    transition: width 0.3s ease;
-}
-
-.dashboard__sidebar:hover .Event-summary-header::after {
-    width: 100%;
-}
-
-.Event-counter {
-    flex: 1;
+.dashboard-summary__heading {
     display: flex;
     align-items: center;
-    justify-content: center;
-    text-align: center;
-    font-family: "Plus Jakarta Sans", sans-serif;
+    justify-content: space-between;
+    gap: 0.75rem;
 }
 
-.agent-status-header {
-    position: relative;
-    text-align: center;
-    font-family: "Plus Jakarta Sans", sans-serif;
-    font-size: 1.1rem;
+.dashboard-summary__heading > span {
+    min-width: 1.6rem;
+    padding: 0.15rem 0.4rem;
+    border-radius: 999px;
+    background: #005eff;
+    font-size: 0.72rem;
     font-weight: 700;
-    padding-bottom: 6px;
-}
-
-.agent-status-header::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    width: 0;
-    height: 2px;
-    background: white;
-    transition: width 0.4s ease;
-}
-
-.dashboard-footer:hover .agent-status-header::after {
-    width: 100%;
-}
-
-.agent-status-container {
     text-align: center;
-    margin-top: 30px;
-    font-family: "Plus Jakarta Sans", sans-serif;
+}
+
+.dashboard-summary > p,
+.dashboard-summary__empty {
+    margin: 0.5rem 0 0;
+    color: var(--text-muted);
+    font-size: 0.76rem;
+}
+
+.dashboard-summary__notice {
+    padding: 0.45rem 0.55rem;
+    border-radius: 6px;
+    background: rgba(120, 53, 15, 0.38);
+    color: #fef3c7 !important;
+}
+
+.dashboard-incident-list {
+    display: grid;
+    gap: 0.55rem;
+    margin-top: 0.65rem;
+}
+
+.dashboard-incident {
+    padding: 0.65rem;
+    border: 1px solid rgba(126, 179, 255, 0.3);
+    border-radius: 7px;
+    background: rgba(0, 14, 39, 0.48);
+}
+
+.dashboard-incident__topline,
+.dashboard-risk-status {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.65rem;
+    font-size: 0.7rem;
+}
+
+.dashboard-incident__topline span,
+.dashboard-risk-status span {
+    color: var(--text-muted);
+}
+
+.dashboard-incident__topline strong {
+    color: #fcd34d;
+    text-transform: capitalize;
+}
+
+.dashboard-incident h3 {
+    margin: 0.4rem 0 0;
+    font-size: 0.84rem;
+}
+
+.dashboard-incident p {
+    margin: 0.25rem 0 0;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+}
+
+.dashboard-incident a,
+.dashboard-summary__link {
+    display: inline-block;
+    margin-top: 0.55rem;
+    color: #9fc5ff;
+    font-size: 0.73rem;
+    font-weight: 700;
+}
+
+.dashboard-risk-status {
+    margin-top: 0.5rem;
+}
+
+.dashboard-risk-status strong {
+    max-width: 65%;
+    overflow-wrap: anywhere;
+    text-align: right;
+    text-transform: capitalize;
+}
+
+.dashboard-recommendations {
+    display: grid;
+    gap: 0.35rem;
+    margin: 0.55rem 0 0;
+    padding-left: 1.1rem;
+    color: var(--text-muted);
+    font-size: 0.73rem;
+}
+
+.dashboard-footer__content {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr);
+    gap: 1rem;
+}
+
+.dashboard-footer__heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.dashboard-footer__heading > span {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+}
+
+.dashboard-agent-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.45rem;
+    margin-top: 0.55rem;
+}
+
+.dashboard-agent {
+    display: grid;
+    gap: 0.15rem;
+    padding: 0.45rem 0.55rem;
+    border-radius: 6px;
+    background: rgba(0, 14, 39, 0.5);
+}
+
+.dashboard-agent strong {
+    overflow: hidden;
+    font-size: 0.7rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dashboard-agent span {
+    color: var(--text-muted);
+    font-size: 0.64rem;
+}
+
+.dashboard-workflow__links {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem;
+    margin-top: 0.55rem;
+}
+
+.dashboard-workflow a {
+    padding: 0.48rem 0.55rem;
+    border: 1px solid rgba(126, 179, 255, 0.35);
+    border-radius: 6px;
+    color: #cfe1ff;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.dashboard-workflow a:hover {
+    border-color: #7eb3ff;
+    background: rgba(0, 94, 255, 0.22);
+}
+
+.dashboard-incident a:focus-visible,
+.dashboard-summary__link:focus-visible,
+.dashboard-workflow a:focus-visible {
+    outline: 3px solid #7eb3ff;
+    outline-offset: 2px;
+}
+
+@media (max-width: 1100px) {
+    .dashboard__sidebar {
+        flex-basis: 270px;
+    }
+
+    .dashboard-agent-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 850px) {
+    .dashboard {
+        height: auto;
+        min-height: 100%;
+        overflow-y: auto;
+    }
+
+    .dashboard__body,
+    .dashboard-footer__content {
+        grid-template-columns: 1fr;
+    }
+
+    .dashboard__body {
+        flex-direction: column;
+    }
+
+    .dashboard__map {
+        flex-basis: 65vh;
+    }
+
+    .dashboard__sidebar {
+        flex-basis: auto;
+        max-height: none;
+    }
 }

@@ -11,9 +11,9 @@ import {
   type CSSProperties,
 } from 'react'
 
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
-import MapView from '../components/MapView'
+import MapView, { type MapCoordinateClickEvent } from '../components/MapView'
 
 import RainRadarLayer, {
   type RainViewerFrame,
@@ -26,79 +26,16 @@ import WindParticleLayer from '../components/layers/WindParticleLayer'
 import FireDangerLegend from '../components/FireDangerLegend'
 import FireRiskAlert from '../components/FireRiskAlert'
 import { clusterHighRiskCells, type FireRiskCluster } from '../components/fireRiskClusters'
-import { normalizeNationalRiskScanResponse, type NationalRiskScan } from '../components/fireRiskScan'
 import InfrastructureLayer from '../components/InfrastructureLayer'
 import LayersControl from '../components/LayersControl'
 import EnvironmentalDataModal from '../components/EnvironmentalDataModal'
+import { fetchDetectedEvents } from '../api/detectedEvents'
+import { fetchEnvironmentalData } from '../api/environmentalData'
+import { useNationalRiskScan } from '../hooks/useNationalRiskScan'
+import type { EnvironmentalData } from '../types/environmentalData'
+import type { IncidentDetails } from '../types/incidents'
 
 import './visuals/dashboard.css'
-
-
-export type RiskEvent = {
-  id: number
-  type: string
-  title: string
-  description: string
-  latitude: number
-  longitude: number
-  risk_score: number
-  risk_level: string
-  recommended_units: string[]
-  response_plan: string
-  explanation: string
-}
-
-
-export type EnvironmentalData = {
-  metadata: {
-    timestamp: string
-    collection_status: string
-
-    services: {
-      weather: {
-        status: string
-        source: string
-      }
-
-      geospatial: {
-        status: string
-        source: string
-      }
-    }
-  }
-
-  location: {
-    latitude: number
-    longitude: number
-  }
-
-  geospatial_context: {
-    terrain_type: string
-    region_type: string
-    vegetation_density: number
-    distance_to_water_m: number
-    [key: string]: any
-  }
-
-  weather: {
-    current: {
-      temperature_c: number
-      humidity_percent: number
-      wind_speed_kmh: number
-      precipitation_mm: number
-      weather_code: number
-    }
-
-    forecast: {
-      daily: {
-        max_temp_c: number[]
-        min_temp_c: number[]
-        max_wind_speed_kmh: number[]
-        precipitation_sum_mm: number[]
-      }
-    }
-  }
-}
 
 
 const WIND_MIN_HOURS = -6
@@ -108,6 +45,22 @@ const WIND_MAX_HOURS = 12
  * Delay between RainViewer animation frames.
  */
 const RAIN_ANIMATION_INTERVAL_MS = 800
+
+const OFFICIAL_AGENT_ROLES = [
+  'Data Collection Agent',
+  'Event Detection Agent',
+  'Risk Analysis Agent',
+  'Resource Allocation Agent',
+  'Response Planning Agent',
+  'LLM Coordination Agent',
+] as const
+
+const WORKSPACE_LINKS = [
+  { path: '/data-layers', label: 'Inspect data & layers' },
+  { path: '/event-detection', label: 'Review event evidence' },
+  { path: '/response-planning', label: 'Open response planning' },
+  { path: '/explanation-audit', label: 'Review explanation & audit' },
+] as const
 
 
 /**
@@ -138,7 +91,7 @@ function formatIsraelTime(
 
 function Dashboard() {
   const [events, setEvents] =
-    useState<RiskEvent[]>([])
+    useState<IncidentDetails[]>([])
 
   const [leaving, setLeaving] =
     useState(false)
@@ -173,10 +126,10 @@ function Dashboard() {
     setShowInfrastructure,
   ] = useState(true)
 
-  const [nationalRiskScan, setNationalRiskScan] =
-    useState<NationalRiskScan | null>(null)
-  const [nationalRiskError, setNationalRiskError] =
-    useState<string | null>(null)
+  const {
+    scan: nationalRiskScan,
+    error: nationalRiskError,
+  } = useNationalRiskScan()
   const [focusedFireRiskCluster, setFocusedFireRiskCluster] =
     useState<FireRiskCluster | null>(null)
   const [dismissedFireRiskSnapshot, setDismissedFireRiskSnapshot] =
@@ -290,56 +243,14 @@ function Dashboard() {
   // =========================================================
 
   useEffect(() => {
-    fetch('/api/detected-events')
-      .then((response) =>
-        response.json()
-      )
-      .then((data) => {
-        if (data.events) {
-          setEvents(data.events)
-        }
-      })
+    fetchDetectedEvents()
+      .then(setEvents)
       .catch((error) =>
         console.error(
           'Error fetching events:',
           error
         )
       )
-  }, [])
-
-  useEffect(() => {
-    let active = true
-    let requestInFlight = false
-    let controller: AbortController | null = null
-
-    const loadNationalRiskScan = async () => {
-      if (requestInFlight) return
-      requestInFlight = true
-      controller = new AbortController()
-      try {
-        const response = await fetch('/api/fire-risk/national-scan', { signal: controller.signal })
-        if (!response.ok) throw new Error('National risk scan is unavailable')
-        const scan = normalizeNationalRiskScanResponse(await response.json() as unknown)
-        if (active) {
-          setNationalRiskScan(scan)
-          setNationalRiskError(null)
-        }
-      } catch (reason: unknown) {
-        if (active && !controller.signal.aborted) {
-          setNationalRiskError(reason instanceof Error ? reason.message : 'National risk scan is unavailable')
-        }
-      } finally {
-        requestInFlight = false
-      }
-    }
-
-    void loadNationalRiskScan()
-    const intervalId = window.setInterval(() => void loadNationalRiskScan(), 5 * 60 * 1000)
-    return () => {
-      active = false
-      controller?.abort()
-      window.clearInterval(intervalId)
-    }
   }, [])
 
   const highRiskClusters = useMemo(
@@ -350,6 +261,15 @@ function Dashboard() {
   const viewHighRiskOnMap = (cluster: FireRiskCluster) => {
     setFocusedFireRiskCluster(cluster)
   }
+
+  const primaryEvent = events[0] ?? null
+  const provisionalActions = primaryEvent
+    ? Array.isArray(primaryEvent.response_plan)
+      ? primaryEvent.response_plan
+      : primaryEvent.response_plan
+        ? [primaryEvent.response_plan]
+        : []
+    : []
 
 
   // =========================================================
@@ -399,18 +319,6 @@ function Dashboard() {
   ])
 
 
-  /**
-   * Stop radar animation if the radar layer is switched off.
-   */
-  useEffect(() => {
-    if (!showRainRadar) {
-      setRainPlaying(false)
-    }
-  }, [
-    showRainRadar,
-  ])
-
-
   // =========================================================
   // Logout
   // =========================================================
@@ -428,43 +336,6 @@ function Dashboard() {
   // =========================================================
   // Environmental data
   // =========================================================
-
-  const fetchEnvironmentalData = (
-    latitude: number,
-    longitude: number
-  ) => {
-    const url =
-      `/api/environmental-data` +
-      `?latitude=${latitude}` +
-      `&longitude=${longitude}`
-
-    return fetch(url)
-      .then(async (response) => {
-        if (!response.ok) {
-          let errorMessage =
-            `Error ${response.status}`
-
-          try {
-            const errorData =
-              await response.json()
-
-            if (errorData.detail) {
-              errorMessage =
-                errorData.detail
-            }
-          } catch {
-            // Keep HTTP status when response is not JSON.
-          }
-
-          throw new Error(
-            errorMessage
-          )
-        }
-
-        return response.json()
-      })
-  }
-
 
   const loadEnvironmentalData = (
     latitude: number,
@@ -494,7 +365,7 @@ function Dashboard() {
 
 
   const handleMapClick = (
-    e: any
+    e: MapCoordinateClickEvent
   ) => {
     if (!e.lngLat) {
       return
@@ -1081,10 +952,16 @@ function Dashboard() {
                 showRainRadar
               }
               onToggleRainRadar={() =>
-                setShowRainRadar(
-                  (current) =>
-                    !current
-                )
+                {
+                  if (showRainRadar) {
+                    setRainPlaying(false)
+                  }
+
+                  setShowRainRadar(
+                    (current) =>
+                      !current
+                  )
+                }
               }
 
               showFireDanger={
@@ -1164,13 +1041,74 @@ function Dashboard() {
 
         <aside className="dashboard__sidebar">
 
-          <div className="Event-summary-header">
-            Events summary
-          </div>
+          <section className="dashboard-summary" aria-labelledby="active-incidents-title">
+            <div className="dashboard-summary__heading">
+              <h2 id="active-incidents-title">Active incidents</h2>
+              <span>{events.length}</span>
+            </div>
+            <p className="dashboard-summary__notice">
+              Current event records are demonstration data and are not operationally verified.
+            </p>
+            <div className="dashboard-incident-list">
+              {events.length === 0 && (
+                <p className="dashboard-summary__empty">No incident records are available.</p>
+              )}
+              {events.map((event) => (
+                <article className="dashboard-incident" key={event.id}>
+                  <div className="dashboard-incident__topline">
+                    <span>{event.type || 'Unknown event type'}</span>
+                    <strong>{event.risk_level || 'Severity unavailable'}</strong>
+                  </div>
+                  <h3>{event.title}</h3>
+                  <p>{event.latitude.toFixed(4)}, {event.longitude.toFixed(4)}</p>
+                  <Link to="/event-detection">Review event evidence</Link>
+                </article>
+              ))}
+            </div>
+          </section>
 
-          <div className="Event-counter">
-            there are {events.length} events going on at the moment
-          </div>
+          <section className="dashboard-summary" aria-labelledby="risk-outlook-title">
+            <h2 id="risk-outlook-title">Risk outlook</h2>
+            <p>
+              National current risk is a conditions-based estimate, not a detected incident.
+            </p>
+            <div className="dashboard-risk-status">
+              <span>Status</span>
+              <strong>{nationalRiskError || nationalRiskScan?.status || 'Loading'}</strong>
+            </div>
+            {nationalRiskScan && (
+              <div className="dashboard-risk-status">
+                <span>High-risk areas</span>
+                <strong>{highRiskClusters.length}</strong>
+              </div>
+            )}
+            <Link className="dashboard-summary__link" to="/data-layers">
+              Inspect source details
+            </Link>
+          </section>
+
+          <section className="dashboard-summary" aria-labelledby="recommendation-title">
+            <h2 id="recommendation-title">Recommendation summary</h2>
+            {provisionalActions.length > 0 ? (
+              <>
+                <p className="dashboard-summary__notice">
+                  Demonstration/provisional response information—not an operational recommendation.
+                </p>
+                <ol className="dashboard-recommendations">
+                  {provisionalActions.slice(0, 2).map((action) => (
+                    <li key={action}>{action}</li>
+                  ))}
+                </ol>
+              </>
+            ) : (
+              <p className="dashboard-summary__empty">
+                No trustworthy operational recommendation is available.
+              </p>
+            )}
+            <Link className="dashboard-summary__link" to="/response-planning">
+              Open response workspace
+            </Link>
+          </section>
 
         </aside>
 
@@ -1178,19 +1116,35 @@ function Dashboard() {
 
 
       <div className="dashboard-footer">
+        <footer className="dashboard-footer__content">
+          <section aria-labelledby="agent-status-title">
+            <div className="dashboard-footer__heading">
+              <h2 id="agent-status-title">Agent status</h2>
+              <span>Runtime status is not exposed by the backend</span>
+            </div>
+            <div className="dashboard-agent-grid">
+              {OFFICIAL_AGENT_ROLES.map((role) => (
+                <div className="dashboard-agent" key={role}>
+                  <strong>{role}</strong>
+                  <span>
+                    {role === 'Data Collection Agent' && envData
+                      ? `Latest context request: ${envData.metadata.collection_status}`
+                      : 'Not observed'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
 
-        <footer>
-
-          <div className="agent-status-header">
-            Agent status
-          </div>
-
-          <div className="agent-status-container">
-            There are no agents active at the moment
-          </div>
-
+          <nav className="dashboard-workflow" aria-label="Incident workflow">
+            <h2>Continue workflow</h2>
+            <div className="dashboard-workflow__links">
+              {WORKSPACE_LINKS.map((workspace) => (
+                <Link key={workspace.path} to={workspace.path}>{workspace.label}</Link>
+              ))}
+            </div>
+          </nav>
         </footer>
-
       </div>
 
     </main>
