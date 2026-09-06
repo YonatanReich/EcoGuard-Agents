@@ -139,9 +139,9 @@ function DataCollectionLayers() {
       {
         name: 'NASA FIRMS detection evidence',
         category: 'Fire / Satellite',
-        description: 'Agent capability exists, but no frontend-facing FIRMS endpoint is currently available.',
-        state: 'unavailable',
-        status: 'Not connected to frontend',
+        description: 'FIRMS-derived event detection and service status are exposed through the EcoGuard detected-events pipeline. Raw hotspot records are not exposed as a standalone frontend dataset.',
+        state: 'partial',
+        status: 'Available through detected-events pipeline',
       },
       {
         name: 'Telegram emergency intelligence',

@@ -89,9 +89,136 @@ function formatIsraelTime(
 }
 
 
+/**
+ * Sidebar card for one detected event.
+ *
+ * Renders the assessment, the plan, and — importantly — the protocol passages
+ * the reasoning actually cited. Showing the verbatim quote and its source is
+ * what lets a reader confirm the analysis was grounded in the corpus rather
+ * than taking the claim on trust.
+ */
+function EventSummaryCard({ event }: { event: IncidentDetails }) {
+  const hasAssessment =
+    event.analysis_status === 'success' &&
+    event.risk_score != null
+  const primaryDrivers = event.primary_drivers ?? []
+  const responseActions = event.response_actions ?? []
+  const evidenceGaps = event.evidence_gaps ?? []
+  const protocolCitations = event.protocol_citations ?? []
+
+  return (
+    <article className="event-card">
+
+      <header className="event-card__header">
+        <span
+          className={`event-card__badge event-card__badge--${event.risk_level ?? 'unknown'}`}
+        >
+          {hasAssessment
+            ? `${event.risk_level} · ${event.risk_score}`
+            : 'not assessed'}
+        </span>
+        <h3 className="event-card__title">{event.title}</h3>
+      </header>
+
+      {/* An unassessed event is stated plainly rather than shown with a
+          default score. A fabricated "low" would read as an all-clear. */}
+      {!hasAssessment && (
+        <p className="event-card__warning">
+          Risk analysis {event.analysis_status ?? 'status unavailable'}. The event was
+          detected, but no risk score is available for it.
+        </p>
+      )}
+
+      {event.explanation && (
+        <p className="event-card__text">{event.explanation}</p>
+      )}
+
+      {primaryDrivers.length > 0 && (
+        <ul className="event-card__drivers">
+          {primaryDrivers.map((driver) => (
+            <li key={driver}>{driver}</li>
+          ))}
+        </ul>
+      )}
+
+      {responseActions.length > 0 && (
+        <>
+          <h4 className="event-card__subheading">Response plan</h4>
+          <ol className="event-card__actions">
+            {responseActions.map((action) => (
+              <li key={action.action}>
+                <span className="event-card__timeframe">
+                  {action.timeframe.replace(/_/g, ' ')}
+                </span>
+                {' '}
+                <strong>{action.responsible_unit.replace(/_/g, ' ')}</strong>
+                {' — '}
+                {action.action}
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
+
+      {evidenceGaps.length > 0 && (
+        <>
+          <h4 className="event-card__subheading">Evidence gaps</h4>
+          <ul className="event-card__gaps">
+            {evidenceGaps.map((gap) => (
+              <li key={gap}>{gap}</li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {protocolCitations.length > 0 && (
+        <>
+          <h4 className="event-card__subheading">
+            Grounded in {protocolCitations.length} protocol passage
+            {protocolCitations.length === 1 ? '' : 's'}
+          </h4>
+          {protocolCitations.map((citation) => (
+            <blockquote key={citation.chunk_id} className="event-card__citation">
+              <p className="event-card__quote">“{citation.quoted_text}”</p>
+              <footer className="event-card__source">
+                {citation.source_url ? (
+                  <a href={citation.source_url} target="_blank" rel="noreferrer">
+                    {citation.document_title}
+                  </a>
+                ) : (
+                  citation.document_title
+                )}
+                {citation.heading_path && ` · ${citation.heading_path}`}
+              </footer>
+            </blockquote>
+          ))}
+        </>
+      )}
+
+      <Link className="event-card__workspace-link" to="/event-detection">
+        Review event evidence
+      </Link>
+
+    </article>
+  )
+}
+
+
 function Dashboard() {
   const [events, setEvents] =
     useState<IncidentDetails[]>([])
+
+  /**
+   * True while the detection scan is running.
+   *
+   * The scan takes tens of seconds — satellite lookup, geospatial context and
+   * two model calls. Without this the sidebar would read "there are 0 events"
+   * for the whole wait, which is indistinguishable from a completed clean scan.
+   */
+  const [isLoadingEvents, setIsLoadingEvents] =
+    useState(true)
+  const [eventsError, setEventsError] =
+    useState<string | null>(null)
 
   const [leaving, setLeaving] =
     useState(false)
@@ -243,14 +370,27 @@ function Dashboard() {
   // =========================================================
 
   useEffect(() => {
-    fetchDetectedEvents()
-      .then(setEvents)
-      .catch((error) =>
-        console.error(
-          'Error fetching events:',
-          error
+    let active = true
+
+    void fetchDetectedEvents()
+      .then((detectedEvents) => {
+        if (active) setEvents(detectedEvents)
+      })
+      .catch((reason: unknown) => {
+        if (!active) return
+        setEventsError(
+          reason instanceof Error
+            ? reason.message
+            : 'Detected event data is unavailable',
         )
-      )
+      })
+      .finally(() => {
+        if (active) setIsLoadingEvents(false)
+      })
+
+    return () => {
+      active = false
+    }
   }, [])
 
   const highRiskClusters = useMemo(
@@ -263,13 +403,18 @@ function Dashboard() {
   }
 
   const primaryEvent = events[0] ?? null
-  const provisionalActions = primaryEvent
-    ? Array.isArray(primaryEvent.response_plan)
-      ? primaryEvent.response_plan
-      : primaryEvent.response_plan
-        ? [primaryEvent.response_plan]
-        : []
-    : []
+  const recommendationActions = primaryEvent?.response_actions?.length
+    ? primaryEvent.response_actions.map((action) => action.action)
+    : primaryEvent
+      ? Array.isArray(primaryEvent.response_plan)
+        ? primaryEvent.response_plan
+        : primaryEvent.response_plan
+          ? [primaryEvent.response_plan]
+          : []
+      : []
+  const hasGroundedPlan =
+    primaryEvent?.planning_status === 'success' &&
+    (primaryEvent.response_actions?.length ?? 0) > 0
 
 
   // =========================================================
@@ -1046,23 +1191,24 @@ function Dashboard() {
               <h2 id="active-incidents-title">Active incidents</h2>
               <span>{events.length}</span>
             </div>
-            <p className="dashboard-summary__notice">
-              Current event records are demonstration data and are not operationally verified.
-            </p>
+            {isLoadingEvents && (
+              <p className="dashboard-summary__notice">
+                Scanning for detected environmental events. Analysis may take up to 90 seconds.
+              </p>
+            )}
+            {eventsError && (
+              <p className="dashboard-summary__error" role="alert">
+                Detection scan unavailable: {eventsError}
+              </p>
+            )}
             <div className="dashboard-incident-list">
-              {events.length === 0 && (
-                <p className="dashboard-summary__empty">No incident records are available.</p>
+              {!isLoadingEvents && !eventsError && events.length === 0 && (
+                <p className="dashboard-summary__empty">
+                  The current detection scan returned no active incidents.
+                </p>
               )}
-              {events.map((event) => (
-                <article className="dashboard-incident" key={event.id}>
-                  <div className="dashboard-incident__topline">
-                    <span>{event.type || 'Unknown event type'}</span>
-                    <strong>{event.risk_level || 'Severity unavailable'}</strong>
-                  </div>
-                  <h3>{event.title}</h3>
-                  <p>{event.latitude.toFixed(4)}, {event.longitude.toFixed(4)}</p>
-                  <Link to="/event-detection">Review event evidence</Link>
-                </article>
+              {!isLoadingEvents && events.map((event) => (
+                <EventSummaryCard key={event.id} event={event} />
               ))}
             </div>
           </section>
@@ -1089,13 +1235,15 @@ function Dashboard() {
 
           <section className="dashboard-summary" aria-labelledby="recommendation-title">
             <h2 id="recommendation-title">Recommendation summary</h2>
-            {provisionalActions.length > 0 ? (
+            {recommendationActions.length > 0 ? (
               <>
                 <p className="dashboard-summary__notice">
-                  Demonstration/provisional response information—not an operational recommendation.
+                  {hasGroundedPlan
+                    ? 'Grounded response-planning output. Operator verification is still required.'
+                    : 'Legacy or provisional response information—not a verified operational instruction.'}
                 </p>
                 <ol className="dashboard-recommendations">
-                  {provisionalActions.slice(0, 2).map((action) => (
+                  {recommendationActions.slice(0, 2).map((action) => (
                     <li key={action}>{action}</li>
                   ))}
                 </ol>
@@ -1113,7 +1261,6 @@ function Dashboard() {
         </aside>
 
       </div>
-
 
       <div className="dashboard-footer">
         <footer className="dashboard-footer__content">
@@ -1146,7 +1293,6 @@ function Dashboard() {
           </nav>
         </footer>
       </div>
-
     </main>
   )
 }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import { fetchDetectedEvents } from '../api/detectedEvents'
+import { fetchDetectedEventsResponse } from '../api/detectedEvents'
 import { fetchEnvironmentalData } from '../api/environmentalData'
 import EnvironmentalDataModal from '../components/EnvironmentalDataModal'
 import InfrastructureLayer from '../components/InfrastructureLayer'
@@ -8,6 +8,7 @@ import MapView, { type MapCoordinateClickEvent } from '../components/MapView'
 import type { EnvironmentalData } from '../types/environmentalData'
 import type {
   AgentPipelineStatus,
+  DetectedEventsResponse,
   EventEvidence,
   IncidentDetails,
 } from '../types/incidents'
@@ -40,6 +41,7 @@ function EventDetectionWorkspace() {
   const [incidents, setIncidents] = useState<IncidentDetails[]>([])
   const [selectedIncident, setSelectedIncident] = useState<IncidentDetails | null>(null)
   const [incidentError, setIncidentError] = useState<string | null>(null)
+  const [detectionResponse, setDetectionResponse] = useState<DetectedEventsResponse | null>(null)
   const [isLoadingIncidents, setIsLoadingIncidents] = useState(true)
   const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lng: number } | null>(null)
   const [environmentalData, setEnvironmentalData] = useState<EnvironmentalData | null>(null)
@@ -66,9 +68,11 @@ function EventDetectionWorkspace() {
   useEffect(() => {
     let active = true
 
-    void fetchDetectedEvents()
-      .then((events) => {
+    void fetchDetectedEventsResponse()
+      .then((response) => {
         if (!active) return
+        const events = response.events
+        setDetectionResponse(response)
         setIncidents(events)
 
         const firstIncident = events[0] ?? null
@@ -114,13 +118,16 @@ function EventDetectionWorkspace() {
         + (environmentalData.geospatial_context.nearby_police_stations?.length ?? 0)
         + (environmentalData.geospatial_context.nearby_fire_stations?.length ?? 0)
       : 0
+    const detectionService = detectionResponse?.metadata.services.detection
 
     return [
       {
         category: 'detection',
-        source: 'Actual detection evidence',
-        status: 'unavailable',
-        summary: 'FIRMS and Telegram evidence are not exposed by a frontend-facing event endpoint.',
+        source: detectionService?.source || 'Detected-events pipeline',
+        status: evidenceStatus(detectionService?.status),
+        summary: detectionService
+          ? `Detection service reported: ${detectionService.status}. Raw FIRMS hotspot records are not exposed separately.`
+          : 'Detection service metadata has not been returned.',
       },
       {
         category: 'environmental',
@@ -151,12 +158,15 @@ function EventDetectionWorkspace() {
           : 'Infrastructure context has not been returned.',
       },
     ]
-  }, [environmentalData, environmentalError])
+  }, [detectionResponse, environmentalData, environmentalError])
 
   const pipeline = useMemo<AgentPipelineStatus[]>(() => {
     const collectionState = isLoadingContext
       ? 'in-progress'
       : contextStatus(environmentalData, environmentalError)
+    const detectionService = detectionResponse?.metadata.services.detection
+    const riskService = detectionResponse?.metadata.services.risk_analysis
+    const planningService = detectionResponse?.metadata.services.response_planning
 
     return [
       {
@@ -172,16 +182,20 @@ function EventDetectionWorkspace() {
       {
         name: 'Event Detection Agent',
         emphasis: 'primary',
-        status: 'unavailable',
-        detail: 'Runtime status and underlying detection evidence are not exposed by the current backend.',
+        status: isLoadingIncidents ? 'in-progress' : evidenceStatus(detectionService?.status),
+        detail: isLoadingIncidents
+          ? 'The detected-events pipeline is running.'
+          : detectionService
+            ? `Observed pipeline status: ${detectionService.status}; source: ${detectionService.source || 'not reported'}.`
+            : 'No detection service metadata is available.',
       },
       {
         name: 'Risk Analysis Agent',
         emphasis: 'primary',
-        status: selectedIncident ? 'partial' : 'unavailable',
-        detail: selectedIncident
-          ? 'A demonstration risk assessment is present; runtime processing status and confidence are unavailable.'
-          : 'No risk assessment is available.',
+        status: isLoadingIncidents ? 'in-progress' : evidenceStatus(riskService?.status),
+        detail: riskService
+          ? `Observed pipeline status: ${riskService.status}; model/source: ${riskService.source || 'not reported'}.`
+          : 'No risk-analysis service metadata is available.',
       },
       {
         name: 'Resource Allocation Agent',
@@ -192,8 +206,10 @@ function EventDetectionWorkspace() {
       {
         name: 'Response Planning Agent',
         emphasis: 'downstream',
-        status: 'unavailable',
-        detail: 'Downstream stage; not evaluated in this workspace.',
+        status: isLoadingIncidents ? 'in-progress' : evidenceStatus(planningService?.status),
+        detail: planningService
+          ? `Observed downstream pipeline status: ${planningService.status}; model/source: ${planningService.source || 'not reported'}.`
+          : 'No response-planning service metadata is available.',
       },
       {
         name: 'LLM Coordination Agent',
@@ -202,7 +218,11 @@ function EventDetectionWorkspace() {
         detail: 'Downstream stage; no LLM runtime or audit data is exposed here.',
       },
     ]
-  }, [environmentalData, environmentalError, isLoadingContext, selectedIncident])
+  }, [detectionResponse, environmentalData, environmentalError, isLoadingContext, isLoadingIncidents])
+
+  const detectionStatus = detectionResponse?.metadata.services.detection?.status
+  const detectionFailed =
+    detectionResponse?.metadata.collection_status === 'failed' || detectionStatus === 'failed'
 
   const currentWeather = environmentalData?.weather?.current
   const geographicContext = environmentalData?.geospatial_context
@@ -219,8 +239,8 @@ function EventDetectionWorkspace() {
       </header>
 
       <div className="event-workspace__notice" role="status">
-        <strong>Demonstration event record:</strong> `/api/detected-events` currently returns
-        hard-coded data. It is not a verified live operational detection.
+        <strong>Authoritative pipeline output:</strong> incidents are returned only after the
+        detected-events pipeline reports a positive detection. Missing analysis remains unavailable.
       </div>
 
       <section className="event-panel" aria-labelledby="event-overview-title">
@@ -247,19 +267,26 @@ function EventDetectionWorkspace() {
           )}
         </div>
 
-        {isLoadingIncidents && <p>Loading the current event record…</p>}
+        {isLoadingIncidents && <p>Running event detection and assessment. This can take up to 90 seconds.</p>}
         {incidentError && <p className="event-message event-message--error">{incidentError}</p>}
         {!isLoadingIncidents && !incidentError && !selectedIncident && (
-          <p className="event-message">No event record is currently available.</p>
+          <p className="event-message">
+            {detectionFailed
+              ? 'The detection provider could not complete the current scan.'
+              : 'The current scan completed with no active fire incident detected.'}
+          </p>
         )}
         {selectedIncident && (
           <div className="incident-facts">
             <div><span>Event type</span><strong>{selectedIncident.type || 'Not provided'}</strong></div>
             <div><span>Location</span><strong>{formatCoordinate(selectedIncident.latitude)}, {formatCoordinate(selectedIncident.longitude)}</strong></div>
-            <div><span>Risk level</span><strong>{selectedIncident.risk_level || 'Not provided'} <small>demo assessment</small></strong></div>
-            <div><span>Risk score</span><strong>{formatValue(selectedIncident.risk_score, '/100')} <small>demo assessment</small></strong></div>
-            <div><span>Detection status</span><strong>Not operationally verified</strong></div>
-            <div><span>Confidence</span><strong>Not provided by backend</strong></div>
+            <div><span>Risk level</span><strong>{selectedIncident.risk_level || 'Not assessed'}</strong></div>
+            <div><span>Risk score</span><strong>{formatValue(selectedIncident.risk_score, '/100')}</strong></div>
+            <div><span>Detection status</span><strong>{detectionStatus || 'Not provided'}</strong></div>
+            <div><span>Detection confidence</span><strong>{selectedIncident.detection_confidence || 'Not provided'}</strong></div>
+            <div><span>Risk confidence</span><strong>{selectedIncident.confidence || 'Not provided'}</strong></div>
+            <div><span>Analysis status</span><strong>{selectedIncident.analysis_status || 'Not provided'}</strong></div>
+            <div><span>Planning status</span><strong>{selectedIncident.planning_status || 'Not provided'}</strong></div>
           </div>
         )}
       </section>
@@ -280,6 +307,30 @@ function EventDetectionWorkspace() {
               </article>
             ))}
           </div>
+          {selectedIncident?.evidence_gaps?.length ? (
+            <article className="evidence-item">
+              <div><span>analysis</span><h3>Evidence gaps</h3></div>
+              <span className="event-status event-status--partial">reported</span>
+              <ul>{selectedIncident.evidence_gaps.map((gap) => <li key={gap}>{gap}</li>)}</ul>
+            </article>
+          ) : null}
+          {selectedIncident?.protocol_citations?.length ? (
+            <article className="evidence-item">
+              <div><span>provenance</span><h3>Verified protocol citations</h3></div>
+              <span className="event-status event-status--available">available</span>
+              <ul>
+                {selectedIncident.protocol_citations.map((citation) => (
+                  <li key={citation.chunk_id}>
+                    {citation.source_url ? (
+                      <a href={citation.source_url} target="_blank" rel="noreferrer">{citation.document_title}</a>
+                    ) : citation.document_title}
+                    {citation.heading_path ? ` · ${citation.heading_path}` : ''}
+                    <blockquote>“{citation.quoted_text}”</blockquote>
+                  </li>
+                ))}
+              </ul>
+            </article>
+          ) : null}
         </section>
 
         <section className="event-panel" aria-labelledby="pipeline-title">
@@ -317,7 +368,7 @@ function EventDetectionWorkspace() {
             onClick={handleMapClick}
             selectedLocation={selectedLocation}
           >
-            <div className="event-map-notice">Event markers are demonstration records</div>
+            <div className="event-map-notice">Markers reflect detected-events pipeline output</div>
             {environmentalData && (
               <InfrastructureLayer
                 hospitals={environmentalData.geospatial_context.nearby_hospitals ?? []}

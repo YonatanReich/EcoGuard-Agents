@@ -89,6 +89,46 @@ const ISRAEL_MAX_BOUNDS: [
 ]
 
 
+/**
+ * Marker colour per operational risk band.
+ *
+ * The backend sends lowercase bands. A previous version compared against
+ * 'High' with a capital H, which never matched, so every marker rendered
+ * orange regardless of severity.
+ */
+const RISK_LEVEL_COLORS: Record<string, string> = {
+  critical: '#7f1d1d',
+  high: '#dc2626',
+  medium: '#f59e0b',
+  low: '#16a34a',
+}
+
+
+/** Grey, used when no risk score exists. */
+const UNASSESSED_COLOR = '#6b7280'
+
+
+/**
+ * Pick a marker colour for a risk band.
+ *
+ * A null band means the analysis was skipped or failed, and grey says exactly
+ * that. Colouring an unassessed fire green would claim it is low risk, which is
+ * a claim nothing in the pipeline actually made.
+ */
+function riskLevelColor(
+  riskLevel: string | null | undefined
+): string {
+  if (!riskLevel) {
+    return UNASSESSED_COLOR
+  }
+
+  return (
+    RISK_LEVEL_COLORS[riskLevel] ??
+    UNASSESSED_COLOR
+  )
+}
+
+
 type MapViewProps = {
   /**
    * Detected events to plot.
@@ -325,10 +365,9 @@ function MapView({
               }
 
               color={
-                event.risk_level ===
-                'High'
-                  ? 'red'
-                  : 'orange'
+                riskLevelColor(
+                  event.risk_level
+                )
               }
 
               onClick={(e) => {

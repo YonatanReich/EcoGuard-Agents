@@ -1,12 +1,12 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 
-import { fetchDetectedEvents } from '../api/detectedEvents'
+import { fetchDetectedEventsResponse } from '../api/detectedEvents'
 import { fetchEnvironmentalData } from '../api/environmentalData'
 import InfrastructureLayer, { type InfrastructureItem } from '../components/InfrastructureLayer'
 import MapView from '../components/MapView'
 import type { EnvironmentalData } from '../types/environmentalData'
-import type { IncidentDetails } from '../types/incidents'
+import type { DetectedEventsResponse, IncidentDetails } from '../types/incidents'
 import type { AllocatedResponseResource } from '../types/responseResources'
 import { straightLineDistanceKm } from '../utils/geospatial'
 
@@ -37,6 +37,7 @@ function ResponsePlanning() {
   const [incidents, setIncidents] = useState<IncidentDetails[]>([])
   const [selectedIncident, setSelectedIncident] = useState<IncidentDetails | null>(null)
   const [incidentError, setIncidentError] = useState<string | null>(null)
+  const [detectionResponse, setDetectionResponse] = useState<DetectedEventsResponse | null>(null)
   const [isLoadingIncident, setIsLoadingIncident] = useState(true)
   const [environmentalData, setEnvironmentalData] = useState<EnvironmentalData | null>(null)
   const [environmentalError, setEnvironmentalError] = useState<string | null>(null)
@@ -71,9 +72,11 @@ function ResponsePlanning() {
   useEffect(() => {
     let active = true
 
-    void fetchDetectedEvents()
-      .then((events) => {
+    void fetchDetectedEventsResponse()
+      .then((response) => {
         if (!active) return
+        const events = response.events
+        setDetectionResponse(response)
         setIncidents(events)
         const firstIncident = events[0] ?? null
         setSelectedIncident(firstIncident)
@@ -99,7 +102,10 @@ function ResponsePlanning() {
     loadContext(incident)
   }
 
-  const provisionalActions = useMemo(() => {
+  const planningActions = useMemo(() => {
+    if (selectedIncident?.response_actions?.length) {
+      return selectedIncident.response_actions.map((action) => action.action)
+    }
     if (!selectedIncident?.response_plan) return []
     return Array.isArray(selectedIncident.response_plan)
       ? selectedIncident.response_plan
@@ -137,6 +143,22 @@ function ResponsePlanning() {
   const hasPartialGeospatialContext = Boolean(
     environmentalData &&
     (geospatialStatus !== 'success' || missingGeospatialLayers.length > 0),
+  )
+  const detectionStatus = detectionResponse?.metadata.services.detection?.status
+  const detectionFailed =
+    detectionResponse?.metadata.collection_status === 'failed' || detectionStatus === 'failed'
+  const geospatialStatusLabel = selectedIncident
+    ? geospatialStatus || (isLoadingContext ? 'Loading' : 'Not available')
+    : isLoadingIncident
+      ? 'Waiting for incident scan'
+      : incidentError
+        ? 'Not requested — incident request failed'
+        : detectionFailed
+          ? 'Not requested — detection failed'
+          : 'Not requested — no detected incident'
+  const hasGroundedPlanningOutput = selectedIncident?.planning_status === 'success'
+  const hasCompletedContextRequest = Boolean(
+    selectedIncident && environmentalData && !isLoadingContext && !environmentalError,
   )
 
   const selectVisualization = (mode: VisualizationMode, moveFocus = false) => {
@@ -201,8 +223,8 @@ function ResponsePlanning() {
       </header>
 
       <div className="response-workspace__warning" role="status">
-        <strong>Demonstration planning data:</strong> the current incident recommendations and
-        actions are stub fields, not verified live instructions or assignments.
+        <strong>Decision-support planning:</strong> recommendations are shown only when returned
+        by the current pipeline. They are not verified dispatch instructions or assignments.
       </div>
 
       <section className="response-panel" aria-labelledby="response-incident-title">
@@ -228,17 +250,27 @@ function ResponsePlanning() {
             </label>
           )}
         </div>
-        {isLoadingIncident && <p className="response-message">Loading incident context…</p>}
+        {isLoadingIncident && (
+          <p className="response-message">
+            Running incident detection, risk analysis, and response planning. This can take up to 90 seconds.
+          </p>
+        )}
         {incidentError && <p className="response-message response-message--error">{incidentError}</p>}
         {!isLoadingIncident && !incidentError && !selectedIncident && (
-          <p className="response-message">No incident is available for planning.</p>
+          <p className="response-message">
+            {detectionFailed
+              ? 'The detection service could not complete the current scan; no incident context is available.'
+              : 'The current detection scan found no incident available for response planning.'}
+          </p>
         )}
         {selectedIncident && (
           <div className="response-facts">
             <div><span>Event type</span><strong>{selectedIncident.type || 'Not provided'}</strong></div>
             <div><span>Location</span><strong>{selectedIncident.latitude.toFixed(4)}, {selectedIncident.longitude.toFixed(4)}</strong></div>
-            <div><span>Risk / priority context</span><strong>{selectedIncident.risk_level || 'Not provided'} <small>demo assessment</small></strong></div>
-            <div><span>Operational status</span><strong>Not verified</strong></div>
+            <div><span>Risk / priority context</span><strong>{selectedIncident.risk_level || 'Not assessed'}</strong></div>
+            <div><span>Analysis status</span><strong>{selectedIncident.analysis_status || 'Not provided'}</strong></div>
+            <div><span>Planning status</span><strong>{selectedIncident.planning_status || 'Not provided'}</strong></div>
+            <div><span>Operational status</span><strong>Decision support · not dispatched</strong></div>
             <div><span>Response timeline</span><strong>Not available</strong></div>
             <div><span>Dispatch state</span><strong>Not available</strong></div>
           </div>
@@ -250,15 +282,15 @@ function ResponsePlanning() {
           <p className="response-panel__label">Recommended authorities / units</p>
           <h2 id="recommended-units-title">Provisional suggestions</h2>
           <p className="response-panel__note">
-            These values come from the demonstration incident response. Availability, capacity,
-            assignment, and authority confirmation are not exposed.
+            These values come from the detected-event planning response. Availability, capacity,
+            assignment, and authority confirmation are not exposed by the current backend.
           </p>
           {selectedIncident?.recommended_units?.length ? (
             <ul className="recommended-unit-list">
               {selectedIncident.recommended_units.map((unit) => (
                 <li key={unit}>
                   <strong>{displayName(unit)}</strong>
-                  <span>Suggested · demonstration only</span>
+                  <span>Suggested · not verified or dispatched</span>
                 </li>
               ))}
             </ul>
@@ -269,15 +301,19 @@ function ResponsePlanning() {
 
         <section className="response-panel" aria-labelledby="action-plan-title">
           <p className="response-panel__label">Action plan</p>
-          <h2 id="action-plan-title">Provisional actions</h2>
-          {provisionalActions.length ? (
+          <h2 id="action-plan-title">Planning actions</h2>
+          {planningActions.length ? (
             <ol className="response-action-list">
-              {provisionalActions.map((action, index) => (
+              {planningActions.map((action, index) => (
                 <li key={`${index}-${action}`}>
                   <span>{index + 1}</span>
                   <div>
                     <strong>{action}</strong>
-                    <small>Demonstration action—not a live operational instruction</small>
+                    <small>
+                      {hasGroundedPlanningOutput
+                        ? 'Grounded pipeline output—not a dispatch instruction'
+                        : 'Provisional data—not a live operational instruction'}
+                    </small>
                   </div>
                 </li>
               ))}
@@ -298,7 +334,7 @@ function ResponsePlanning() {
         <div className="response-context-status" role="status">
           <div>
             <span>Geospatial service</span>
-            <strong>{geospatialStatus || (isLoadingContext ? 'Loading' : 'Not available')}</strong>
+            <strong>{geospatialStatusLabel}</strong>
           </div>
           <button
             type="button"
@@ -322,7 +358,7 @@ function ResponsePlanning() {
         )}
         {isLoadingContext && <p className="response-message">Loading real geographic context…</p>}
         {environmentalError && <p className="response-message response-message--error">{environmentalError}</p>}
-        {!isLoadingContext && !environmentalError && nearbyInfrastructure.length === 0 && (
+        {hasCompletedContextRequest && nearbyInfrastructure.length === 0 && (
           <p className="response-message">No nearby emergency infrastructure was returned.</p>
         )}
         <div className="response-infrastructure-list">
@@ -363,9 +399,9 @@ function ResponsePlanning() {
                 )
               })}
             </ul>
-          ) : (
+          ) : hasCompletedContextRequest ? (
             <p className="response-message">No nearby road context was returned.</p>
-          )}
+          ) : null}
         </div>
 
         {selectedIncident && (
@@ -430,7 +466,7 @@ function ResponsePlanning() {
                       fireStations={environmentalData.geospatial_context.nearby_fire_stations ?? []}
                     />
                   )}
-              <div className="response-map__notice">Demo incident · nearby infrastructure is not allocated</div>
+              <div className="response-map__notice">Pipeline-detected incident · nearby infrastructure is not allocated</div>
                 </MapView>
               </div>
             )}

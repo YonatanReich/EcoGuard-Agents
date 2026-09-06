@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
-import { fetchDetectedEvents } from '../api/detectedEvents'
+import { fetchDetectedEventsResponse } from '../api/detectedEvents'
 import { fetchEnvironmentalData } from '../api/environmentalData'
 import { fetchCurrentRiskAssessment } from '../api/fireRisk'
 import { useNationalRiskScan } from '../hooks/useNationalRiskScan'
 import type { EnvironmentalData } from '../types/environmentalData'
-import type { IncidentDetails } from '../types/incidents'
+import type { DetectedEventsResponse, IncidentDetails } from '../types/incidents'
 import type { FireRiskAssessment } from '../types/riskAnalysis'
 
 import './visuals/explanation-audit.css'
@@ -46,6 +46,7 @@ function ExplanationAudit() {
   const [incidents, setIncidents] = useState<IncidentDetails[]>([])
   const [selectedIncident, setSelectedIncident] = useState<IncidentDetails | null>(null)
   const [incidentError, setIncidentError] = useState<string | null>(null)
+  const [detectionResponse, setDetectionResponse] = useState<DetectedEventsResponse | null>(null)
   const [isLoadingIncident, setIsLoadingIncident] = useState(true)
   const [environmentalData, setEnvironmentalData] = useState<EnvironmentalData | null>(null)
   const [environmentalError, setEnvironmentalError] = useState<string | null>(null)
@@ -90,9 +91,11 @@ function ExplanationAudit() {
   useEffect(() => {
     let active = true
 
-    void fetchDetectedEvents()
-      .then((events) => {
+    void fetchDetectedEventsResponse()
+      .then((response) => {
         if (!active) return
+        const events = response.events
+        setDetectionResponse(response)
         setIncidents(events)
         const firstIncident = events[0] ?? null
         setSelectedIncident(firstIncident)
@@ -122,8 +125,9 @@ function ExplanationAudit() {
     {
       source: 'Detected events endpoint',
       role: 'Incident and recommendation context',
-      state: 'demo',
-      status: 'Hard-coded demonstration record; not operationally verified',
+      state: sourceState(detectionResponse?.metadata.collection_status),
+      status: detectionResponse?.metadata.collection_status || 'No response available',
+      timestamp: detectionResponse?.metadata.timestamp,
     },
     {
       source: environmentalData?.metadata.services.weather.source || 'Open-Meteo',
@@ -183,9 +187,9 @@ function ExplanationAudit() {
     },
     {
       source: 'NASA FIRMS',
-      role: 'Potential satellite detection evidence',
-      state: 'unavailable',
-      status: 'Not connected to frontend event trace',
+      role: 'Satellite detection source used by the detected-events pipeline; raw hotspots are not exposed separately',
+      state: sourceState(detectionResponse?.metadata.services.detection?.status),
+      status: detectionResponse?.metadata.services.detection?.status || 'No response available',
     },
     {
       source: 'Telegram emergency intelligence',
@@ -194,6 +198,7 @@ function ExplanationAudit() {
       status: 'Not connected to frontend event trace',
     },
   ], [
+    detectionResponse,
     environmentalData,
     environmentalError,
     nationalRiskError,
@@ -215,23 +220,34 @@ function ExplanationAudit() {
           ? `Observed context response: ${environmentalData.metadata.collection_status}. Runtime status unavailable.`
           : 'No context output available. Runtime status unavailable.'
       case 'Event Detection Agent':
-        return 'Only a demonstration incident record is observable; detection evidence and runtime status are unavailable.'
+        return detectionResponse?.metadata.services.detection
+          ? `Observed pipeline status: ${detectionResponse.metadata.services.detection.status}; source: ${detectionResponse.metadata.services.detection.source || 'not reported'}.`
+          : 'No detection output or service metadata is available.'
       case 'Risk Analysis Agent':
-        return riskAssessment?.current_risk.status === 'available'
-          ? 'A real conditions-based model estimate is observable; it is not detection evidence.'
-          : 'No available model estimate. Runtime status is unavailable.'
+        return selectedIncident?.analysis_status
+          ? `Detected-event analysis status: ${selectedIncident.analysis_status}.`
+          : 'No detected-event risk analysis output is available.'
       case 'Resource Allocation Agent':
         return selectedIncident?.recommended_units?.length
-          ? 'Demonstration recommended-unit fields are observable; no live allocation status exists.'
+          ? 'Suggested units are observable; no verified allocation or dispatch status exists.'
           : 'No observable allocation output or runtime status.'
       case 'Response Planning Agent':
-        return selectedIncident?.response_plan
-          ? 'Demonstration response actions are observable; no live planning status exists.'
+        return selectedIncident?.planning_status
+          ? `Detected-event planning status: ${selectedIncident.planning_status}; no dispatch status is implied.`
           : 'No observable response-plan output or runtime status.'
       case 'LLM Coordination Agent':
-        return 'No LLM output, prompt trace, model trace, or runtime status is exposed.'
+        return selectedIncident?.protocol_citations?.length
+          ? 'Grounded output and verified citations are observable; prompts, hidden reasoning, and runtime traces are not exposed.'
+          : 'No prompt trace, hidden reasoning, model conversation, or runtime status is exposed.'
     }
   }
+
+  const detectionStatus = detectionResponse?.metadata.services.detection?.status
+  const detectionFailed =
+    detectionResponse?.metadata.collection_status === 'failed' || detectionStatus === 'failed'
+  const responseActions = selectedIncident?.response_actions ?? []
+  const protocolCitations = selectedIncident?.protocol_citations ?? []
+  const evidenceGaps = selectedIncident?.evidence_gaps ?? []
 
   return (
     <main className="audit-workspace">
@@ -245,8 +261,9 @@ function ExplanationAudit() {
       </header>
 
       <div className="audit-workspace__warning" role="status">
-        <strong>No live LLM reasoning is available.</strong> The incident explanation shown below
-        is stub content from the demonstration endpoint, not a prompt, chain-of-thought, or model trace.
+        <strong>Grounded output is not hidden reasoning.</strong> When analysis succeeds, the
+        explanation and verified citations come from the detected-events pipeline. Prompts,
+        chain-of-thought, model conversations, and operator audit history are not exposed.
       </div>
 
       <section className="audit-panel" aria-labelledby="audit-context-title">
@@ -272,16 +289,29 @@ function ExplanationAudit() {
             </label>
           )}
         </div>
-        {isLoadingIncident && <p className="audit-message">Loading incident record…</p>}
+        {isLoadingIncident && (
+          <p className="audit-message">
+            Running incident detection, risk analysis, and response planning. This can take up to 90 seconds.
+          </p>
+        )}
         {incidentError && <p className="audit-message audit-message--error">{incidentError}</p>}
+        {!isLoadingIncident && !incidentError && !selectedIncident && (
+          <p className="audit-message">
+            {detectionFailed
+              ? 'The detection provider could not complete the current scan; no incident audit is available.'
+              : 'The current scan completed with no active fire incident to audit.'}
+          </p>
+        )}
         {selectedIncident && (
           <div className="audit-facts">
             <div><span>Event type</span><strong>{selectedIncident.type || 'Not provided'}</strong></div>
             <div><span>Location</span><strong>{selectedIncident.latitude.toFixed(4)}, {selectedIncident.longitude.toFixed(4)}</strong></div>
-            <div><span>Incident risk</span><strong>{selectedIncident.risk_level || 'Not provided'} <small>demo-derived</small></strong></div>
-            <div><span>Recommendation status</span><strong>Demonstration / provisional</strong></div>
-            <div><span>Operational verification</span><strong>Unavailable</strong></div>
-            <div><span>Confidence</span><strong>Not provided</strong></div>
+            <div><span>Incident risk</span><strong>{selectedIncident.risk_level || 'Not assessed'}</strong></div>
+            <div><span>Risk score</span><strong>{selectedIncident.risk_score ?? 'Not assessed'}</strong></div>
+            <div><span>Detection status</span><strong>{detectionStatus || 'Not provided'}</strong></div>
+            <div><span>Analysis status</span><strong>{selectedIncident.analysis_status || 'Not provided'}</strong></div>
+            <div><span>Planning status</span><strong>{selectedIncident.planning_status || 'Not provided'}</strong></div>
+            <div><span>Confidence</span><strong>{selectedIncident.confidence || 'Not provided'}</strong></div>
           </div>
         )}
       </section>
@@ -290,7 +320,11 @@ function ExplanationAudit() {
         <p className="audit-panel__label">Human-readable explanation</p>
         <h2 id="explanation-title">Available explanation text</h2>
         <div className="audit-explanation">
-          <span>Demonstration / stub</span>
+          <span>
+            {selectedIncident?.analysis_status === 'success'
+              ? 'Grounded pipeline explanation'
+              : 'Explanation unavailable or incomplete'}
+          </span>
           <p>{selectedIncident?.explanation || 'No explanation text is available.'}</p>
         </div>
       </section>
@@ -300,8 +334,8 @@ function ExplanationAudit() {
           <p className="audit-panel__label">Evidence summary</p>
           <h2 id="evidence-summary-title">Context available to the operator</h2>
           <p className="audit-panel__note">
-            This context was retrieved for the selected coordinates. The backend does not prove
-            that it contributed to the demonstration detection or explanation.
+            Environmental context below is retrieved for the selected coordinates. Verified
+            protocol citations identify the textual sources grounding pipeline outputs.
           </p>
           {isLoadingTrace && <p className="audit-message">Collecting traceable context…</p>}
           <div className="audit-evidence-grid">
@@ -310,22 +344,76 @@ function ExplanationAudit() {
             <div><span>Terrain</span><strong>{String(environmentalData?.geospatial_context.terrain_type || 'Unavailable')}</strong></div>
             <div><span>Region</span><strong>{String(environmentalData?.geospatial_context.region_type || 'Unavailable')}</strong></div>
             <div><span>Nearby infrastructure</span><strong>{environmentalData ? infrastructureCount : 'Unavailable'}</strong></div>
-            <div><span>Detection evidence</span><strong>Not exposed</strong></div>
+            <div><span>Detection source</span><strong>{detectionResponse?.metadata.services.detection?.source || 'Unavailable'}</strong></div>
           </div>
+          {evidenceGaps.length > 0 && (
+            <div className="model-factors">
+              <h3>Evidence gaps reported by analysis</h3>
+              <ul>{evidenceGaps.map((gap) => <li key={gap}>{gap}</li>)}</ul>
+            </div>
+          )}
         </section>
 
         <section className="audit-panel" aria-labelledby="limitations-title">
           <p className="audit-panel__label">Confidence / limitations</p>
           <h2 id="limitations-title">Known limitations</h2>
           <ul className="audit-limitations">
-            <li>No incident or recommendation confidence is provided by the backend.</li>
-            <li>The incident, explanation, recommended units, and response actions are demonstration fields.</li>
-            <li>FIRMS and Telegram evidence are not available through the frontend event trace.</li>
+            <li>Confidence is shown only when supplied by the detected-events response.</li>
+            <li>Suggested units are not verified allocations, availability, or dispatch assignments.</li>
+            <li>Raw FIRMS hotspots and Telegram messages are not exposed as frontend records.</li>
             <li>Model factors are associations with an estimate, not causal explanations.</li>
             <li>No prompt trace, hidden reasoning, audit history, or operator approval history exists.</li>
           </ul>
         </section>
       </div>
+
+      <section className="audit-panel" aria-labelledby="grounded-output-title">
+        <p className="audit-panel__label">Grounded pipeline output</p>
+        <h2 id="grounded-output-title">Response actions and verified citations</h2>
+        {responseActions.length > 0 ? (
+          <ol className="audit-limitations">
+            {responseActions.map((action) => (
+              <li key={`${action.timeframe}-${action.responsible_unit}-${action.action}`}>
+                <strong>{action.timeframe.replace(/_/g, ' ')}</strong>
+                {' · '}{action.responsible_unit.replace(/_/g, ' ')} — {action.action}
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="audit-message">
+            No structured response actions are available for this incident.
+          </p>
+        )}
+        {protocolCitations.length > 0 ? (
+          <div className="audit-source-grid">
+            {protocolCitations.map((citation) => (
+              <article key={citation.chunk_id}>
+                <div className="audit-source__heading">
+                  <h3>{citation.document_title}</h3>
+                  <span className="audit-state audit-state--available">verified</span>
+                </div>
+                <p>“{citation.quoted_text}”</p>
+                <dl>
+                  <div><dt>Supports</dt><dd>{citation.supports}</dd></div>
+                  <div><dt>Section</dt><dd>{citation.heading_path || 'Not provided'}</dd></div>
+                  <div>
+                    <dt>Source</dt>
+                    <dd>
+                      {citation.source_url ? (
+                        <a href={citation.source_url} target="_blank" rel="noreferrer">
+                          Open source document
+                        </a>
+                      ) : 'No source URL provided'}
+                    </dd>
+                  </div>
+                </dl>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="audit-message">No verified protocol citations are available.</p>
+        )}
+      </section>
 
       <section className="audit-panel" aria-labelledby="source-trace-title">
         <p className="audit-panel__label">Data source traceability</p>

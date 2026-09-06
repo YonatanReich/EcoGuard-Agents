@@ -1,0 +1,220 @@
+{
+  "case_id": "fire-03-carmel-wui-extreme",
+  "title": "Extreme wildland-urban interface fire on the Carmel",
+  "hazard": "fire",
+  "probes": [
+    "critical-mobilisation",
+    "safety-preconditions",
+    "extended-response"
+  ],
+  "notes": "The most severe case in the suite, modelled on Carmel-type conditions: khamsin wind, single-digit-teens humidity, very extreme fire weather, and no fire station inside the search radius.",
+  "expected_behaviour_notes": "Critical. Should mobilise broadly including aerial_firefighting and home_front_command, address evacuation of both settlements, and name the absent fire station as an extended-response constraint. Crucially it must state safety preconditions on engagement rather than assuming they hold — at very extreme FWI, direct attack on the head is not viable.",
+  "detected_event": {
+    "metadata": {
+      "timestamp": "2026-09-03T09:00:00Z",
+      "collection_status": "success"
+    },
+    "event_type": "fire",
+    "detected": true,
+    "location": {
+      "latitude": 32.74,
+      "longitude": 35.035
+    },
+    "detection_confidence": "high",
+    "fire_weather_severity": "very_extreme",
+    "satellite_evidence": {
+      "source": "NASA FIRMS",
+      "hotspots_count": 12,
+      "selected_hotspot": {
+        "latitude": 32.74,
+        "longitude": 35.035,
+        "acquisition_date": "2026-09-03",
+        "acquisition_time": "0905",
+        "satellite": "N20",
+        "instrument": "VIIRS",
+        "confidence": "h",
+        "normalized_confidence": "high",
+        "frp": 180.4,
+        "daynight": "D"
+      },
+      "hotspots": [
+        {
+          "latitude": 32.74,
+          "longitude": 35.035,
+          "acquisition_date": "2026-09-03",
+          "acquisition_time": "0905",
+          "satellite": "N20",
+          "instrument": "VIIRS",
+          "confidence": "h",
+          "normalized_confidence": "high",
+          "frp": 180.4,
+          "daynight": "D"
+        }
+      ]
+    },
+    "fire_danger": {
+      "source": "GWIS/EFFIS",
+      "index": "FWI",
+      "danger_level": "very_extreme",
+      "fwi_min": 70.0,
+      "fwi_max": null
+    },
+    "weather_context": {
+      "current": {
+        "temperature_c": 41.0,
+        "humidity_percent": 11,
+        "wind_speed_kmh": 55.0,
+        "precipitation_mm": 0.0,
+        "weather_code": 0
+      },
+      "forecast": {
+        "daily": {}
+      }
+    },
+    "geospatial_context": {
+      "terrain_type": null,
+      "region_type": null,
+      "vegetation_density": null,
+      "distance_to_water_m": null,
+      "nearby_settlements": [
+        {
+          "name": "Isfiya",
+          "type": "town",
+          "population": "12000"
+        },
+        {
+          "name": "Nir Etzion",
+          "type": "village",
+          "population": "700"
+        }
+      ],
+      "nearby_hospitals": [
+        {
+          "name": "Carmel Clinic"
+        }
+      ],
+      "nearby_fire_stations": [],
+      "nearby_police_stations": [],
+      "nearby_roads": [
+        {
+          "name": "Route 672",
+          "type": "secondary"
+        }
+      ],
+      "nearby_green_areas": [],
+      "nearby_water_sources": []
+    },
+    "source_status": {
+      "nasa_firms": "success",
+      "gwis_effis": "success",
+      "weather": "success",
+      "geospatial": "success"
+    }
+  },
+  "risk_assessment": {
+    "metadata": {
+      "timestamp": "2026-09-03T09:00:05Z",
+      "agent": "RiskAnalysisAgent",
+      "analysis_status": "success",
+      "model": "claude-sonnet-5",
+      "reason": null
+    },
+    "event_id": "93ed28660952",
+    "event_type": "fire",
+    "location": {
+      "latitude": 32.74,
+      "longitude": 35.035
+    },
+    "risk_score": 93,
+    "risk_level": "critical",
+    "risk_semantics": "detected_event_operational_risk",
+    "confidence": "high",
+    "situational_context": {
+      "area_type": "wildland_urban_interface",
+      "area_type_basis": "Two settlements tagged place=town and place=village sit within the search radius on wooded Carmel terrain, served by a single secondary-class road.",
+      "population_band": "10k_to_100k",
+      "population_basis": "osm_population_tag",
+      "evacuation_consideration": "large_scale_evacuation",
+      "context_gaps": [],
+      "derived": {
+        "geospatial_available": true,
+        "search_radius_km": 2,
+        "settlements_count": 2,
+        "settlement_types": [
+          "town",
+          "village"
+        ],
+        "settlements_with_population_tag": 2,
+        "tagged_population_total": 12700,
+        "hospitals_count": 1,
+        "fire_stations_count": 0,
+        "police_stations_count": 0,
+        "roads_count": 1,
+        "road_classes": [
+          "secondary"
+        ]
+      }
+    },
+    "primary_drivers": [
+      "Twelve hotspots with 180.4 MW peak radiative power",
+      "High satellite detection confidence",
+      "Very extreme fire-weather danger (FWI above 70)",
+      "Khamsin wind at 55 km/h with 11% relative humidity",
+      "Two settlements exposed and no fire station in radius"
+    ],
+    "explanation": "A confirmed, high-intensity fire under the most severe fire-weather class the index defines. Twelve hotspots and 180 MW radiative power indicate an established, actively spreading fire, and 55 km/h wind with 11% humidity will drive rapid rate of spread through cured fuels. Two settlements totalling roughly 12,700 people lie within the search radius, and no fire station was found inside it, so initial-attack resources must travel. At this danger class, control efforts at the head of the fire should be expected to fail.",
+    "evidence_gaps": [
+      "Wind direction not reported, only speed",
+      "No fire station within the search radius, so response time is unknown"
+    ],
+    "web_findings": [],
+    "grounding": {
+      "retriever": "bm25",
+      "retrieved_chunk_ids": [
+        "effis-fire-weather-index#interpreting-the-classes-operationally#0",
+        "nwcg-standard-orders-watchouts#lces-lookouts-communications-escape-routes-safety#0",
+        "usfa-structure-triage#the-scarce-resource-problem#0"
+      ],
+      "citations": [
+        {
+          "chunk_id": "effis-fire-weather-index#interpreting-the-classes-operationally#0",
+          "document_title": "Fire Weather Index (FWI) System and Fire Danger Classification",
+          "quoted_text": "Reserved for the most severe observed conditions. Assume control efforts at the fire head will fail and plan around evacuation and defensible point protection.",
+          "supports": "Very extreme conditions: assume head attack fails",
+          "document_id": "effis-fire-weather-index",
+          "source_url": "https://forest-fire.emergency.copernicus.eu/about-effis/technical-background/fire-danger-forecast",
+          "heading_path": "Fire Weather Index (FWI) System and Fire Danger Classification > Interpreting the Classes Operationally",
+          "verified": true
+        },
+        {
+          "chunk_id": "nwcg-standard-orders-watchouts#lces-lookouts-communications-escape-routes-safety#0",
+          "document_title": "Wildland Fire Safety Doctrine: Standard Firefighting Orders, Watch Out Situations, and LCES",
+          "quoted_text": "LCES is the framework wildland firefighters use to engage in fire suppression safely, and it is described as the foundation of safe fire suppression action. The four elements must",
+          "supports": "Safety preconditions must be established before engagement",
+          "document_id": "nwcg-standard-orders-watchouts",
+          "source_url": "https://www.nps.gov/articles/firefighting-orders-watchout-situations.htm",
+          "heading_path": "Wildland Fire Safety Doctrine: Standard Firefighting Orders, Watch Out Situations, and LCES > LCES: Lookouts, Communications, Escape Routes, Safety Zones",
+          "verified": true
+        },
+        {
+          "chunk_id": "usfa-structure-triage#the-scarce-resource-problem#0",
+          "document_title": "Structure Triage and Resource Allocation in the Wildland/Urban Interface",
+          "quoted_text": "There are never enough resources to protect every threatened structure; hard decisions must be made as to when and where intervention will occur. Structure triage is the",
+          "supports": "Structure triage under scarce resources",
+          "document_id": "usfa-structure-triage",
+          "source_url": "https://apps.usfa.fema.gov/pdf/efop/tr_94kb.pdf",
+          "heading_path": "Structure Triage and Resource Allocation in the Wildland/Urban Interface > The Scarce-Resource Problem",
+          "verified": true
+        }
+      ],
+      "unverified_citation_count": 0,
+      "web_search": {
+        "enabled": true,
+        "searches_used": 0,
+        "findings_verified": 0,
+        "findings_dropped": 0
+      }
+    },
+    "error": null
+  }
+}
