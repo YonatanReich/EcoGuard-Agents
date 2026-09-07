@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { fetchDetectedEventsResponse } from '../api/detectedEvents'
 import { fetchEnvironmentalData } from '../api/environmentalData'
@@ -48,21 +48,28 @@ function EventDetectionWorkspace() {
   const [environmentalError, setEnvironmentalError] = useState<string | null>(null)
   const [isLoadingContext, setIsLoadingContext] = useState(false)
   const [isPopupOpen, setIsPopupOpen] = useState(false)
+  const contextRequestIdRef = useRef(0)
 
   const loadContext = useCallback((latitude: number, longitude: number) => {
+    const requestId = ++contextRequestIdRef.current
     setSelectedLocation({ lat: latitude, lng: longitude })
     setIsLoadingContext(true)
     setEnvironmentalError(null)
     setEnvironmentalData(null)
 
     void fetchEnvironmentalData(latitude, longitude)
-      .then(setEnvironmentalData)
+      .then((data) => {
+        if (contextRequestIdRef.current === requestId) setEnvironmentalData(data)
+      })
       .catch((reason: unknown) => {
+        if (contextRequestIdRef.current !== requestId) return
         setEnvironmentalError(
           reason instanceof Error ? reason.message : 'Environmental context is unavailable',
         )
       })
-      .finally(() => setIsLoadingContext(false))
+      .finally(() => {
+        if (contextRequestIdRef.current === requestId) setIsLoadingContext(false)
+      })
   }, [])
 
   useEffect(() => {
@@ -186,7 +193,7 @@ function EventDetectionWorkspace() {
         detail: 'Intended shared persistence layer; connection and runtime status are not exposed by this frontend contract.',
       },
       {
-        name: 'Anomaly Detectors',
+        name: 'Anomaly Detectors · current FIRMS fire scope',
         emphasis: 'primary',
         status: evidenceStatus(detectionService?.status),
         detail: isLoadingIncidents
@@ -199,7 +206,7 @@ function EventDetectionWorkspace() {
         name: 'Coordinator / Strainer',
         emphasis: 'downstream',
         status: 'unavailable',
-        detail: 'Correlates, deduplicates and groups detection candidates into incidents. Correlation output and runtime status are not exposed here.',
+        detail: 'Intended to correlate, deduplicate and group detection candidates into incidents. Generic correlation output and runtime status are not currently exposed.',
       },
       {
         name: 'Emergency / Non-emergency Routing',
@@ -238,8 +245,8 @@ function EventDetectionWorkspace() {
         <h1>Event Detection Workspace</h1>
         <p>
           Review detected event/anomaly candidates and available pipeline context.
-          The Coordinator / Strainer correlates and deduplicates candidates into incidents
-          before routing; this workspace does not confirm that correlation has occurred.
+          The intended Coordinator / Strainer stage will correlate and deduplicate candidates
+          into incidents before routing; this workspace does not confirm that correlation has occurred.
         </p>
       </header>
 

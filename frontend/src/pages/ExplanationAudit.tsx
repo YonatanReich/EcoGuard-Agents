@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { fetchDetectedEventsResponse } from '../api/detectedEvents'
@@ -54,9 +54,11 @@ function ExplanationAudit() {
   const [riskAssessment, setRiskAssessment] = useState<FireRiskAssessment | null>(null)
   const [riskError, setRiskError] = useState<string | null>(null)
   const [isLoadingTrace, setIsLoadingTrace] = useState(false)
+  const traceRequestIdRef = useRef(0)
   const { scan: nationalRiskScan, error: nationalRiskError } = useNationalRiskScan()
 
   const loadTraceContext = useCallback((incident: IncidentDetails) => {
+    const requestId = ++traceRequestIdRef.current
     setIsLoadingTrace(true)
     setEnvironmentalData(null)
     setEnvironmentalError(null)
@@ -67,6 +69,7 @@ function ExplanationAudit() {
       fetchEnvironmentalData(incident.latitude, incident.longitude),
       fetchCurrentRiskAssessment(incident.latitude, incident.longitude),
     ]).then(([environmentResult, riskResult]) => {
+      if (traceRequestIdRef.current !== requestId) return
       if (environmentResult.status === 'fulfilled') {
         setEnvironmentalData(environmentResult.value)
       } else {
@@ -86,7 +89,9 @@ function ExplanationAudit() {
             : 'Risk metadata is unavailable',
         )
       }
-    }).finally(() => setIsLoadingTrace(false))
+    }).finally(() => {
+      if (traceRequestIdRef.current === requestId) setIsLoadingTrace(false)
+    })
   }, [])
 
   useEffect(() => {
@@ -227,7 +232,7 @@ function ExplanationAudit() {
           ? `Observed pipeline status: ${detectionResponse.metadata.services.detection.status}; source: ${detectionResponse.metadata.services.detection.source || 'not reported'}.`
           : 'No detection output or service metadata is available.'
       case 'Coordinator / Strainer':
-        return 'Correlates, deduplicates and groups anomalies into incidents. No correlation result, runtime trace, prompts or hidden reasoning are exposed here.'
+        return 'Intended to correlate, deduplicate and group anomalies into incidents. Generic correlation output and runtime status are not currently exposed.'
       case 'Emergency / Non-emergency Routing':
         return 'Intended routing stage after Coordinator correlation; no routing decision or runtime status is exposed here.'
       case 'Resource Allocation / Response Implementation':

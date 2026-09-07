@@ -52,6 +52,7 @@ function ResponsePlanning() {
   const restoredVisualizationHeightRef = useRef(DEFAULT_VISUALIZATION_HEIGHT)
   const twoDimensionalTabRef = useRef<HTMLButtonElement>(null)
   const threeDimensionalTabRef = useRef<HTMLButtonElement>(null)
+  const contextRequestIdRef = useRef(0)
   const selectedFacilityResources = useMemo(
     () => selectedFacilitySimulation(selectedIncident?.allocated_resources),
     [selectedIncident],
@@ -61,18 +62,24 @@ function ResponsePlanning() {
     ?? 'Not provided'
 
   const loadContext = useCallback((incident: IncidentDetails) => {
+    const requestId = ++contextRequestIdRef.current
     setIsLoadingContext(true)
     setEnvironmentalError(null)
     setEnvironmentalData(null)
 
     void fetchEnvironmentalData(incident.latitude, incident.longitude)
-      .then(setEnvironmentalData)
+      .then((data) => {
+        if (contextRequestIdRef.current === requestId) setEnvironmentalData(data)
+      })
       .catch((reason: unknown) => {
+        if (contextRequestIdRef.current !== requestId) return
         setEnvironmentalError(
           reason instanceof Error ? reason.message : 'Response context is unavailable',
         )
       })
-      .finally(() => setIsLoadingContext(false))
+      .finally(() => {
+        if (contextRequestIdRef.current === requestId) setIsLoadingContext(false)
+      })
   }, [])
 
   useEffect(() => {

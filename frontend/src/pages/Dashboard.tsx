@@ -29,11 +29,11 @@ import { clusterHighRiskCells, type FireRiskCluster } from '../components/fireRi
 import InfrastructureLayer from '../components/InfrastructureLayer'
 import LayersControl from '../components/LayersControl'
 import EnvironmentalDataModal from '../components/EnvironmentalDataModal'
-import { fetchDetectedEvents } from '../api/detectedEvents'
+import { fetchDetectedEventsResponse } from '../api/detectedEvents'
 import { fetchEnvironmentalData } from '../api/environmentalData'
 import { useNationalRiskScan } from '../hooks/useNationalRiskScan'
 import type { EnvironmentalData } from '../types/environmentalData'
-import type { IncidentDetails } from '../types/incidents'
+import type { DetectedEventsResponse, IncidentDetails } from '../types/incidents'
 
 import './visuals/dashboard.css'
 
@@ -220,6 +220,8 @@ function Dashboard() {
     useState(true)
   const [eventsError, setEventsError] =
     useState<string | null>(null)
+  const [detectedEventsResponse, setDetectedEventsResponse] =
+    useState<DetectedEventsResponse | null>(null)
 
   const [leaving, setLeaving] =
     useState(false)
@@ -373,9 +375,11 @@ function Dashboard() {
   useEffect(() => {
     let active = true
 
-    void fetchDetectedEvents()
-      .then((detectedEvents) => {
-        if (active) setEvents(detectedEvents)
+    void fetchDetectedEventsResponse()
+      .then((response) => {
+        if (!active) return
+        setDetectedEventsResponse(response)
+        setEvents(response.events)
       })
       .catch((reason: unknown) => {
         if (!active) return
@@ -393,6 +397,10 @@ function Dashboard() {
       active = false
     }
   }, [])
+
+  const detectionProviderFailed =
+    detectedEventsResponse?.metadata.collection_status === 'failed'
+    || detectedEventsResponse?.metadata.services.detection?.status === 'failed'
 
   const highRiskClusters = useMemo(
     () => clusterHighRiskCells(nationalRiskScan?.cells ?? []),
@@ -1202,8 +1210,13 @@ function Dashboard() {
                 Detection scan unavailable: {eventsError}
               </p>
             )}
+            {!eventsError && detectionProviderFailed && (
+              <p className="dashboard-summary__error" role="alert">
+                Detection provider could not complete the current scan. No-event status is unknown.
+              </p>
+            )}
             <div className="dashboard-incident-list">
-              {!isLoadingEvents && !eventsError && events.length === 0 && (
+              {!isLoadingEvents && !eventsError && !detectionProviderFailed && events.length === 0 && (
                 <p className="dashboard-summary__empty">
                   The current detection scan returned no detected events.
                 </p>

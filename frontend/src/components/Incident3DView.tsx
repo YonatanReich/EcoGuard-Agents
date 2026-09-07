@@ -601,9 +601,13 @@ function Incident3DView({
           status: 'READY',
         })))
         const routeScene = viewer.scene
+        const routeViewer = viewer
         const routeResults = await Promise.all(activeResources.map(async (resource) => {
           try {
             const route = await fetchRoute(resource, incident)
+            if (!isCurrentGeneration() || routeViewer.isDestroyed()) {
+              return { resource, route: null, error: null }
+            }
             return {
               resource,
               route: await createSurfaceAwareRoute(routeScene, route),

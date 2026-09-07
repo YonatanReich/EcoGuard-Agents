@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 
 import { fetchEnvironmentalData } from '../api/environmentalData'
 import EnvironmentalDataModal from '../components/EnvironmentalDataModal'
@@ -53,12 +53,14 @@ function DataCollectionLayers() {
   const [environmentalError, setEnvironmentalError] = useState<string | null>(null)
   const [isLoadingEnvironmentalData, setIsLoadingEnvironmentalData] = useState(false)
   const [isPopupOpen, setIsPopupOpen] = useState(false)
+  const contextRequestIdRef = useRef(0)
   const { scan: nationalRiskScan, error: nationalRiskError } = useNationalRiskScan()
 
   const handleMapClick = (event: MapCoordinateClickEvent) => {
     const { lat, lng } = event.lngLat
 
     if (lat < 29.45 || lat > 33.35 || lng < 34.26 || lng > 35.90) return
+    const requestId = ++contextRequestIdRef.current
 
     setSelectedLocation({ lat, lng })
     setIsPopupOpen(true)
@@ -67,13 +69,18 @@ function DataCollectionLayers() {
     setEnvironmentalData(null)
 
     void fetchEnvironmentalData(lat, lng)
-      .then(setEnvironmentalData)
+      .then((data) => {
+        if (contextRequestIdRef.current === requestId) setEnvironmentalData(data)
+      })
       .catch((reason: unknown) => {
+        if (contextRequestIdRef.current !== requestId) return
         setEnvironmentalError(
           reason instanceof Error ? reason.message : 'Environmental data is unavailable',
         )
       })
-      .finally(() => setIsLoadingEnvironmentalData(false))
+      .finally(() => {
+        if (contextRequestIdRef.current === requestId) setIsLoadingEnvironmentalData(false)
+      })
   }
 
   const sourceItems = useMemo<SourceItem[]>(() => {
