@@ -200,6 +200,7 @@ class ResourceAllocationAgent:
         result = {
             "status": "success",
             "allocated_units": allocated_units,
+            "nearby_roads": geospatial_context.get("nearby_roads") or [],
             "shortages": {},
             "unsupported_units": [],
             "errors": [],
