@@ -8,8 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from scripts.build_historical_environmental_features import PriorFirmsIndex, historical_fire_features
-from scripts.build_historical_fire_negative_samples import FIRMS_INPUT, NegativeSampleError, load_firms_incidents
+from research.datasets.build_historical_environmental_features import PriorFirmsIndex, historical_fire_features
+from research.datasets.build_historical_fire_negative_samples import FIRMS_INPUT, NegativeSampleError, load_firms_incidents
 from services.rolling_weather_cache import DEFAULT_CACHE_PATH, RollingWeatherCache, WeatherCacheError
 from services.static_feature_store import DEFAULT_DATABASE_PATH, STATIC_MODEL_FEATURES
 

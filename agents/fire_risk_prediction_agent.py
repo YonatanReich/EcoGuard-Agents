@@ -11,7 +11,7 @@ from typing import Any, Mapping
 import joblib
 import numpy as np
 
-from scripts.calibrate_fire_risk_levels import apply_calibration
+from research.training.calibrate_fire_risk_levels import apply_calibration
 
 DEFAULT_MODEL_PATH = Path("data/generated/ml/fire_prediction_landcover_terrain_model.joblib")
 DEFAULT_THRESHOLDS_PATH = Path("data/generated/ml/fire_risk_thresholds.json")

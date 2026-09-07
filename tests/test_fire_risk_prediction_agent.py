@@ -6,8 +6,8 @@ import json
 import numpy as np
 
 from agents.fire_risk_prediction_agent import FireRiskPredictionAgent
-from scripts.calibrate_fire_risk_levels import OUTPUT_PATH
-from scripts.train_fire_prediction_landcover_terrain_models import DATASET_PATH, load_dataset
+from research.training.calibrate_fire_risk_levels import OUTPUT_PATH
+from research.training.train_fire_prediction_landcover_terrain_models import DATASET_PATH, load_dataset
 
 
 def _payload() -> dict[str, float]:

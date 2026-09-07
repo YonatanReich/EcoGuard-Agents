@@ -3,8 +3,8 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
-from scripts.build_historical_environmental_features import PriorFirmsIndex
-from scripts.train_fire_prediction_landcover_terrain_models import FULL_FEATURES
+from research.datasets.build_historical_environmental_features import PriorFirmsIndex
+from research.training.train_fire_prediction_landcover_terrain_models import FULL_FEATURES
 from services.current_risk_feature_builder import CurrentRiskFeatureBuilder
 from services.static_feature_store import STATIC_MODEL_FEATURES
 from services.weather_feature_calculator import FEATURE_FIELDS

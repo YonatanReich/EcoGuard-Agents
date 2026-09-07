@@ -6,8 +6,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 import requests
 
-from scripts.build_historical_fire_weather_features import FEATURE_FIELDS as HISTORICAL_FIELDS
-from scripts.build_historical_fire_weather_features import compute_features as historical_compute
+from research.datasets.build_historical_fire_weather_features import FEATURE_FIELDS as HISTORICAL_FIELDS
+from research.datasets.build_historical_fire_weather_features import compute_features as historical_compute
 from services.open_meteo_hourly_client import (
     HOURLY_VARIABLES, HourlyProviderError, OpenMeteoHourlyClient, validate_location_response,
 )
