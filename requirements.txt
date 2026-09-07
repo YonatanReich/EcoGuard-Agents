@@ -36,3 +36,10 @@ rasterio==1.4.4
 # Risk analysis and response planning (LLM + RAG)
 anthropic==1.1.0
 httpx2==2.12.0
+
+# Collection layer — Postgres/PostGIS store and the collector timers
+sqlalchemy>=2.0
+alembic
+psycopg[binary]
+geoalchemy2
+apscheduler

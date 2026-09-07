@@ -19,6 +19,8 @@ Run locally with:
 """
 
 import logging
+import os
+from contextlib import asynccontextmanager
 from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Query
@@ -46,7 +48,31 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start the background workers, and make sure they stop with the app.
+
+    The collection scheduler is imported here rather than at module scope so a
+    developer without DATABASE_URL set still gets a working API for the old
+    request-scoped endpoints; only collection is missing, and loudly.
+    """
+    current_risk_refresh.start()
+    collection_scheduler = None
+    try:
+        from ecoguard.scheduler import scheduler as collection_scheduler
+
+        collection_scheduler.start()
+    except Exception:
+        logging.exception("Collection scheduler did not start; no observations will be written")
+    try:
+        yield
+    finally:
+        if collection_scheduler is not None and collection_scheduler.running:
+            collection_scheduler.shutdown()
+        current_risk_refresh.stop()
+
+
+app = FastAPI(lifespan=lifespan)
 
 # Allow the Vite dev server to call the API directly during development.
 # Both localhost and 127.0.0.1 are listed because browsers treat them as
@@ -112,15 +138,6 @@ ISRAEL_MIN_LONGITUDE = 34.26
 ISRAEL_MAX_LONGITUDE = 35.90
 
 
-@app.on_event("startup")
-def start_current_risk_refresh():
-    current_risk_refresh.start()
-
-
-@app.on_event("shutdown")
-def stop_current_risk_refresh():
-    current_risk_refresh.stop()
-
 @app.get("/")
 def read_root():
     """
@@ -133,6 +150,30 @@ def read_root():
         "message": "EcoGuard Agents API is running",
         "status": "success"
     }
+
+
+@app.post("/api/dev/run/{source}")
+def run_collector_now(source: str):
+    """Run one collector immediately instead of waiting for its next tick.
+
+    Off unless ECOGUARD_DEV_ENDPOINTS is set. Defined as a sync endpoint on
+    purpose: FastAPI runs it in a worker thread, which the Telegram collector
+    needs because it opens its own event loop.
+    """
+    if os.getenv("ECOGUARD_DEV_ENDPOINTS") != "1":
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    from ecoguard.scheduler import COLLECTORS, run_once
+
+    if source not in COLLECTORS:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown collector. Known sources: {sorted(COLLECTORS)}",
+        )
+
+    # run() never raises, so the outcome is in collector_runs, not the response.
+    run_once(source)
+    return {"source": source, "status": "run complete; see collector_runs for the outcome"}
 
 
 @app.post("/api/fire-risk", response_model=FireRiskResponse)
