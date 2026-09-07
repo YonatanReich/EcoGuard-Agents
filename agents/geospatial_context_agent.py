@@ -53,6 +53,17 @@ class GeospatialContextAgent:
         self.source_name = "OpenStreetMap / Overpass API"
         self.overpass_url = "https://overpass-api.de/api/interpreter"
 
+    def fetch_facilities(self, latitude, longitude, facility_type, radius_km):
+        """Fetch only the requested facility layer; propagate lookup failures."""
+        layers = {
+            "fire_station": (self.build_fire_stations_query, self.normalize_fire_stations),
+            "hospital": (self.build_hospitals_query, self.normalize_hospitals),
+            "police_station": (self.build_police_stations_query, self.normalize_police_stations),
+        }
+        build_query, normalize = layers[facility_type]
+        elements = self.execute_overpass_query(build_query(latitude, longitude, radius_km))
+        return {"status": "success", "facilities": normalize(elements)}
+
     def fetch_nearby_context(self, latitude, longitude, radius_km=2):
         """
         Fetch real geospatial context around a given coordinate using
