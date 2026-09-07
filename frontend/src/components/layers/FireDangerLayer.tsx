@@ -117,16 +117,11 @@ function FireDangerLayer({
             FWI_MAX, 1,
           ],
 
-          // Cells sit on a fixed 5 km grid, so as you zoom in they spread
-          // apart and the blend thins. Raising intensity with zoom keeps the
-          // surface reading at the same strength all the way in.
-          'heatmap-intensity': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            6, 1,
-            12, 3,
-          ],
+          // Constant. Because the radius below tracks ground scale, the
+          // number of cells blending into any given pixel no longer changes
+          // with zoom — so intensity must not either, or the colours shift as
+          // you zoom.
+          'heatmap-intensity': 1,
 
           // The GWIS legend's own ramp, so the map and the sidebar agree.
           // Density 0 must be fully transparent or the heatmap paints a wash
@@ -144,16 +139,26 @@ function FireDangerLayer({
             1.0, 'rgba(88, 0, 21, 0.95)',
           ],
 
-          // Roughly half a cell at national zoom, growing so neighbouring
-          // cells keep overlapping as they separate on screen. Too small and
-          // the grid reappears as dots; too large and everything smears.
+          // heatmap-radius is in SCREEN PIXELS, which is why a fixed value
+          // breaks up into one circle per cell as you zoom in: the 5 km grid
+          // spreads across more pixels while the radius stays put.
+          //
+          // An exponential base-2 ramp doubles the radius every zoom level —
+          // exactly how the map itself scales — so the radius covers a
+          // constant *ground* distance and the surface looks identical at
+          // every zoom. 4px at z6 against 2.4px cell spacing gives a
+          // radius:spacing ratio of 1.67, and that ratio then holds all the
+          // way in.
+          //
+          // ponytail: clamps at 1024px above z14. Past there you are below the
+          // 5 km resolution of the data anyway and the field is a flat wash;
+          // add stops only if anyone actually works at street zoom.
           'heatmap-radius': [
             'interpolate',
-            ['linear'],
+            ['exponential', 2],
             ['zoom'],
-            6, 18,
-            9, 40,
-            12, 90,
+            6, 4,
+            14, 1024,
           ],
 
           'heatmap-opacity': opacity,
