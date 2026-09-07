@@ -30,6 +30,12 @@ from pydantic import (
 
 PollutantUnit = Literal["µg/m³", "mg/m³", "ng/m³", "ppb", "ppm"]
 AnomalySeverity = Literal["low", "medium", "high", "critical"]
+DetectionMethod = Literal[
+    "reference_threshold",
+    "provider_aqi",
+    "sustained_condition",
+    "historical_baseline",
+]
 
 CORE_AIR_POLLUTANTS: frozenset[str] = frozenset(
     {"PM2.5", "PM10", "NO2", "NO", "NOx", "O3", "CO", "SO2"}
@@ -177,6 +183,64 @@ class SupportingEvidence(ContractModel):
         return value.strip()
 
 
+class DetectionAssessment(ContractModel):
+    """Optional, auditable details of the deterministic detector assessment."""
+
+    detection_methods: list[DetectionMethod] = Field(default_factory=list)
+    window_started_at: AwareDatetime | None = None
+    window_ended_at: AwareDatetime | None = None
+    aggregation_minutes: int | None = Field(default=None, gt=0)
+    valid_sample_count: int | None = Field(default=None, ge=0)
+    expected_sample_count: int | None = Field(default=None, ge=1)
+    completeness_ratio: float | None = Field(default=None, ge=0, le=1)
+    window_complete: bool | None = None
+    reference_kind: Literal["target", "environmental", "alert", "other"] | None = None
+    reference_value: float | None = Field(default=None, ge=0, strict=True)
+    reference_unit: PollutantUnit | None = None
+    reference_source: str | None = Field(default=None, min_length=1, max_length=500)
+    reference_version: str | None = Field(default=None, min_length=1, max_length=200)
+    provider_aqi_value: float | None = Field(default=None, strict=True)
+    provider_aqi_category: str | None = Field(default=None, min_length=1, max_length=100)
+    baseline_median: float | None = Field(default=None, ge=0, strict=True)
+    baseline_deviation: float | None = Field(default=None, ge=0, strict=True)
+    freshness_seconds: float | None = Field(default=None, ge=0)
+    preliminary: bool = False
+    limitations: list[str] = Field(default_factory=list)
+    confidence_factors: dict[str, float] = Field(default_factory=dict)
+    confidence_caps: dict[str, float] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _validate_assessment(self) -> "DetectionAssessment":
+        if (
+            self.window_started_at is not None
+            and self.window_ended_at is not None
+            and self.window_ended_at < self.window_started_at
+        ):
+            raise ValueError("window_ended_at cannot precede window_started_at")
+        if self.reference_value is not None and self.reference_unit is None:
+            raise ValueError("reference_unit is required with reference_value")
+        if self.expected_sample_count and self.valid_sample_count is not None:
+            expected_ratio = min(self.valid_sample_count / self.expected_sample_count, 1.0)
+            if (
+                self.completeness_ratio is not None
+                and abs(self.completeness_ratio - expected_ratio) > 1e-9
+            ):
+                raise ValueError("completeness_ratio does not match sample counts")
+        if any(not item.strip() for item in self.limitations):
+            raise ValueError("limitations cannot contain blank entries")
+        if any(
+            not name.strip() or not -1 <= contribution <= 1
+            for name, contribution in self.confidence_factors.items()
+        ):
+            raise ValueError("confidence factors require names and values from -1 to 1")
+        if any(
+            not name.strip() or not 0 <= cap <= 1
+            for name, cap in self.confidence_caps.items()
+        ):
+            raise ValueError("confidence caps require names and values from 0 to 1")
+        return self
+
+
 class AirPollutionAnomaly(ContractModel):
     """One normalized anomaly detection emitted for Coordinator correlation.
 
@@ -199,6 +263,7 @@ class AirPollutionAnomaly(ContractModel):
     anomaly_reasons: list[str] = Field(default_factory=list, max_length=20)
     sources: list[AnomalySource] = Field(min_length=1)
     supporting_evidence: list[SupportingEvidence] = Field(default_factory=list)
+    assessment: DetectionAssessment | None = None
 
     @field_validator("detection_id", "explanation")
     @classmethod
