@@ -1,131 +1,135 @@
-"""
-Fire Coordinator
-
-Responsible for orchestrating the complete, end-to-end fire event pipeline.
-It replaces direct agent calls in the FastAPI backend and ensures data flows
-sequentially through the five pipeline stages.
-
-How it works:
-    1. Validates the event type, explicitly rejecting non-fire events with an 
-       "unsupported event type" message.
-    2. Executes Data Collection & Event Detection to gather live satellite, 
-       weather, and geospatial data.
-    3. Executes Risk Analysis to determine risk levels based on protocols.
-    4. Executes Resource Allocation to select the nearest response units using 
-       real geospatial data.
-    5. Executes Response Planning to produce a protocol-grounded action plan.
-    6. Returns a single, structured, non-hardcoded result containing the full chain.
-
-Consumed by:
-    backend.main (FastAPI endpoints)
-"""
-
 from agents.fire_detection_agent import FireDetectionAgent
+from agents.risk_analysis_agent import RiskAnalysisAgent
+from agents.response_planning_agent import ResponsePlanningAgent
 from agents.resource_allocation_agent import ResourceAllocationAgent
-from agents.risk_analysis_agent import analyze_event
+
 
 class FireCoordinator:
-    def __init__(self):
-        # initialize agents
-        self.fire_detection_agent = FireDetectionAgent()
-        self.resource_allocation_agent = ResourceAllocationAgent()
+    def __init__(self, *, detection_agent=None, risk_agent=None, planning_agent=None, allocation_agent=None):
+        self.fire_detection_agent = detection_agent if detection_agent is not None else FireDetectionAgent()
+        self.risk_agent = risk_agent if risk_agent is not None else RiskAnalysisAgent()
+        self.planning_agent = planning_agent if planning_agent is not None else ResponsePlanningAgent()
+        self.resource_allocation_agent = allocation_agent if allocation_agent is not None else ResourceAllocationAgent()
 
-    def run_event_pipeline(self, latitude: float, longitude: float, event_type: str = "fire"):
+    def run_event_pipeline(
+        self,
+        latitude: float,
+        longitude: float,
+        event_type: str = "fire",
+        *,
+        day_range: int = 2,
+        radius_km: float = 5.0,
+        include_analysis: bool = True,
+    ):
         """
-        Runs the full 5-stage pipeline for a fire event.
+        Runs the full end-to-end pipeline for a fire event.
         """
-        # Ensure event type. TODO: extend to other events
-        if event_type.lower() != "fire":
-            return {
-                "status": "error", 
-                "message": f"Unsupported event type: '{event_type}'. Only 'fire' is supported."
-            }
+        if not isinstance(event_type, str) or event_type.lower() != "fire":
+            return self._build_final_response(
+                status="error",
+                message=f"Unsupported event type: '{event_type}'. Only 'fire' is supported."
+            )
 
-        # ---------------------------------------------------------
-        # Data Collection + Event Detection
-        # ---------------------------------------------------------
         detection_result = self.fire_detection_agent.detect_fire(
-            latitude=latitude, 
-            longitude=longitude
+            latitude=latitude,
+            longitude=longitude,
+            day_range=day_range,
+            max_hotspot_distance_km=radius_km,
         )
-
-        # TODO: Hardcoded data for testing. remove
-        # from agents.geospatial_context_agent import GeospatialContextAgent
-        # temp_geo_agent = GeospatialContextAgent()
-        # geo_data = temp_geo_agent.fetch_nearby_context(latitude, longitude, radius_km=5) # הרחבתי קצת את הרדיוס כדי שבטוח נתפוס תחנות
-        
-        # detection_result = {
-        #     "detected": True,
-        #     "location": {"latitude": latitude, "longitude": longitude},
-        #     "geospatial_context": geo_data.get("geospatial_context", {})
-        # }
 
         is_detected = detection_result.get("detected")
 
-        # Handle null case - unable to detect fire
         if is_detected is None:
-            return {
-                "status": "error", 
-                "message": "Detection service is currently unavailable. Could not verify event status."
-            }
-            
-        # Handle false case - no fire was detected
+            return self._build_final_response(
+                status="error",
+                message="Detection service is currently unavailable. Could not verify event status.",
+                detection=detection_result,
+            )
         elif is_detected is False:
-            return {
-                "status": "no_event", 
-                "message": "No fire event detected at this location."
-            }
+            return self._build_final_response(
+                status="no_event",
+                message="No fire event detected at this location.",
+                detection=detection_result,
+            )
+
+        if not include_analysis:
+            return self._build_final_response(
+                status="success",
+                message=None,
+                detection=detection_result,
+            )
+
+        risk_result = self.risk_agent.analyze_event(detection_result)
         
-        # ---------------------------------------------------------
-        # Risk Analysis
-        # ---------------------------------------------------------
+        if risk_result.get("metadata", {}).get("analysis_status") != "success":
+            return self._build_final_response(
+                status="partial",
+                message="Risk analysis failed or returned incomplete data.",
+                detection=detection_result,
+                risk_analysis=risk_result,
+            )
 
-        # TODO: (Integration): Uncomment the following lines once Risk Analysis Agent
-        # returns un-hardcoded response
-        #
-        # detected_event_type = detection_result.get("event_type", "fire")
-        # risk_result = self.risk_analysis_agent.analyze_event(
-        #     event_type=detected_event_type,
-        #     detected_event=detection_result
-        # )
-        risk_result = analyze_event("wildfire")
-
-        recommended_units = risk_result.get("recommended_units", [])
-        required_resources = {}
-
-        # TODO: remove hardcoded facilities
-        if "fire_department" in recommended_units:
-            required_resources["fire_station"] = 2
-        if "police" in recommended_units:
-            required_resources["police_station"] = 1
-        if "hospital" in recommended_units:
-                    required_resources["hospital"] = 1
-                
-        required_resources["road"] = 3
-            
-        risk_result["required_resources"] = required_resources
-
-        # ---------------------------------------------------------
-        # Resource Allocation
-        # ---------------------------------------------------------
-        allocation_result = self.resource_allocation_agent.allocate_resources(
-            event_location=detection_result["location"],
-            geospatial_context=detection_result["geospatial_context"],
-            risk_analysis=risk_result
+        planning_result = self.planning_agent.plan_response(
+            detection_result, risk_result
         )
 
-        # ---------------------------------------------------------
-        # Response Planning
-        # ---------------------------------------------------------
+        if planning_result.get("metadata", {}).get("planning_status") != "success":
+            return self._build_final_response(
+                status="partial",
+                message="Response planning failed.",
+                detection=detection_result,
+                risk_analysis=risk_result,
+                planning=planning_result,
+            )
+
+        allocation_result = self.resource_allocation_agent.allocate_resources(
+            detection_result.get("location"),
+            detection_result.get("geospatial_context"),
+            planning_result,
+        )
+
+        final_status = "success" if allocation_result.get("status") == "success" else "partial"
+
+        return self._build_final_response(
+            status=final_status,
+            message=None,
+            detection=detection_result,
+            risk_analysis=risk_result,
+            planning=planning_result,
+            allocation=self._clean_allocation(allocation_result)
+        )
+
+    @staticmethod
+    def _clean_allocation(allocation):
+        """Remove internal OpenStreetMap identifiers from coordinator output."""
+        if not isinstance(allocation, dict):
+            return allocation
+
+        cleaned_units = {}
+        for unit_type, facilities in (allocation.get("allocated_units") or {}).items():
+            cleaned_units[unit_type] = [
+                {
+                    key: value
+                    for key, value in facility.items()
+                    if key not in {"osm_id", "osm_type"}
+                }
+                for facility in facilities
+            ]
+
+        return {**allocation, "allocated_units": cleaned_units}
+
+    def _build_final_response(self, status: str, message: str | None, detection=None, risk_analysis=None, planning=None, allocation=None):
+        """
+        Helper method to ensure a consistent, single structured response shape 
+        for all pipeline outcomes.
+        """
         return {
-            "status": "success",
+            "status": status,
+            "message": message,
             "event_type": "fire",
-            "location": detection_result["location"],
-            "risk_assessment": {
-                "score": risk_result.get("risk_score"),
-                "level": risk_result.get("risk_level"),
-                "explanation": risk_result.get("explanation")
-            },
-            "allocated_resources": allocation_result,
-            "response_plan": risk_result.get("response_plan", [])
+            "location": detection.get("location") if detection else None,
+            "detection": detection,
+            "risk_analysis": risk_analysis,
+            "planning": planning,
+            "allocated_resources": allocation,
         }
