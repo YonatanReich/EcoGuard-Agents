@@ -11,9 +11,9 @@ import {
   type CSSProperties,
 } from 'react'
 
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
-import MapView from '../components/MapView'
+import MapView, { type MapCoordinateClickEvent } from '../components/MapView'
 
 import RainRadarLayer, {
   type RainViewerFrame,
@@ -26,160 +26,16 @@ import WindParticleLayer from '../components/layers/WindParticleLayer'
 import FireDangerLegend from '../components/FireDangerLegend'
 import FireRiskAlert from '../components/FireRiskAlert'
 import { clusterHighRiskCells, type FireRiskCluster } from '../components/fireRiskClusters'
-import { normalizeNationalRiskScanResponse, type NationalRiskScan } from '../components/fireRiskScan'
 import InfrastructureLayer from '../components/InfrastructureLayer'
 import LayersControl from '../components/LayersControl'
 import EnvironmentalDataModal from '../components/EnvironmentalDataModal'
+import { fetchDetectedEventsResponse } from '../api/detectedEvents'
+import { fetchEnvironmentalData } from '../api/environmentalData'
+import { useNationalRiskScan } from '../hooks/useNationalRiskScan'
+import type { EnvironmentalData } from '../types/environmentalData'
+import type { DetectedEventsResponse, IncidentDetails } from '../types/incidents'
 
 import './visuals/dashboard.css'
-
-
-/** Operational risk bands, lowest to highest. Derived from the score server-side. */
-export type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
-
-/** Outcome of one reasoning step. Only "success" carries results. */
-export type StepStatus = 'success' | 'failed' | 'skipped'
-
-/**
- * One verified reference from a reasoning step back to a protocol document.
- *
- * The backend only emits citations it has checked against the retrieved source
- * text, so anything appearing here has been confirmed to quote the document it
- * names.
- */
-export type ProtocolCitation = {
-  chunk_id: string
-  document_id: string
-  document_title: string
-  source_url: string | null
-  heading_path: string
-  quoted_text: string
-  supports: string
-  verified: boolean
-}
-
-/** One action in a response plan, with its owning unit and urgency. */
-export type ResponseAction = {
-  action: string
-  responsible_unit: string
-  timeframe: 'immediate' | 'within_1_hour' | 'within_6_hours' | 'ongoing'
-}
-
-/**
- * One detected fire event, as returned by GET /api/detected-events.
- *
- * Combines satellite detection evidence, the risk assessment, and the response
- * plan into one flat object per map marker.
- *
- * Nullable fields are load-bearing rather than defensive. When analysis is
- * skipped or fails, `risk_score` and `risk_level` are null — not zero, not
- * "low". Absence of an assessment is not evidence that an area is safe, so the
- * UI must render that state distinctly instead of defaulting it.
- */
-export type RiskEvent = {
-  /** Stable hash of the hotspot, so the React key survives repeated polls. */
-  id: string
-  type: string
-  title: string
-  description: string
-  latitude: number
-  longitude: number
-
-  /** Detection evidence, kept distinct from the risk judgement. */
-  detection_confidence: string | null
-  fire_weather_severity: string | null
-
-  /** Risk analysis. All null unless analysis_status is "success". */
-  risk_score: number | null
-  risk_level: RiskLevel | null
-  confidence: 'low' | 'medium' | 'high' | null
-  primary_drivers: string[]
-  explanation: string | null
-  /** What the model could not determine, e.g. a failed weather lookup. */
-  evidence_gaps: string[]
-
-  /** Response plan. Empty unless planning_status is "success". */
-  recommended_units: string[]
-  /** Flattened action text, for compact display. */
-  response_plan: string[]
-  /** The same actions with their unit and timeframe. */
-  response_actions: ResponseAction[]
-
-  /** Verified citations from the risk and planning steps, merged. */
-  protocol_citations: ProtocolCitation[]
-
-  analysis_status: StepStatus
-  planning_status: StepStatus
-}
-
-/** Full payload of GET /api/detected-events. */
-export type DetectedEventsResponse = {
-  metadata: {
-    timestamp: string | null
-    collection_status: string
-    services: Record<string, { status: string; source: string | null }>
-  }
-  query: {
-    latitude: number
-    longitude: number
-    radius_km: number
-    day_range: number
-    include_analysis: boolean
-  }
-  events: RiskEvent[]
-}
-
-
-export type EnvironmentalData = {
-  metadata: {
-    timestamp: string
-    collection_status: string
-
-    services: {
-      weather: {
-        status: string
-        source: string
-      }
-
-      geospatial: {
-        status: string
-        source: string
-      }
-    }
-  }
-
-  location: {
-    latitude: number
-    longitude: number
-  }
-
-  geospatial_context: {
-    terrain_type: string
-    region_type: string
-    vegetation_density: number
-    distance_to_water_m: number
-    [key: string]: any
-  }
-
-  weather: {
-    current: {
-      temperature_c: number
-      humidity_percent: number
-      wind_speed_kmh: number
-      precipitation_mm: number
-      weather_code: number
-    }
-
-    forecast: {
-      daily: {
-        max_temp_c: number[]
-        min_temp_c: number[]
-        max_wind_speed_kmh: number[]
-        precipitation_sum_mm: number[]
-      }
-    }
-  }
-}
 
 
 const WIND_MIN_HOURS = -6
@@ -189,6 +45,23 @@ const WIND_MAX_HOURS = 12
  * Delay between RainViewer animation frames.
  */
 const RAIN_ANIMATION_INTERVAL_MS = 800
+
+const OFFICIAL_AGENT_ROLES = [
+  'Data Collection Agents',
+  'Shared Data Layer / PostGIS',
+  'Anomaly Detectors',
+  'Coordinator / Strainer',
+  'Emergency / Non-emergency Routing',
+  'Response Planning',
+  'Resource Allocation / Response Implementation',
+] as const
+
+const WORKSPACE_LINKS = [
+  { path: '/data-layers', label: 'Inspect data & layers' },
+  { path: '/event-detection', label: 'Review event evidence' },
+  { path: '/response-planning', label: 'Open response planning' },
+  { path: '/explanation-audit', label: 'Review explanation & audit' },
+] as const
 
 
 /**
@@ -225,10 +98,14 @@ function formatIsraelTime(
  * what lets a reader confirm the analysis was grounded in the corpus rather
  * than taking the claim on trust.
  */
-function EventSummaryCard({ event }: { event: RiskEvent }) {
+function EventSummaryCard({ event }: { event: IncidentDetails }) {
   const hasAssessment =
     event.analysis_status === 'success' &&
-    event.risk_score !== null
+    event.risk_score != null
+  const primaryDrivers = event.primary_drivers ?? []
+  const responseActions = event.response_actions ?? []
+  const evidenceGaps = event.evidence_gaps ?? []
+  const protocolCitations = event.protocol_citations ?? []
 
   return (
     <article className="event-card">
@@ -248,8 +125,8 @@ function EventSummaryCard({ event }: { event: RiskEvent }) {
           default score. A fabricated "low" would read as an all-clear. */}
       {!hasAssessment && (
         <p className="event-card__warning">
-          Risk analysis {event.analysis_status}. A fire was detected, but no risk
-          score is available for it.
+          Risk analysis {event.analysis_status ?? 'status unavailable'}. The event was
+          detected, but no risk score is available for it.
         </p>
       )}
 
@@ -257,19 +134,19 @@ function EventSummaryCard({ event }: { event: RiskEvent }) {
         <p className="event-card__text">{event.explanation}</p>
       )}
 
-      {event.primary_drivers.length > 0 && (
+      {primaryDrivers.length > 0 && (
         <ul className="event-card__drivers">
-          {event.primary_drivers.map((driver) => (
+          {primaryDrivers.map((driver) => (
             <li key={driver}>{driver}</li>
           ))}
         </ul>
       )}
 
-      {event.response_actions.length > 0 && (
+      {responseActions.length > 0 && (
         <>
           <h4 className="event-card__subheading">Response plan</h4>
           <ol className="event-card__actions">
-            {event.response_actions.map((action) => (
+            {responseActions.map((action) => (
               <li key={action.action}>
                 <span className="event-card__timeframe">
                   {action.timeframe.replace(/_/g, ' ')}
@@ -284,24 +161,24 @@ function EventSummaryCard({ event }: { event: RiskEvent }) {
         </>
       )}
 
-      {event.evidence_gaps.length > 0 && (
+      {evidenceGaps.length > 0 && (
         <>
           <h4 className="event-card__subheading">Evidence gaps</h4>
           <ul className="event-card__gaps">
-            {event.evidence_gaps.map((gap) => (
+            {evidenceGaps.map((gap) => (
               <li key={gap}>{gap}</li>
             ))}
           </ul>
         </>
       )}
 
-      {event.protocol_citations.length > 0 && (
+      {protocolCitations.length > 0 && (
         <>
           <h4 className="event-card__subheading">
-            Grounded in {event.protocol_citations.length} protocol passage
-            {event.protocol_citations.length === 1 ? '' : 's'}
+            Grounded in {protocolCitations.length} protocol passage
+            {protocolCitations.length === 1 ? '' : 's'}
           </h4>
-          {event.protocol_citations.map((citation) => (
+          {protocolCitations.map((citation) => (
             <blockquote key={citation.chunk_id} className="event-card__citation">
               <p className="event-card__quote">“{citation.quoted_text}”</p>
               <footer className="event-card__source">
@@ -319,6 +196,10 @@ function EventSummaryCard({ event }: { event: RiskEvent }) {
         </>
       )}
 
+      <Link className="event-card__workspace-link" to="/event-detection">
+        Review event evidence
+      </Link>
+
     </article>
   )
 }
@@ -326,7 +207,7 @@ function EventSummaryCard({ event }: { event: RiskEvent }) {
 
 function Dashboard() {
   const [events, setEvents] =
-    useState<RiskEvent[]>([])
+    useState<IncidentDetails[]>([])
 
   /**
    * True while the detection scan is running.
@@ -337,6 +218,10 @@ function Dashboard() {
    */
   const [isLoadingEvents, setIsLoadingEvents] =
     useState(true)
+  const [eventsError, setEventsError] =
+    useState<string | null>(null)
+  const [detectedEventsResponse, setDetectedEventsResponse] =
+    useState<DetectedEventsResponse | null>(null)
 
   const [leaving, setLeaving] =
     useState(false)
@@ -371,10 +256,10 @@ function Dashboard() {
     setShowInfrastructure,
   ] = useState(true)
 
-  const [nationalRiskScan, setNationalRiskScan] =
-    useState<NationalRiskScan | null>(null)
-  const [nationalRiskError, setNationalRiskError] =
-    useState<string | null>(null)
+  const {
+    scan: nationalRiskScan,
+    error: nationalRiskError,
+  } = useNationalRiskScan()
   const [focusedFireRiskCluster, setFocusedFireRiskCluster] =
     useState<FireRiskCluster | null>(null)
   const [dismissedFireRiskSnapshot, setDismissedFireRiskSnapshot] =
@@ -488,65 +373,34 @@ function Dashboard() {
   // =========================================================
 
   useEffect(() => {
-    // No setIsLoadingEvents(true) here: the state already initializes to true
-    // and this effect runs once on mount, so setting it again would only
-    // trigger a cascading render.
-    fetch('/api/detected-events')
-      .then((response) =>
-        response.json() as Promise<DetectedEventsResponse>
-      )
-      .then((data) => {
-        // An empty list is a valid answer — it means the scan ran and found
-        // nothing — so this assigns unconditionally rather than only on a
-        // truthy list. Guarding on `if (data.events)` would leave stale events
-        // on the map after a clean scan.
-        setEvents(data.events ?? [])
-      })
-      .catch((error) =>
-        console.error(
-          'Error fetching events:',
-          error
-        )
-      )
-      .finally(() =>
-        setIsLoadingEvents(false)
-      )
-  }, [])
-
-  useEffect(() => {
     let active = true
-    let requestInFlight = false
-    let controller: AbortController | null = null
 
-    const loadNationalRiskScan = async () => {
-      if (requestInFlight) return
-      requestInFlight = true
-      controller = new AbortController()
-      try {
-        const response = await fetch('/api/fire-risk/national-scan', { signal: controller.signal })
-        if (!response.ok) throw new Error('National risk scan is unavailable')
-        const scan = normalizeNationalRiskScanResponse(await response.json() as unknown)
-        if (active) {
-          setNationalRiskScan(scan)
-          setNationalRiskError(null)
-        }
-      } catch (reason: unknown) {
-        if (active && !controller.signal.aborted) {
-          setNationalRiskError(reason instanceof Error ? reason.message : 'National risk scan is unavailable')
-        }
-      } finally {
-        requestInFlight = false
-      }
-    }
+    void fetchDetectedEventsResponse()
+      .then((response) => {
+        if (!active) return
+        setDetectedEventsResponse(response)
+        setEvents(response.events)
+      })
+      .catch((reason: unknown) => {
+        if (!active) return
+        setEventsError(
+          reason instanceof Error
+            ? reason.message
+            : 'Detected event data is unavailable',
+        )
+      })
+      .finally(() => {
+        if (active) setIsLoadingEvents(false)
+      })
 
-    void loadNationalRiskScan()
-    const intervalId = window.setInterval(() => void loadNationalRiskScan(), 5 * 60 * 1000)
     return () => {
       active = false
-      controller?.abort()
-      window.clearInterval(intervalId)
     }
   }, [])
+
+  const detectionProviderFailed =
+    detectedEventsResponse?.metadata.collection_status === 'failed'
+    || detectedEventsResponse?.metadata.services.detection?.status === 'failed'
 
   const highRiskClusters = useMemo(
     () => clusterHighRiskCells(nationalRiskScan?.cells ?? []),
@@ -556,6 +410,20 @@ function Dashboard() {
   const viewHighRiskOnMap = (cluster: FireRiskCluster) => {
     setFocusedFireRiskCluster(cluster)
   }
+
+  const primaryEvent = events[0] ?? null
+  const recommendationActions = primaryEvent?.response_actions?.length
+    ? primaryEvent.response_actions.map((action) => action.action)
+    : primaryEvent
+      ? Array.isArray(primaryEvent.response_plan)
+        ? primaryEvent.response_plan
+        : primaryEvent.response_plan
+          ? [primaryEvent.response_plan]
+          : []
+      : []
+  const hasGroundedPlan =
+    primaryEvent?.planning_status === 'success' &&
+    (primaryEvent.response_actions?.length ?? 0) > 0
 
 
   // =========================================================
@@ -605,18 +473,6 @@ function Dashboard() {
   ])
 
 
-  /**
-   * Stop radar animation if the radar layer is switched off.
-   */
-  useEffect(() => {
-    if (!showRainRadar) {
-      setRainPlaying(false)
-    }
-  }, [
-    showRainRadar,
-  ])
-
-
   // =========================================================
   // Logout
   // =========================================================
@@ -634,43 +490,6 @@ function Dashboard() {
   // =========================================================
   // Environmental data
   // =========================================================
-
-  const fetchEnvironmentalData = (
-    latitude: number,
-    longitude: number
-  ) => {
-    const url =
-      `/api/environmental-data` +
-      `?latitude=${latitude}` +
-      `&longitude=${longitude}`
-
-    return fetch(url)
-      .then(async (response) => {
-        if (!response.ok) {
-          let errorMessage =
-            `Error ${response.status}`
-
-          try {
-            const errorData =
-              await response.json()
-
-            if (errorData.detail) {
-              errorMessage =
-                errorData.detail
-            }
-          } catch {
-            // Keep HTTP status when response is not JSON.
-          }
-
-          throw new Error(
-            errorMessage
-          )
-        }
-
-        return response.json()
-      })
-  }
-
 
   const loadEnvironmentalData = (
     latitude: number,
@@ -700,7 +519,7 @@ function Dashboard() {
 
 
   const handleMapClick = (
-    e: any
+    e: MapCoordinateClickEvent
   ) => {
     if (!e.lngLat) {
       return
@@ -908,19 +727,6 @@ function Dashboard() {
 
 
       <div className="dashboard__body">
-
-        <aside className="dashboard__agents">
-
-          <div className="agent-status-header">
-            Agent status
-          </div>
-
-          <div className="agent-status-container">
-            There are no agents active at the moment
-          </div>
-
-        </aside>
-
 
         <main className="dashboard__map">
 
@@ -1300,10 +1106,16 @@ function Dashboard() {
                 showRainRadar
               }
               onToggleRainRadar={() =>
-                setShowRainRadar(
-                  (current) =>
-                    !current
-                )
+                {
+                  if (showRainRadar) {
+                    setRainPlaying(false)
+                  }
+
+                  setShowRainRadar(
+                    (current) =>
+                      !current
+                  )
+                }
               }
 
               showFireDanger={
@@ -1383,24 +1195,120 @@ function Dashboard() {
 
         <aside className="dashboard__sidebar">
 
-          <div className="Event-summary-header">
-            Events summary
-          </div>
+          <section className="dashboard-summary" aria-labelledby="active-incidents-title">
+            <div className="dashboard-summary__heading">
+              <h2 id="active-incidents-title">Detected events / anomaly candidates</h2>
+              <span>{events.length}</span>
+            </div>
+            {isLoadingEvents && (
+              <p className="dashboard-summary__notice">
+                Scanning for detected environmental events. Analysis may take up to 90 seconds.
+              </p>
+            )}
+            {eventsError && (
+              <p className="dashboard-summary__error" role="alert">
+                Detection scan unavailable: {eventsError}
+              </p>
+            )}
+            {!eventsError && detectionProviderFailed && (
+              <p className="dashboard-summary__error" role="alert">
+                Detection provider could not complete the current scan. No-event status is unknown.
+              </p>
+            )}
+            <div className="dashboard-incident-list">
+              {!isLoadingEvents && !eventsError && !detectionProviderFailed && events.length === 0 && (
+                <p className="dashboard-summary__empty">
+                  The current detection scan returned no detected events.
+                </p>
+              )}
+              {!isLoadingEvents && events.map((event) => (
+                <EventSummaryCard key={event.id} event={event} />
+              ))}
+            </div>
+          </section>
 
-          <div className="Event-counter">
-            {isLoadingEvents
-              ? 'Scanning for active fires…'
-              : `there are ${events.length} events going on at the moment`}
-          </div>
+          <section className="dashboard-summary" aria-labelledby="risk-outlook-title">
+            <h2 id="risk-outlook-title">Risk outlook</h2>
+            <p>
+              National current risk is a conditions-based estimate, not a detected incident.
+            </p>
+            <div className="dashboard-risk-status">
+              <span>Status</span>
+              <strong>{nationalRiskError || nationalRiskScan?.status || 'Loading'}</strong>
+            </div>
+            {nationalRiskScan && (
+              <div className="dashboard-risk-status">
+                <span>High-risk areas</span>
+                <strong>{highRiskClusters.length}</strong>
+              </div>
+            )}
+            <Link className="dashboard-summary__link" to="/data-layers">
+              Inspect source details
+            </Link>
+          </section>
 
-          {!isLoadingEvents && events.map((event) => (
-            <EventSummaryCard key={event.id} event={event} />
-          ))}
+          <section className="dashboard-summary" aria-labelledby="recommendation-title">
+            <h2 id="recommendation-title">Recommendation summary</h2>
+            {recommendationActions.length > 0 ? (
+              <>
+                <p className="dashboard-summary__notice">
+                  {hasGroundedPlan
+                    ? 'Grounded response-planning output. Operator verification is still required.'
+                    : 'Legacy or provisional response information—not a verified operational instruction.'}
+                </p>
+                <ol className="dashboard-recommendations">
+                  {recommendationActions.slice(0, 2).map((action) => (
+                    <li key={action}>{action}</li>
+                  ))}
+                </ol>
+              </>
+            ) : (
+              <p className="dashboard-summary__empty">
+                No trustworthy operational recommendation is available.
+              </p>
+            )}
+            <Link className="dashboard-summary__link" to="/response-planning">
+              Open response workspace
+            </Link>
+          </section>
 
         </aside>
 
       </div>
 
+      <div className="dashboard-footer">
+        <footer className="dashboard-footer__content">
+          <section aria-labelledby="agent-status-title">
+            <div className="dashboard-footer__heading">
+              <h2 id="agent-status-title">Architecture overview</h2>
+              <span>Intended flow; stage runtime and Coordinator correlation are not confirmed here</span>
+            </div>
+            <div className="dashboard-agent-grid">
+              {OFFICIAL_AGENT_ROLES.map((role) => (
+                <div className="dashboard-agent" key={role}>
+                  <strong>{role}</strong>
+                  <span>
+                    {role === 'Data Collection Agents' && envData
+                      ? `Latest context request: ${envData.metadata.collection_status}`
+                      : role === 'Resource Allocation / Response Implementation'
+                        ? `Resource selection: ${primaryEvent?.allocated_resources?.status ?? 'Not provided'}. Operational dispatch not exposed.`
+                      : 'Stage runtime / connection not exposed here'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <nav className="dashboard-workflow" aria-label="Incident workflow">
+            <h2>Continue workflow</h2>
+            <div className="dashboard-workflow__links">
+              {WORKSPACE_LINKS.map((workspace) => (
+                <Link key={workspace.path} to={workspace.path}>{workspace.label}</Link>
+              ))}
+            </div>
+          </nav>
+        </footer>
+      </div>
     </main>
   )
 }
