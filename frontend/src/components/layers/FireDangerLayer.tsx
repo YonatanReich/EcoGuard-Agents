@@ -1,33 +1,28 @@
 /**
- * FireDangerLayer — the Fire Weather Index, as a heatmap.
+ * FireDangerLayer — the Fire Weather Index, as a smooth interpolated surface.
  *
- * Renders GWIS/EFFIS FWI over Israel. The data arrives from our own
- * /api/fire-danger as one point per 5 km cell, not from the WMS directly.
+ * Renders GWIS/EFFIS FWI over Israel from a georeferenced PNG our own backend
+ * builds at /api/fire-danger.png, positioned with bounds from
+ * /api/fire-danger.
  *
- * That indirection is the whole reason this is a smooth field rather than the
- * blocks it used to be. The GWIS raster is coarse and *categorical* — six
- * stepped colours, no gradient — so stretching one PNG across the country
- * upscaled the steps into visible squares and invented nothing in between.
- * The collector samples that raster once per cell, and feathered discs over
- * those samples blend into a surface the point data can actually support.
+ * Why an image rather than a Mapbox layer over the points: the data is 620
+ * samples on a 5 km grid, and Mapbox has no interpolating layer type. A
+ * heatmap measures how crowded points are, which on a uniform grid is constant
+ * and discards the values entirely. Circles and fills draw one mark per sample,
+ * so the grid shows through as dots however they are tuned. Interpolating
+ * server-side is the only way to get a continuous surface, and a
+ * Gaussian-weighted average with a stated bandwidth is a method rather than a
+ * rendering accident.
  *
- * Rendered as blurred circles rather than a heatmap layer on purpose.
- * heatmap-density measures how crowded points are; on a uniform 5 km grid the
- * crowding never varies, so a heatmap flattened every danger band into one
- * colour and discarded the only signal in the data.
+ * The image is transparent wherever no sample is close enough, so the Negev
+ * reads as the absence of data it is: Copernicus publishes no FWI over desert,
+ * because desert has no fuel to index.
  *
- * Coverage stops around latitude 31: Copernicus publishes no FWI over the
- * Negev, because desert has no fuel to index. The gap is the source's and is
- * shown as a gap rather than filled in.
- *
- * It also takes the browser off a third-party WMS: one request to our own API
- * instead of a 900x1200 PNG from Copernicus on every mount.
- *
- * The layer shows environmental fire-weather danger only. It is NOT active
+ * This layer shows environmental fire-weather danger only. It is NOT active
  * fire, and NOT the operational risk score from RiskAnalysisAgent.
  *
- * Data source: GWIS / EFFIS, WMS layer mf010.fwi, via ecoguard's fire_weather
- * collector.
+ * Data source: GWIS / EFFIS, WMS layer mf010.fwi, sampled per 5 km cell by
+ * ecoguard's fire_weather collector.
  */
 
 import { useEffect, useState } from 'react'
@@ -38,35 +33,24 @@ type FireDangerLayerProps = {
   /** Whether the FWI overlay is visible. */
   visible?: boolean
 
-  /** Opacity of each cell's disc. Overlapping discs accumulate, so this is
-   *  lower than it looks. */
+  /** Opacity of the surface above the base map. */
   opacity?: number
 }
 
 
-type FireDangerCollection = {
-  type: 'FeatureCollection'
+type FireDangerMeta = {
   observed_at: string | null
-  features: Array<{
-    type: 'Feature'
-    geometry: { type: 'Point'; coordinates: [number, number] }
-    properties: { cell_id: string; danger_level: string; fwi: number }
-  }>
-}
-
-
-const EMPTY: FireDangerCollection = {
-  type: 'FeatureCollection',
-  observed_at: null,
-  features: [],
+  /** west, south, east, north */
+  bounds: [number, number, number, number]
+  cell_count: number
 }
 
 
 function FireDangerLayer({
   visible = true,
-  opacity = 0.45,
+  opacity = 0.6,
 }: FireDangerLayerProps) {
-  const [data, setData] = useState<FireDangerCollection>(EMPTY)
+  const [meta, setMeta] = useState<FireDangerMeta | null>(null)
 
   useEffect(() => {
     if (!visible) return
@@ -78,13 +62,12 @@ function FireDangerLayer({
         if (!response.ok) throw new Error(String(response.status))
         return response.json()
       })
-      .then((collection: FireDangerCollection) => {
-        if (!cancelled) setData(collection)
+      .then((value: FireDangerMeta) => {
+        if (!cancelled) setMeta(value)
       })
       .catch(() => {
-        // A missing FWI layer is a missing layer, not a broken dashboard. The
-        // toggle stays available and the next mount retries.
-        if (!cancelled) setData(EMPTY)
+        // A missing FWI layer is a missing layer, not a broken dashboard.
+        if (!cancelled) setMeta(null)
       })
 
     return () => {
@@ -92,64 +75,38 @@ function FireDangerLayer({
     }
   }, [visible])
 
-  if (!visible || data.features.length === 0) {
+  if (!visible || !meta || meta.cell_count === 0) {
     return null
   }
+
+  const [west, south, east, north] = meta.bounds
 
   return (
     <Source
       id="gwis-fwi-source"
-      type="geojson"
-      data={data}
+      type="image"
+      // observed_at busts the browser cache exactly when the data changes and
+      // never in between; the endpoint sets a one-hour Cache-Control.
+      url={`/api/fire-danger.png?t=${encodeURIComponent(meta.observed_at ?? '')}`}
+      coordinates={[
+        // Mapbox image coordinates run top-left, top-right, bottom-right,
+        // bottom-left.
+        [west, north],
+        [east, north],
+        [east, south],
+        [west, south],
+      ]}
     >
       <Layer
-        id="gwis-fwi-heatmap"
-        type="circle"
+        id="gwis-fwi-surface"
+        type="raster"
         paint={{
-          // Colour comes from the cell's own FWI band, not from how many
-          // points happen to overlap.
-          //
-          // This started as a heatmap layer and that was the wrong primitive.
-          // heatmap-density measures how CROWDED points are, but these sit on
-          // a uniform 5 km grid — the density is constant by construction, so
-          // the ramp flattened every band into the same green and the real
-          // signal was thrown away. A soft circle per cell keeps the value.
-          'circle-color': [
-            'match',
-            ['get', 'danger_level'],
-            'low', '#9cffc0',
-            'moderate', '#cde24e',
-            'high', '#e6ac00',
-            'very_high', '#d97010',
-            'extreme', '#ad060e',
-            'very_extreme', '#580015',
-            '#9cffc0',
-          ],
-
-          // circle-radius is in screen pixels, so a fixed value breaks into
-          // separate dots as the 5 km grid spreads out. An exponential base-2
-          // ramp doubles it every zoom level, exactly matching map scale, so
-          // each circle covers a constant ~5 km of ground at every zoom and
-          // neighbours always overlap by the same amount.
-          //
-          // ponytail: clamps above z14, where you are well below the 5 km
-          // resolution of the data anyway.
-          'circle-radius': [
-            'interpolate',
-            ['exponential', 2],
-            ['zoom'],
-            6, 3,
-            14, 768,
-          ],
-
-          // Fully feathered. Hard-edged circles would read as dots; at blur 1
-          // the fill fades to nothing at the rim, and overlapping neighbours
-          // alpha-blend into a continuous surface.
-          'circle-blur': 1,
-
-          'circle-opacity': opacity,
-
-          'circle-stroke-width': 0,
+          'raster-opacity': opacity,
+          // The PNG is already smooth and is being scaled up; nearest-neighbour
+          // resampling would reintroduce the very pixel edges it exists to
+          // avoid.
+          'raster-resampling': 'linear',
+          'raster-fade-duration': 300,
         }}
       />
     </Source>

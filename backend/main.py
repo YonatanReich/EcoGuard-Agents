@@ -20,10 +20,12 @@ Run locally with:
 
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime
+from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from agents.fire_detection_agent import FireDetectionAgent
@@ -41,6 +43,7 @@ from services.claude_llm_service import ClaudeLLMService
 from services.current_risk_feature_builder import CurrentRiskFeatureBuilder
 from services.current_risk_refresh_orchestrator import CurrentRiskRefreshOrchestrator
 from services.national_current_risk_scan_service import NationalCurrentRiskScanService
+from services.fire_danger_surface import build_surface as build_fire_danger_surface
 from services.protocol_retrieval_service import ProtocolRetriever
 
 logging.basicConfig(
@@ -152,35 +155,100 @@ def read_root():
     }
 
 
+# FWI is a daily product, so both the query and the ~500 ms numpy render are
+# worth holding briefly. The TTL is what bounds staleness after the collector
+# picks up a new day's raster; the surface itself is keyed on observed_at so a
+# new day always replaces it.
+FIRE_DANGER_CACHE_SECONDS = 600
+
+_fire_danger_surface_cache: dict[str, bytes] = {}
+_fire_danger_payload_cache: dict[str, Any] = {}
+
+
+def _fire_danger_payload():
+    from ecoguard.collection.fire_weather import area_bounds
+    from ecoguard.database.repositories.observations import latest_fire_danger_geojson
+
+    now = time.monotonic()
+    cached = _fire_danger_payload_cache.get("value")
+    if cached is not None and now - _fire_danger_payload_cache["at"] < FIRE_DANGER_CACHE_SECONDS:
+        return cached
+
+    value = (latest_fire_danger_geojson(), area_bounds())
+    _fire_danger_payload_cache["value"] = value
+    _fire_danger_payload_cache["at"] = now
+    return value
+
+
 @app.get("/api/fire-danger")
 def get_fire_danger():
-    """Serve today's GWIS/EFFIS Fire Weather Index as GeoJSON points.
+    """Describe today's Fire Weather Index surface, without shipping it.
 
-    The frontend used to request the WMS raster directly and stretch one PNG
-    across the country, which is why the overlay looked like blocks: the FWI
-    product is coarse and categorical, so upscaling it invents nothing. The
-    collection layer already samples that raster once per 5 km cell, so serving
-    those points instead lets the map render a real heatmap — and takes the
-    browser's dependency on a third-party WMS away.
+    Returns the geographic bounds and timestamp the frontend needs to place
+    /api/fire-danger.png, rather than the 620 underlying points — the map
+    renders the interpolated image, so the samples would be dead weight.
 
     Returns:
-        dict: GeoJSON FeatureCollection, one Point per cell, carrying the
-            danger band and a representative FWI value. features is empty when
-            the collector has not run yet.
+        dict: observed_at, bounds as [west, south, east, north], and the
+            number of cells behind the surface. cell_count is 0 when the
+            collector has not run yet.
 
     Raises:
         HTTPException: 503 when the observations store cannot be reached.
     """
-    from ecoguard.database.repositories.observations import latest_fire_danger_geojson
-
     try:
-        return latest_fire_danger_geojson()
+        collection, bounds = _fire_danger_payload()
     except Exception as error:
         logging.error("Fire danger query failed: %s", error, exc_info=True)
-        raise HTTPException(
-            status_code=503,
-            detail="Fire danger data is unavailable.",
-        )
+        raise HTTPException(status_code=503, detail="Fire danger data is unavailable.")
+
+    return {
+        "observed_at": collection["observed_at"],
+        "bounds": list(bounds),
+        "cell_count": len(collection["features"]),
+    }
+
+
+@app.get("/api/fire-danger.png")
+def get_fire_danger_surface():
+    """Serve the Fire Weather Index as a smoothed, georeferenced RGBA PNG.
+
+    The samples sit on a 5 km grid and Mapbox has no interpolating layer type,
+    so every browser-side rendering of them — heatmap, circles, fill — draws
+    one mark per sample and the grid shows through. Interpolating here produces
+    a continuous surface, and a Gaussian-weighted average with a stated
+    bandwidth is a method rather than a rendering accident.
+
+    Transparent wherever no sample is near enough, so the Negev reads as the
+    absence of data it is: Copernicus publishes no FWI over desert.
+
+    Raises:
+        HTTPException: 503 when the observations store cannot be reached, 404
+            when no fire-weather observations exist yet.
+    """
+    try:
+        collection, bounds = _fire_danger_payload()
+    except Exception as error:
+        logging.error("Fire danger query failed: %s", error, exc_info=True)
+        raise HTTPException(status_code=503, detail="Fire danger data is unavailable.")
+
+    if not collection["features"]:
+        raise HTTPException(status_code=404, detail="No fire weather observations yet.")
+
+    key = str(collection["observed_at"])
+    png = _fire_danger_surface_cache.get(key)
+    if png is None:
+        png = build_fire_danger_surface(collection["features"], bounds)
+        _fire_danger_surface_cache.clear()
+        _fire_danger_surface_cache[key] = png
+
+    return Response(
+        content=png,
+        media_type="image/png",
+        # FWI is a daily product; an hour of browser caching costs nothing and
+        # saves re-fetching 160 KB on every toggle of the layer.
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 @app.post("/api/dev/run/{source}")
