@@ -7,7 +7,7 @@ import InfrastructureLayer, { type InfrastructureItem } from '../components/Infr
 import MapView from '../components/MapView'
 import type { EnvironmentalData } from '../types/environmentalData'
 import type { DetectedEventsResponse, IncidentDetails } from '../types/incidents'
-import type { AllocatedResponseResource } from '../types/responseResources'
+import { selectedFacilitySimulation } from '../utils/selectedFacilitySimulation'
 import { straightLineDistanceKm } from '../utils/geospatial'
 
 import './visuals/response-planning.css'
@@ -20,7 +20,6 @@ type ResponseInfrastructure = InfrastructureItem & {
 type VisualizationMode = '2d' | '3d'
 
 const Incident3DView = lazy(() => import('../components/Incident3DView'))
-const NO_ALLOCATED_RESOURCES: readonly AllocatedResponseResource[] = Object.freeze([])
 const DEFAULT_VISUALIZATION_HEIGHT = 520
 const MIN_VISUALIZATION_HEIGHT = 420
 const MAX_VISUALIZATION_HEIGHT = 900
@@ -53,6 +52,13 @@ function ResponsePlanning() {
   const restoredVisualizationHeightRef = useRef(DEFAULT_VISUALIZATION_HEIGHT)
   const twoDimensionalTabRef = useRef<HTMLButtonElement>(null)
   const threeDimensionalTabRef = useRef<HTMLButtonElement>(null)
+  const selectedFacilityResources = useMemo(
+    () => selectedFacilitySimulation(selectedIncident?.allocated_resources),
+    [selectedIncident],
+  )
+  const allocationStatus = selectedIncident?.allocated_resources?.status
+    ?? detectionResponse?.metadata.services.resource_allocation?.status
+    ?? 'Not provided'
 
   const loadContext = useCallback((incident: IncidentDetails) => {
     setIsLoadingContext(true)
@@ -150,12 +156,12 @@ function ResponsePlanning() {
   const geospatialStatusLabel = selectedIncident
     ? geospatialStatus || (isLoadingContext ? 'Loading' : 'Not available')
     : isLoadingIncident
-      ? 'Waiting for incident scan'
+      ? 'Waiting for detection scan'
       : incidentError
-        ? 'Not requested — incident request failed'
+        ? 'Not requested — detection request failed'
         : detectionFailed
           ? 'Not requested — detection failed'
-          : 'Not requested — no detected incident'
+          : 'Not requested — no detected event'
   const hasGroundedPlanningOutput = selectedIncident?.planning_status === 'success'
   const hasCompletedContextRequest = Boolean(
     selectedIncident && environmentalData && !isLoadingContext && !environmentalError,
@@ -225,17 +231,19 @@ function ResponsePlanning() {
       <div className="response-workspace__warning" role="status">
         <strong>Decision-support planning:</strong> recommendations are shown only when returned
         by the current pipeline. They are not verified dispatch instructions or assignments.
+        In the intended architecture, Coordinator correlation and emergency/non-emergency routing
+        precede planning; allocation follows emergency planning. Those routing results are not exposed here.
       </div>
 
       <section className="response-panel" aria-labelledby="response-incident-title">
         <div className="response-panel__heading">
           <div>
-            <p className="response-panel__label">Incident summary</p>
+            <p className="response-panel__label">Detected event summary</p>
             <h2 id="response-incident-title">Planning context</h2>
           </div>
           {incidents.length > 1 && (
             <label className="response-selector">
-              Incident
+              Detected event
               <select
                 value={selectedIncident?.id ?? ''}
                 onChange={(event) => {
@@ -252,15 +260,15 @@ function ResponsePlanning() {
         </div>
         {isLoadingIncident && (
           <p className="response-message">
-            Running incident detection, risk analysis, and response planning. This can take up to 90 seconds.
+            Awaiting event detection, risk analysis, and response planning output. This can take up to 90 seconds.
           </p>
         )}
         {incidentError && <p className="response-message response-message--error">{incidentError}</p>}
         {!isLoadingIncident && !incidentError && !selectedIncident && (
           <p className="response-message">
             {detectionFailed
-              ? 'The detection service could not complete the current scan; no incident context is available.'
-              : 'The current detection scan found no incident available for response planning.'}
+              ? 'The detection service could not complete the current scan; no detected-event context is available.'
+              : 'The current detection scan found no event available for response planning.'}
           </p>
         )}
         {selectedIncident && (
@@ -323,6 +331,25 @@ function ResponsePlanning() {
           )}
         </section>
       </div>
+
+      <section className="response-panel" aria-labelledby="selected-facilities-title">
+        <p className="response-panel__label">Resource Allocation selection</p>
+        <h2 id="selected-facilities-title">Selected response facilities</h2>
+        <p className="response-panel__note">
+          Selection status: {allocationStatus}. EcoGuard-selected response sources; vehicle availability
+          and operational dispatch are not exposed. Starting the 3D demo creates one simulated vehicle per listed facility.
+        </p>
+        {selectedFacilityResources.length ? (
+          <ul className="recommended-unit-list">
+            {selectedFacilityResources.map((resource) => (
+              <li key={resource.id}>
+                <strong>{resource.sourceName}</strong>
+                <span>{resource.displayName} simulation source · NOT DISPATCHED</span>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="response-message">No usable selected response facilities are available.</p>}
+      </section>
 
       <section className="response-panel" aria-labelledby="infrastructure-title">
         <p className="response-panel__label">Nearby response infrastructure</p>
@@ -466,7 +493,7 @@ function ResponsePlanning() {
                       fireStations={environmentalData.geospatial_context.nearby_fire_stations ?? []}
                     />
                   )}
-              <div className="response-map__notice">Pipeline-detected incident · nearby infrastructure is not allocated</div>
+              <div className="response-map__notice">Pipeline-detected event · correlation not confirmed · nearby infrastructure is not allocated</div>
                 </MapView>
               </div>
             )}
@@ -482,7 +509,7 @@ function ResponsePlanning() {
                   <Incident3DView
                     incident={selectedIncident}
                     context={environmentalData?.geospatial_context ?? null}
-                    allocatedResources={NO_ALLOCATED_RESOURCES}
+                    selectedFacilityResources={selectedFacilityResources}
                     riskArea={null}
                   />
                 </Suspense>
@@ -518,8 +545,10 @@ function ResponsePlanning() {
           <p className="response-panel__label">Planning system status</p>
           <h2 id="planning-status-title">Relevant architectural stages</h2>
         </div>
-        <div><strong>Resource Allocation Agent</strong><span>Runtime status not exposed</span></div>
-        <div><strong>Response Planning Agent</strong><span>Runtime status not exposed</span></div>
+        <div><strong>Coordinator / Strainer</strong><span>Correlation and runtime status not exposed</span></div>
+        <div><strong>Emergency / Non-emergency Routing</strong><span>Routing decision not exposed</span></div>
+        <div><strong>Response Planning</strong><span>Pipeline planning status: {selectedIncident?.planning_status || 'Not provided'}</span></div>
+        <div><strong>Resource Allocation / Response Implementation</strong><span>Resource selection status: {allocationStatus}. Operational dispatch not exposed. Nearby infrastructure remains geographic context.</span></div>
       </section>
 
       <nav className="response-workflow" aria-label="Response workflow">

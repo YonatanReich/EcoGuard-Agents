@@ -174,10 +174,10 @@ function DataCollectionLayers() {
       },
       {
         name: 'Flood, topography & air quality',
-        category: 'Future Environmental Sources',
-        description: 'Reserved for future crisis layers; no operational frontend data source is connected.',
+        category: 'Integrations under development',
+        description: 'Flood, topography and air-quality integrations are planned or under development; frontend availability depends on merged backend/data-source contracts.',
         state: 'unavailable',
-        status: 'Not connected',
+        status: 'Not connected to this frontend',
       },
     ]
   }, [

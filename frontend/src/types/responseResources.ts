@@ -26,3 +26,13 @@ export type IncidentRiskArea = {
   radiusMeters: number
   color?: string
 }
+
+/** A presentation vehicle, never an operational allocation or dispatch. */
+export type DemoResponseResource = Omit<AllocatedResponseResource, 'allocationStatus'> & {
+  allocationStatus: 'simulation'
+  selectionMetadata?: {
+    unitType?: string
+    distanceKm?: number
+    selectionReason?: string
+  }
+}

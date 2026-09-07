@@ -47,12 +47,13 @@ const WIND_MAX_HOURS = 12
 const RAIN_ANIMATION_INTERVAL_MS = 800
 
 const OFFICIAL_AGENT_ROLES = [
-  'Data Collection Agent',
-  'Event Detection Agent',
-  'Risk Analysis Agent',
-  'Resource Allocation Agent',
-  'Response Planning Agent',
-  'LLM Coordination Agent',
+  'Data Collection Agents',
+  'Shared Data Layer / PostGIS',
+  'Anomaly Detectors',
+  'Coordinator / Strainer',
+  'Emergency / Non-emergency Routing',
+  'Response Planning',
+  'Resource Allocation / Response Implementation',
 ] as const
 
 const WORKSPACE_LINKS = [
@@ -1188,7 +1189,7 @@ function Dashboard() {
 
           <section className="dashboard-summary" aria-labelledby="active-incidents-title">
             <div className="dashboard-summary__heading">
-              <h2 id="active-incidents-title">Active incidents</h2>
+              <h2 id="active-incidents-title">Detected events / anomaly candidates</h2>
               <span>{events.length}</span>
             </div>
             {isLoadingEvents && (
@@ -1204,7 +1205,7 @@ function Dashboard() {
             <div className="dashboard-incident-list">
               {!isLoadingEvents && !eventsError && events.length === 0 && (
                 <p className="dashboard-summary__empty">
-                  The current detection scan returned no active incidents.
+                  The current detection scan returned no detected events.
                 </p>
               )}
               {!isLoadingEvents && events.map((event) => (
@@ -1266,17 +1267,19 @@ function Dashboard() {
         <footer className="dashboard-footer__content">
           <section aria-labelledby="agent-status-title">
             <div className="dashboard-footer__heading">
-              <h2 id="agent-status-title">Agent status</h2>
-              <span>Runtime status is not exposed by the backend</span>
+              <h2 id="agent-status-title">Architecture overview</h2>
+              <span>Intended flow; stage runtime and Coordinator correlation are not confirmed here</span>
             </div>
             <div className="dashboard-agent-grid">
               {OFFICIAL_AGENT_ROLES.map((role) => (
                 <div className="dashboard-agent" key={role}>
                   <strong>{role}</strong>
                   <span>
-                    {role === 'Data Collection Agent' && envData
+                    {role === 'Data Collection Agents' && envData
                       ? `Latest context request: ${envData.metadata.collection_status}`
-                      : 'Not observed'}
+                      : role === 'Resource Allocation / Response Implementation'
+                        ? `Resource selection: ${primaryEvent?.allocated_resources?.status ?? 'Not provided'}. Operational dispatch not exposed.`
+                      : 'Stage runtime / connection not exposed here'}
                   </span>
                 </div>
               ))}

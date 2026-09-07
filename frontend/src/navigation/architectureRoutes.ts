@@ -39,7 +39,7 @@ export const architectureRoutes: readonly ArchitectureRoute[] = [
   {
     id: 'explanation-audit',
     path: '/explanation-audit',
-    title: 'LLM Explanation & Audit',
-    navigationLabel: 'LLM Explanation & Audit',
+    title: 'Explanation & Audit',
+    navigationLabel: 'Explanation & Audit',
   },
 ]

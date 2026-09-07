@@ -2,6 +2,31 @@ export type IncidentRiskLevel = 'low' | 'medium' | 'high' | 'critical'
 
 export type IncidentStepStatus = 'success' | 'failed' | 'skipped'
 
+export type SelectedResponseFacility = {
+  name?: string | null
+  latitude: number
+  longitude: number
+  unit_type?: string
+  distance_km?: number
+  selection_reason?: string
+}
+
+export type IncidentResourceSelection = {
+  status?: string
+  allocation_needed?: boolean
+  reason?: string
+  rationale?: string
+  alert_radius_km?: number | null
+  allocated_units?: {
+    fire_stations?: SelectedResponseFacility[]
+    police_stations?: SelectedResponseFacility[]
+    hospitals?: SelectedResponseFacility[]
+  }
+  shortages?: Record<string, number>
+  unsupported_units?: string[]
+  errors?: { facility_type: string; reason: string; message: string }[]
+}
+
 export type IncidentResponseAction = {
   action: string
   responsible_unit: string
@@ -59,6 +84,7 @@ export type IncidentDetails = {
   protocol_citations?: IncidentProtocolCitation[]
   analysis_status?: IncidentStepStatus
   planning_status?: IncidentStepStatus
+  allocated_resources?: IncidentResourceSelection
 }
 
 export type EventEvidence = {

@@ -22,12 +22,13 @@ type DataSourceTrace = {
 }
 
 const AGENT_ROLES = [
-  'Data Collection Agent',
-  'Event Detection Agent',
-  'Risk Analysis Agent',
-  'Resource Allocation Agent',
-  'Response Planning Agent',
-  'LLM Coordination Agent',
+  'Data Collection Agents',
+  'Shared Data Layer / PostGIS',
+  'Anomaly Detectors',
+  'Coordinator / Strainer',
+  'Emergency / Non-emergency Routing',
+  'Response Planning',
+  'Resource Allocation / Response Implementation',
 ] as const
 
 function formatTimestamp(value?: string | null) {
@@ -104,7 +105,7 @@ function ExplanationAudit() {
       .catch((reason: unknown) => {
         if (!active) return
         setIncidentError(
-          reason instanceof Error ? reason.message : 'Incident audit context is unavailable',
+          reason instanceof Error ? reason.message : 'Detected-event audit context is unavailable',
         )
       })
       .finally(() => {
@@ -124,7 +125,7 @@ function ExplanationAudit() {
   const sources = useMemo<DataSourceTrace[]>(() => [
     {
       source: 'Detected events endpoint',
-      role: 'Incident and recommendation context',
+      role: 'Detected-event and recommendation context',
       state: sourceState(detectionResponse?.metadata.collection_status),
       status: detectionResponse?.metadata.collection_status || 'No response available',
       timestamp: detectionResponse?.metadata.timestamp,
@@ -215,30 +216,26 @@ function ExplanationAudit() {
 
   const agentDetail = (role: typeof AGENT_ROLES[number]) => {
     switch (role) {
-      case 'Data Collection Agent':
+      case 'Data Collection Agents':
         return environmentalData
           ? `Observed context response: ${environmentalData.metadata.collection_status}. Runtime status unavailable.`
           : 'No context output available. Runtime status unavailable.'
-      case 'Event Detection Agent':
+      case 'Shared Data Layer / PostGIS':
+        return 'Intended shared data layer; database connection and runtime status are not exposed by this frontend contract.'
+      case 'Anomaly Detectors':
         return detectionResponse?.metadata.services.detection
           ? `Observed pipeline status: ${detectionResponse.metadata.services.detection.status}; source: ${detectionResponse.metadata.services.detection.source || 'not reported'}.`
           : 'No detection output or service metadata is available.'
-      case 'Risk Analysis Agent':
-        return selectedIncident?.analysis_status
-          ? `Detected-event analysis status: ${selectedIncident.analysis_status}.`
-          : 'No detected-event risk analysis output is available.'
-      case 'Resource Allocation Agent':
-        return selectedIncident?.recommended_units?.length
-          ? 'Suggested units are observable; no verified allocation or dispatch status exists.'
-          : 'No observable allocation output or runtime status.'
-      case 'Response Planning Agent':
+      case 'Coordinator / Strainer':
+        return 'Correlates, deduplicates and groups anomalies into incidents. No correlation result, runtime trace, prompts or hidden reasoning are exposed here.'
+      case 'Emergency / Non-emergency Routing':
+        return 'Intended routing stage after Coordinator correlation; no routing decision or runtime status is exposed here.'
+      case 'Resource Allocation / Response Implementation':
+        return `Resource selection status: ${selectedIncident?.allocated_resources?.status ?? detectionResponse?.metadata.services.resource_allocation?.status ?? 'Not provided'}. Selected facilities are recommended response sources; operational availability and dispatch are not exposed.`
+      case 'Response Planning':
         return selectedIncident?.planning_status
-          ? `Detected-event planning status: ${selectedIncident.planning_status}; no dispatch status is implied.`
-          : 'No observable response-plan output or runtime status.'
-      case 'LLM Coordination Agent':
-        return selectedIncident?.protocol_citations?.length
-          ? 'Grounded output and verified citations are observable; prompts, hidden reasoning, and runtime traces are not exposed.'
-          : 'No prompt trace, hidden reasoning, model conversation, or runtime status is exposed.'
+          ? `Observed planning status: ${selectedIncident.planning_status}; analysis status: ${selectedIncident.analysis_status || 'not provided'}. Grounded outputs and citations are shown where supplied; Coordinator routing and dispatch are not implied.`
+          : `No response-plan status is available. Detected-event analysis status: ${selectedIncident?.analysis_status || 'not provided'}.`
     }
   }
 
@@ -253,7 +250,7 @@ function ExplanationAudit() {
     <main className="audit-workspace">
       <header className="audit-workspace__header">
         <p className="audit-workspace__eyebrow">Decision traceability</p>
-        <h1>LLM Explanation &amp; Audit</h1>
+        <h1>Explanation &amp; Audit</h1>
         <p>
           Distinguish real source context and model metadata from demonstration fields,
           unavailable evidence, and unsupported audit capabilities before acting.
@@ -269,12 +266,12 @@ function ExplanationAudit() {
       <section className="audit-panel" aria-labelledby="audit-context-title">
         <div className="audit-panel__heading">
           <div>
-            <p className="audit-panel__label">Incident / recommendation context</p>
+            <p className="audit-panel__label">Detected event / recommendation context</p>
             <h2 id="audit-context-title">Selected record</h2>
           </div>
           {incidents.length > 1 && (
             <label className="audit-selector">
-              Incident
+              Detected event
               <select
                 value={selectedIncident?.id ?? ''}
                 onChange={(event) => {
@@ -291,22 +288,22 @@ function ExplanationAudit() {
         </div>
         {isLoadingIncident && (
           <p className="audit-message">
-            Running incident detection, risk analysis, and response planning. This can take up to 90 seconds.
+            Awaiting event detection, risk analysis, and response planning output. This can take up to 90 seconds.
           </p>
         )}
         {incidentError && <p className="audit-message audit-message--error">{incidentError}</p>}
         {!isLoadingIncident && !incidentError && !selectedIncident && (
           <p className="audit-message">
             {detectionFailed
-              ? 'The detection provider could not complete the current scan; no incident audit is available.'
-              : 'The current scan completed with no active fire incident to audit.'}
+              ? 'The detection provider could not complete the current scan; no detected-event audit is available.'
+              : 'The current scan completed with no fire detection candidate to audit.'}
           </p>
         )}
         {selectedIncident && (
           <div className="audit-facts">
             <div><span>Event type</span><strong>{selectedIncident.type || 'Not provided'}</strong></div>
             <div><span>Location</span><strong>{selectedIncident.latitude.toFixed(4)}, {selectedIncident.longitude.toFixed(4)}</strong></div>
-            <div><span>Incident risk</span><strong>{selectedIncident.risk_level || 'Not assessed'}</strong></div>
+            <div><span>Reported event risk</span><strong>{selectedIncident.risk_level || 'Not assessed'}</strong></div>
             <div><span>Risk score</span><strong>{selectedIncident.risk_score ?? 'Not assessed'}</strong></div>
             <div><span>Detection status</span><strong>{detectionStatus || 'Not provided'}</strong></div>
             <div><span>Analysis status</span><strong>{selectedIncident.analysis_status || 'Not provided'}</strong></div>
@@ -381,7 +378,7 @@ function ExplanationAudit() {
           </ol>
         ) : (
           <p className="audit-message">
-            No structured response actions are available for this incident.
+            No structured response actions are available for this detected event.
           </p>
         )}
         {protocolCitations.length > 0 ? (
@@ -471,7 +468,7 @@ function ExplanationAudit() {
       <section className="audit-panel" aria-labelledby="agent-trace-title">
         <p className="audit-panel__label">Agent traceability</p>
         <h2 id="agent-trace-title">Observable architectural outputs</h2>
-        <p className="audit-panel__note">Runtime execution status is not exposed for any agent.</p>
+        <p className="audit-panel__note">Intended architecture with observed service outputs where supplied. Detection candidates are not confirmed correlated incidents; PostGIS, Coordinator and routing runtime are not exposed here.</p>
         <ol className="audit-agent-list">
           {AGENT_ROLES.map((role) => (
             <li key={role}><strong>{role}</strong><span>{agentDetail(role)}</span></li>

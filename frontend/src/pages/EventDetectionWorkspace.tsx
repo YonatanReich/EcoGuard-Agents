@@ -170,7 +170,7 @@ function EventDetectionWorkspace() {
 
     return [
       {
-        name: 'Data Collection Agent',
+        name: 'Data Collection Agents',
         emphasis: 'primary',
         status: collectionState,
         detail: isLoadingContext
@@ -180,42 +180,46 @@ function EventDetectionWorkspace() {
             : 'No context response is currently available.',
       },
       {
-        name: 'Event Detection Agent',
+        name: 'Shared Data Layer / PostGIS',
         emphasis: 'primary',
-        status: isLoadingIncidents ? 'in-progress' : evidenceStatus(detectionService?.status),
+        status: 'unavailable',
+        detail: 'Intended shared persistence layer; connection and runtime status are not exposed by this frontend contract.',
+      },
+      {
+        name: 'Anomaly Detectors',
+        emphasis: 'primary',
+        status: evidenceStatus(detectionService?.status),
         detail: isLoadingIncidents
-          ? 'The detected-events pipeline is running.'
+          ? 'Awaiting the detected-events pipeline response; individual stage execution is not exposed.'
           : detectionService
             ? `Observed pipeline status: ${detectionService.status}; source: ${detectionService.source || 'not reported'}.`
             : 'No detection service metadata is available.',
       },
       {
-        name: 'Risk Analysis Agent',
-        emphasis: 'primary',
-        status: isLoadingIncidents ? 'in-progress' : evidenceStatus(riskService?.status),
-        detail: riskService
-          ? `Observed pipeline status: ${riskService.status}; model/source: ${riskService.source || 'not reported'}.`
-          : 'No risk-analysis service metadata is available.',
-      },
-      {
-        name: 'Resource Allocation Agent',
+        name: 'Coordinator / Strainer',
         emphasis: 'downstream',
         status: 'unavailable',
-        detail: 'Downstream stage; not evaluated in this workspace.',
+        detail: 'Correlates, deduplicates and groups detection candidates into incidents. Correlation output and runtime status are not exposed here.',
       },
       {
-        name: 'Response Planning Agent',
+        name: 'Emergency / Non-emergency Routing',
         emphasis: 'downstream',
-        status: isLoadingIncidents ? 'in-progress' : evidenceStatus(planningService?.status),
+        status: 'unavailable',
+        detail: 'Intended Coordinator routing decision; no emergency classification or routing status is exposed here.',
+      },
+      {
+        name: 'Response Planning',
+        emphasis: 'downstream',
+        status: evidenceStatus(planningService?.status),
         detail: planningService
-          ? `Observed downstream pipeline status: ${planningService.status}; model/source: ${planningService.source || 'not reported'}.`
-          : 'No response-planning service metadata is available.',
+          ? `Observed planning service: ${planningService.status}; source: ${planningService.source || 'not reported'}. Risk-analysis service: ${riskService?.status || 'not reported'}; source: ${riskService?.source || 'not reported'}. This does not confirm Coordinator routing.`
+          : `No response-planning service metadata is available. Risk-analysis service: ${riskService?.status || 'not reported'}; source: ${riskService?.source || 'not reported'}.`,
       },
       {
-        name: 'LLM Coordination Agent',
+        name: 'Resource Allocation / Response Implementation',
         emphasis: 'downstream',
-        status: 'unavailable',
-        detail: 'Downstream stage; no LLM runtime or audit data is exposed here.',
+        status: evidenceStatus(detectionResponse?.metadata.services.resource_allocation?.status),
+        detail: `Resource selection status: ${detectionResponse?.metadata.services.resource_allocation?.status || 'Not provided'}. Operational dispatch is not exposed; nearby infrastructure remains context.`,
       },
     ]
   }, [detectionResponse, environmentalData, environmentalError, isLoadingContext, isLoadingIncidents])
@@ -230,16 +234,17 @@ function EventDetectionWorkspace() {
   return (
     <main className="event-workspace">
       <header className="event-workspace__header">
-        <p className="event-workspace__eyebrow">Incident assessment</p>
+        <p className="event-workspace__eyebrow">Detection / anomaly assessment</p>
         <h1>Event Detection Workspace</h1>
         <p>
-          Review an incident record, its available context, and the processing information
-          exposed by the current EcoGuard pipeline before moving to downstream planning.
+          Review detected event/anomaly candidates and available pipeline context.
+          The Coordinator / Strainer correlates and deduplicates candidates into incidents
+          before routing; this workspace does not confirm that correlation has occurred.
         </p>
       </header>
 
       <div className="event-workspace__notice" role="status">
-        <strong>Authoritative pipeline output:</strong> incidents are returned only after the
+        <strong>Authoritative pipeline output:</strong> detected candidates are returned only after the
         detected-events pipeline reports a positive detection. Missing analysis remains unavailable.
       </div>
 
@@ -247,11 +252,11 @@ function EventDetectionWorkspace() {
         <div className="event-panel__heading">
           <div>
             <p className="event-panel__label">Event overview</p>
-            <h2 id="event-overview-title">Selected incident</h2>
+            <h2 id="event-overview-title">Selected detection candidate</h2>
           </div>
           {incidents.length > 1 && (
             <label className="event-selector">
-              Incident
+              Detected event
               <select
                 value={selectedIncident?.id ?? ''}
                 onChange={(event) => {
@@ -273,7 +278,7 @@ function EventDetectionWorkspace() {
           <p className="event-message">
             {detectionFailed
               ? 'The detection provider could not complete the current scan.'
-              : 'The current scan completed with no active fire incident detected.'}
+              : 'The current scan completed with no fire detection candidate returned.'}
           </p>
         )}
         {selectedIncident && (
@@ -334,7 +339,7 @@ function EventDetectionWorkspace() {
         </section>
 
         <section className="event-panel" aria-labelledby="pipeline-title">
-          <p className="event-panel__label">Agent pipeline status</p>
+          <p className="event-panel__label">Intended architecture / available service metadata</p>
           <h2 id="pipeline-title">Architectural processing stages</h2>
           <ol className="pipeline-list">
             {pipeline.map((stage) => (

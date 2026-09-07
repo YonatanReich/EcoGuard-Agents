@@ -33,16 +33,20 @@ import type { EnvironmentalData } from '../types/environmentalData'
 import type { IncidentDetails } from '../types/incidents'
 import type {
   AllocatedResponseResource,
+  DemoResponseResource,
   IncidentRiskArea,
   ResponseResourceModelKey,
 } from '../types/responseResources'
 
 import './incident-3d-view.css'
 
+const NO_VERIFIED_RESOURCES: readonly AllocatedResponseResource[] = Object.freeze([])
+
 export type OperationalIncident3DProps = {
   incident: IncidentDetails
   context: EnvironmentalData['geospatial_context'] | null
   allocatedResources?: readonly AllocatedResponseResource[]
+  selectedFacilityResources?: readonly DemoResponseResource[]
   riskArea?: IncidentRiskArea | null
 }
 
@@ -396,7 +400,8 @@ function selectDemoResources(
 function Incident3DView({
   incident,
   context,
-  allocatedResources = [],
+  allocatedResources = NO_VERIFIED_RESOURCES,
+  selectedFacilityResources,
   riskArea = null,
 }: OperationalIncident3DProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -431,8 +436,16 @@ function Incident3DView({
         sourceFacility: resource.sourceName ?? resource.displayName,
       }))
     }
-    return demoActive ? selectDemoResources(context, incident) : []
-  }, [allocatedResources, context, demoActive, incident])
+    if (!demoActive) return []
+    if (selectedFacilityResources?.length) {
+      return selectedFacilityResources.map((resource) => ({
+        ...resource,
+        mode: 'demo' as const,
+        sourceFacility: resource.sourceName ?? resource.displayName,
+      }))
+    }
+    return selectDemoResources(context, incident)
+  }, [allocatedResources, selectedFacilityResources, context, demoActive, incident])
 
   useEffect(() => {
     if (!token || !hasWebGl || !containerRef.current) return
@@ -1130,11 +1143,14 @@ function Incident3DView({
           <span>Visualization only · no resources are dispatched or allocated.</span>
           <button
             type="button"
-            disabled={infrastructure.length === 0}
+            disabled={infrastructure.length === 0 && !selectedFacilityResources?.length}
             onClick={() => setDemoActive(true)}
           >
             Run Demo Simulation
           </button>
+          <span>{selectedFacilityResources?.length
+            ? 'Simulated response from EcoGuard-selected facilities. One demo vehicle per facility; availability is unknown.'
+            : 'No usable selected facilities. Demo uses nearby context only; these sources were not selected by Resource Allocation.'}</span>
         </div>
       )}
 
@@ -1144,7 +1160,7 @@ function Incident3DView({
           aria-label="Response route simulation"
         >
           <header>
-            <strong>{simulationSummaries[0].mode === 'demo' ? 'DEMO · NOT DISPATCHED' : 'VERIFIED ALLOCATION'}</strong>
+            <strong>{simulationSummaries[0].mode === 'demo' ? 'DEMO · NOT DISPATCHED' : 'RESOURCE RESPONSE STATUS'}</strong>
             <div>
               <button
                 type="button"
@@ -1160,6 +1176,11 @@ function Incident3DView({
           </header>
           {!isSimulationPanelCollapsed && (
             <div className="incident-3d-view__simulation-content">
+          {simulationSummaries[0].mode === 'demo' && (
+            <p>{selectedFacilityResources?.length
+              ? 'Simulated response from EcoGuard-selected facilities. Availability and dispatch are unconfirmed.'
+              : 'Simulation from nearby context only; sources were not selected by Resource Allocation.'}</p>
+          )}
           <label className="incident-3d-view__speed">
             Simulation speed
             <select
@@ -1203,12 +1224,12 @@ function Incident3DView({
       <div className="incident-3d-view__semantics">
         <span><i className="incident-3d-view__dot incident-3d-view__dot--incident" />Incident location</span>
         <span><i className="incident-3d-view__dot incident-3d-view__dot--context" />Nearby infrastructure</span>
-        <span><i className="incident-3d-view__dot incident-3d-view__dot--allocated" />Verified allocation</span>
+        <span><i className="incident-3d-view__dot incident-3d-view__dot--allocated" />Simulated selected response</span>
       </div>
 
       <div className="incident-3d-view__notices" aria-live="polite">
         {infrastructure.length === 0 && <span>No nearby infrastructure is available to display.</span>}
-        {allocatedResources.length === 0 && <span>No verified allocated resources.</span>}
+        {allocatedResources.length === 0 && <span>No verified operational dispatch.</span>}
       </div>
     </div>
   )
