@@ -15,7 +15,7 @@
  */
 
 import { useState } from 'react'
-import { Marker, Popup } from 'react-map-gl/maplibre'
+import { Marker, Popup } from 'react-map-gl/mapbox'
 import type { CSSProperties } from 'react'
 
 
@@ -141,7 +141,7 @@ const popupStyle: CSSProperties = {
   maxWidth: 260,
 
   // Explicit colours prevent dashboard/global CSS from making
-  // MapLibre popup text invisible.
+  // Mapbox popup text invisible.
   color: '#111827',
   background: '#ffffff',
 

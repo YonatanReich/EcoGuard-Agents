@@ -21,7 +21,7 @@ import {
   useState,
 } from 'react'
 
-import { useControl } from 'react-map-gl/maplibre'
+import { useControl } from 'react-map-gl/mapbox'
 import { MapboxOverlay } from '@deck.gl/mapbox'
 
 import {

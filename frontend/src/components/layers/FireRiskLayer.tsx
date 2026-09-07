@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
-import { Layer, Popup, Source, useMap } from 'react-map-gl/maplibre'
-import type { MapLayerMouseEvent } from 'maplibre-gl'
+import { Layer, Popup, Source, useMap } from 'react-map-gl/mapbox'
+import type { MapLayerMouseEvent } from 'mapbox-gl'
 import type { FireRiskCluster } from '../fireRiskClusters'
 import type { NationalRiskCell, NationalRiskScan, RiskLevel } from '../fireRiskScan'
 import {

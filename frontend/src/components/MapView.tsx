@@ -6,11 +6,13 @@
  * clicked. Presentational: it holds no application data and fetches nothing.
  * Clicks are reported upward to Dashboard, which owns the response.
  *
- * Tiles come from MapTiler and require VITE_MAPTILER_KEY. Without it the
+ * Tiles come from Mapbox and require VITE_MAPBOX_KEY. Without it the
  * component renders an explanatory placeholder instead of a broken map.
  *
  * The map is deliberately constrained to Israel: bounded panning, a zoom
- * floor, and rotation disabled to keep the view north-up.
+ * floor, and an IsraelMask that greys out everything past the service area.
+ * Unlike the previous MapTiler setup the camera can tilt and rotate, because
+ * the terrain is the point — slope and aspect drive fire behaviour.
  */
 
 import { useState, type CSSProperties } from 'react'
@@ -21,11 +23,14 @@ import Map, {
   GeolocateControl,
   Marker,
   type MapProps,
-} from 'react-map-gl/maplibre'
+  Source,
+} from 'react-map-gl/mapbox'
 
-import maplibregl from 'maplibre-gl'
+import mapboxgl from 'mapbox-gl'
 
-import 'maplibre-gl/dist/maplibre-gl.css'
+import 'mapbox-gl/dist/mapbox-gl.css'
+
+import IsraelMask from './layers/IsraelMask'
 
 import { type RiskEvent } from '../pages/Dashboard'
 
@@ -34,27 +39,47 @@ import { type RiskEvent } from '../pages/Dashboard'
  * Hebrew and Arabic place names are right-to-left.
  *
  * Vite hot reload can execute this module more than once during development.
- * MapLibre throws an error when setRTLTextPlugin is called repeatedly, so
+ * Mapbox throws an error when setRTLTextPlugin is called repeatedly, so
  * register the plugin only while it is still unavailable.
  */
 if (
-  maplibregl.getRTLTextPluginStatus() ===
+  mapboxgl.getRTLTextPluginStatus() ===
   'unavailable'
 ) {
-  maplibregl.setRTLTextPlugin(
-    'https://unpkg.com/@mapbox/mapbox-gl-rtl-text@0.2.3/mapbox-gl-rtl-text.min.js',
+  mapboxgl.setRTLTextPlugin(
+    'https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-rtl-text/v0.2.3/mapbox-gl-rtl-text.js',
+    /* callback */ undefined,
     /* lazy */ true,
   )
 }
 
 
 /**
- * MapTiler API key, read from the Vite environment at build time.
+ * Mapbox public access token, read from the Vite environment at build time.
  *
- * Set VITE_MAPTILER_KEY in frontend/.env.local.
+ * Set VITE_MAPBOX_KEY in frontend/.env. A pk.* token is meant to be visible in
+ * the bundle; restrict it by URL in the Mapbox dashboard rather than trying to
+ * hide it.
  */
-const MAPTILER_KEY =
-  import.meta.env.VITE_MAPTILER_KEY
+const MAPBOX_KEY =
+  import.meta.env.VITE_MAPBOX_KEY
+
+
+/**
+ * Mapbox Standard: 3D buildings, landmarks and time-of-day lighting built in.
+ */
+const MAP_STYLE = 'mapbox://styles/mapbox/standard'
+
+
+/**
+ * Mapbox's global terrain DEM, and how hard to push it.
+ *
+ * Israel's relief is modest — the Carmel and the Galilee are only a few
+ * hundred metres — so at exaggeration 1.0 the terrain is invisible at national
+ * zoom. 1.4 makes slope readable without turning the Negev into the Alps.
+ */
+const TERRAIN_SOURCE = 'mapbox-dem'
+const TERRAIN_EXAGGERATION = 1.4
 
 
 /**
@@ -69,17 +94,31 @@ const ISRAEL_CENTER = {
 } as const
 
 
+/**
+ * Deliberately wider than the country.
+ *
+ * A tilted camera sees far more ground than a top-down one, and MapLibre-style
+ * bounds clamp the *visible* area — so bounds drawn tight to the coastline
+ * make the map fight every attempt to pitch. The mask, not these bounds, is
+ * what keeps the user looking at Israel; these only stop them wandering to
+ * Europe.
+ */
 const ISRAEL_MAX_BOUNDS: [
   number,
   number,
   number,
   number
 ] = [
-  33.5,
-  29.0,
-  36.5,
-  33.6,
+  32.0,
+  28.0,
+  38.0,
+  34.6,
 ]
+
+
+/** Tilt hard enough that relief reads, not so hard the horizon dominates. */
+const INITIAL_PITCH = 45
+const MAX_PITCH = 75
 
 
 /**
@@ -138,13 +177,14 @@ type MapViewProps = {
   style?: CSSProperties
 
   /**
-   * MapTiler style id.
+   * Override the basemap style.
    *
    * Examples:
-   * streets-v2
-   * satellite
-   * hybrid
-   * topo-v2
+   * mapbox://styles/mapbox/standard
+   * mapbox://styles/mapbox/standard-satellite
+   * mapbox://styles/mapbox/satellite-streets-v12
+   *
+   * Defaults to Standard, which is the one with 3D buildings and lighting.
    */
   mapStyleId?: string
 
@@ -188,7 +228,7 @@ type MapViewProps = {
 function MapView({
   events,
   style,
-  mapStyleId = 'streets-v2',
+  mapStyleId,
   initialZoom = 7,
   children,
   onClick,
@@ -214,7 +254,7 @@ function MapView({
   }
 
 
-  if (!MAPTILER_KEY) {
+  if (!MAPBOX_KEY) {
     return (
       <div
         style={{
@@ -225,7 +265,7 @@ function MapView({
         <p>
           Map unavailable: set{' '}
           <code>
-            VITE_MAPTILER_KEY
+            VITE_MAPBOX_KEY
           </code>{' '}
           in a{' '}
           <code>
@@ -242,12 +282,6 @@ function MapView({
   }
 
 
-  const styleUrl =
-    `https://api.maptiler.com/maps/` +
-    `${mapStyleId}/style.json` +
-    `?key=${MAPTILER_KEY}`
-
-
   return (
     <div
       style={containerStyle}
@@ -258,39 +292,55 @@ function MapView({
           style={errorBannerStyle}
         >
           Failed to load map tiles — check your
-          MapTiler key and network.
+          Mapbox token and network.
         </div>
       )}
 
 
       <Map
+        mapboxAccessToken={
+          MAPBOX_KEY
+        }
+
         initialViewState={{
           ...ISRAEL_CENTER,
           zoom: initialZoom,
+          pitch: INITIAL_PITCH,
+          bearing: 0,
         }}
 
         minZoom={6}
 
         maxZoom={18}
 
+        maxPitch={MAX_PITCH}
+
         maxBounds={
           ISRAEL_MAX_BOUNDS
         }
 
         mapStyle={
-          styleUrl
+          mapStyleId ?? MAP_STYLE
         }
 
         /**
-         * Keep the map north-up.
+         * Drape the basemap over real elevation. Without this the pitch above
+         * only tilts a flat plane, which looks 3D but tells you nothing.
          */
-        dragRotate={false}
+        terrain={{
+          source: TERRAIN_SOURCE,
+          exaggeration:
+            TERRAIN_EXAGGERATION,
+        }}
 
         touchZoomRotate
 
-        attributionControl={{
-          compact: true,
-        }}
+        /**
+         * Mapbox takes a boolean here where MapLibre took an options object.
+         * It compacts itself on narrow viewports, and Mapbox's terms require
+         * the attribution stay visible, so this is on deliberately.
+         */
+        attributionControl
 
         onError={() =>
           setHadError(true)
@@ -308,9 +358,21 @@ function MapView({
         {...mapProps}
       >
 
+        <Source
+          id={TERRAIN_SOURCE}
+          type="raster-dem"
+          url="mapbox://mapbox.mapbox-terrain-dem-v1"
+          tileSize={512}
+          maxzoom={14}
+        />
+
+
+        <IsraelMask />
+
+
         <NavigationControl
           position="top-right"
-          visualizePitch={false}
+          visualizePitch
         />
 
 

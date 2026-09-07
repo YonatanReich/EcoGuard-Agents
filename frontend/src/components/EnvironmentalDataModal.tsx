@@ -5,11 +5,11 @@
  * hands it (loading, error, or data) and owns none of them. All fetching
  * lives in Dashboard.
  *
- * Despite the name it is not a modal overlay but a maplibre Popup anchored to
+ * Despite the name it is not a modal overlay but a Mapbox Popup anchored to
  * the coordinate on the map, which is why it must be rendered inside MapView.
  */
 
-import { Popup } from 'react-map-gl/maplibre'
+import { Popup } from 'react-map-gl/mapbox'
 import { type EnvironmentalData } from '../pages/Dashboard'
 import '../pages/visuals/environmentaldatamodal.css'
 

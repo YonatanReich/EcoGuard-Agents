@@ -5,7 +5,7 @@
  *
  * Unlike RainViewer, GWIS/EFFIS exposes the FWI data through a WMS service
  * rather than standard XYZ tiles. Therefore this component requests one
- * georeferenced PNG covering Israel and uses it as a MapLibre image source.
+ * georeferenced PNG covering Israel and uses it as a Mapbox image source.
  *
  * The layer visualizes environmental fire-weather danger only.
  * It does NOT represent active fires and does NOT represent the final
@@ -18,7 +18,7 @@
  *   mf010.fwi
  */
 
-import { Layer, Source } from 'react-map-gl/maplibre'
+import { Layer, Source } from 'react-map-gl/mapbox'
 
 
 type FireDangerLayerProps = {
@@ -87,7 +87,7 @@ function FireDangerLayer({
       type="image"
       url={imageUrl}
       coordinates={[
-        // MapLibre image coordinates must be:
+        // Mapbox image coordinates must be:
         // top-left, top-right, bottom-right, bottom-left.
         [
           FIRE_DANGER_BOUNDS.west,
