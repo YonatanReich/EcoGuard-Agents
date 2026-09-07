@@ -29,8 +29,7 @@ longer called by fetch_nearby_context. They are kept because the
 corresponding normalize_* methods are still used, and because they are
 useful for querying a single layer in isolation while debugging.
 
-Consumed by: backend.main.get_environmental_data,
-             services.multi_location_collection_service
+Consumed by: backend.main.get_environmental_data
 """
 
 from datetime import datetime, timezone

@@ -11,8 +11,7 @@ The agent never raises on network failure. Instead it returns the same
 unified structure with metadata.collection_status set to "failed", so
 callers can merge results from several agents without special-casing errors.
 
-Consumed by: backend.main.get_environmental_data,
-             services.multi_location_collection_service
+Consumed by: backend.main.get_environmental_data
 """
 
 import requests
