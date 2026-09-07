@@ -27,7 +27,14 @@ import maplibregl from 'maplibre-gl'
 
 import 'maplibre-gl/dist/maplibre-gl.css'
 
-import { type RiskEvent } from '../pages/Dashboard'
+import type { IncidentDetails } from '../types/incidents'
+
+export type MapCoordinateClickEvent = {
+  lngLat: {
+    lat: number
+    lng: number
+  }
+}
 
 
 /**
@@ -51,7 +58,7 @@ if (
 /**
  * MapTiler API key, read from the Vite environment at build time.
  *
- * Set VITE_MAPTILER_KEY in frontend/.env.local.
+ * Set VITE_MAPTILER_KEY in the repository-level .env file loaded by Vite.
  */
 const MAPTILER_KEY =
   import.meta.env.VITE_MAPTILER_KEY
@@ -128,7 +135,7 @@ type MapViewProps = {
    *
    * Marker colour is derived from risk_level.
    */
-  events: RiskEvent[]
+  events: IncidentDetails[]
 
   /**
    * Inline style for the wrapping container.
@@ -162,9 +169,7 @@ type MapViewProps = {
    * Called with the clicked coordinate for both
    * map clicks and event-marker clicks.
    */
-  onClick?: (
-    e: any
-  ) => void
+  onClick?: (event: MapCoordinateClickEvent) => void
 
   /**
    * Coordinate highlighted with the blue marker.
@@ -175,7 +180,7 @@ type MapViewProps = {
   } | null
 } & Pick<
   MapProps,
-  'onLoad' | 'onClick'
+  'onLoad'
 >
 
 
