@@ -81,207 +81,408 @@
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
 }
 
-.dashboard__sidebar {
-    flex: 0 0 280px;
-    background: var(--bg-cards);
-    border-radius: 10px;
-    border: 2px solid transparent;
-    transition: border-color 0.3s ease;
-    display: flex;
-    flex-direction: column;
-}
 
-.dashboard__agents {
-    flex: 0 0 240px;
-    background: var(--bg-cards);
-    border-radius: 10px;
-    border: 2px solid transparent;
-    transition: border-color 0.3s ease;
-    display: flex;
-    flex-direction: column;
-}
 
-.dashboard__agents:hover,
-.dashboard__sidebar:hover {
-    border-color: white;
-}
 
-.Event-summary-header {
-    position: relative;
-    text-align: center;
-    font-family: "Plus Jakarta Sans", sans-serif;
-    font-size: 1.1rem;
-    font-weight: 700;
-    padding-bottom: 6px;
-}
 
-.Event-summary-header::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    width: 0;
-    height: 2px;
-    background: white;
-    transition: width 0.3s ease;
-}
 
-.dashboard__sidebar:hover .Event-summary-header::after {
-    width: 100%;
-}
 
-.Event-counter {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    font-family: "Plus Jakarta Sans", sans-serif;
-}
 
-.agent-status-header {
-    position: relative;
-    text-align: center;
-    font-family: "Plus Jakarta Sans", sans-serif;
-    font-size: 1.1rem;
-    font-weight: 700;
-    padding-bottom: 6px;
-}
 
-.agent-status-header::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    width: 0;
-    height: 2px;
-    background: white;
-    transition: width 0.4s ease;
-}
 
-.dashboard__agents:hover .agent-status-header::after {
-    width: 100%;
-}
-
-.agent-status-container {
-    text-align: center;
-    margin-top: 30px;
-    font-family: "Plus Jakarta Sans", sans-serif;
-}
 
 /* ===== Event summary cards =====
    One card per detected event in the sidebar. The citation blocks are the
    point of this section: they show the verbatim protocol text the reasoning
    was grounded in, so a reader can verify the analysis rather than trust it. */
 
-.event-card {
-    margin: 14px 10px;
-    padding: 12px 14px;
-    background: var(--bg-cards);
-    border: 1px solid var(--card-border);
-    border-radius: 10px;
-    font-family: "Plus Jakarta Sans", sans-serif;
-    font-size: 0.85rem;
-    text-align: left;
-    line-height: 1.45;
-}
 
-.event-card__header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-    margin-bottom: 8px;
-}
 
-.event-card__title {
-    margin: 0;
-    font-size: 0.95rem;
-    font-weight: 700;
-}
 
-.event-card__badge {
-    padding: 2px 8px;
-    border-radius: 999px;
-    font-size: 0.72rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    white-space: nowrap;
-    color: #fff;
-    background: #6b7280;
-}
 
 /* Colours mirror RISK_LEVEL_COLORS in MapView.tsx so the sidebar badge and
    the map marker agree. Keep the two in step. */
-.event-card__badge--critical { background: #7f1d1d; }
-.event-card__badge--high     { background: #dc2626; }
-.event-card__badge--medium   { background: #f59e0b; color: #1c1300; }
-.event-card__badge--low      { background: #16a34a; }
-.event-card__badge--unknown  { background: #6b7280; }
 
-.event-card__warning {
-    margin: 0 0 8px;
-    padding: 6px 8px;
-    border-left: 3px solid #6b7280;
-    background: rgba(107, 114, 128, 0.18);
-    color: var(--text-muted);
+
+
+
+
+
+
+
+
+
+
+
+/* ============================================================
+   Event legend, panels, cards and modal
+   ============================================================ */
+
+/* Colour carries hazard type, motion carries urgency. Keeping them on
+   separate channels lets one mark say both without a lookup table. */
+
+.legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 2rem;
+    padding: 0.6rem 1rem;
+    margin-bottom: 0.75rem;
+    background: var(--bg-cards);
+    border-radius: 10px;
+    font-size: 0.8rem;
 }
 
-.event-card__text {
-    margin: 0 0 8px;
+.legend__group {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    flex-wrap: wrap;
 }
 
-.event-card__subheading {
-    margin: 12px 0 6px;
-    font-size: 0.78rem;
-    font-weight: 700;
+.legend__caption {
     text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.68rem;
+    opacity: 0.65;
+}
+
+.legend__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.legend__swatch {
+    width: 0.85rem;
+    height: 0.85rem;
+    border-radius: 3px;
+}
+
+.legend__dot,
+.legend__pulse {
+    position: relative;
+    width: 0.7rem;
+    height: 0.7rem;
+    border-radius: 50%;
+    background: #cbd5e1;
+}
+
+.legend__pulse {
+    animation: marker-pulse 1.6s ease-out infinite;
+}
+
+.legend__count {
+    padding: 0 0.4rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.legend__note {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: 0.72rem;
+    opacity: 0.55;
+}
+
+.dashboard__panel {
+    flex: 0 0 300px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--bg-cards);
+    border-radius: 10px;
+    border: 2px solid transparent;
+    transition: border-color 0.3s ease;
+}
+
+.dashboard__panel:hover {
+    border-color: rgba(255, 255, 255, 0.5);
+}
+
+.dashboard__panel--emergency {
+    border-top: 3px solid #dc2626;
+}
+
+.dashboard__panel--advisory {
+    border-top: 3px solid #64748b;
+}
+
+.panel__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    font-weight: 600;
     letter-spacing: 0.04em;
-    color: var(--text-muted);
+    text-transform: uppercase;
+    font-size: 0.78rem;
 }
 
-.event-card__drivers,
-.event-card__gaps,
-.event-card__actions {
-    margin: 0 0 8px;
-    padding-left: 18px;
+.panel__count {
+    padding: 0.05rem 0.5rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
 }
 
-.event-card__drivers li,
-.event-card__gaps li,
-.event-card__actions li {
-    margin-bottom: 4px;
+/* The list scrolls, not the page: an operator watching twenty events should
+   never lose sight of the map. */
+.panel__list {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 0 0.6rem 0.6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
 }
 
-.event-card__timeframe {
-    display: inline-block;
-    padding: 1px 6px;
-    border-radius: 4px;
-    background: rgba(0, 98, 255, 0.25);
+.panel__empty {
+    padding: 0.75rem;
+    margin: 0;
+    font-size: 0.82rem;
+    opacity: 0.55;
+}
+
+.event-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    width: 100%;
+    text-align: left;
+    padding: 0.6rem 0.7rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    /* The hazard colour arrives as an inline --hazard custom property, set
+       from the same registry the legend and map markers read. */
+    border-left: 4px solid var(--hazard, #94a3b8);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.event-card:hover {
+    background: rgba(255, 255, 255, 0.09);
+    transform: translateX(2px);
+}
+
+.event-card--selected {
+    background: rgba(255, 255, 255, 0.13);
+    border-color: var(--hazard, #94a3b8);
+}
+
+.event-card__type {
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--hazard, #94a3b8);
+}
+
+.event-card__title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    line-height: 1.25;
+}
+
+.event-card__meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.72rem;
+    opacity: 0.7;
+}
+
+.event-card__score--none {
+    font-style: italic;
+    opacity: 0.75;
+}
+
+/* Map markers ------------------------------------------------ */
+
+.map-marker {
+    position: relative;
+    display: block;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--hazard, #94a3b8);
+    border: 2px solid rgba(255, 255, 255, 0.9);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+    cursor: pointer;
+}
+
+/* Only emergencies pulse. If everything moved, nothing would stand out. */
+.map-marker--emergency::after {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+    background: var(--hazard-halo, rgba(148, 163, 184, 0.45));
+    animation: marker-pulse 1.6s ease-out infinite;
+    pointer-events: none;
+}
+
+@keyframes marker-pulse {
+    0%   { transform: scale(1);   opacity: 0.9; }
+    70%  { transform: scale(2.6); opacity: 0; }
+    100% { transform: scale(2.6); opacity: 0; }
+}
+
+/* Respect a stated preference for less motion; the colour still carries the
+   hazard and the panel still carries the urgency. */
+@media (prefers-reduced-motion: reduce) {
+    .map-marker--emergency::after,
+    .legend__pulse {
+        animation: none;
+    }
+    .map-marker--emergency::after {
+        opacity: 0.5;
+    }
+}
+
+/* Modal ------------------------------------------------------ */
+
+.event-modal__backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    background: rgba(3, 7, 18, 0.72);
+    backdrop-filter: blur(2px);
+}
+
+.event-modal {
+    width: min(680px, 100%);
+    max-height: 85vh;
+    overflow-y: auto;
+    padding: 1.25rem 1.5rem 1.75rem;
+    border-radius: 14px;
+    border-top: 4px solid var(--hazard, #94a3b8);
+    background: var(--bg-cards, #111827);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+.event-modal__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.event-modal__type {
     font-size: 0.7rem;
     text-transform: uppercase;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.09em;
+    color: var(--hazard, #94a3b8);
+    margin-right: 0.6rem;
 }
 
-.event-card__citation {
-    margin: 0 0 8px;
-    padding: 8px 10px;
-    border-left: 3px solid var(--card-border);
-    background: rgba(0, 98, 255, 0.08);
-    border-radius: 0 6px 6px 0;
+.event-modal__urgency {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
 }
 
-.event-card__quote {
-    margin: 0 0 4px;
+.event-modal__urgency--emergency { background: #dc2626; color: #fff; }
+.event-modal__urgency--advisory  { background: #475569; color: #e2e8f0; }
+
+.event-modal__close {
+    padding: 0.3rem 0.8rem;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.event-modal__close:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.event-modal__title {
+    margin: 0.6rem 0 1rem;
+    font-size: 1.25rem;
+}
+
+.event-modal__facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.6rem 1rem;
+    margin: 0 0 1.25rem;
+}
+
+.event-modal__facts dt {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    opacity: 0.55;
+}
+
+.event-modal__facts dd {
+    margin: 0.15rem 0 0;
+    font-size: 0.92rem;
+}
+
+.event-modal__section {
+    margin-bottom: 1.25rem;
+}
+
+.event-modal__section h3 {
+    margin: 0 0 0.45rem;
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.65;
+}
+
+.event-modal__section p,
+.event-modal__section li {
+    font-size: 0.88rem;
+    line-height: 1.5;
+}
+
+.event-modal__section ul,
+.event-modal__section ol {
+    margin: 0;
+    padding-left: 1.1rem;
+}
+
+.event-modal__actions li {
+    margin-bottom: 0.4rem;
+}
+
+.event-modal__timeframe {
+    margin-left: 0.5rem;
+    padding: 0.05rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.68rem;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.event-modal__section--gaps li {
+    color: #fbbf24;
+}
+
+.event-modal__citation {
+    margin: 0 0 0.6rem;
+    padding: 0.5rem 0.75rem;
+    border-left: 2px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.event-modal__citation p {
+    margin: 0 0 0.3rem;
     font-style: italic;
 }
 
-.event-card__source {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-}
-
-.event-card__source a {
-    color: var(--card-border);
+.event-modal__citation footer {
+    font-size: 0.72rem;
+    opacity: 0.6;
 }

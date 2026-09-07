@@ -31,6 +31,7 @@ import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 
 import IsraelMask from './layers/IsraelMask'
+import { classify, hazardOf } from './hazards'
 
 import { type RiskEvent } from '../pages/Dashboard'
 
@@ -121,46 +122,6 @@ const INITIAL_PITCH = 45
 const MAX_PITCH = 75
 
 
-/**
- * Marker colour per operational risk band.
- *
- * The backend sends lowercase bands. A previous version compared against
- * 'High' with a capital H, which never matched, so every marker rendered
- * orange regardless of severity.
- */
-const RISK_LEVEL_COLORS: Record<string, string> = {
-  critical: '#7f1d1d',
-  high: '#dc2626',
-  medium: '#f59e0b',
-  low: '#16a34a',
-}
-
-
-/** Grey, used when no risk score exists. */
-const UNASSESSED_COLOR = '#6b7280'
-
-
-/**
- * Pick a marker colour for a risk band.
- *
- * A null band means the analysis was skipped or failed, and grey says exactly
- * that. Colouring an unassessed fire green would claim it is low risk, which is
- * a claim nothing in the pipeline actually made.
- */
-function riskLevelColor(
-  riskLevel: string | null | undefined
-): string {
-  if (!riskLevel) {
-    return UNASSESSED_COLOR
-  }
-
-  return (
-    RISK_LEVEL_COLORS[riskLevel] ??
-    UNASSESSED_COLOR
-  )
-}
-
-
 type MapViewProps = {
   /**
    * Detected events to plot.
@@ -207,6 +168,12 @@ type MapViewProps = {
   ) => void
 
   /**
+   * Called when an event marker is clicked, so the card list and the map
+   * open the same modal.
+   */
+  onEventClick?: (event: RiskEvent) => void
+
+  /**
    * Coordinate highlighted with the blue marker.
    */
   selectedLocation?: {
@@ -232,6 +199,7 @@ function MapView({
   initialZoom = 7,
   children,
   onClick,
+  onEventClick,
   selectedLocation,
   ...mapProps
 }: MapViewProps) {
@@ -407,53 +375,59 @@ function MapView({
 
 
         {events.map(
-          (event) => (
-            <Marker
-              key={
-                event.id
-              }
+          (event) => {
+            const hazard = hazardOf(event)
+            const isEmergency =
+              classify(event) === 'emergency'
 
-              longitude={
-                event.longitude
-              }
-
-              latitude={
-                event.latitude
-              }
-
-              color={
-                riskLevelColor(
-                  event.risk_level
-                )
-              }
-
-              onClick={(e) => {
-                /**
-                 * Prevent the marker click from
-                 * also triggering the underlying map.
-                 */
-                e.originalEvent
-                  .stopPropagation()
-
-                /**
-                 * Forward the marker coordinates
-                 * in the same shape as a normal
-                 * MapLibre map click.
-                 */
-                if (onClick) {
-                  onClick({
-                    lngLat: {
-                      lat:
-                        event.latitude,
-
-                      lng:
-                        event.longitude,
-                    },
-                  })
+            return (
+              <Marker
+                key={
+                  event.id
                 }
-              }}
-            />
-          )
+
+                longitude={
+                  event.longitude
+                }
+
+                latitude={
+                  event.latitude
+                }
+
+                onClick={(e) => {
+                  /**
+                   * Prevent the marker click from
+                   * also triggering the underlying map.
+                   */
+                  e.originalEvent
+                    .stopPropagation()
+
+                  if (onEventClick) {
+                    onEventClick(event)
+                  }
+                }}
+              >
+                {/*
+                  * Hazard sets the colour, urgency sets the pulse. Two
+                  * independent signals on one mark, so an operator can read
+                  * "which kind" and "how urgent" without a lookup.
+                  */}
+                <span
+                  className={
+                    'map-marker' +
+                    (isEmergency
+                      ? ' map-marker--emergency'
+                      : '')
+                  }
+                  style={{
+                    '--hazard': hazard.color,
+                    '--hazard-halo': hazard.halo,
+                  } as CSSProperties}
+                  title={event.title}
+                />
+              </Marker>
+            )
+          }
         )}
 
 

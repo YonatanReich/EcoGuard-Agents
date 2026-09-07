@@ -20,6 +20,10 @@ import RainRadarLayer, {
 } from '../components/layers/RainRadarLayer'
 
 import FireDangerLayer from '../components/layers/FireDangerLayer'
+import EventCard from '../components/EventCard'
+import EventLegend from '../components/EventLegend'
+import EventModal from '../components/EventModal'
+import { classify } from '../components/hazards'
 import FireRiskLayer from '../components/layers/FireRiskLayer'
 import WindParticleLayer from '../components/layers/WindParticleLayer'
 
@@ -217,116 +221,42 @@ function formatIsraelTime(
 }
 
 
-/**
- * Sidebar card for one detected event.
- *
- * Renders the assessment, the plan, and — importantly — the protocol passages
- * the reasoning actually cited. Showing the verbatim quote and its source is
- * what lets a reader confirm the analysis was grounded in the corpus rather
- * than taking the claim on trust.
- */
-function EventSummaryCard({ event }: { event: RiskEvent }) {
-  const hasAssessment =
-    event.analysis_status === 'success' &&
-    event.risk_score !== null
-
-  return (
-    <article className="event-card">
-
-      <header className="event-card__header">
-        <span
-          className={`event-card__badge event-card__badge--${event.risk_level ?? 'unknown'}`}
-        >
-          {hasAssessment
-            ? `${event.risk_level} · ${event.risk_score}`
-            : 'not assessed'}
-        </span>
-        <h3 className="event-card__title">{event.title}</h3>
-      </header>
-
-      {/* An unassessed event is stated plainly rather than shown with a
-          default score. A fabricated "low" would read as an all-clear. */}
-      {!hasAssessment && (
-        <p className="event-card__warning">
-          Risk analysis {event.analysis_status}. A fire was detected, but no risk
-          score is available for it.
-        </p>
-      )}
-
-      {event.explanation && (
-        <p className="event-card__text">{event.explanation}</p>
-      )}
-
-      {event.primary_drivers.length > 0 && (
-        <ul className="event-card__drivers">
-          {event.primary_drivers.map((driver) => (
-            <li key={driver}>{driver}</li>
-          ))}
-        </ul>
-      )}
-
-      {event.response_actions.length > 0 && (
-        <>
-          <h4 className="event-card__subheading">Response plan</h4>
-          <ol className="event-card__actions">
-            {event.response_actions.map((action) => (
-              <li key={action.action}>
-                <span className="event-card__timeframe">
-                  {action.timeframe.replace(/_/g, ' ')}
-                </span>
-                {' '}
-                <strong>{action.responsible_unit.replace(/_/g, ' ')}</strong>
-                {' — '}
-                {action.action}
-              </li>
-            ))}
-          </ol>
-        </>
-      )}
-
-      {event.evidence_gaps.length > 0 && (
-        <>
-          <h4 className="event-card__subheading">Evidence gaps</h4>
-          <ul className="event-card__gaps">
-            {event.evidence_gaps.map((gap) => (
-              <li key={gap}>{gap}</li>
-            ))}
-          </ul>
-        </>
-      )}
-
-      {event.protocol_citations.length > 0 && (
-        <>
-          <h4 className="event-card__subheading">
-            Grounded in {event.protocol_citations.length} protocol passage
-            {event.protocol_citations.length === 1 ? '' : 's'}
-          </h4>
-          {event.protocol_citations.map((citation) => (
-            <blockquote key={citation.chunk_id} className="event-card__citation">
-              <p className="event-card__quote">“{citation.quoted_text}”</p>
-              <footer className="event-card__source">
-                {citation.source_url ? (
-                  <a href={citation.source_url} target="_blank" rel="noreferrer">
-                    {citation.document_title}
-                  </a>
-                ) : (
-                  citation.document_title
-                )}
-                {citation.heading_path && ` · ${citation.heading_path}`}
-              </footer>
-            </blockquote>
-          ))}
-        </>
-      )}
-
-    </article>
-  )
-}
-
 
 function Dashboard() {
   const [events, setEvents] =
     useState<RiskEvent[]>([])
+
+  /** The event whose modal is open, from either a card or a map marker. */
+  const [openEvent, setOpenEvent] =
+    useState<RiskEvent | null>(null)
+
+  /**
+   * Split the feed into the two panels.
+   *
+   * Emergencies sort hardest-first, so the top of the right panel is always
+   * the thing most in need of a decision.
+   */
+  const emergencyEvents = useMemo(
+    () => events
+      .filter((event) => classify(event) === 'emergency')
+      .sort((a, b) => (b.risk_score ?? 0) - (a.risk_score ?? 0)),
+    [events],
+  )
+
+  const advisoryEvents = useMemo(
+    () => events.filter((event) => classify(event) !== 'emergency'),
+    [events],
+  )
+
+  /**
+   * Drop the modal when its event leaves the feed, rather than leaving a stale
+   * record open over a fire that is no longer being reported.
+   */
+  useEffect(() => {
+    if (openEvent && !events.some((event) => event.id === openEvent.id)) {
+      setOpenEvent(null)
+    }
+  }, [events, openEvent])
 
   /**
    * True while the detection scan is running.
@@ -907,16 +837,36 @@ function Dashboard() {
       </header>
 
 
+      <EventLegend
+        emergencyCount={emergencyEvents.length}
+        advisoryCount={advisoryEvents.length}
+      />
+
+
       <div className="dashboard__body">
 
-        <aside className="dashboard__agents">
+        <aside className="dashboard__panel dashboard__panel--advisory">
 
-          <div className="agent-status-header">
-            Agent status
+          <div className="panel__header">
+            Advisory
+            <span className="panel__count">{advisoryEvents.length}</span>
           </div>
 
-          <div className="agent-status-container">
-            There are no agents active at the moment
+          <div className="panel__list">
+            {isLoadingEvents ? (
+              <p className="panel__empty">Scanning…</p>
+            ) : advisoryEvents.length === 0 ? (
+              <p className="panel__empty">Nothing requiring advice.</p>
+            ) : (
+              advisoryEvents.map((event) => (
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  onOpen={setOpenEvent}
+                  isSelected={openEvent?.id === event.id}
+                />
+              ))
+            )}
           </div>
 
         </aside>
@@ -927,6 +877,7 @@ function Dashboard() {
           <MapView
             events={events}
             onClick={handleMapClick}
+            onEventClick={setOpenEvent}
             selectedLocation={selectedLocation}
           >
 
@@ -1381,25 +1332,41 @@ function Dashboard() {
         </main>
 
 
-        <aside className="dashboard__sidebar">
+        <aside className="dashboard__panel dashboard__panel--emergency">
 
-          <div className="Event-summary-header">
-            Events summary
+          <div className="panel__header">
+            Emergency
+            <span className="panel__count">{emergencyEvents.length}</span>
           </div>
 
-          <div className="Event-counter">
-            {isLoadingEvents
-              ? 'Scanning for active fires…'
-              : `there are ${events.length} events going on at the moment`}
+          <div className="panel__list">
+            {isLoadingEvents ? (
+              <p className="panel__empty">Scanning…</p>
+            ) : emergencyEvents.length === 0 ? (
+              <p className="panel__empty">No active emergencies.</p>
+            ) : (
+              emergencyEvents.map((event) => (
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  onOpen={setOpenEvent}
+                  isSelected={openEvent?.id === event.id}
+                />
+              ))
+            )}
           </div>
-
-          {!isLoadingEvents && events.map((event) => (
-            <EventSummaryCard key={event.id} event={event} />
-          ))}
 
         </aside>
 
       </div>
+
+
+      {openEvent && (
+        <EventModal
+          event={openEvent}
+          onClose={() => setOpenEvent(null)}
+        />
+      )}
 
     </main>
   )
