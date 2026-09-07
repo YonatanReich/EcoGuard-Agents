@@ -1,23 +1,27 @@
 /**
- * FireDangerLayer
+ * FireDangerLayer — the Fire Weather Index, as a heatmap.
  *
- * Displays the GWIS/EFFIS Fire Weather Index (FWI) raster over Israel.
+ * Renders GWIS/EFFIS FWI over Israel. The data arrives from our own
+ * /api/fire-danger as one point per 5 km cell, not from the WMS directly.
  *
- * Unlike RainViewer, GWIS/EFFIS exposes the FWI data through a WMS service
- * rather than standard XYZ tiles. Therefore this component requests one
- * georeferenced PNG covering Israel and uses it as a Mapbox image source.
+ * That indirection is the whole reason this looks like a heatmap rather than
+ * the blocks it used to. The GWIS raster is coarse and *categorical* — six
+ * stepped colours, no gradient — so stretching one PNG across the country
+ * upscaled the steps into visible squares and invented nothing in between.
+ * The collector samples that raster once per cell; interpolating between those
+ * samples is a claim the point data can actually support.
  *
- * The layer visualizes environmental fire-weather danger only.
- * It does NOT represent active fires and does NOT represent the final
- * operational risk score calculated by RiskAnalysisAgent.
+ * It also takes the browser off a third-party WMS: one request to our own API
+ * instead of a 900x1200 PNG from Copernicus on every mount.
  *
- * Data source:
- *   GWIS / EFFIS
+ * The layer shows environmental fire-weather danger only. It is NOT active
+ * fire, and NOT the operational risk score from RiskAnalysisAgent.
  *
- * WMS layer:
- *   mf010.fwi
+ * Data source: GWIS / EFFIS, WMS layer mf010.fwi, via ecoguard's fire_weather
+ * collector.
  */
 
+import { useEffect, useState } from 'react'
 import { Layer, Source } from 'react-map-gl/mapbox'
 
 
@@ -25,94 +29,134 @@ type FireDangerLayerProps = {
   /** Whether the FWI overlay is visible. */
   visible?: boolean
 
-  /** Transparency of the FWI raster above the base map. */
+  /** Peak opacity of the heatmap above the base map. */
   opacity?: number
 }
 
 
-// Bounding box covering Israel and a small surrounding area.
-//
-// WMS BBOX order for version 1.1.1 with EPSG:4326:
-// west,south,east,north
-const FIRE_DANGER_BOUNDS = {
-  west: 33.5,
-  south: 29.0,
-  east: 36.5,
-  north: 33.6,
+type FireDangerCollection = {
+  type: 'FeatureCollection'
+  observed_at: string | null
+  features: Array<{
+    type: 'Feature'
+    geometry: { type: 'Point'; coordinates: [number, number] }
+    properties: { cell_id: string; danger_level: string; fwi: number }
+  }>
 }
 
-const GWIS_WMS_URL =
-  'https://maps.effis.emergency.copernicus.eu/effis'
+
+const EMPTY: FireDangerCollection = {
+  type: 'FeatureCollection',
+  observed_at: null,
+  features: [],
+}
+
+
+/**
+ * The FWI band boundaries, as heatmap weights.
+ *
+ * Weight is normalised 0..1 across the range the legend spans, so a cell in
+ * the "extreme" band pushes the heatmap roughly twice as hard as one in
+ * "high". Anchoring on the legend keeps the colours meaning the same thing
+ * they do in the sidebar.
+ */
+const FWI_MIN = 0
+const FWI_MAX = 80
 
 
 function FireDangerLayer({
   visible = true,
-  opacity = 0.55,
+  opacity = 0.75,
 }: FireDangerLayerProps) {
-  if (!visible) {
+  const [data, setData] = useState<FireDangerCollection>(EMPTY)
+
+  useEffect(() => {
+    if (!visible) return
+
+    let cancelled = false
+
+    fetch('/api/fire-danger')
+      .then((response) => {
+        if (!response.ok) throw new Error(String(response.status))
+        return response.json()
+      })
+      .then((collection: FireDangerCollection) => {
+        if (!cancelled) setData(collection)
+      })
+      .catch(() => {
+        // A missing FWI layer is a missing layer, not a broken dashboard. The
+        // toggle stays available and the next mount retries.
+        if (!cancelled) setData(EMPTY)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [visible])
+
+  if (!visible || data.features.length === 0) {
     return null
   }
-
-  /**
-   * Build the WMS GetMap request dynamically so the date always represents
-   * the current day rather than being hard-coded into the frontend.
-   */
-  const today = new Date().toISOString().split('T')[0]
-
-  const params = new URLSearchParams({
-    SERVICE: 'WMS',
-    VERSION: '1.1.1',
-    REQUEST: 'GetMap',
-    LAYERS: 'mf010.fwi',
-    STYLES: '',
-    SRS: 'EPSG:4326',
-    BBOX: [
-      FIRE_DANGER_BOUNDS.west,
-      FIRE_DANGER_BOUNDS.south,
-      FIRE_DANGER_BOUNDS.east,
-      FIRE_DANGER_BOUNDS.north,
-    ].join(','),
-    WIDTH: '900',
-    HEIGHT: '1200',
-    FORMAT: 'image/png',
-    TRANSPARENT: 'true',
-    TIME: today,
-  })
-
-  const imageUrl = `${GWIS_WMS_URL}?${params.toString()}`
 
   return (
     <Source
       id="gwis-fwi-source"
-      type="image"
-      url={imageUrl}
-      coordinates={[
-        // Mapbox image coordinates must be:
-        // top-left, top-right, bottom-right, bottom-left.
-        [
-          FIRE_DANGER_BOUNDS.west,
-          FIRE_DANGER_BOUNDS.north,
-        ],
-        [
-          FIRE_DANGER_BOUNDS.east,
-          FIRE_DANGER_BOUNDS.north,
-        ],
-        [
-          FIRE_DANGER_BOUNDS.east,
-          FIRE_DANGER_BOUNDS.south,
-        ],
-        [
-          FIRE_DANGER_BOUNDS.west,
-          FIRE_DANGER_BOUNDS.south,
-        ],
-      ]}
+      type="geojson"
+      data={data}
     >
       <Layer
-        id="gwis-fwi-layer"
-        type="raster"
+        id="gwis-fwi-heatmap"
+        type="heatmap"
         paint={{
-          'raster-opacity': opacity,
-          'raster-fade-duration': 0,
+          // Each cell contributes in proportion to its danger band.
+          'heatmap-weight': [
+            'interpolate',
+            ['linear'],
+            ['get', 'fwi'],
+            FWI_MIN, 0,
+            FWI_MAX, 1,
+          ],
+
+          // Cells sit on a fixed 5 km grid, so as you zoom in they spread
+          // apart and the blend thins. Raising intensity with zoom keeps the
+          // surface reading at the same strength all the way in.
+          'heatmap-intensity': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            6, 1,
+            12, 3,
+          ],
+
+          // The GWIS legend's own ramp, so the map and the sidebar agree.
+          // Density 0 must be fully transparent or the heatmap paints a wash
+          // over the entire country instead of only where cells are.
+          'heatmap-color': [
+            'interpolate',
+            ['linear'],
+            ['heatmap-density'],
+            0.0, 'rgba(0, 0, 0, 0)',
+            0.15, 'rgba(156, 255, 192, 0.5)',
+            0.3, 'rgba(205, 226, 78, 0.65)',
+            0.5, 'rgba(230, 172, 0, 0.75)',
+            0.7, 'rgba(217, 112, 16, 0.85)',
+            0.85, 'rgba(173, 6, 14, 0.9)',
+            1.0, 'rgba(88, 0, 21, 0.95)',
+          ],
+
+          // Roughly half a cell at national zoom, growing so neighbouring
+          // cells keep overlapping as they separate on screen. Too small and
+          // the grid reappears as dots; too large and everything smears.
+          'heatmap-radius': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            6, 18,
+            9, 40,
+            12, 90,
+          ],
+
+          'heatmap-opacity': opacity,
         }}
       />
     </Source>

@@ -152,6 +152,37 @@ def read_root():
     }
 
 
+@app.get("/api/fire-danger")
+def get_fire_danger():
+    """Serve today's GWIS/EFFIS Fire Weather Index as GeoJSON points.
+
+    The frontend used to request the WMS raster directly and stretch one PNG
+    across the country, which is why the overlay looked like blocks: the FWI
+    product is coarse and categorical, so upscaling it invents nothing. The
+    collection layer already samples that raster once per 5 km cell, so serving
+    those points instead lets the map render a real heatmap — and takes the
+    browser's dependency on a third-party WMS away.
+
+    Returns:
+        dict: GeoJSON FeatureCollection, one Point per cell, carrying the
+            danger band and a representative FWI value. features is empty when
+            the collector has not run yet.
+
+    Raises:
+        HTTPException: 503 when the observations store cannot be reached.
+    """
+    from ecoguard.database.repositories.observations import latest_fire_danger_geojson
+
+    try:
+        return latest_fire_danger_geojson()
+    except Exception as error:
+        logging.error("Fire danger query failed: %s", error, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="Fire danger data is unavailable.",
+        )
+
+
 @app.post("/api/dev/run/{source}")
 def run_collector_now(source: str):
     """Run one collector immediately instead of waiting for its next tick.
