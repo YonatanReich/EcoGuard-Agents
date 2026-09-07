@@ -5,7 +5,12 @@ __pycache__/
 backend/__pycache__/
 *.pyc
 *.bak
-.env
+
+# Every .env variant — .env alone does not match .env.local, .env.backup and
+# friends, and one `git add -A` on such a file publishes every credential.
+.env*
+!.env.example
+
 .pytest_cache/
 
 # Telethon authentication sessions

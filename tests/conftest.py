@@ -11,6 +11,13 @@ import os
 import socket
 
 import pytest
+from dotenv import load_dotenv
+
+# .env first. load_dotenv does not overwrite variables that are already set, so
+# seeding the placeholder before this line would silently pin every test to
+# localhost and skip the whole database suite even with a real DATABASE_URL
+# configured.
+load_dotenv()
 
 os.environ.setdefault(
     "DATABASE_URL", "postgresql+psycopg://ecoguard:ecoguard@localhost:5432/ecoguard"
