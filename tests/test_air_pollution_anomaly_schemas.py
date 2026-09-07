@@ -143,6 +143,51 @@ def test_future_chemical_identifier_is_supported_and_provider_id_is_preserved():
     assert observation.provider_pollutant_id == "benzene_hourly"
 
 
+def test_nanograms_per_cubic_metre_is_accepted_without_conversion():
+    anomaly = AirPollutionAnomaly(
+        **build_anomaly(
+            pollutant_observations=[
+                {"pollutant": "C6H6", "value": 1000.0, "unit": "ng/m³"}
+            ]
+        )
+    )
+
+    observation = anomaly.pollutant_observations[0]
+    assert observation.value == 1000.0
+    assert observation.unit == "ng/m³"
+
+
+def test_provider_nanogram_unit_is_normalized_and_preserved():
+    anomaly = AirPollutionAnomaly(
+        **build_anomaly(
+            pollutant_observations=[
+                {
+                    "pollutant": "C6H6",
+                    "value": 8.5,
+                    "unit": "ng/m3",
+                    "provider_unit": "ng/m3",
+                }
+            ]
+        )
+    )
+
+    observation = anomaly.pollutant_observations[0]
+    assert observation.unit == "ng/m³"
+    assert observation.provider_unit == "ng/m3"
+
+
+def test_provider_unit_is_optional():
+    anomaly = AirPollutionAnomaly(
+        **build_anomaly(
+            pollutant_observations=[
+                {"pollutant": "PM10", "value": 22.0, "unit": "µg/m³"}
+            ]
+        )
+    )
+
+    assert anomaly.pollutant_observations[0].provider_unit is None
+
+
 def test_missing_pollutant_observations_is_valid_incomplete_source_state():
     anomaly = AirPollutionAnomaly(**build_anomaly(pollutant_observations=[]))
 

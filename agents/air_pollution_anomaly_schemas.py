@@ -28,7 +28,7 @@ from pydantic import (
     model_validator,
 )
 
-PollutantUnit = Literal["µg/m³", "mg/m³", "ppb", "ppm"]
+PollutantUnit = Literal["µg/m³", "mg/m³", "ng/m³", "ppb", "ppm"]
 AnomalySeverity = Literal["low", "medium", "high", "critical"]
 
 CORE_AIR_POLLUTANTS: frozenset[str] = frozenset(
@@ -114,6 +114,7 @@ class PollutantObservation(ContractModel):
     )
     value: float = Field(ge=0, strict=True)
     unit: PollutantUnit
+    provider_unit: str | None = Field(default=None, min_length=1, max_length=100)
     observed_at: AwareDatetime | None = None
     source_id: str | None = Field(default=None, min_length=1, max_length=200)
 
@@ -125,7 +126,14 @@ class PollutantObservation(ContractModel):
             raise ValueError("weather context cannot be a pollutant observation")
         return normalized
 
-    @field_validator("provider_pollutant_id", "source_id")
+    @field_validator("unit", mode="before")
+    @classmethod
+    def _normalize_unit(cls, value: object) -> object:
+        if value == "ng/m3":
+            return "ng/m³"
+        return value
+
+    @field_validator("provider_pollutant_id", "provider_unit", "source_id")
     @classmethod
     def _strip_optional_source_id(cls, value: str | None) -> str | None:
         if value is None:
