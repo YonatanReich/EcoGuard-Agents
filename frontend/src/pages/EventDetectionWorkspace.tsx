@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { fetchDetectedEventsResponse } from '../api/detectedEvents'
 import { fetchEnvironmentalData } from '../api/environmentalData'
 import EnvironmentalDataModal from '../components/EnvironmentalDataModal'
+import AirPollutionContextLayer, { PROXIMITY_LIMITATION } from '../components/AirPollutionContextLayer'
 import InfrastructureLayer from '../components/InfrastructureLayer'
 import MapView, { type MapCoordinateClickEvent } from '../components/MapView'
 import type { EnvironmentalData } from '../types/environmentalData'
@@ -12,6 +13,14 @@ import type {
   EventEvidence,
   IncidentDetails,
 } from '../types/incidents'
+import {
+  eventBySelectionKey,
+  eventSelectionKey,
+  formatEventTimestamp,
+  isAirPollutionEvent,
+  pollutionStationLabel,
+  primaryPollutionObservation,
+} from '../utils/airPollutionEvents'
 
 import './visuals/event-detection-workspace.css'
 
@@ -115,6 +124,10 @@ function EventDetectionWorkspace() {
     loadContext(lat, lng)
   }
 
+  const selectedIsPollution = isAirPollutionEvent(selectedIncident)
+  const pollutionObservation = primaryPollutionObservation(selectedIncident)
+  const pollutionStation = pollutionStationLabel(selectedIncident)
+
   const evidence = useMemo<EventEvidence[]>(() => {
     const weatherSource = environmentalData?.metadata.services.weather.source || 'Weather service'
     const geographicSource = environmentalData?.metadata.services.geospatial.source || 'Geographic service'
@@ -126,15 +139,22 @@ function EventDetectionWorkspace() {
         + (environmentalData.geospatial_context.nearby_fire_stations?.length ?? 0)
       : 0
     const detectionService = detectionResponse?.metadata.services.detection
+    const eventSpatialContext = selectedIsPollution ? selectedIncident?.spatial_context : null
 
     return [
       {
         category: 'detection',
-        source: detectionService?.source || 'Detected-events pipeline',
-        status: evidenceStatus(detectionService?.status),
-        summary: detectionService
-          ? `Detection service reported: ${detectionService.status}. Raw FIRMS hotspot records are not exposed separately.`
-          : 'Detection service metadata has not been returned.',
+        source: selectedIsPollution
+          ? pollutionStation || 'Air-pollution anomaly source'
+          : selectedIncident?.detection_source || detectionService?.source || 'Detected-events pipeline',
+        status: selectedIsPollution
+          ? 'available'
+          : evidenceStatus(detectionService?.status),
+        summary: selectedIsPollution
+          ? `${selectedIncident?.anomaly?.supporting_evidence?.length ?? 0} supporting evidence record(s) supplied with the anomaly.`
+          : detectionService
+            ? `Detection service reported: ${detectionService.status}. Raw FIRMS hotspot records are not exposed separately.`
+            : 'Detection service metadata has not been returned.',
       },
       {
         category: 'environmental',
@@ -148,14 +168,30 @@ function EventDetectionWorkspace() {
       },
       {
         category: 'geographic',
+        source: eventSpatialContext?.source || (selectedIsPollution
+          ? 'Event-supplied spatial context'
+          : geographicSource),
+        status: eventSpatialContext
+          ? evidenceStatus(eventSpatialContext.status)
+          : geographicStatus,
+        summary: eventSpatialContext
+          ? `Spatial context supplied with the anomaly: ${eventSpatialContext.status}. Proximity does not confirm exposure.`
+          : environmentalError
+            ? environmentalError
+            : environmentalData
+              ? `Context collected with status: ${environmentalData.metadata.services.geospatial.status}.`
+              : 'Geographic context has not been returned.',
+      },
+      ...(selectedIsPollution ? [{
+        category: 'geographic' as const,
         source: geographicSource,
         status: geographicStatus,
         summary: environmentalError
-          ? environmentalError
+          ? `Live supplemental lookup failed: ${environmentalError}`
           : environmentalData
-            ? `Context collected with status: ${environmentalData.metadata.services.geospatial.status}.`
-            : 'Geographic context has not been returned.',
-      },
+            ? `Live supplemental lookup status: ${environmentalData.metadata.services.geospatial.status}.`
+            : 'Live supplemental geographic context has not been returned.',
+      }] : []),
       {
         category: 'infrastructure',
         source: 'Nearby infrastructure',
@@ -165,7 +201,7 @@ function EventDetectionWorkspace() {
           : 'Infrastructure context has not been returned.',
       },
     ]
-  }, [detectionResponse, environmentalData, environmentalError])
+  }, [detectionResponse, environmentalData, environmentalError, pollutionStation, selectedIncident, selectedIsPollution])
 
   const pipeline = useMemo<AgentPipelineStatus[]>(() => {
     const collectionState = isLoadingContext
@@ -193,10 +229,16 @@ function EventDetectionWorkspace() {
         detail: 'Intended shared persistence layer; connection and runtime status are not exposed by this frontend contract.',
       },
       {
-        name: 'Anomaly Detectors · current FIRMS fire scope',
+        name: selectedIsPollution
+          ? 'Anomaly Detectors · air-pollution record'
+          : 'Anomaly Detectors · current FIRMS fire scope',
         emphasis: 'primary',
-        status: evidenceStatus(detectionService?.status),
-        detail: isLoadingIncidents
+        status: selectedIsPollution
+          ? evidenceStatus(selectedIncident?.air_pollution_runtime?.status)
+          : evidenceStatus(detectionService?.status),
+        detail: selectedIsPollution
+          ? 'A typed air-pollution anomaly record is available; anomaly severity is not emergency classification.'
+          : isLoadingIncidents
           ? 'Awaiting the detected-events pipeline response; individual stage execution is not exposed.'
           : detectionService
             ? `Observed pipeline status: ${detectionService.status}; source: ${detectionService.source || 'not reported'}.`
@@ -217,19 +259,29 @@ function EventDetectionWorkspace() {
       {
         name: 'Response Planning',
         emphasis: 'downstream',
-        status: evidenceStatus(planningService?.status),
-        detail: planningService
-          ? `Observed planning service: ${planningService.status}; source: ${planningService.source || 'not reported'}. Risk-analysis service: ${riskService?.status || 'not reported'}; source: ${riskService?.source || 'not reported'}. This does not confirm Coordinator routing.`
-          : `No response-planning service metadata is available. Risk-analysis service: ${riskService?.status || 'not reported'}; source: ${riskService?.source || 'not reported'}.`,
+        status: selectedIsPollution
+          ? evidenceStatus(selectedIncident?.pollution_response_plan?.status)
+          : evidenceStatus(planningService?.status),
+        detail: selectedIsPollution
+          ? selectedIncident?.pollution_response_plan
+            ? `Pollution plan supplied with status: ${selectedIncident.pollution_response_plan.status}. It is downstream decision support, not dispatch.`
+            : 'No downstream pollution response plan is supplied for this anomaly candidate.'
+          : planningService
+            ? `Observed planning service: ${planningService.status}; source: ${planningService.source || 'not reported'}. Risk-analysis service: ${riskService?.status || 'not reported'}; source: ${riskService?.source || 'not reported'}. This does not confirm Coordinator routing.`
+            : `No response-planning service metadata is available. Risk-analysis service: ${riskService?.status || 'not reported'}; source: ${riskService?.source || 'not reported'}.`,
       },
       {
         name: 'Resource Allocation / Response Implementation',
         emphasis: 'downstream',
-        status: evidenceStatus(detectionResponse?.metadata.services.resource_allocation?.status),
-        detail: `Resource selection status: ${detectionResponse?.metadata.services.resource_allocation?.status || 'Not provided'}. Operational dispatch is not exposed; nearby infrastructure remains context.`,
+        status: selectedIsPollution
+          ? 'unavailable'
+          : evidenceStatus(detectionResponse?.metadata.services.resource_allocation?.status),
+        detail: selectedIsPollution
+          ? 'No pollution resource-allocation or operational implementation output is supplied.'
+          : `Resource selection status: ${detectionResponse?.metadata.services.resource_allocation?.status || 'Not provided'}. Operational dispatch is not exposed; nearby infrastructure remains context.`,
       },
     ]
-  }, [detectionResponse, environmentalData, environmentalError, isLoadingContext, isLoadingIncidents])
+  }, [detectionResponse, environmentalData, environmentalError, isLoadingContext, isLoadingIncidents, selectedIncident, selectedIsPollution])
 
   const detectionStatus = detectionResponse?.metadata.services.detection?.status
   const detectionFailed =
@@ -237,7 +289,6 @@ function EventDetectionWorkspace() {
 
   const currentWeather = environmentalData?.weather?.current
   const geographicContext = environmentalData?.geospatial_context
-
   return (
     <main className="event-workspace">
       <header className="event-workspace__header">
@@ -265,14 +316,14 @@ function EventDetectionWorkspace() {
             <label className="event-selector">
               Detected event
               <select
-                value={selectedIncident?.id ?? ''}
+                value={selectedIncident ? eventSelectionKey(selectedIncident) : ''}
                 onChange={(event) => {
-                  const incident = incidents.find((item) => String(item.id) === event.target.value)
+                  const incident = eventBySelectionKey(incidents, event.target.value)
                   if (incident) selectIncident(incident)
                 }}
               >
                 {incidents.map((incident) => (
-                  <option key={incident.id} value={incident.id}>{incident.title}</option>
+                  <option key={eventSelectionKey(incident)} value={eventSelectionKey(incident)}>{incident.title}</option>
                 ))}
               </select>
             </label>
@@ -285,20 +336,33 @@ function EventDetectionWorkspace() {
           <p className="event-message">
             {detectionFailed
               ? 'The detection provider could not complete the current scan.'
-              : 'The current scan completed with no fire detection candidate returned.'}
+              : 'The current scan completed with no detected event or anomaly candidate returned.'}
           </p>
         )}
         {selectedIncident && (
           <div className="incident-facts">
-            <div><span>Event type</span><strong>{selectedIncident.type || 'Not provided'}</strong></div>
+            <div><span>Event type</span><strong>{selectedIsPollution ? 'Air Pollution' : selectedIncident.type || 'Not provided'}</strong></div>
             <div><span>Location</span><strong>{formatCoordinate(selectedIncident.latitude)}, {formatCoordinate(selectedIncident.longitude)}</strong></div>
-            <div><span>Risk level</span><strong>{selectedIncident.risk_level || 'Not assessed'}</strong></div>
-            <div><span>Risk score</span><strong>{formatValue(selectedIncident.risk_score, '/100')}</strong></div>
-            <div><span>Detection status</span><strong>{detectionStatus || 'Not provided'}</strong></div>
-            <div><span>Detection confidence</span><strong>{selectedIncident.detection_confidence || 'Not provided'}</strong></div>
-            <div><span>Risk confidence</span><strong>{selectedIncident.confidence || 'Not provided'}</strong></div>
-            <div><span>Analysis status</span><strong>{selectedIncident.analysis_status || 'Not provided'}</strong></div>
-            <div><span>Planning status</span><strong>{selectedIncident.planning_status || 'Not provided'}</strong></div>
+            {selectedIsPollution ? (
+              <>
+                {pollutionObservation && <div><span>Pollutant observation</span><strong>{pollutionObservation.pollutant} · {pollutionObservation.value} {pollutionObservation.unit}</strong></div>}
+                {selectedIncident.anomaly?.severity && <div><span>Anomaly severity</span><strong>{selectedIncident.anomaly.severity}</strong><small>Pollution anomaly magnitude; not emergency status</small></div>}
+                {typeof selectedIncident.anomaly?.confidence === 'number' && <div><span>Detection confidence</span><strong>{Math.round(selectedIncident.anomaly.confidence * 100)}%</strong></div>}
+                {pollutionStation && <div><span>Station / source</span><strong>{pollutionStation}</strong></div>}
+                {formatEventTimestamp(selectedIncident.anomaly?.observed_at) && <div><span>Observed</span><strong>{formatEventTimestamp(selectedIncident.anomaly?.observed_at)}</strong></div>}
+                {selectedIncident.anomaly?.assessment?.preliminary && <div><span>Quality</span><strong>Preliminary · not quality controlled</strong></div>}
+                {selectedIncident.air_pollution_runtime?.stale && <div><span>Runtime state</span><strong>Last-known anomaly</strong><small>Latest Ministry collection failed</small></div>}
+              </>
+            ) : (
+              <>
+                <div><span>Risk level</span><strong>{selectedIncident.risk_level || 'Not assessed'}</strong></div>
+                <div><span>Risk score</span><strong>{formatValue(selectedIncident.risk_score, '/100')}</strong></div>
+              </>
+            )}
+            <div><span>Detection status</span><strong>{selectedIsPollution ? selectedIncident.air_pollution_runtime?.status ?? 'Not provided' : detectionStatus || 'Not provided'}</strong></div>
+            {!selectedIsPollution && <div><span>Detection confidence</span><strong>{selectedIncident.detection_confidence || 'Not provided'}</strong></div>}
+            {!selectedIsPollution && <div><span>Risk confidence</span><strong>{selectedIncident.confidence || 'Not provided'}</strong></div>}
+            <div><span>Planning status</span><strong>{selectedIsPollution ? selectedIncident.pollution_response_plan?.status ?? 'Not provided' : selectedIncident.planning_status || 'Not provided'}</strong></div>
           </div>
         )}
       </section>
@@ -324,6 +388,24 @@ function EventDetectionWorkspace() {
               <div><span>analysis</span><h3>Evidence gaps</h3></div>
               <span className="event-status event-status--partial">reported</span>
               <ul>{selectedIncident.evidence_gaps.map((gap) => <li key={gap}>{gap}</li>)}</ul>
+            </article>
+          ) : null}
+          {selectedIsPollution && selectedIncident?.anomaly?.anomaly_reasons?.length ? (
+            <article className="evidence-item">
+              <div><span>anomaly</span><h3>Detection reasons</h3></div>
+              <span className="event-status event-status--available">supplied</span>
+              <ul>{selectedIncident.anomaly.anomaly_reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
+            </article>
+          ) : null}
+          {selectedIsPollution && selectedIncident?.anomaly?.supporting_evidence?.length ? (
+            <article className="evidence-item">
+              <div><span>provenance</span><h3>Supporting observation evidence</h3></div>
+              <span className="event-status event-status--available">supplied</span>
+              <ul>
+                {selectedIncident.anomaly.supporting_evidence.map((item) => (
+                  <li key={item.evidence_id}><strong>{item.evidence_type}</strong> · {item.summary}</li>
+                ))}
+              </ul>
             </article>
           ) : null}
           {selectedIncident?.protocol_citations?.length ? (
@@ -364,7 +446,7 @@ function EventDetectionWorkspace() {
 
       <section className="event-panel" aria-labelledby="context-title">
         <p className="event-panel__label">Selected location context</p>
-        <h2 id="context-title">Environmental and geographic context</h2>
+        <h2 id="context-title">Live supplemental environmental and geographic context</h2>
         <div className="context-summary">
           <div><span>Temperature</span><strong>{formatValue(currentWeather?.temperature_c, '°C')}</strong></div>
           <div><span>Humidity</span><strong>{formatValue(currentWeather?.humidity_percent, '%')}</strong></div>
@@ -378,6 +460,8 @@ function EventDetectionWorkspace() {
           <MapView
             events={incidents}
             onClick={handleMapClick}
+            onEventSelect={selectIncident}
+            activeEvent={selectedIncident}
             selectedLocation={selectedLocation}
           >
             <div className="event-map-notice">Markers reflect detected-events pipeline output</div>
@@ -387,6 +471,10 @@ function EventDetectionWorkspace() {
                 policeStations={environmentalData.geospatial_context.nearby_police_stations ?? []}
                 fireStations={environmentalData.geospatial_context.nearby_fire_stations ?? []}
               />
+            )}
+            <AirPollutionContextLayer event={selectedIncident} />
+            {selectedIsPollution && selectedIncident?.spatial_context && (
+              <div className="event-map-limitation">Nearby settlements are point-based context. {PROXIMITY_LIMITATION}</div>
             )}
             <EnvironmentalDataModal
               isOpen={isPopupOpen}

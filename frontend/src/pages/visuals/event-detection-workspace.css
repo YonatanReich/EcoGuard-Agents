@@ -239,6 +239,20 @@
   text-align: center;
 }
 
+.event-map-limitation {
+  position: absolute;
+  right: 12px;
+  bottom: 34px;
+  z-index: 6;
+  max-width: 390px;
+  padding: 0.45rem 0.7rem;
+  border-radius: 7px;
+  background: rgba(46, 16, 101, 0.92);
+  color: #ede9fe;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
 @media (max-width: 900px) {
   .event-workspace__columns {
     grid-template-columns: 1fr;

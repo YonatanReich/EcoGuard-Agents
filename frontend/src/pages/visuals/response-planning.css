@@ -454,6 +454,20 @@
   text-align: center;
 }
 
+.response-map__context-note {
+  position: absolute;
+  right: 12px;
+  bottom: 36px;
+  z-index: 6;
+  max-width: 390px;
+  padding: 0.45rem 0.7rem;
+  border-radius: 7px;
+  background: rgba(46, 16, 101, 0.92);
+  color: #ede9fe;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
 .response-agent-context {
   display: grid;
   grid-template-columns: minmax(220px, 1.4fr) repeat(2, minmax(190px, 1fr));

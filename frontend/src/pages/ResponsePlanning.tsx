@@ -3,12 +3,19 @@ import { Link } from 'react-router-dom'
 
 import { fetchDetectedEventsResponse } from '../api/detectedEvents'
 import { fetchEnvironmentalData } from '../api/environmentalData'
+import AirPollutionContextLayer, { PROXIMITY_LIMITATION } from '../components/AirPollutionContextLayer'
 import InfrastructureLayer, { type InfrastructureItem } from '../components/InfrastructureLayer'
 import MapView from '../components/MapView'
 import type { EnvironmentalData } from '../types/environmentalData'
 import type { DetectedEventsResponse, IncidentDetails } from '../types/incidents'
 import { selectedFacilitySimulation } from '../utils/selectedFacilitySimulation'
 import { straightLineDistanceKm } from '../utils/geospatial'
+import {
+  eventBySelectionKey,
+  eventSelectionKey,
+  isAirPollutionEvent,
+  primaryPollutionObservation,
+} from '../utils/airPollutionEvents'
 
 import './visuals/response-planning.css'
 
@@ -53,9 +60,14 @@ function ResponsePlanning() {
   const twoDimensionalTabRef = useRef<HTMLButtonElement>(null)
   const threeDimensionalTabRef = useRef<HTMLButtonElement>(null)
   const contextRequestIdRef = useRef(0)
+  const selectedIsPollution = isAirPollutionEvent(selectedIncident)
+  const pollutionPlan = selectedIncident?.pollution_response_plan
+  const pollutionObservation = primaryPollutionObservation(selectedIncident)
   const selectedFacilityResources = useMemo(
-    () => selectedFacilitySimulation(selectedIncident?.allocated_resources),
-    [selectedIncident],
+    () => selectedIsPollution
+      ? []
+      : selectedFacilitySimulation(selectedIncident?.allocated_resources),
+    [selectedIncident, selectedIsPollution],
   )
   const allocationStatus = selectedIncident?.allocated_resources?.status
     ?? detectionResponse?.metadata.services.resource_allocation?.status
@@ -112,10 +124,14 @@ function ResponsePlanning() {
 
   const selectIncident = (incident: IncidentDetails) => {
     setSelectedIncident(incident)
+    if (isAirPollutionEvent(incident)) setVisualizationMode('2d')
     loadContext(incident)
   }
 
   const planningActions = useMemo(() => {
+    if (selectedIsPollution) {
+      return pollutionPlan?.actions?.map((action) => action.recommendation) ?? []
+    }
     if (selectedIncident?.response_actions?.length) {
       return selectedIncident.response_actions.map((action) => action.action)
     }
@@ -123,7 +139,14 @@ function ResponsePlanning() {
     return Array.isArray(selectedIncident.response_plan)
       ? selectedIncident.response_plan
       : [selectedIncident.response_plan]
-  }, [selectedIncident])
+  }, [pollutionPlan, selectedIncident, selectedIsPollution])
+
+  const recommendedTypes = selectedIsPollution
+    ? Array.from(new Set([
+      ...(pollutionPlan?.recommended_authority_types ?? []),
+      ...(pollutionPlan?.recommended_resource_types ?? []),
+    ]))
+    : selectedIncident?.recommended_units ?? []
 
   const nearbyInfrastructure = useMemo<ResponseInfrastructure[]>(() => {
     if (!selectedIncident || !environmentalData) return []
@@ -152,6 +175,7 @@ function ResponsePlanning() {
 
   const nearbyRoads = environmentalData?.geospatial_context.nearby_roads ?? []
   const geospatialStatus = environmentalData?.metadata.services.geospatial.status
+  const suppliedSpatialContext = selectedIsPollution ? selectedIncident?.spatial_context : null
   const missingGeospatialLayers = environmentalData?.missing_layers ?? []
   const hasPartialGeospatialContext = Boolean(
     environmentalData &&
@@ -169,7 +193,9 @@ function ResponsePlanning() {
         : detectionFailed
           ? 'Not requested — detection failed'
           : 'Not requested — no detected event'
-  const hasGroundedPlanningOutput = selectedIncident?.planning_status === 'success'
+  const hasGroundedPlanningOutput = selectedIsPollution
+    ? pollutionPlan?.status === 'success'
+    : selectedIncident?.planning_status === 'success'
   const hasCompletedContextRequest = Boolean(
     selectedIncident && environmentalData && !isLoadingContext && !environmentalError,
   )
@@ -185,6 +211,7 @@ function ResponsePlanning() {
   const handleVisualizationKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
     event.preventDefault()
+    if (selectedIsPollution) return
     selectVisualization(visualizationMode === '2d' ? '3d' : '2d', true)
   }
 
@@ -252,14 +279,14 @@ function ResponsePlanning() {
             <label className="response-selector">
               Detected event
               <select
-                value={selectedIncident?.id ?? ''}
+                value={selectedIncident ? eventSelectionKey(selectedIncident) : ''}
                 onChange={(event) => {
-                  const incident = incidents.find((item) => String(item.id) === event.target.value)
+                  const incident = eventBySelectionKey(incidents, event.target.value)
                   if (incident) selectIncident(incident)
                 }}
               >
                 {incidents.map((incident) => (
-                  <option value={incident.id} key={incident.id}>{incident.title}</option>
+                  <option value={eventSelectionKey(incident)} key={eventSelectionKey(incident)}>{incident.title}</option>
                 ))}
               </select>
             </label>
@@ -280,11 +307,12 @@ function ResponsePlanning() {
         )}
         {selectedIncident && (
           <div className="response-facts">
-            <div><span>Event type</span><strong>{selectedIncident.type || 'Not provided'}</strong></div>
+            <div><span>Event type</span><strong>{selectedIsPollution ? 'Air Pollution' : selectedIncident.type || 'Not provided'}</strong></div>
             <div><span>Location</span><strong>{selectedIncident.latitude.toFixed(4)}, {selectedIncident.longitude.toFixed(4)}</strong></div>
-            <div><span>Risk / priority context</span><strong>{selectedIncident.risk_level || 'Not assessed'}</strong></div>
-            <div><span>Analysis status</span><strong>{selectedIncident.analysis_status || 'Not provided'}</strong></div>
-            <div><span>Planning status</span><strong>{selectedIncident.planning_status || 'Not provided'}</strong></div>
+            {selectedIsPollution && pollutionObservation && <div><span>Pollutant observation</span><strong>{pollutionObservation.pollutant} · {pollutionObservation.value} {pollutionObservation.unit}</strong></div>}
+            <div><span>{selectedIsPollution ? 'Anomaly severity' : 'Risk / priority context'}</span><strong>{selectedIsPollution ? selectedIncident.anomaly?.severity ?? 'Not provided' : selectedIncident.risk_level || 'Not assessed'}</strong></div>
+            {!selectedIsPollution && <div><span>Analysis status</span><strong>{selectedIncident.analysis_status || 'Not provided'}</strong></div>}
+            <div><span>Planning status</span><strong>{selectedIsPollution ? pollutionPlan?.status ?? 'Not provided' : selectedIncident.planning_status || 'Not provided'}</strong></div>
             <div><span>Operational status</span><strong>Decision support · not dispatched</strong></div>
             <div><span>Response timeline</span><strong>Not available</strong></div>
             <div><span>Dispatch state</span><strong>Not available</strong></div>
@@ -300,12 +328,12 @@ function ResponsePlanning() {
             These values come from the detected-event planning response. Availability, capacity,
             assignment, and authority confirmation are not exposed by the current backend.
           </p>
-          {selectedIncident?.recommended_units?.length ? (
+          {recommendedTypes.length ? (
             <ul className="recommended-unit-list">
-              {selectedIncident.recommended_units.map((unit) => (
+              {recommendedTypes.map((unit) => (
                 <li key={unit}>
                   <strong>{displayName(unit)}</strong>
-                  <span>Suggested · not verified or dispatched</span>
+                  <span>{selectedIsPollution ? 'Recommended type · availability and dispatch not represented' : 'Suggested · not verified or dispatched'}</span>
                 </li>
               ))}
             </ul>
@@ -339,7 +367,7 @@ function ResponsePlanning() {
         </section>
       </div>
 
-      <section className="response-panel" aria-labelledby="selected-facilities-title">
+      {!selectedIsPollution && <section className="response-panel" aria-labelledby="selected-facilities-title">
         <p className="response-panel__label">Resource Allocation selection</p>
         <h2 id="selected-facilities-title">Selected response facilities</h2>
         <p className="response-panel__note">
@@ -356,7 +384,43 @@ function ResponsePlanning() {
             ))}
           </ul>
         ) : <p className="response-message">No usable selected response facilities are available.</p>}
-      </section>
+      </section>}
+
+      {selectedIsPollution && pollutionPlan && (
+        <section className="response-panel" aria-labelledby="pollution-plan-details-title">
+          <p className="response-panel__label">Grounded pollution decision support</p>
+          <h2 id="pollution-plan-details-title">Limitations, gaps and verified references</h2>
+          {pollutionPlan.actions?.length ? (
+            <div className="response-infrastructure-list">
+              {pollutionPlan.actions.map((action) => (
+                <article key={`${action.resource_type}-${action.recommendation}`}>
+                  <div><span>{displayName(action.resource_type)}</span><h3>{action.recommendation}</h3></div>
+                  <dl>
+                    <div><dt>Responsible type</dt><dd>{displayName(action.responsible_authority_type)}</dd></div>
+                    <div><dt>Priority</dt><dd>{displayName(action.priority)}</dd></div>
+                    <div><dt>Timeframe</dt><dd>{displayName(action.timeframe)}</dd></div>
+                  </dl>
+                </article>
+              ))}
+            </div>
+          ) : <p className="response-message">No grounded pollution actions are available.</p>}
+          {[...(pollutionPlan.assumptions ?? []), ...(pollutionPlan.evidence_gaps ?? []), ...(pollutionPlan.limitations ?? [])].length > 0 && (
+            <ul className="recommended-unit-list">
+              {[...(pollutionPlan.assumptions ?? []), ...(pollutionPlan.evidence_gaps ?? []), ...(pollutionPlan.limitations ?? [])].map((item) => <li key={item}>{item}</li>)}
+            </ul>
+          )}
+          {pollutionPlan.protocol_references?.length ? (
+            <ul className="recommended-unit-list">
+              {pollutionPlan.protocol_references.map((reference) => (
+                <li key={reference.chunk_id}>
+                  <a href={reference.source_url} target="_blank" rel="noreferrer">{reference.document_title}</a>
+                  <span>Verified · {reference.heading_path}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
+      )}
 
       <section className="response-panel" aria-labelledby="infrastructure-title">
         <p className="response-panel__label">Nearby response infrastructure</p>
@@ -367,7 +431,7 @@ function ResponsePlanning() {
         </p>
         <div className="response-context-status" role="status">
           <div>
-            <span>Geospatial service</span>
+            <span>Live supplemental geospatial lookup</span>
             <strong>{geospatialStatusLabel}</strong>
           </div>
           <button
@@ -380,6 +444,15 @@ function ResponsePlanning() {
             {isLoadingContext ? 'Loading context…' : 'Retry environmental context'}
           </button>
         </div>
+        {suppliedSpatialContext && (
+          <div className="response-context-status" role="status">
+            <div>
+              <span>Event-supplied spatial context</span>
+              <strong>{suppliedSpatialContext.status}</strong>
+            </div>
+            <small>{suppliedSpatialContext.source || 'Source not supplied'} · proximity does not confirm exposure</small>
+          </div>
+        )}
         {hasPartialGeospatialContext && (
           <div className="response-context-status__partial">
             <strong>Partial geospatial response</strong>
@@ -391,7 +464,7 @@ function ResponsePlanning() {
           </div>
         )}
         {isLoadingContext && <p className="response-message">Loading real geographic context…</p>}
-        {environmentalError && <p className="response-message response-message--error">{environmentalError}</p>}
+        {environmentalError && <p className="response-message response-message--error">Live supplemental context failed: {environmentalError}</p>}
         {hasCompletedContextRequest && nearbyInfrastructure.length === 0 && (
           <p className="response-message">No nearby emergency infrastructure was returned.</p>
         )}
@@ -458,7 +531,7 @@ function ResponsePlanning() {
               >
                 2D Map View
               </button>
-              <button
+              {!selectedIsPollution && <button
                 ref={threeDimensionalTabRef}
                 id="response-view-tab-3d"
                 type="button"
@@ -470,7 +543,7 @@ function ResponsePlanning() {
                 onKeyDown={handleVisualizationKeyDown}
               >
                 3D Operational View
-              </button>
+              </button>}
             </div>
               <button
                 className="response-view-expand"
@@ -491,6 +564,8 @@ function ResponsePlanning() {
               >
                 <MapView
                   events={[selectedIncident]}
+                  onEventSelect={selectIncident}
+                  activeEvent={selectedIncident}
                   selectedLocation={{ lat: selectedIncident.latitude, lng: selectedIncident.longitude }}
                 >
                   {environmentalData && (
@@ -500,12 +575,16 @@ function ResponsePlanning() {
                       fireStations={environmentalData.geospatial_context.nearby_fire_stations ?? []}
                     />
                   )}
-              <div className="response-map__notice">Pipeline-detected event · correlation not confirmed · nearby infrastructure is not allocated</div>
+                  <AirPollutionContextLayer event={selectedIncident} />
+                  {selectedIsPollution && selectedIncident.spatial_context && (
+                    <div className="response-map__context-note">Nearby settlement points only. {PROXIMITY_LIMITATION}</div>
+                  )}
+              <div className="response-map__notice">Detected event / anomaly candidate · exposure and correlation are not confirmed</div>
                 </MapView>
               </div>
             )}
 
-            {visualizationMode === '3d' && (
+            {!selectedIsPollution && visualizationMode === '3d' && (
               <div
                 id="response-view-panel-3d"
                 className="response-map response-map--3d"
@@ -555,7 +634,7 @@ function ResponsePlanning() {
         <div><strong>Coordinator / Strainer</strong><span>Correlation and runtime status not exposed</span></div>
         <div><strong>Emergency / Non-emergency Routing</strong><span>Routing decision not exposed</span></div>
         <div><strong>Response Planning</strong><span>Pipeline planning status: {selectedIncident?.planning_status || 'Not provided'}</span></div>
-        <div><strong>Resource Allocation / Response Implementation</strong><span>Resource selection status: {allocationStatus}. Operational dispatch not exposed. Nearby infrastructure remains geographic context.</span></div>
+        <div><strong>Resource Allocation / Response Implementation</strong><span>{selectedIsPollution ? 'No pollution allocation or operational implementation output is exposed.' : `Resource selection status: ${allocationStatus}. Operational dispatch not exposed. Nearby infrastructure remains geographic context.`}</span></div>
       </section>
 
       <nav className="response-workflow" aria-label="Response workflow">

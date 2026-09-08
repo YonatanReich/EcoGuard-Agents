@@ -361,6 +361,27 @@
     line-height: 1.45;
 }
 
+.event-card--air-pollution {
+    border-color: rgba(167, 139, 250, 0.7);
+}
+
+.event-card__type {
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #6d28d9;
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.event-card__pollutant {
+    margin: 0 0 8px;
+    color: #ddd6fe;
+    font-size: 0.9rem;
+}
+
 .event-card__header {
     display: flex;
     align-items: center;

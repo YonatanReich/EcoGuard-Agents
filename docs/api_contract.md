@@ -606,7 +606,8 @@ Responses:
 
 * **`200 OK`** — Always returned when the pipeline ran, including when nothing
   was detected (`events: []`) and when satellite detection failed
-  (`events: []`, `collection_status: "failed"`). This differs from
+  (no fire event; an independently stored pollution event may still be present).
+  Service metadata distinguishes the failed fire source. This differs from
   `/api/environmental-data`, which returns 502 on provider failure. The
   difference is intentional: this endpoint is fetched on dashboard load with no
   user-visible error path, so a 5xx would silently blank the map.
@@ -615,15 +616,28 @@ Responses:
   masked and the exception logged server-side.
 
 The response carries `metadata` (with a per-service status breakdown covering
-`detection`, `risk_analysis`, `response_planning` and `protocols`), the `query`
-that produced it, and an `events` array of zero or one event. Each event
-flattens the detection, assessment and plan into one object, with
-`response_plan` as flattened action strings and `response_actions` retaining
-unit and timeframe. Event `id` is a stable hash of the hotspot, so repeated
-scans of the same fire produce the same id.
+`detection`, `risk_analysis`, `response_planning`, `resource_allocation`,
+`protocols`, and `air_pollution`), the fire query that produced it, and an
+`events` array. Fire events flatten the detection, assessment and plan into
+one object, with `response_plan` as flattened action strings and
+`response_actions` retaining unit and timeframe. Fire event `id` is a stable
+hash of the hotspot, so repeated scans of the same fire produce the same id.
+
+Air-pollution entries are independent stored anomaly candidates. They carry
+`type: "air_pollution"` plus the EA-307 `anomaly`, optional EA-310
+`spatial_context` and optional EA-311 `correlation_evidence`.
+`pollution_response_plan` is optional and appears only when a downstream
+Coordinator-selected EA-312 planning stage has produced one. Nearby context
+does not establish exposure, and
+these entries do not contain fire resource allocation or dispatch state.
+The `air_pollution` service metadata reports refresh timestamps and whether a
+retained last-known anomaly is stale after a source failure.
 
 **Performance.** The full pipeline typically takes 20-90 seconds: the
 OpenStreetMap Overpass lookup alone can take 30 seconds under load, and each
 model call adds several more. Pass `include_analysis=false` for a
-detection-only response. A background-job endpoint would be the proper fix and
-is not implemented.
+detection-only fire response. Air-pollution collection, EA-309 detection, and
+optional EA-310/311 support run on an independent configurable background
+cadence. The temporary refresh stops before Coordinator routing and EA-312
+planning; this GET only reads the latest stored state and never invokes the
+pollution pipeline.

@@ -123,7 +123,7 @@ Fetches, normalizes, and unifies real-time weather forecasts and regional geospa
 
 ---
 
-### 2. Detect, Assess and Plan for Fire Events
+### 2. Read Detected Fire and Air-Pollution Events
 `GET /api/detected-events`
 
 #### Description
@@ -132,6 +132,15 @@ NASA FIRMS satellite hotspots and enriches them with GWIS/EFFIS fire weather,
 Open-Meteo conditions and OpenStreetMap context; `RiskAnalysisAgent` scores the
 operational risk; `ResponsePlanningAgent` produces the units to activate and the
 actions to take.
+
+The response also appends the latest stored Air Pollution anomaly candidates
+from an independently scheduled collection/detection refresh. That refresh
+stops before the future generic Coordinator/Strainer and does not invoke the
+EA-312 planner. Browser reads do not call the Ministry API, Overpass, or Claude
+for pollution processing. Pollution events remain anomaly candidates and never
+enter the fire resource-allocation or 3D vehicle flow. A
+`pollution_response_plan` is optional and is exposed only after a downstream
+Coordinator-selected planning stage has actually produced one.
 
 Both reasoning agents call Claude and are **grounded in retrieved protocol
 text** rather than the model's general knowledge. Passages are retrieved from

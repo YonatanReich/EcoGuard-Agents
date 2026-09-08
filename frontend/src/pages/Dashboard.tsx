@@ -34,6 +34,13 @@ import { fetchEnvironmentalData } from '../api/environmentalData'
 import { useNationalRiskScan } from '../hooks/useNationalRiskScan'
 import type { EnvironmentalData } from '../types/environmentalData'
 import type { DetectedEventsResponse, IncidentDetails } from '../types/incidents'
+import {
+  eventSelectionKey,
+  formatEventTimestamp,
+  isAirPollutionEvent,
+  pollutionStationLabel,
+  primaryPollutionObservation,
+} from '../utils/airPollutionEvents'
 
 import './visuals/dashboard.css'
 
@@ -99,6 +106,42 @@ function formatIsraelTime(
  * than taking the claim on trust.
  */
 function EventSummaryCard({ event }: { event: IncidentDetails }) {
+  if (isAirPollutionEvent(event)) {
+    const observation = primaryPollutionObservation(event)
+    const observedAt = formatEventTimestamp(event.anomaly?.observed_at)
+    const station = pollutionStationLabel(event)
+    return (
+      <article className="event-card event-card--air-pollution">
+        <header className="event-card__header">
+          <span className="event-card__type">Air pollution</span>
+          {event.anomaly?.severity && (
+            <span className={`event-card__badge event-card__badge--${event.anomaly.severity}`}>
+              {event.anomaly.severity}
+            </span>
+          )}
+          <h3 className="event-card__title">{event.title}</h3>
+        </header>
+        {observation && (
+          <p className="event-card__pollutant">
+            <strong>{observation.pollutant}</strong> · {observation.value} {observation.unit}
+          </p>
+        )}
+        {typeof event.anomaly?.confidence === 'number' && (
+          <p className="event-card__text">Detection confidence: {Math.round(event.anomaly.confidence * 100)}%</p>
+        )}
+        {station && <p className="event-card__text">Source: {station}</p>}
+        {observedAt && <p className="event-card__text">Observed: {observedAt}</p>}
+        {event.air_pollution_runtime?.stale && (
+          <p className="event-card__warning">
+            Last-known anomaly · the latest Ministry collection failed.
+          </p>
+        )}
+        <p className="event-card__warning">Anomaly candidate · exposure and emergency status are not confirmed.</p>
+        <Link className="event-card__link" to="/event-detection">Review event evidence</Link>
+      </article>
+    )
+  }
+
   const hasAssessment =
     event.analysis_status === 'success' &&
     event.risk_score != null
@@ -132,6 +175,10 @@ function EventSummaryCard({ event }: { event: IncidentDetails }) {
 
       {event.explanation && (
         <p className="event-card__text">{event.explanation}</p>
+      )}
+
+      {event.detection_source && (
+        <p className="event-card__text">Detection source: {event.detection_source}</p>
       )}
 
       {primaryDrivers.length > 0 && (
@@ -411,19 +458,29 @@ function Dashboard() {
     setFocusedFireRiskCluster(cluster)
   }
 
-  const primaryEvent = events[0] ?? null
-  const recommendationActions = primaryEvent?.response_actions?.length
-    ? primaryEvent.response_actions.map((action) => action.action)
-    : primaryEvent
-      ? Array.isArray(primaryEvent.response_plan)
-        ? primaryEvent.response_plan
-        : primaryEvent.response_plan
-          ? [primaryEvent.response_plan]
-          : []
-      : []
-  const hasGroundedPlan =
-    primaryEvent?.planning_status === 'success' &&
-    (primaryEvent.response_actions?.length ?? 0) > 0
+  const recommendationActions = events.flatMap((event) => {
+    const actions = isAirPollutionEvent(event)
+      ? event.pollution_response_plan?.actions?.map((action) => action.recommendation) ?? []
+      : event.response_actions?.length
+        ? event.response_actions.map((action) => action.action)
+        : Array.isArray(event.response_plan)
+          ? event.response_plan
+          : event.response_plan ? [event.response_plan] : []
+    return actions.map((action, index) => ({
+      key: `${eventSelectionKey(event)}:${index}`,
+      text: events.length > 1 ? `${event.title}: ${action}` : action,
+      grounded: isAirPollutionEvent(event)
+        ? event.pollution_response_plan?.status === 'success'
+        : event.planning_status === 'success'
+          && (event.response_actions?.length ?? 0) > 0,
+    }))
+  })
+  const hasGroundedPlan = recommendationActions.some((action) => action.grounded)
+  const fireAllocationStatuses = Array.from(new Set(
+    events
+      .filter((event) => !isAirPollutionEvent(event))
+      .map((event) => event.allocated_resources?.status ?? 'Not provided'),
+  ))
 
 
   // =========================================================
@@ -1212,7 +1269,7 @@ function Dashboard() {
             )}
             {!eventsError && detectionProviderFailed && (
               <p className="dashboard-summary__error" role="alert">
-                Detection provider could not complete the current scan. No-event status is unknown.
+                Fire detection provider could not complete the current scan. Fire no-event status is unknown; independently stored pollution candidates remain listed below.
               </p>
             )}
             <div className="dashboard-incident-list">
@@ -1222,7 +1279,7 @@ function Dashboard() {
                 </p>
               )}
               {!isLoadingEvents && events.map((event) => (
-                <EventSummaryCard key={event.id} event={event} />
+                <EventSummaryCard key={eventSelectionKey(event)} event={event} />
               ))}
             </div>
           </section>
@@ -1258,7 +1315,7 @@ function Dashboard() {
                 </p>
                 <ol className="dashboard-recommendations">
                   {recommendationActions.slice(0, 2).map((action) => (
-                    <li key={action}>{action}</li>
+                    <li key={action.key}>{action.text}</li>
                   ))}
                 </ol>
               </>
@@ -1291,7 +1348,9 @@ function Dashboard() {
                     {role === 'Data Collection Agents' && envData
                       ? `Latest context request: ${envData.metadata.collection_status}`
                       : role === 'Resource Allocation / Response Implementation'
-                        ? `Resource selection: ${primaryEvent?.allocated_resources?.status ?? 'Not provided'}. Operational dispatch not exposed.`
+                        ? fireAllocationStatuses.length === 0
+                          ? 'No pollution allocation or operational implementation output is exposed.'
+                          : `Fire resource selection status: ${fireAllocationStatuses.join(', ')}. Operational dispatch not exposed.`
                       : 'Stage runtime / connection not exposed here'}
                   </span>
                 </div>

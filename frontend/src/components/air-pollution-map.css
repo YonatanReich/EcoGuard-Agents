@@ -1,0 +1,86 @@
+.pollution-event-marker,
+.pollution-settlement-marker {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+
+.pollution-event-marker {
+  width: 34px;
+  height: 34px;
+  border: 2px solid #f8fafc;
+  border-radius: 50% 50% 50% 12%;
+  transform: rotate(-45deg);
+  background: #7c3aed;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.55);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+
+.pollution-event-marker span {
+  transform: rotate(45deg);
+}
+
+.pollution-settlement-marker {
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(167, 139, 250, 0.9);
+  border-radius: 50%;
+  background: rgba(124, 58, 237, 0.18);
+  box-shadow: 0 0 0 7px rgba(124, 58, 237, 0.12);
+}
+
+.pollution-settlement-marker span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #c4b5fd;
+}
+
+.pollution-map-popup {
+  display: grid;
+  min-width: 190px;
+  max-width: 290px;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  background: #fff;
+  color: #111827;
+  font-family: "Plus Jakarta Sans", sans-serif;
+}
+
+.pollution-map-popup span {
+  color: #4b5563;
+  font-size: 0.76rem;
+}
+
+.pollution-map-popup small {
+  margin-top: 0.2rem;
+  color: #6d28d9;
+  font-size: 0.69rem;
+  font-weight: 700;
+}
+
+.pollution-map-popup {
+  display: grid;
+  gap: 4px;
+  min-width: 210px;
+  max-width: 290px;
+  color: #111827;
+  background: #fff;
+  font-family: Arial, sans-serif;
+}
+
+.pollution-map-popup span,
+.pollution-map-popup small {
+  color: #4b5563;
+  font-size: 0.75rem;
+}
+
+.pollution-map-popup small {
+  padding-top: 5px;
+  border-top: 1px solid #e5e7eb;
+  font-weight: 700;
+}

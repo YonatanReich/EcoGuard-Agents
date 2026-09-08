@@ -1,3 +1,10 @@
+import type {
+  AirPollutionAnomaly,
+  AirPollutionCorrelationEvidence,
+  AirPollutionResponsePlan,
+  AirPollutionSpatialContext,
+} from './airPollution'
+
 export type IncidentRiskLevel = 'low' | 'medium' | 'high' | 'critical'
 
 export type IncidentStepStatus = 'success' | 'failed' | 'skipped'
@@ -51,6 +58,12 @@ export type DetectedEventsResponse = {
     services: Record<string, {
       status: string
       source: string | null
+      last_attempted_at?: string | null
+      last_successful_collection_at?: string | null
+      stale?: boolean
+      observation_count?: number
+      excluded_count?: number
+      errors?: string[]
     }>
   }
   query: {
@@ -72,6 +85,7 @@ export type IncidentDetails = {
   longitude: number
   detection_confidence?: string | null
   fire_weather_severity?: string | null
+  detection_source?: string | null
   risk_score?: number | null
   risk_level?: IncidentRiskLevel | null
   confidence?: 'low' | 'medium' | 'high' | null
@@ -85,6 +99,25 @@ export type IncidentDetails = {
   analysis_status?: IncidentStepStatus
   planning_status?: IncidentStepStatus
   allocated_resources?: IncidentResourceSelection
+  /** EA-307 anomaly payload when type is air_pollution. */
+  anomaly?: AirPollutionAnomaly
+  /** EA-310 proximity context. The lookup radius is not an exposure zone. */
+  spatial_context?: AirPollutionSpatialContext
+  /** EA-311 heuristic evidence; it does not establish causation. */
+  correlation_evidence?: AirPollutionCorrelationEvidence
+  /** EA-312 decision support; never dispatch or availability. */
+  pollution_response_plan?: AirPollutionResponsePlan
+  /** Refresh provenance for retained last-known pollution state. */
+  air_pollution_runtime?: {
+    status: string
+    stale: boolean
+    last_successful_collection_at?: string | null
+  }
+}
+
+export type AirPollutionIncidentDetails = IncidentDetails & {
+  type: 'air_pollution'
+  anomaly: AirPollutionAnomaly
 }
 
 export type EventEvidence = {

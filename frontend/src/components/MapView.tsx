@@ -20,6 +20,7 @@ import Map, {
   FullscreenControl,
   GeolocateControl,
   Marker,
+  Popup,
   type MapProps,
 } from 'react-map-gl/maplibre'
 
@@ -28,6 +29,15 @@ import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
 import type { IncidentDetails } from '../types/incidents'
+import {
+  eventSelectionKey,
+  formatEventTimestamp,
+  isAirPollutionEvent,
+  pollutionStationLabel,
+  primaryPollutionObservation,
+} from '../utils/airPollutionEvents'
+
+import './air-pollution-map.css'
 
 export type MapCoordinateClickEvent = {
   lngLat: {
@@ -178,6 +188,12 @@ type MapViewProps = {
     lat: number
     lng: number
   } | null
+
+  /** Called when an event marker, rather than the map background, is chosen. */
+  onEventSelect?: (event: IncidentDetails) => void
+
+  /** Optional parent-owned selection used to suppress a stale pollution popup. */
+  activeEvent?: IncidentDetails | null
 } & Pick<
   MapProps,
   'onLoad'
@@ -198,6 +214,8 @@ function MapView({
   children,
   onClick,
   selectedLocation,
+  onEventSelect,
+  activeEvent,
   ...mapProps
 }: MapViewProps) {
 
@@ -209,6 +227,13 @@ function MapView({
     hadError,
     setHadError,
   ] = useState(false)
+  const [selectedPollutionEvent, setSelectedPollutionEvent] =
+    useState<IncidentDetails | null>(null)
+  const visiblePollutionEvent = selectedPollutionEvent
+    && (!activeEvent
+      || eventSelectionKey(activeEvent) === eventSelectionKey(selectedPollutionEvent))
+    ? selectedPollutionEvent
+    : null
 
 
   const containerStyle: CSSProperties = {
@@ -349,12 +374,31 @@ function MapView({
         )}
 
 
-        {events.map(
-          (event) => (
+        {events
+          .filter((event) => Number.isFinite(event.latitude) && Number.isFinite(event.longitude))
+          .map((event) => isAirPollutionEvent(event) ? (
             <Marker
-              key={
-                event.id
-              }
+              key={eventSelectionKey(event)}
+              longitude={event.longitude}
+              latitude={event.latitude}
+              anchor="bottom"
+            >
+              <button
+                type="button"
+                className="pollution-event-marker"
+                title={`${primaryPollutionObservation(event)?.pollutant ?? 'Air pollution'} anomaly`}
+                onClick={(click) => {
+                  click.stopPropagation()
+                  setSelectedPollutionEvent(event)
+                  onEventSelect?.(event)
+                }}
+              >
+                <span>AQ</span>
+              </button>
+            </Marker>
+          ) : (
+            <Marker
+              key={eventSelectionKey(event)}
 
               longitude={
                 event.longitude
@@ -383,7 +427,10 @@ function MapView({
                  * in the same shape as a normal
                  * MapLibre map click.
                  */
-                if (onClick) {
+                if (onEventSelect) {
+                  setSelectedPollutionEvent(null)
+                  onEventSelect(event)
+                } else if (onClick) {
                   onClick({
                     lngLat: {
                       lat:
@@ -396,8 +443,41 @@ function MapView({
                 }
               }}
             />
+          ))}
+
+        {visiblePollutionEvent && (() => {
+          const observation = primaryPollutionObservation(visiblePollutionEvent)
+          const observed = formatEventTimestamp(visiblePollutionEvent.anomaly?.observed_at)
+          const station = pollutionStationLabel(visiblePollutionEvent)
+          return (
+            <Popup
+              longitude={visiblePollutionEvent.longitude}
+              latitude={visiblePollutionEvent.latitude}
+              anchor="bottom"
+              closeOnClick={false}
+              offset={36}
+              onClose={() => setSelectedPollutionEvent(null)}
+            >
+              <div className="pollution-map-popup">
+                <strong>{observation?.pollutant ?? 'Air pollution anomaly'}</strong>
+                {observation && <span>{observation.value} {observation.unit}</span>}
+                {observation?.provider_pollutant_id && <span>Provider pollutant: {observation.provider_pollutant_id}</span>}
+                {visiblePollutionEvent.anomaly?.severity && (
+                  <span>Severity: {visiblePollutionEvent.anomaly.severity}</span>
+                )}
+                {observed && <span>Observed: {observed}</span>}
+                {station && <span>Source: {station}</span>}
+                {visiblePollutionEvent.anomaly?.assessment?.preliminary && (
+                  <span>Quality: preliminary · not quality controlled</span>
+                )}
+                {visiblePollutionEvent.air_pollution_runtime?.stale && (
+                  <span>Runtime: last-known anomaly; latest collection failed</span>
+                )}
+                <small>Anomaly detection only; exposure and emergency status are not confirmed.</small>
+              </div>
+            </Popup>
           )
-        )}
+        })()}
 
 
         {children}

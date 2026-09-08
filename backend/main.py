@@ -9,8 +9,8 @@ agents package.
 
 Endpoints:
     GET /                       Health check.
-    GET /api/detected-events    Live fire detection, risk analysis and response
-                                planning for one coordinate.
+    GET /api/detected-events    Fire pipeline output plus the latest stored
+                                air-pollution event state.
     GET /api/environmental-data Live weather + geospatial context for one
                                 coordinate.
 
@@ -42,6 +42,9 @@ from services.current_risk_refresh_orchestrator import CurrentRiskRefreshOrchest
 from services.national_current_risk_scan_service import NationalCurrentRiskScanService
 from services.protocol_retrieval_service import ProtocolRetriever
 from agents.coordinator import FireCoordinator
+from backend.air_pollution_event_adapter import attach_air_pollution_state
+from services.air_pollution_event_store import InMemoryAirPollutionEventStore
+from services.air_pollution_runtime_service import AirPollutionRuntimeService
 
 logging.basicConfig(
     level=logging.INFO,
@@ -84,6 +87,14 @@ fire_risk_prediction_agent = FireRiskPredictionAgent()
 national_risk_scan_service = NationalCurrentRiskScanService()
 current_risk_refresh = CurrentRiskRefreshOrchestrator(scan_service=national_risk_scan_service)
 
+# Transitional runtime boundary for EA-313. The API reads this store only; the
+# independently scheduled refresh performs Ministry collection, EA-309
+# detection, and optional EA-310/311 context/support. It deliberately stops
+# before Coordinator routing and EA-312 planning. Replace the in-memory store
+# with the shared PostGIS repository without changing API/frontend callers.
+air_pollution_event_store = InMemoryAirPollutionEventStore()
+air_pollution_runtime = AirPollutionRuntimeService(store=air_pollution_event_store)
+
 # --- Risk analysis and response planning (LLM + RAG) ----------------------
 # Interprets a *detected* fire event and plans a response, grounded in the
 # protocol corpus. Distinct from the prediction model above: that one
@@ -118,10 +129,12 @@ ISRAEL_MAX_LONGITUDE = 35.90
 @app.on_event("startup")
 def start_current_risk_refresh():
     current_risk_refresh.start()
+    air_pollution_runtime.start()
 
 
 @app.on_event("shutdown")
 def stop_current_risk_refresh():
+    air_pollution_runtime.stop()
     current_risk_refresh.stop()
 
 
@@ -272,7 +285,7 @@ def get_detected_events(
     ),
 ):
     """
-    Detect fires near a coordinate, assess their risk, and plan a response.
+    Detect fires near a coordinate and include stored air-pollution events.
 
     Runs the full pipeline: FireDetectionAgent (NASA FIRMS satellite hotspots,
     enriched with GWIS/EFFIS fire weather, Open-Meteo conditions and
@@ -290,7 +303,7 @@ def get_detected_events(
 
     Returns:
         dict: metadata (including a per-service status breakdown), the query
-            that produced it, and an events list holding zero or one event.
+            that produced the fire scan, and independent fire/pollution events.
 
     Raises:
         HTTPException: 500 for an unexpected internal error, with the detail
@@ -303,10 +316,11 @@ def get_detected_events(
     user-visible explanation. /api/environmental-data does return 502 because it
     is user-initiated and has an error modal behind it.
 
-    Performance: this is slow, typically 20-90 seconds. The OpenStreetMap
+    Performance: the fire path is slow, typically 20-90 seconds. The OpenStreetMap
     Overpass lookup alone can take 30 seconds under load, and each of the two
     model calls adds several more. Pass include_analysis=false for a detection-
-    only response. A background-job endpoint is the real fix and is not built.
+    only response. Air-pollution state is read from its refresh store and never
+    invokes Ministry collection, geospatial lookup, or model work here.
     """
     logging.info(
         "Detected-events request for lat=%s, lon=%s, radius=%skm, days=%s, analysis=%s",
@@ -322,7 +336,7 @@ def get_detected_events(
             include_analysis=include_analysis,
         )
 
-        return build_detected_events_response(
+        response = build_detected_events_response(
             pipeline=pipeline,
             query={
                 "latitude": latitude,
@@ -332,6 +346,11 @@ def get_detected_events(
                 "include_analysis": include_analysis,
             },
         )
+        response = attach_air_pollution_state(
+            response,
+            air_pollution_event_store.snapshot(),
+        )
+        return response
 
     except HTTPException:
         raise
@@ -479,6 +498,7 @@ def build_dashboard_event(*, pipeline: dict) -> dict:
         # Detection evidence, kept distinct from the risk judgement.
         "detection_confidence": event.get("detection_confidence"),
         "fire_weather_severity": event.get("fire_weather_severity"),
+        "detection_source": (event.get("metadata") or {}).get("source") or "NASA FIRMS",
 
         # Risk analysis. All of these are None unless the analysis succeeded.
         "risk_score": risk.get("risk_score"),

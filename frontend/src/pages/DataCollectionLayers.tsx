@@ -180,9 +180,16 @@ function DataCollectionLayers() {
         updatedAt: environmentalData?.metadata.timestamp,
       },
       {
-        name: 'Flood, topography & air quality',
+        name: 'Israeli Ministry air-quality observations',
+        category: 'Air Quality',
+        description: 'Scheduled Ministry collection is processed independently from browser reads. Its latest runtime status and genuine anomaly events are exposed through the detected-events contract; raw observations are not a standalone frontend layer.',
+        state: 'idle',
+        status: 'Status is published with detected-events responses',
+      },
+      {
+        name: 'Flood & topography integrations',
         category: 'Integrations under development',
-        description: 'Flood, topography and air-quality integrations are planned or under development; frontend availability depends on merged backend/data-source contracts.',
+        description: 'Frontend availability depends on merged backend and data-source contracts.',
         state: 'unavailable',
         status: 'Not connected to this frontend',
       },

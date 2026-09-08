@@ -8,10 +8,18 @@ import { useNationalRiskScan } from '../hooks/useNationalRiskScan'
 import type { EnvironmentalData } from '../types/environmentalData'
 import type { DetectedEventsResponse, IncidentDetails } from '../types/incidents'
 import type { FireRiskAssessment } from '../types/riskAnalysis'
+import {
+  eventBySelectionKey,
+  eventSelectionKey,
+  formatEventTimestamp,
+  isAirPollutionEvent,
+  pollutionStationLabel,
+  primaryPollutionObservation,
+} from '../utils/airPollutionEvents'
 
 import './visuals/explanation-audit.css'
 
-type TraceState = 'available' | 'partial' | 'demo' | 'unavailable' | 'not-used'
+type TraceState = 'available' | 'partial' | 'unavailable' | 'not-used'
 
 type DataSourceTrace = {
   source: string
@@ -37,6 +45,10 @@ function formatTimestamp(value?: string | null) {
   return Number.isNaN(parsed.getTime()) ? 'Not available' : parsed.toLocaleString()
 }
 
+function displayTraceValue(value: string) {
+  return value.replace(/_/g, ' ')
+}
+
 function sourceState(status?: string): TraceState {
   if (status === 'success') return 'available'
   if (status === 'partial' || status === 'partial_service_failure') return 'partial'
@@ -56,6 +68,10 @@ function ExplanationAudit() {
   const [isLoadingTrace, setIsLoadingTrace] = useState(false)
   const traceRequestIdRef = useRef(0)
   const { scan: nationalRiskScan, error: nationalRiskError } = useNationalRiskScan()
+  const selectedIsPollution = isAirPollutionEvent(selectedIncident)
+  const pollutionPlan = selectedIncident?.pollution_response_plan
+  const pollutionObservation = primaryPollutionObservation(selectedIncident)
+  const pollutionStation = pollutionStationLabel(selectedIncident)
 
   const loadTraceContext = useCallback((incident: IncidentDetails) => {
     const requestId = ++traceRequestIdRef.current
@@ -67,7 +83,9 @@ function ExplanationAudit() {
 
     void Promise.allSettled([
       fetchEnvironmentalData(incident.latitude, incident.longitude),
-      fetchCurrentRiskAssessment(incident.latitude, incident.longitude),
+      isAirPollutionEvent(incident)
+        ? Promise.resolve(null)
+        : fetchCurrentRiskAssessment(incident.latitude, incident.longitude),
     ]).then(([environmentResult, riskResult]) => {
       if (traceRequestIdRef.current !== requestId) return
       if (environmentResult.status === 'fulfilled') {
@@ -80,9 +98,9 @@ function ExplanationAudit() {
         )
       }
 
-      if (riskResult.status === 'fulfilled') {
+      if (riskResult.status === 'fulfilled' && riskResult.value) {
         setRiskAssessment(riskResult.value)
-      } else {
+      } else if (riskResult.status === 'rejected') {
         setRiskError(
           riskResult.reason instanceof Error
             ? riskResult.reason.message
@@ -148,7 +166,7 @@ function ExplanationAudit() {
     },
     {
       source: environmentalData?.metadata.services.geospatial.source || 'OpenStreetMap / Overpass',
-      role: 'Geographic and infrastructure context collected for this audit view',
+      role: 'Live supplemental geographic context requested for this audit view',
       state: environmentalError
         ? 'unavailable'
         : sourceState(environmentalData?.metadata.services.geospatial.status),
@@ -157,45 +175,64 @@ function ExplanationAudit() {
         || 'No response available',
       timestamp: environmentalData?.metadata.timestamp,
     },
-    {
-      source: 'EcoGuard current-risk model',
-      role: 'Point conditions-based model estimate; separate from event detection',
-      state: riskError || riskAssessment?.current_risk.status !== 'available'
-        ? 'unavailable'
-        : 'available',
-      status: riskError
-        || riskAssessment?.current_risk.reason
-        || riskAssessment?.current_risk.status
-        || 'No response available',
-    },
-    {
-      source: 'EcoGuard national current-risk scan',
-      role: 'National conditions-based risk context; separate from detected incidents',
-      state: nationalRiskError || nationalRiskScan?.status === 'unavailable'
-        ? 'unavailable'
-        : nationalRiskScan?.status === 'partial'
-          ? 'partial'
-          : nationalRiskScan ? 'available' : 'unavailable',
-      status: nationalRiskError || nationalRiskScan?.status || 'No response available',
-      timestamp: nationalRiskScan?.evaluation_time,
-    },
+    ...(selectedIsPollution ? [] : [
+      {
+        source: 'EcoGuard current-risk model',
+        role: 'Point conditions-based fire-risk estimate; separate from event detection',
+        state: riskError || riskAssessment?.current_risk.status !== 'available'
+          ? 'unavailable' as const
+          : 'available' as const,
+        status: riskError
+          || riskAssessment?.current_risk.reason
+          || riskAssessment?.current_risk.status
+          || 'No response available',
+      },
+      {
+        source: 'EcoGuard national current-risk scan',
+        role: 'National fire-risk context; separate from detected incidents',
+        state: nationalRiskError || nationalRiskScan?.status === 'unavailable'
+          ? 'unavailable' as const
+          : nationalRiskScan?.status === 'partial'
+            ? 'partial' as const
+            : nationalRiskScan ? 'available' as const : 'unavailable' as const,
+        status: nationalRiskError || nationalRiskScan?.status || 'No response available',
+        timestamp: nationalRiskScan?.evaluation_time,
+      },
+    ]),
+    ...(selectedIsPollution && selectedIncident?.spatial_context ? [{
+      source: selectedIncident.spatial_context.source || 'Event-supplied spatial context',
+      role: 'Spatial context supplied with this pollution candidate; proximity does not confirm exposure',
+      state: sourceState(selectedIncident.spatial_context.status),
+      status: selectedIncident.spatial_context.status,
+      timestamp: selectedIncident.spatial_context.collected_at,
+    }] : []),
     {
       source: 'RainViewer',
       role: 'Available visualization integration; not queried or traced to this incident here',
       state: 'not-used',
       status: 'Not used in this audit request',
     },
-    {
+    ...(selectedIsPollution ? [] : [{
       source: 'GWIS / EFFIS',
       role: 'Available fire-danger visualization; not traced to this incident assessment',
-      state: 'not-used',
+      state: 'not-used' as const,
       status: 'Not used in this audit request',
-    },
+    }]),
     {
-      source: 'NASA FIRMS',
-      role: 'Satellite detection source used by the detected-events pipeline; raw hotspots are not exposed separately',
-      state: sourceState(detectionResponse?.metadata.services.detection?.status),
-      status: detectionResponse?.metadata.services.detection?.status || 'No response available',
+      source: selectedIsPollution
+        ? pollutionStation ?? 'Air-pollution source'
+        : selectedIncident?.detection_source
+          || detectionResponse?.metadata.services.detection?.source
+          || 'NASA FIRMS',
+      role: selectedIsPollution
+        ? 'Observation provenance supplied with the air-pollution anomaly'
+        : 'Satellite detection source used by the detected-events pipeline; raw hotspots are not exposed separately',
+      state: sourceState(selectedIsPollution
+        ? selectedIncident?.air_pollution_runtime?.status
+        : detectionResponse?.metadata.services.detection?.status),
+      status: selectedIsPollution
+        ? selectedIncident?.air_pollution_runtime?.status || 'No pollution runtime status available'
+        : detectionResponse?.metadata.services.detection?.status || 'No response available',
     },
     {
       source: 'Telegram emergency intelligence',
@@ -211,6 +248,9 @@ function ExplanationAudit() {
     nationalRiskScan,
     riskAssessment,
     riskError,
+    selectedIsPollution,
+    pollutionStation,
+    selectedIncident,
   ])
 
   const infrastructureCount = environmentalData
@@ -228,16 +268,28 @@ function ExplanationAudit() {
       case 'Shared Data Layer / PostGIS':
         return 'Intended shared data layer; database connection and runtime status are not exposed by this frontend contract.'
       case 'Anomaly Detectors':
+        if (selectedIsPollution && selectedIncident?.anomaly) {
+          return `Air-pollution anomaly supplied with ${selectedIncident.anomaly.supporting_evidence?.length ?? 0} supporting evidence record(s).`
+        }
         return detectionResponse?.metadata.services.detection
           ? `Observed pipeline status: ${detectionResponse.metadata.services.detection.status}; source: ${detectionResponse.metadata.services.detection.source || 'not reported'}.`
           : 'No detection output or service metadata is available.'
       case 'Coordinator / Strainer':
+        if (selectedIsPollution && selectedIncident?.correlation_evidence) {
+          return `Correlation candidate evidence supplied; candidate match: ${selectedIncident.correlation_evidence.candidate_match}. This is not causation or final incident creation.`
+        }
         return 'Intended to correlate, deduplicate and group anomalies into incidents. Generic correlation output and runtime status are not currently exposed.'
       case 'Emergency / Non-emergency Routing':
         return 'Intended routing stage after Coordinator correlation; no routing decision or runtime status is exposed here.'
       case 'Resource Allocation / Response Implementation':
+        if (selectedIsPollution) {
+          return 'No pollution resource-allocation or operational implementation output is exposed.'
+        }
         return `Resource selection status: ${selectedIncident?.allocated_resources?.status ?? detectionResponse?.metadata.services.resource_allocation?.status ?? 'Not provided'}. Selected facilities are recommended response sources; operational availability and dispatch are not exposed.`
       case 'Response Planning':
+        if (selectedIsPollution) {
+          return `Grounded pollution planning status: ${pollutionPlan?.status ?? 'not provided'}. Recommendations are decision support only.`
+        }
         return selectedIncident?.planning_status
           ? `Observed planning status: ${selectedIncident.planning_status}; analysis status: ${selectedIncident.analysis_status || 'not provided'}. Grounded outputs and citations are shown where supplied; Coordinator routing and dispatch are not implied.`
           : `No response-plan status is available. Detected-event analysis status: ${selectedIncident?.analysis_status || 'not provided'}.`
@@ -248,8 +300,12 @@ function ExplanationAudit() {
   const detectionFailed =
     detectionResponse?.metadata.collection_status === 'failed' || detectionStatus === 'failed'
   const responseActions = selectedIncident?.response_actions ?? []
-  const protocolCitations = selectedIncident?.protocol_citations ?? []
-  const evidenceGaps = selectedIncident?.evidence_gaps ?? []
+  const protocolCitations = selectedIsPollution
+    ? pollutionPlan?.protocol_references ?? []
+    : selectedIncident?.protocol_citations ?? []
+  const evidenceGaps = selectedIsPollution
+    ? pollutionPlan?.evidence_gaps ?? []
+    : selectedIncident?.evidence_gaps ?? []
 
   return (
     <main className="audit-workspace">
@@ -278,14 +334,14 @@ function ExplanationAudit() {
             <label className="audit-selector">
               Detected event
               <select
-                value={selectedIncident?.id ?? ''}
+                value={selectedIncident ? eventSelectionKey(selectedIncident) : ''}
                 onChange={(event) => {
-                  const incident = incidents.find((item) => String(item.id) === event.target.value)
+                  const incident = eventBySelectionKey(incidents, event.target.value)
                   if (incident) selectIncident(incident)
                 }}
               >
                 {incidents.map((incident) => (
-                  <option key={incident.id} value={incident.id}>{incident.title}</option>
+                  <option key={eventSelectionKey(incident)} value={eventSelectionKey(incident)}>{incident.title}</option>
                 ))}
               </select>
             </label>
@@ -301,33 +357,62 @@ function ExplanationAudit() {
           <p className="audit-message">
             {detectionFailed
               ? 'The detection provider could not complete the current scan; no detected-event audit is available.'
-              : 'The current scan completed with no fire detection candidate to audit.'}
+              : 'The current scan completed with no detected event or anomaly candidate to audit.'}
           </p>
         )}
         {selectedIncident && (
           <div className="audit-facts">
-            <div><span>Event type</span><strong>{selectedIncident.type || 'Not provided'}</strong></div>
+            <div><span>Event type</span><strong>{selectedIsPollution ? 'Air Pollution' : selectedIncident.type || 'Not provided'}</strong></div>
             <div><span>Location</span><strong>{selectedIncident.latitude.toFixed(4)}, {selectedIncident.longitude.toFixed(4)}</strong></div>
-            <div><span>Reported event risk</span><strong>{selectedIncident.risk_level || 'Not assessed'}</strong></div>
-            <div><span>Risk score</span><strong>{selectedIncident.risk_score ?? 'Not assessed'}</strong></div>
-            <div><span>Detection status</span><strong>{detectionStatus || 'Not provided'}</strong></div>
-            <div><span>Analysis status</span><strong>{selectedIncident.analysis_status || 'Not provided'}</strong></div>
-            <div><span>Planning status</span><strong>{selectedIncident.planning_status || 'Not provided'}</strong></div>
-            <div><span>Confidence</span><strong>{selectedIncident.confidence || 'Not provided'}</strong></div>
+            {selectedIsPollution && pollutionObservation && <div><span>Observation</span><strong>{pollutionObservation.pollutant} · {pollutionObservation.value} {pollutionObservation.unit}</strong></div>}
+            <div><span>{selectedIsPollution ? 'Anomaly severity' : 'Reported event risk'}</span><strong>{selectedIsPollution ? selectedIncident.anomaly?.severity ?? 'Not provided' : selectedIncident.risk_level || 'Not assessed'}</strong></div>
+            {!selectedIsPollution && <div><span>Risk score</span><strong>{selectedIncident.risk_score ?? 'Not assessed'}</strong></div>}
+            <div><span>Detection status</span><strong>{selectedIsPollution ? selectedIncident.air_pollution_runtime?.status ?? 'Not provided' : detectionStatus || 'Not provided'}</strong></div>
+            {!selectedIsPollution && <div><span>Analysis status</span><strong>{selectedIncident.analysis_status || 'Not provided'}</strong></div>}
+            <div><span>Planning status</span><strong>{selectedIsPollution ? pollutionPlan?.status ?? 'Not provided' : selectedIncident.planning_status || 'Not provided'}</strong></div>
+            <div><span>Confidence</span><strong>{selectedIsPollution && typeof selectedIncident.anomaly?.confidence === 'number' ? `${Math.round(selectedIncident.anomaly.confidence * 100)}%` : selectedIncident.confidence || 'Not provided'}</strong></div>
           </div>
         )}
       </section>
+
+      {selectedIsPollution && selectedIncident?.anomaly && (
+        <section className="audit-panel" aria-labelledby="pollution-trace-title">
+          <p className="audit-panel__label">Air-pollution trace</p>
+          <h2 id="pollution-trace-title">Detection, spatial and correlation evidence</h2>
+          <div className="audit-evidence-grid">
+            <div><span>Observed</span><strong>{formatEventTimestamp(selectedIncident.anomaly.observed_at) ?? 'Unavailable'}</strong></div>
+            <div><span>Station / source</span><strong>{pollutionStation ?? 'Unavailable'}</strong></div>
+            <div><span>Spatial lookup</span><strong>{selectedIncident.spatial_context?.status ?? 'Not supplied'}</strong></div>
+            <div><span>Nearby settlements</span><strong>{selectedIncident.spatial_context?.nearby_settlements?.length ?? 'Not supplied'}</strong></div>
+            <div><span>Nearby roads</span><strong>{selectedIncident.spatial_context?.nearby_roads?.length ?? 'Not supplied'}</strong></div>
+            <div><span>Correlation candidate match</span><strong>{selectedIncident.correlation_evidence ? String(selectedIncident.correlation_evidence.candidate_match) : 'Not supplied'}</strong></div>
+          </div>
+          {selectedIncident.anomaly.anomaly_reasons?.length ? (
+            <div className="model-factors"><h3>Why EcoGuard flagged this anomaly</h3><ul>{selectedIncident.anomaly.anomaly_reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></div>
+          ) : null}
+          {selectedIncident.correlation_evidence && (
+            <div className="model-factors">
+              <h3>Correlation signals</h3>
+              <p>Engineering candidate evidence only; it does not establish causation or a common incident.</p>
+              <ul>{selectedIncident.correlation_evidence.matching_signals.map((signal) => <li key={signal}>{displayTraceValue(signal)}</li>)}</ul>
+            </div>
+          )}
+          <p className="audit-panel__note">Nearby places and roads are proximity context only. They do not confirm exposure, pollution movement, or source attribution. The lookup radius is not an affected-area boundary.</p>
+        </section>
+      )}
 
       <section className="audit-panel" aria-labelledby="explanation-title">
         <p className="audit-panel__label">Human-readable explanation</p>
         <h2 id="explanation-title">Available explanation text</h2>
         <div className="audit-explanation">
           <span>
-            {selectedIncident?.analysis_status === 'success'
-              ? 'Grounded pipeline explanation'
+            {selectedIsPollution
+              ? 'Deterministic anomaly explanation'
+              : selectedIncident?.analysis_status === 'success'
+                ? 'Grounded pipeline explanation'
               : 'Explanation unavailable or incomplete'}
           </span>
-          <p>{selectedIncident?.explanation || 'No explanation text is available.'}</p>
+          <p>{selectedIsPollution ? selectedIncident?.anomaly?.explanation || 'No anomaly explanation is available.' : selectedIncident?.explanation || 'No explanation text is available.'}</p>
         </div>
       </section>
 
@@ -336,8 +421,9 @@ function ExplanationAudit() {
           <p className="audit-panel__label">Evidence summary</p>
           <h2 id="evidence-summary-title">Context available to the operator</h2>
           <p className="audit-panel__note">
-            Environmental context below is retrieved for the selected coordinates. Verified
-            protocol citations identify the textual sources grounding pipeline outputs.
+            Live supplemental context below is retrieved for the selected coordinates. Event-supplied
+            pollution context remains available independently. Verified protocol citations identify
+            the textual sources grounding pipeline outputs.
           </p>
           {isLoadingTrace && <p className="audit-message">Collecting traceable context…</p>}
           <div className="audit-evidence-grid">
@@ -346,7 +432,8 @@ function ExplanationAudit() {
             <div><span>Terrain</span><strong>{String(environmentalData?.geospatial_context.terrain_type || 'Unavailable')}</strong></div>
             <div><span>Region</span><strong>{String(environmentalData?.geospatial_context.region_type || 'Unavailable')}</strong></div>
             <div><span>Nearby infrastructure</span><strong>{environmentalData ? infrastructureCount : 'Unavailable'}</strong></div>
-            <div><span>Detection source</span><strong>{detectionResponse?.metadata.services.detection?.source || 'Unavailable'}</strong></div>
+            <div><span>Detection source</span><strong>{selectedIsPollution ? pollutionStation ?? 'Unavailable' : selectedIncident?.detection_source || detectionResponse?.metadata.services.detection?.source || 'Unavailable'}</strong></div>
+            {selectedIsPollution && <div><span>Event-supplied spatial context</span><strong>{selectedIncident?.spatial_context?.status ?? 'Not supplied'}</strong></div>}
           </div>
           {evidenceGaps.length > 0 && (
             <div className="model-factors">
@@ -362,8 +449,8 @@ function ExplanationAudit() {
           <ul className="audit-limitations">
             <li>Confidence is shown only when supplied by the detected-events response.</li>
             <li>Suggested units are not verified allocations, availability, or dispatch assignments.</li>
-            <li>Raw FIRMS hotspots and Telegram messages are not exposed as frontend records.</li>
-            <li>Model factors are associations with an estimate, not causal explanations.</li>
+            <li>{selectedIsPollution ? 'Nearby geographic features do not confirm exposure, movement, or source attribution.' : 'Raw FIRMS hotspots and Telegram messages are not exposed as frontend records.'}</li>
+            {!selectedIsPollution && <li>Model factors are associations with an estimate, not causal explanations.</li>}
             <li>No prompt trace, hidden reasoning, audit history, or operator approval history exists.</li>
           </ul>
         </section>
@@ -372,7 +459,16 @@ function ExplanationAudit() {
       <section className="audit-panel" aria-labelledby="grounded-output-title">
         <p className="audit-panel__label">Grounded pipeline output</p>
         <h2 id="grounded-output-title">Response actions and verified citations</h2>
-        {responseActions.length > 0 ? (
+        {selectedIsPollution && pollutionPlan?.actions?.length ? (
+          <ol className="audit-limitations">
+            {pollutionPlan.actions.map((action) => (
+              <li key={`${action.resource_type}-${action.recommendation}`}>
+                <strong>{displayTraceValue(action.timeframe)} · {displayTraceValue(action.priority)}</strong>
+                {' · '}{displayTraceValue(action.responsible_authority_type)} — {action.recommendation}
+              </li>
+            ))}
+          </ol>
+        ) : responseActions.length > 0 ? (
           <ol className="audit-limitations">
             {responseActions.map((action) => (
               <li key={`${action.timeframe}-${action.responsible_unit}-${action.action}`}>
@@ -437,7 +533,7 @@ function ExplanationAudit() {
         </div>
       </section>
 
-      <section className="audit-panel" aria-labelledby="model-metadata-title">
+      {!selectedIsPollution && <section className="audit-panel" aria-labelledby="model-metadata-title">
         <p className="audit-panel__label">Model / risk metadata</p>
         <h2 id="model-metadata-title">Current-risk trace</h2>
         <p className="audit-panel__note">
@@ -468,7 +564,7 @@ function ExplanationAudit() {
             <p className="audit-message">No model-associated factors were returned.</p>
           )}
         </div>
-      </section>
+      </section>}
 
       <section className="audit-panel" aria-labelledby="agent-trace-title">
         <p className="audit-panel__label">Agent traceability</p>
