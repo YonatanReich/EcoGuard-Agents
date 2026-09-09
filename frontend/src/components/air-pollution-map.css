@@ -63,6 +63,233 @@
   font-weight: 700;
 }
 
+.pollution-transport-settlement {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 7px rgba(15, 23, 42, 0.45);
+}
+
+.pollution-transport-settlement span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.pollution-transport-settlement--inside {
+  background: #7c3aed;
+  color: #ede9fe;
+}
+
+.pollution-transport-settlement--outside {
+  background: #64748b;
+  color: #e2e8f0;
+  opacity: 0.72;
+}
+
+.pollution-transport-panel {
+  position: absolute;
+  left: 12px;
+  bottom: 36px;
+  z-index: 4;
+  display: grid;
+  width: min(370px, calc(100% - 24px));
+  max-height: min(620px, calc(100% - 54px));
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(109, 40, 217, 0.32);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.97);
+  color: #1f2937;
+  font-size: 0.76rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.2);
+  font-family: "Plus Jakarta Sans", sans-serif;
+}
+
+.pollution-transport-panel header {
+  display: grid;
+  gap: 3px;
+}
+
+.pollution-transport-panel header > span {
+  color: #6d28d9;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.pollution-transport-panel h3,
+.pollution-transport-panel h4,
+.pollution-transport-panel p,
+.pollution-transport-panel dl,
+.pollution-transport-panel ol,
+.pollution-transport-panel ul {
+  margin: 0;
+}
+
+.pollution-transport-panel h3 {
+  color: #3b0764;
+  font-size: 0.98rem;
+}
+
+.pollution-transport-panel h4 {
+  margin-bottom: 6px;
+  color: #4c1d95;
+  font-size: 0.78rem;
+}
+
+.pollution-transport-panel header p,
+.pollution-transport-panel__empty {
+  color: #4b5563;
+  line-height: 1.4;
+}
+
+.pollution-transport-panel__summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.pollution-transport-panel__summary > div,
+.pollution-transport-panel__metrics > div {
+  display: grid;
+  gap: 1px;
+}
+
+.pollution-transport-panel__summary dt,
+.pollution-transport-panel__metrics dt,
+.pollution-map-popup__metrics dt {
+  color: #6b7280;
+  font-size: 0.65rem;
+}
+
+.pollution-transport-panel__summary dd,
+.pollution-transport-panel__metrics dd,
+.pollution-map-popup__metrics dd {
+  margin: 0;
+  color: #111827;
+  font-weight: 700;
+}
+
+.pollution-transport-panel__ranking-note {
+  padding: 7px 8px;
+  border-radius: 6px;
+  background: #f5f3ff;
+  color: #4c1d95;
+  line-height: 1.35;
+}
+
+.pollution-transport-panel__scroll {
+  display: grid;
+  min-height: 0;
+  gap: 10px;
+  overflow-y: auto;
+  padding-right: 3px;
+}
+
+.pollution-transport-panel__ranking,
+.pollution-transport-panel__outside,
+.pollution-transport-panel__limitations {
+  display: grid;
+  gap: 7px;
+  padding: 0;
+  list-style: none;
+}
+
+.pollution-transport-panel__settlement {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #ddd6fe;
+  border-radius: 7px;
+  background: #fafafa;
+}
+
+.pollution-transport-panel__settlement-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pollution-transport-panel__settlement-heading strong {
+  color: #3b0764;
+}
+
+.pollution-transport-panel__settlement-heading span {
+  color: #6d28d9;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-align: right;
+}
+
+.pollution-transport-panel__metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.pollution-transport-panel__components {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: #6b7280;
+  font-size: 0.67rem;
+}
+
+.pollution-transport-panel__details {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 8px;
+}
+
+.pollution-transport-panel__details summary {
+  cursor: pointer;
+  color: #4c1d95;
+  font-weight: 800;
+}
+
+.pollution-transport-panel__outside,
+.pollution-transport-panel__limitations {
+  margin-top: 7px;
+}
+
+.pollution-transport-panel__outside li {
+  display: grid;
+  gap: 2px;
+}
+
+.pollution-transport-panel__outside span,
+.pollution-transport-panel__outside small,
+.pollution-transport-panel__limitations {
+  color: #4b5563;
+}
+
+.pollution-transport-panel__limitations {
+  padding-left: 17px;
+  list-style: disc;
+  line-height: 1.35;
+}
+
+.pollution-transport-panel--unavailable {
+  max-width: 330px;
+}
+
+.pollution-transport-panel--unavailable strong {
+  color: #4c1d95;
+}
+
+.pollution-transport-panel--unavailable p {
+  color: #4b5563;
+  line-height: 1.4;
+}
+
 .pollution-map-popup {
   display: grid;
   gap: 4px;
@@ -83,4 +310,21 @@
   padding-top: 5px;
   border-top: 1px solid #e5e7eb;
   font-weight: 700;
+}
+
+.pollution-map-popup__metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 9px;
+  margin: 3px 0;
+}
+
+@media (max-width: 680px) {
+  .pollution-transport-panel {
+    max-height: 52%;
+  }
+
+  .pollution-transport-panel__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

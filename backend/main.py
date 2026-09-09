@@ -45,6 +45,11 @@ from agents.coordinator import FireCoordinator
 from backend.air_pollution_event_adapter import attach_air_pollution_state
 from services.air_pollution_event_store import InMemoryAirPollutionEventStore
 from services.air_pollution_runtime_service import AirPollutionRuntimeService
+from services.air_pollution_transport_prediction_service import (
+    AirPollutionTransportConfigurationError,
+    configured_air_pollution_transport_prediction_service,
+)
+from services.ims_wind_observation_client import IMSWindObservationError
 
 logging.basicConfig(
     level=logging.INFO,
@@ -93,7 +98,24 @@ current_risk_refresh = CurrentRiskRefreshOrchestrator(scan_service=national_risk
 # before Coordinator routing and EA-312 planning. Replace the in-memory store
 # with the shared PostGIS repository without changing API/frontend callers.
 air_pollution_event_store = InMemoryAirPollutionEventStore()
-air_pollution_runtime = AirPollutionRuntimeService(store=air_pollution_event_store)
+try:
+    air_pollution_transport_service = (
+        configured_air_pollution_transport_prediction_service()
+    )
+    air_pollution_transport_configuration_error = None
+except AirPollutionTransportConfigurationError as error:
+    air_pollution_transport_service = None
+    air_pollution_transport_configuration_error = error.category
+except IMSWindObservationError:
+    air_pollution_transport_service = None
+    air_pollution_transport_configuration_error = (
+        "air_pollution_transport_ims_configuration_unavailable"
+    )
+air_pollution_runtime = AirPollutionRuntimeService(
+    store=air_pollution_event_store,
+    transport_service=air_pollution_transport_service,
+    transport_configuration_error=air_pollution_transport_configuration_error,
+)
 
 # --- Risk analysis and response planning (LLM + RAG) ----------------------
 # Interprets a *detected* fire event and plans a response, grounded in the

@@ -9,12 +9,17 @@ from agents.air_pollution_spatial_schemas import (
     PollutionSpatialContext,
     SpatiallyEnrichedAirPollutionAnomaly,
 )
+from agents.air_pollution_transport_schemas import WindEvidence
 from backend.air_pollution_event_adapter import attach_air_pollution_state
 from services.air_pollution_event_store import (
     InMemoryAirPollutionEventStore,
     StoredAirPollutionEvent,
 )
 from services.air_pollution_runtime_service import AirPollutionRuntimeService
+from services.air_pollution_transport_prediction_service import (
+    AirPollutionTransportConfiguration,
+    AirPollutionTransportPredictionService,
+)
 from services.air_quality_schemas import (
     AirQualityCollectionResult,
     AirQualityMonitor,
@@ -181,14 +186,73 @@ class FakeEnricher:
         )
 
 
-def runtime(*, client, detector, store=None, enricher=None):
+def runtime(
+    *,
+    client,
+    detector,
+    store=None,
+    enricher=None,
+    transport_service=None,
+    transport_configuration_error=None,
+):
     return AirPollutionRuntimeService(
         store=store or InMemoryAirPollutionEventStore(),
         client=client,
         detector=detector,
         enricher=enricher or FakeEnricher(),
+        transport_service=transport_service,
+        transport_configuration_error=transport_configuration_error,
         cadence_minutes=5,
         clock=lambda: NOW,
+    )
+
+
+class FakeRuntimeWindProvider:
+    def __init__(self, *, error=None, wind_from_direction_deg=270.0):
+        self.error = error
+        self.wind_from_direction_deg = wind_from_direction_deg
+        self.calls = []
+
+    def select_wind_evidence(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.error is not None:
+            raise self.error
+        observed_at = kwargs["anomaly_observed_at"]
+        evidence = WindEvidence(
+            evidence_id=f"ims-wind:test:{observed_at.isoformat()}",
+            provider="IMS",
+            source_type="station_observation",
+            provider_location_kind="station",
+            provider_location_id="test-wind-station",
+            provider_location_name="Test wind station",
+            requested_coordinates=kwargs["analysis_coordinates"],
+            actual_provider_coordinates={"latitude": 32.09, "longitude": 34.79},
+            raw_provider_timestamp="2026-09-08T14:00:00+03:00",
+            wind_observed_at=observed_at,
+            retrieved_at=NOW,
+            wind_from_direction_deg=self.wind_from_direction_deg,
+            wind_speed_mps=4.0,
+            provider_validity="valid",
+            provider_channel_validity={"WD": "valid", "WS": "valid"},
+            original_units={"wind_direction": "deg", "wind_speed": "m/sec"},
+            time_offset_from_anomaly_seconds=0.0,
+        )
+        return type("Selection", (), {"wind_evidence": evidence})()
+
+
+def runtime_transport_service(*, provider=None):
+    wind_provider = provider or FakeRuntimeWindProvider()
+    return (
+        AirPollutionTransportPredictionService(
+            wind_evidence_service=wind_provider,
+            configuration=AirPollutionTransportConfiguration(
+                corridor_half_angle_deg=60.0,
+                max_screening_distance_m=10_000.0,
+                arc_segment_count=6,
+                wind_max_age_minutes=60.0,
+            ),
+        ),
+        wind_provider,
     )
 
 
@@ -255,6 +319,165 @@ def test_valid_anomaly_preserves_spatial_context_without_precoordinator_plan():
     assert "pollution_response_plan" not in event
     assert "planning_status" not in event
     assert "allocated_resources" not in event
+
+
+def test_background_refresh_adds_candidate_specific_transport_output():
+    transport_service, wind_provider = runtime_transport_service()
+    service = runtime(
+        client=FakeClient([observation()]),
+        detector=FakeDetector([anomaly()]),
+        transport_service=transport_service,
+    )
+
+    result = service.refresh()
+    snapshot = service.store.snapshot()
+    stored = snapshot.events[0]
+    fire = {"id": "fire-1", "type": "fire", "latitude": 31.9, "longitude": 34.8}
+    response = attach_air_pollution_state(base_fire_response([fire]), snapshot)
+    pollution = response["events"][1]
+
+    assert result["transport_events"] == 1
+    assert len(wind_provider.calls) == 1
+    assert stored.transport_prediction is not None
+    assert stored.transport_prediction.analysis_origin.analysis_origin_kind == "monitoring_location"
+    assert pollution["air_pollution_transport"]["exposure_not_confirmed"] is True
+    assert pollution["air_pollution_transport"]["origin"]["coordinates"] == [34.8, 32.1]
+    assert pollution["air_pollution_transport"]["downwind_to_direction_deg"] == 90.0
+    assert "air_pollution_transport" not in response["events"][0]
+    assert response["events"][0] == fire
+
+
+def test_disabled_transport_bridge_makes_no_wind_request_and_adds_no_output():
+    wind_provider = FakeRuntimeWindProvider()
+    service = runtime(
+        client=FakeClient([observation()]),
+        detector=FakeDetector([anomaly()]),
+        transport_service=None,
+    )
+
+    result = service.refresh()
+    event = attach_air_pollution_state(
+        base_fire_response(), service.store.snapshot()
+    )["events"][0]
+
+    assert result["transport_events"] == 0
+    assert wind_provider.calls == []
+    assert "air_pollution_transport" not in event
+
+
+def test_wind_provider_failure_preserves_candidate_without_geometry():
+    provider = FakeRuntimeWindProvider(error=RuntimeError("provider unavailable"))
+    transport_service, _ = runtime_transport_service(provider=provider)
+    service = runtime(
+        client=FakeClient([observation()]),
+        detector=FakeDetector([anomaly()]),
+        transport_service=transport_service,
+    )
+
+    result = service.refresh()
+    snapshot = service.store.snapshot()
+    event = attach_air_pollution_state(base_fire_response(), snapshot)["events"][0]
+
+    assert result["status"] == "partial"
+    assert len(snapshot.events) == 1
+    assert snapshot.events[0].transport_prediction is None
+    assert "air_pollution_transport_wind_evidence_unavailable" in snapshot.errors
+    assert "air_pollution_transport" not in event
+    assert "provider unavailable" not in str(snapshot.model_dump())
+
+
+def test_transport_calculation_failure_preserves_candidate():
+    class FailingPredictionService:
+        def __init__(self):
+            self.provider = FakeRuntimeWindProvider()
+
+        def obtain_wind_evidence(self, candidate):
+            return self.provider.select_wind_evidence(
+                analysis_coordinates=candidate.anomaly.location,
+                anomaly_observed_at=candidate.anomaly.observed_at,
+                maximum_observation_age_seconds=3600.0,
+            ).wind_evidence
+
+        def predict(self, candidate, *, wind_evidence):
+            raise ValueError("calculation detail must not leak")
+
+    transport_service = FailingPredictionService()
+    service = runtime(
+        client=FakeClient([observation()]),
+        detector=FakeDetector([anomaly()]),
+        transport_service=transport_service,
+    )
+
+    service.refresh()
+    snapshot = service.store.snapshot()
+
+    assert len(snapshot.events) == 1
+    assert snapshot.events[0].transport_prediction is None
+    assert snapshot.errors == ["air_pollution_transport_screening_failed"]
+    assert "calculation detail" not in str(snapshot.model_dump())
+
+
+def test_multiple_pollution_candidates_keep_separate_transport_geometry():
+    second_observation = observation().model_copy(
+        update={"provider_channel_id": "channel-2"}
+    )
+    second_payload = anomaly("pollution-2").model_dump()
+    second_payload["location"] = {"latitude": 32.2, "longitude": 34.9}
+    second_anomaly = AirPollutionAnomaly.model_validate(second_payload)
+    transport_service, wind_provider = runtime_transport_service()
+    service = runtime(
+        client=FakeClient([observation(), second_observation]),
+        detector=FakeDetector([anomaly("pollution-1"), second_anomaly]),
+        transport_service=transport_service,
+    )
+
+    result = service.refresh()
+    response = attach_air_pollution_state(base_fire_response(), service.store.snapshot())
+    by_id = {event["id"]: event for event in response["events"]}
+
+    assert result["transport_events"] == 2
+    assert len(wind_provider.calls) == 2
+    assert by_id["pollution-1"]["air_pollution_transport"]["origin"]["coordinates"] == [34.8, 32.1]
+    assert by_id["pollution-2"]["air_pollution_transport"]["origin"]["coordinates"] == [34.9, 32.2]
+    assert by_id["pollution-1"]["air_pollution_transport"] != by_id["pollution-2"]["air_pollution_transport"]
+
+
+def test_one_refresh_reuses_wind_evidence_for_matching_origin_and_timestamp():
+    second_observation = observation().model_copy(
+        update={"provider_channel_id": "channel-2", "pollutant": "PM10"}
+    )
+    second_anomaly = anomaly("pollution-2")
+    transport_service, wind_provider = runtime_transport_service()
+    service = runtime(
+        client=FakeClient([observation(), second_observation]),
+        detector=FakeDetector([anomaly("pollution-1"), second_anomaly]),
+        transport_service=transport_service,
+    )
+
+    result = service.refresh()
+
+    assert result["transport_events"] == 2
+    assert len(wind_provider.calls) == 1
+    assert all(
+        item.transport_prediction is not None
+        for item in service.store.snapshot().events
+    )
+
+
+def test_transport_configuration_error_is_safe_and_candidate_is_preserved():
+    service = runtime(
+        client=FakeClient([observation()]),
+        detector=FakeDetector([anomaly()]),
+        transport_configuration_error="air_pollution_transport_configuration_invalid",
+    )
+
+    service.refresh()
+    snapshot = service.store.snapshot()
+
+    assert len(snapshot.events) == 1
+    assert snapshot.events[0].transport_prediction is None
+    assert snapshot.status == "partial"
+    assert snapshot.errors == ["air_pollution_transport_configuration_invalid"]
 
 
 def test_grounded_response_plan_is_preserved_by_the_transport_adapter():
@@ -433,7 +656,17 @@ def test_failed_fire_envelope_does_not_erase_stored_pollution_candidates():
 def test_repeated_api_reads_do_not_run_pollution_refresh(monkeypatch):
     from backend import main
 
+    transport_service, wind_provider = runtime_transport_service()
+    real_runtime = runtime(
+        client=FakeClient([observation()]),
+        detector=FakeDetector([anomaly()]),
+        transport_service=transport_service,
+    )
+    real_runtime.refresh()
+    assert len(wind_provider.calls) == 1
+
     refresh_calls = []
+    monkeypatch.setattr(main, "air_pollution_event_store", real_runtime.store)
     monkeypatch.setattr(main.air_pollution_runtime, "refresh", lambda: refresh_calls.append(True))
     monkeypatch.setattr(
         main.fire_coordinator,
@@ -450,13 +683,21 @@ def test_repeated_api_reads_do_not_run_pollution_refresh(monkeypatch):
         },
     )
 
-    for _ in range(2):
+    responses = [
         main.get_detected_events(
             latitude=32.1, longitude=34.8, radius_km=5.0,
             day_range=2, include_analysis=False,
         )
+        for _ in range(2)
+    ]
 
+    assert all(response["events"][0]["id"] == "pollution-1" for response in responses)
+    assert all(
+        "air_pollution_transport" in response["events"][0]
+        for response in responses
+    )
     assert refresh_calls == []
+    assert len(wind_provider.calls) == 1
 
 
 def test_detected_events_endpoint_returns_fire_and_stored_pollution(monkeypatch):

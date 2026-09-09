@@ -3,6 +3,7 @@ import type {
   AirPollutionCorrelationEvidence,
   AirPollutionResponsePlan,
   AirPollutionSpatialContext,
+  AirPollutionTransportSpatialOutput,
 } from './airPollution'
 
 export type IncidentRiskLevel = 'low' | 'medium' | 'high' | 'critical'
@@ -107,6 +108,8 @@ export type IncidentDetails = {
   correlation_evidence?: AirPollutionCorrelationEvidence
   /** EA-312 decision support; never dispatch or availability. */
   pollution_response_plan?: AirPollutionResponsePlan
+  /** Optional EA-322 geometry; absent until the prediction runtime is connected. */
+  air_pollution_transport?: AirPollutionTransportSpatialOutput | null
   /** Refresh provenance for retained last-known pollution state. */
   air_pollution_runtime?: {
     status: string

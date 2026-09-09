@@ -25,6 +25,9 @@ from services.air_pollution_event_store import (
 )
 from services.air_quality_schemas import AirQualityObservation
 from services.ministry_air_quality_client import MinistryAirQualityClient
+from services.air_pollution_transport_prediction_service import (
+    AirPollutionTransportPredictionService,
+)
 
 
 DEFAULT_REFRESH_MINUTES = 5
@@ -59,6 +62,8 @@ class AirPollutionRuntimeService:
         detector=None,
         enricher=None,
         reference_rules: ReferenceRuleProvider | None = None,
+        transport_service: AirPollutionTransportPredictionService | None = None,
+        transport_configuration_error: str | None = None,
         cadence_minutes: int | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ):
@@ -67,6 +72,8 @@ class AirPollutionRuntimeService:
         self.detector = detector if detector is not None else AirPollutionAnomalyDetector()
         self.enricher = enricher if enricher is not None else AirPollutionSpatialEnricher()
         self.reference_rules = reference_rules or (lambda _station, _pollutant: ())
+        self.transport_service = transport_service
+        self.transport_configuration_error = transport_configuration_error
         self.cadence_minutes = (
             cadence_minutes
             if cadence_minutes is not None
@@ -107,7 +114,43 @@ class AirPollutionRuntimeService:
             stations = {item.provider_station_id: item for item in station_result.stations}
             results: list[StoredAirPollutionEvent] = []
             errors = list(collection.errors)
+            if self.transport_configuration_error is not None:
+                errors.append(self.transport_configuration_error)
             evaluated: set[tuple[str, str, str, str, str]] = set()
+            wind_evidence_cache = {}
+            unavailable_wind_keys = set()
+
+            def transport_prediction_for(candidate):
+                if self.transport_service is None:
+                    return None
+                wind_key = (
+                    candidate.anomaly.location.latitude,
+                    candidate.anomaly.location.longitude,
+                    candidate.anomaly.observed_at,
+                )
+                if wind_key in unavailable_wind_keys:
+                    return None
+                wind_evidence = wind_evidence_cache.get(wind_key)
+                if wind_evidence is None:
+                    try:
+                        wind_evidence = self.transport_service.obtain_wind_evidence(
+                            candidate
+                        )
+                        wind_evidence_cache[wind_key] = wind_evidence
+                    except Exception:
+                        unavailable_wind_keys.add(wind_key)
+                        errors.append(
+                            "air_pollution_transport_wind_evidence_unavailable"
+                        )
+                        return None
+                try:
+                    return self.transport_service.predict(
+                        candidate,
+                        wind_evidence=wind_evidence,
+                    )
+                except Exception:
+                    errors.append("air_pollution_transport_screening_failed")
+                    return None
 
             for observation in collection.observations:
                 key = (
@@ -170,10 +213,12 @@ class AirPollutionRuntimeService:
                     errors.append("air_pollution_spatial_enrichment_failed")
 
                 correlation = self._closest_prior_match(candidate, prior_events)
+                transport_prediction = transport_prediction_for(candidate)
                 results.append(
                     StoredAirPollutionEvent(
                         event=candidate,
                         correlation_evidence=correlation,
+                        transport_prediction=transport_prediction,
                     )
                 )
 
@@ -191,6 +236,9 @@ class AirPollutionRuntimeService:
                 "status": status,
                 "observations": len(collection.observations),
                 "events": len(results),
+                "transport_events": sum(
+                    item.transport_prediction is not None for item in results
+                ),
                 "excluded": len(collection.excluded),
             }
         finally:

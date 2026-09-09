@@ -29,6 +29,8 @@ import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
 import type { IncidentDetails } from '../types/incidents'
+import AirPollutionTransportLayer from './AirPollutionTransportLayer'
+import AirPollutionTransportPanel from './AirPollutionTransportPanel'
 import {
   eventSelectionKey,
   formatEventTimestamp,
@@ -234,6 +236,9 @@ function MapView({
       || eventSelectionKey(activeEvent) === eventSelectionKey(selectedPollutionEvent))
     ? selectedPollutionEvent
     : null
+  const transportEvent = activeEvent === undefined
+    ? visiblePollutionEvent
+    : activeEvent
 
 
   const containerStyle: CSSProperties = {
@@ -331,9 +336,10 @@ function MapView({
           height: '100%',
         }}
 
-        onClick={
-          onClick
-        }
+        onClick={(event) => {
+          setSelectedPollutionEvent(null)
+          onClick?.(event)
+        }}
 
         {...mapProps}
       >
@@ -358,6 +364,15 @@ function MapView({
         <ScaleControl
           position="bottom-left"
           unit="metric"
+        />
+
+
+        <AirPollutionTransportLayer
+          event={transportEvent}
+        />
+
+        <AirPollutionTransportPanel
+          event={transportEvent}
         />
 
 
@@ -422,13 +437,14 @@ function MapView({
                 e.originalEvent
                   .stopPropagation()
 
+                setSelectedPollutionEvent(null)
+
                 /**
                  * Forward the marker coordinates
                  * in the same shape as a normal
                  * MapLibre map click.
                  */
                 if (onEventSelect) {
-                  setSelectedPollutionEvent(null)
                   onEventSelect(event)
                 } else if (onClick) {
                   onClick({

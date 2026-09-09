@@ -21,6 +21,9 @@ from agents.air_pollution_correlation import (
 )
 from agents.air_pollution_response_schemas import AirPollutionResponsePlan
 from services.air_quality_schemas import AirQualityObservation
+from services.air_pollution_transport_prediction_service import (
+    AirPollutionTransportPredictionExecution,
+)
 
 
 RuntimeStatus = Literal["not_started", "success", "partial", "failed"]
@@ -37,6 +40,7 @@ class StoredAirPollutionEvent(ContractModel):
     event: PollutionCorrelationCandidate
     correlation_evidence: PollutionCorrelationResult | None = None
     plan: AirPollutionResponsePlan | None = None
+    transport_prediction: AirPollutionTransportPredictionExecution | None = None
 
 
 class AirPollutionRuntimeSnapshot(ContractModel):

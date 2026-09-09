@@ -124,3 +124,65 @@ export type AirPollutionResponsePlan = {
   limitations?: string[]
   protocol_references?: AirPollutionProtocolReference[]
 }
+
+export type Wgs84LongitudeLatitude = [longitude: number, latitude: number]
+
+export type AirPollutionTransportPoint = {
+  type: 'Point'
+  coordinates: Wgs84LongitudeLatitude
+}
+
+export type AirPollutionTransportLineString = {
+  type: 'LineString'
+  coordinates: Wgs84LongitudeLatitude[]
+}
+
+export type AirPollutionTransportPolygon = {
+  type: 'Polygon'
+  coordinates: Wgs84LongitudeLatitude[][]
+}
+
+export type AirPollutionTransportSettlement = {
+  settlement_id: string
+  name: string
+  point: AirPollutionTransportPoint
+  inside_transport_corridor: boolean
+  rank?: number | null
+  exclusion_reason?: string | null
+  potential_downwind_relevance: string
+  relevance_score: number
+  geodesic_distance_m: number
+  bearing_from_origin_deg: number
+  angular_difference_deg: number
+  along_wind_distance_m: number
+  crosswind_distance_m: number
+  kinematic_advection_time_seconds?: number | null
+  transport_time_method?: 'constant_wind_kinematic_screening' | null
+  transport_time_assumptions?: string[]
+  exposure_not_confirmed: true
+}
+
+export type AirPollutionTransportSpatialOutput = {
+  output_kind: 'estimated_transport_screening_geometry'
+  data_status: 'success' | 'partial' | 'unavailable'
+  spatial_reference: {
+    srid: 4326
+    crs: 'EPSG:4326'
+    datum: 'WGS84'
+    coordinate_order: 'longitude_latitude'
+    geometry_units: 'degrees'
+  }
+  origin: AirPollutionTransportPoint
+  centerline?: AirPollutionTransportLineString | null
+  corridor_polygon?: AirPollutionTransportPolygon | null
+  downwind_to_direction_deg?: number | null
+  corridor_method: string
+  corridor_half_angle_deg: number
+  max_screening_distance_m: number
+  direction_stddev_deg?: number | null
+  arc_segment_count: number
+  dateline_handling: 'reject_longitude_discontinuity'
+  settlements?: AirPollutionTransportSettlement[]
+  limitations: string[]
+  exposure_not_confirmed: true
+}

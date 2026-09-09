@@ -49,6 +49,10 @@ def build_air_pollution_event(result: StoredAirPollutionEvent) -> dict:
     if result.plan is not None:
         event["pollution_response_plan"] = result.plan.model_dump(mode="json")
         event["planning_status"] = result.plan.status
+    if result.transport_prediction is not None:
+        event["air_pollution_transport"] = (
+            result.transport_prediction.spatial_output.model_dump(mode="json")
+        )
     return event
 
 
