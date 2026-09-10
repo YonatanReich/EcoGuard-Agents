@@ -11,8 +11,10 @@ Endpoints:
     GET /                       Health check.
     GET /api/detected-events    Live fire detection, risk analysis and response
                                 planning for one coordinate.
-    GET /api/environmental-data Live weather + geospatial context for one
-                                coordinate.
+    GET /api/environmental-data Stored weather + live geospatial context for
+                                one coordinate.
+    POST /api/area-summary      Population, weather and fire danger aggregated
+                                over a polygon drawn on the map.
 
 Run locally with:
     uvicorn backend.main:app --reload
@@ -34,6 +36,7 @@ from agents.geospatial_context_agent import GeospatialContextAgent
 from agents.response_planning_agent import ResponsePlanningAgent
 from agents.risk_analysis_agent import RiskAnalysisAgent, build_event_id
 from agents.weather_data_agent import WeatherDataAgent
+from backend.area_schemas import AreaSummaryRequest, AreaSummaryResponse
 from backend.fire_risk_schemas import (
     FireRiskRequest,
     FireRiskResponse,
@@ -323,6 +326,42 @@ def get_mda_stations():
     except Exception as error:
         logging.error("MDA station query failed: %s", error, exc_info=True)
         raise HTTPException(status_code=503, detail="MDA station data is unavailable.")
+
+
+@app.post("/api/area-summary", response_model=AreaSummaryResponse)
+def get_area_summary(request: AreaSummaryRequest):
+    """Summarise everything we store inside a polygon the user drew on the map.
+
+    This replaced clicking a single coordinate. A point answers "what is the
+    temperature here"; an operator's question is "how many people are inside
+    this fire's likely path, and what is the weather doing across it", and only
+    an area can answer that.
+
+    Every figure comes from the store — the population grid, the hourly weather
+    observations, today's Fire Weather Index and the station rosters — so this
+    is one round trip with no upstream provider in the path, unlike the
+    per-coordinate endpoints that wait on Open-Meteo and Overpass.
+
+    Args:
+        request: an AreaSummaryRequest carrying a GeoJSON Polygon. Its
+            validator enforces Israel's bounding box, ring closure and a vertex
+            ceiling; FastAPI turns a failure into a 422 naming the reason.
+
+    Returns:
+        AreaSummaryResponse: area in km², population, mean weather, mean and
+            worst fire danger, and station counts. A section with no data
+            underneath it reports nulls and cell_count 0 rather than vanishing.
+
+    Raises:
+        HTTPException: 503 when the store cannot be reached.
+    """
+    from ecoguard.database.repositories.area_summary import summarize_area
+
+    try:
+        return summarize_area(request.geometry)
+    except Exception as error:
+        logging.error("Area summary failed: %s", error, exc_info=True)
+        raise HTTPException(status_code=503, detail="Area summary is unavailable.")
 
 
 @app.post("/api/dev/run/{source}")
@@ -723,18 +762,22 @@ def get_environmental_data(
         description="Longitude must be within Israel's borders"
     )):
     """
-    Collect and unify live environmental data for a single coordinate.
+    Unify environmental data for a single coordinate.
 
-    Calls the weather agent and the geospatial agent for the given point and
-    merges their two results into one response. The coordinate bounds are
-    enforced by FastAPI on the Query parameters above, which restrict input
-    to Israel's bounding box — this both matches the product scope and stops
-    the endpoint being used to scan arbitrary parts of the world through our
-    upstream providers.
+    Merges two agents that no longer work the same way. The weather agent
+    reads the collection layer's stored observations, answering from the 5 km
+    grid cell containing the point — metadata.services.weather.observation
+    names the cell and its distance. The geospatial agent still calls
+    OpenStreetMap Overpass live, because nothing collects that on a timer.
+
+    The coordinate bounds are enforced by FastAPI on the Query parameters
+    above, which restrict input to Israel's bounding box — this matches the
+    product scope and, for the one remaining live provider, stops the endpoint
+    being used to scan arbitrary parts of the world through it.
 
     Because each agent reports its own collection_status instead of raising,
-    a failure in one provider degrades the response rather than breaking it.
-    Only a double failure is treated as an outage.
+    one failing degrades the response rather than breaking it. Only a double
+    failure is treated as an outage.
 
     Args:
         latitude (float): 29.45 to 33.35. Defaults to Jerusalem.
@@ -752,9 +795,9 @@ def get_environmental_data(
             so internal paths and stack traces are not leaked to clients.
             FastAPI itself returns 422 for out-of-bounds coordinates.
 
-    Performance: this typically takes several seconds, occasionally 30+.
-    The geospatial agent's Overpass call dominates; the two agents also run
-    sequentially here, so their latencies add.
+    Performance: dominated entirely by the geospatial agent's Overpass call,
+    which takes seconds and occasionally 30+. The weather half used to add its
+    own provider round trip and is now a single indexed read.
     """
     logging.info(f"Received environmental data request for lat={latitude}, lon={longitude}")
 

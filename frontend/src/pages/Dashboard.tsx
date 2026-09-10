@@ -31,19 +31,12 @@ import FireDangerLegend from '../components/FireDangerLegend'
 import FireRiskAlert from '../components/FireRiskAlert'
 import { clusterHighRiskCells, type FireRiskCluster } from '../components/fireRiskClusters'
 import { normalizeNationalRiskScanResponse, type NationalRiskScan } from '../components/fireRiskScan'
-import InfrastructureLayer from '../components/InfrastructureLayer'
+import AreaSelect from '../components/AreaSelect'
 import LayersControl from '../components/LayersControl'
 import WhatToSeeControl from '../components/WhatToSeeControl'
-import FireStationsLayer, {
-  FIRE_STATIONS_LAYER_ID,
-} from '../components/layers/FireStationsLayer'
-import PoliceStationsLayer, {
-  POLICE_STATIONS_LAYER_ID,
-} from '../components/layers/PoliceStationsLayer'
-import MdaStationsLayer, {
-  MDA_STATIONS_LAYER_ID,
-} from '../components/layers/MdaStationsLayer'
-import EnvironmentalDataModal from '../components/EnvironmentalDataModal'
+import FireStationsLayer from '../components/layers/FireStationsLayer'
+import PoliceStationsLayer from '../components/layers/PoliceStationsLayer'
+import MdaStationsLayer from '../components/layers/MdaStationsLayer'
 
 import './visuals/dashboard.css'
 
@@ -141,58 +134,6 @@ export type DetectedEventsResponse = {
     include_analysis: boolean
   }
   events: RiskEvent[]
-}
-
-
-export type EnvironmentalData = {
-  metadata: {
-    timestamp: string
-    collection_status: string
-
-    services: {
-      weather: {
-        status: string
-        source: string
-      }
-
-      geospatial: {
-        status: string
-        source: string
-      }
-    }
-  }
-
-  location: {
-    latitude: number
-    longitude: number
-  }
-
-  geospatial_context: {
-    terrain_type: string
-    region_type: string
-    vegetation_density: number
-    distance_to_water_m: number
-    [key: string]: any
-  }
-
-  weather: {
-    current: {
-      temperature_c: number
-      humidity_percent: number
-      wind_speed_kmh: number
-      precipitation_mm: number
-      weather_code: number
-    }
-
-    forecast: {
-      daily: {
-        max_temp_c: number[]
-        min_temp_c: number[]
-        max_wind_speed_kmh: number[]
-        precipitation_sum_mm: number[]
-      }
-    }
-  }
 }
 
 
@@ -306,11 +247,6 @@ function Dashboard() {
     setShowWind,
   ] = useState(false)
 
-  const [
-    showInfrastructure,
-    setShowInfrastructure,
-  ] = useState(true)
-
   // Fire stations are reference data rather than an environmental overlay, so
   // they live in the "I want to see" bar above the map, not in LayersControl.
   const [
@@ -416,39 +352,6 @@ function Dashboard() {
   const [
     rainPlaying,
     setRainPlaying,
-  ] = useState(false)
-
-
-  // =========================================================
-  // Environmental data
-  // =========================================================
-
-  const [
-    envData,
-    setEnvData,
-  ] = useState<EnvironmentalData | null>(null)
-
-  const [
-    isLoadingEnvData,
-    setIsLoadingEnvData,
-  ] = useState(false)
-
-  const [
-    envDataError,
-    setEnvDataError,
-  ] = useState<string | null>(null)
-
-  const [
-    selectedLocation,
-    setSelectedLocation,
-  ] = useState<{
-    lat: number
-    lng: number
-  } | null>(null)
-
-  const [
-    isPopupOpen,
-    setIsPopupOpen,
   ] = useState(false)
 
 
@@ -599,120 +502,6 @@ function Dashboard() {
     setTimeout(
       () => navigate('/'),
       700
-    )
-  }
-
-
-  // =========================================================
-  // Environmental data
-  // =========================================================
-
-  const fetchEnvironmentalData = (
-    latitude: number,
-    longitude: number
-  ) => {
-    const url =
-      `/api/environmental-data` +
-      `?latitude=${latitude}` +
-      `&longitude=${longitude}`
-
-    return fetch(url)
-      .then(async (response) => {
-        if (!response.ok) {
-          let errorMessage =
-            `Error ${response.status}`
-
-          try {
-            const errorData =
-              await response.json()
-
-            if (errorData.detail) {
-              errorMessage =
-                errorData.detail
-            }
-          } catch {
-            // Keep HTTP status when response is not JSON.
-          }
-
-          throw new Error(
-            errorMessage
-          )
-        }
-
-        return response.json()
-      })
-  }
-
-
-  const loadEnvironmentalData = (
-    latitude: number,
-    longitude: number
-  ) => {
-    setIsLoadingEnvData(true)
-    setEnvDataError(null)
-    setEnvData(null)
-
-    fetchEnvironmentalData(
-      latitude,
-      longitude
-    )
-      .then((data) => {
-        setEnvData(data)
-      })
-      .catch((error) => {
-        setEnvDataError(
-          error.message ||
-          'Error loading data'
-        )
-      })
-      .finally(() => {
-        setIsLoadingEnvData(false)
-      })
-  }
-
-
-  const handleMapClick = (
-    e: any
-  ) => {
-    if (!e.lngLat) {
-      return
-    }
-
-    // The click hit an interactive data layer, which owns it. Without this,
-    // clicking a fire station would also drop the blue pin and fire off an
-    // environmental-data request for the station's own coordinates.
-    if (e.features?.length) {
-      return
-    }
-
-    const {
-      lat,
-      lng,
-    } = e.lngLat
-
-    if (
-      lat < 29.45 ||
-      lat > 33.35 ||
-      lng < 34.26 ||
-      lng > 35.90
-    ) {
-      console.warn(
-        'Clicked outside Israel borders. Ignoring.'
-      )
-
-      return
-    }
-
-    setSelectedLocation({
-      lat,
-      lng,
-    })
-
-    setIsPopupOpen(true)
-
-    loadEnvironmentalData(
-      lat,
-      lng
     )
   }
 
@@ -963,15 +752,8 @@ function Dashboard() {
 
           <MapView
             events={events}
-            onClick={handleMapClick}
             onEventClick={setOpenEvent}
-            selectedLocation={selectedLocation}
             style={{ flex: '1 1 auto', minHeight: 0 }}
-            interactiveLayerIds={[
-              ...(showFireStations ? [FIRE_STATIONS_LAYER_ID] : []),
-              ...(showPoliceStations ? [POLICE_STATIONS_LAYER_ID] : []),
-              ...(showMdaStations ? [MDA_STATIONS_LAYER_ID] : []),
-            ]}
           >
 
             {nationalRiskScan && highRiskClusters.length > 0 && dismissedFireRiskSnapshot !== nationalRiskScan.evaluation_time && (
@@ -1322,35 +1104,6 @@ function Dashboard() {
 
 
             {/* ================================================= */}
-            {/* Nearby infrastructure                             */}
-            {/* ================================================= */}
-
-            {showInfrastructure &&
-              envData && (
-                <InfrastructureLayer
-                  hospitals={
-                    envData
-                      .geospatial_context
-                      .nearby_hospitals ??
-                    []
-                  }
-                  policeStations={
-                    envData
-                      .geospatial_context
-                      .nearby_police_stations ??
-                    []
-                  }
-                  fireStations={
-                    envData
-                      .geospatial_context
-                      .nearby_fire_stations ??
-                    []
-                  }
-                />
-              )}
-
-
-            {/* ================================================= */}
             {/* Layer controls                                    */}
             {/* ================================================= */}
 
@@ -1395,45 +1148,14 @@ function Dashboard() {
                 )
               }
 
-              showInfrastructure={
-                showInfrastructure
-              }
-              onToggleInfrastructure={() =>
-                setShowInfrastructure(
-                  (current) =>
-                    !current
-                )
-              }
             />
 
 
-            <EnvironmentalDataModal
-              isOpen={
-                isPopupOpen
-              }
-              onClose={() =>
-                setIsPopupOpen(
-                  false
-                )
-              }
-              latitude={
-                selectedLocation
-                  ?.lat ?? null
-              }
-              longitude={
-                selectedLocation
-                  ?.lng ?? null
-              }
-              envData={
-                envData
-              }
-              isLoading={
-                isLoadingEnvData
-              }
-              error={
-                envDataError
-              }
-            />
+            {/* ================================================= */}
+            {/* Draw an area, read what is inside it              */}
+            {/* ================================================= */}
+
+            <AreaSelect />
 
           </MapView>
 

@@ -1,10 +1,14 @@
 /**
  * MapView — the interactive map of Israel.
  *
- * Responsible for rendering the MapLibre map, its navigation controls, a
- * marker per detected risk event, and a marker for the point the user last
- * clicked. Presentational: it holds no application data and fetches nothing.
- * Clicks are reported upward to Dashboard, which owns the response.
+ * Responsible for rendering the MapLibre map, its navigation controls and a
+ * marker per detected risk event. Presentational: it holds no application data
+ * and fetches nothing.
+ *
+ * The map itself has no click behaviour. Layers that need one — the station
+ * dots, the area drawing tool — attach their own listeners through useMap, so
+ * a click belongs to whatever drew the thing under it rather than being routed
+ * up to Dashboard and dispatched back down.
  *
  * Tiles come from Mapbox and require VITE_MAPBOX_KEY. Without it the
  * component renders an explanatory placeholder instead of a broken map.
@@ -160,32 +164,11 @@ type MapViewProps = {
   children?: React.ReactNode
 
   /**
-   * Called with the clicked coordinate for both
-   * map clicks and event-marker clicks.
-   */
-  onClick?: (
-    e: any
-  ) => void
-
-  /**
    * Called when an event marker is clicked, so the card list and the map
    * open the same modal.
    */
   onEventClick?: (event: RiskEvent) => void
-
-  /**
-   * Coordinate highlighted with the blue marker.
-   */
-  selectedLocation?: {
-    lat: number
-    lng: number
-  } | null
-} & Pick<
-  MapProps,
-  // interactiveLayerIds is what makes a click on a data layer report the
-  // feature it hit, so a handler can tell a station dot from open ground.
-  'onLoad' | 'onClick' | 'interactiveLayerIds'
->
+} & Pick<MapProps, 'onLoad'>
 
 
 /**
@@ -200,9 +183,7 @@ function MapView({
   mapStyleId,
   initialZoom = 7,
   children,
-  onClick,
   onEventClick,
-  selectedLocation,
   ...mapProps
 }: MapViewProps) {
 
@@ -321,10 +302,6 @@ function MapView({
           height: '100%',
         }}
 
-        onClick={
-          onClick
-        }
-
         {...mapProps}
       >
 
@@ -361,19 +338,6 @@ function MapView({
           position="bottom-left"
           unit="metric"
         />
-
-
-        {selectedLocation && (
-          <Marker
-            longitude={
-              selectedLocation.lng
-            }
-            latitude={
-              selectedLocation.lat
-            }
-            color="#005eff"
-          />
-        )}
 
 
         {events.map(

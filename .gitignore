@@ -102,3 +102,8 @@ data/generated/ml/forecast_risk_pilot/
 
 # Generated evaluation runs
 data/generated/evaluation/
+
+# WorldPop population raster, downloaded once and loaded into population_cells
+# by scripts/load_population_grid.py. Republished yearly by WorldPop; there is
+# no reason to carry a copy in the history.
+data/generated/isr_ppp_*.tif

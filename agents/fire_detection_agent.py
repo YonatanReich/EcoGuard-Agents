@@ -260,8 +260,10 @@ class FireDetectionAgent:
         """
         Collect weather information around the detected hotspot.
 
-        WeatherDataAgent already implements graceful failure behaviour and
-        returns collection_status="failed" when Open-Meteo is unavailable.
+        WeatherDataAgent reads the collection layer's stored observations —
+        the hotspot is answered by the 5 km cell containing it — and already
+        implements graceful failure behaviour, returning
+        collection_status="failed" when the store has nothing recent nearby.
 
         Args:
             latitude (float): Detected hotspot latitude.

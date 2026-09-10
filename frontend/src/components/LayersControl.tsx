@@ -10,8 +10,6 @@
  *   - Rain Radar — live precipitation radar from RainViewer.
  *   - Fire Danger — Fire Weather Index (FWI) from GWIS/EFFIS.
  *   - Wind — animated near-surface wind visualization from Open-Meteo.
- *   - Nearby Infrastructure — hospitals, police stations and fire stations
- *     returned by the geospatial backend for the selected location.
  *
  * Additional layers can be added here later without changing MapView.
  */
@@ -42,12 +40,6 @@ type LayersControlProps = {
 
   /** Toggle the animated wind layer. */
   onToggleWind: () => void
-
-  /** Whether nearby infrastructure markers are currently visible. */
-  showInfrastructure: boolean
-
-  /** Toggle nearby infrastructure markers. */
-  onToggleInfrastructure: () => void
 }
 
 function LayersControl({
@@ -59,8 +51,6 @@ function LayersControl({
   onToggleFireRisk,
   showWind,
   onToggleWind,
-  showInfrastructure,
-  onToggleInfrastructure,
 }: LayersControlProps) {
   return (
     <div style={containerStyle}>
@@ -102,14 +92,6 @@ function LayersControl({
         <span>💨 Wind</span>
       </label>
 
-      <label style={rowStyle}>
-        <input
-          type="checkbox"
-          checked={showInfrastructure}
-          onChange={onToggleInfrastructure}
-        />
-        <span>📍 Nearby Infrastructure</span>
-      </label>
     </div>
   )
 }

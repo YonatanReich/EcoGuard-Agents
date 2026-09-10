@@ -1,4 +1,10 @@
-"""Small in-process scheduler for weather-cache and national Current Risk refreshes."""
+"""Small in-process scheduler for the national Current Risk snapshot.
+
+It used to fetch weather too, from its own Open-Meteo client into its own
+SQLite cache. That was the second of three collection paths against the same
+API; weather now arrives once, through the collection layer, and this only
+scores what is already stored.
+"""
 
 from __future__ import annotations
 
@@ -7,11 +13,10 @@ import os
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from services.national_current_risk_scan_service import DEFAULT_OUTPUT_PATH, NationalCurrentRiskScanService
-from services.open_meteo_hourly_client import OpenMeteoHourlyClient
-from services.rolling_weather_cache import DEFAULT_CACHE_PATH, DEFAULT_GRID_PATH, RollingWeatherCache
+from services.static_feature_store import DEFAULT_DATABASE_PATH as DEFAULT_GRID_PATH
 
 
 DEFAULT_REFRESH_MINUTES = 180
@@ -58,16 +63,13 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
 
 class CurrentRiskRefreshOrchestrator:
     def __init__(
-        self, *, weather_cache: RollingWeatherCache | None = None,
-        weather_client_factory: Callable[[], Any] | None = None,
+        self, *,
         scan_service: NationalCurrentRiskScanService | None = None,
         grid_path: Path | str = DEFAULT_GRID_PATH,
         snapshot_path: Path | str = DEFAULT_OUTPUT_PATH,
         status_path: Path | str = DEFAULT_STATUS_PATH,
         cadence_minutes: int | None = None,
     ):
-        self.weather_cache = weather_cache or RollingWeatherCache(DEFAULT_CACHE_PATH)
-        self.weather_client_factory = weather_client_factory or (lambda: OpenMeteoHourlyClient(batch_size=50))
         self.scan_service = scan_service or NationalCurrentRiskScanService(grid_path=grid_path)
         self.grid_path, self.snapshot_path, self.status_path = Path(grid_path), Path(snapshot_path), Path(status_path)
         self.cadence_minutes = cadence_minutes if cadence_minutes is not None else configured_refresh_minutes()
@@ -83,22 +85,14 @@ class CurrentRiskRefreshOrchestrator:
         started = _text()
         try:
             evaluation = _utc(evaluation_time)
-            weather = self.weather_cache.update(
-                grid_path=self.grid_path, client=self.weather_client_factory(), now=evaluation
-            )
-            if weather.get("status") not in {"success", "partial"}:
-                result = {"status": "weather_unusable", "scan_updated": False, "weather": weather,
-                          "started_at_utc": started, "completed_at_utc": _text(),
-                          "cadence_minutes": self.cadence_minutes}
-                _atomic_json(self.status_path, result); return result
             scan = self.scan_service.scan(evaluation)
-            metadata = {"status": "success" if weather["status"] == "success" and scan["status"] == "success" else "partial",
+            metadata = {"status": "success" if scan["status"] == "success" else "partial",
                         "started_at_utc": started, "completed_at_utc": _text(),
-                        "cadence_minutes": self.cadence_minutes, "weather_status": weather["status"],
+                        "cadence_minutes": self.cadence_minutes,
                         "scan_status": scan["status"]}
             snapshot = {**scan, "refresh_metadata": metadata}
             _atomic_json(self.snapshot_path, snapshot)
-            result = {"status": metadata["status"], "scan_updated": True, "weather": weather,
+            result = {"status": metadata["status"], "scan_updated": True,
                       "scan_summary": scan["summary"], **metadata}
             _atomic_json(self.status_path, result)
             return result
