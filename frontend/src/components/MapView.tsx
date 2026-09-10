@@ -182,7 +182,9 @@ type MapViewProps = {
   } | null
 } & Pick<
   MapProps,
-  'onLoad' | 'onClick'
+  // interactiveLayerIds is what makes a click on a data layer report the
+  // feature it hit, so a handler can tell a station dot from open ground.
+  'onLoad' | 'onClick' | 'interactiveLayerIds'
 >
 
 

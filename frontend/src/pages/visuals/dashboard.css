@@ -74,6 +74,8 @@
 }
 
 .dashboard__map {
+    display: flex;
+    flex-direction: column;
     flex: 1 1 auto;
     min-height: 400px;
     border-radius: 12px;

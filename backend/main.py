@@ -251,6 +251,80 @@ def get_fire_danger_surface():
     )
 
 
+@app.get("/api/fire-stations")
+def get_fire_stations():
+    """Serve the national fire station list as GeoJSON points.
+
+    Reference data, not a live feed: it changes only when the Fire and Rescue
+    Authority republishes its station list and the seed script is re-run. The
+    query is 115 rows and costs a few milliseconds, so it is not cached — a
+    cache here would mostly serve to hide a re-seed until the next restart.
+
+    Returns:
+        dict: A GeoJSON FeatureCollection, plus `located` and `total`. They
+            differ because ten stations publish an address with no locality to
+            geocode, and those carry no geometry to draw.
+
+    Raises:
+        HTTPException: 503 when the store cannot be reached.
+    """
+    from ecoguard.database.repositories.fire_stations import fire_stations_geojson
+
+    try:
+        return fire_stations_geojson()
+    except Exception as error:
+        logging.error("Fire station query failed: %s", error, exc_info=True)
+        raise HTTPException(status_code=503, detail="Fire station data is unavailable.")
+
+
+@app.get("/api/police-stations")
+def get_police_stations():
+    """Serve the Israel Police station list as GeoJSON points.
+
+    Reference data like /api/fire-stations, and the same shape, but every
+    coordinate here is published rather than derived — there is no precision
+    field because there is no approximation to qualify.
+
+    Returns:
+        dict: A GeoJSON FeatureCollection, plus `located` and `total`. They are
+            always equal: police_stations.location is NOT NULL.
+
+    Raises:
+        HTTPException: 503 when the store cannot be reached.
+    """
+    from ecoguard.database.repositories.police_stations import police_stations_geojson
+
+    try:
+        return police_stations_geojson()
+    except Exception as error:
+        logging.error("Police station query failed: %s", error, exc_info=True)
+        raise HTTPException(status_code=503, detail="Police station data is unavailable.")
+
+
+@app.get("/api/mda-stations")
+def get_mda_stations():
+    """Serve the Magen David Adom station roster as GeoJSON points.
+
+    Same shape as /api/fire-stations, including `precision`: MDA publishes no
+    coordinates, so a station is placed on its mapped building where OSM covers
+    it and on its published address otherwise.
+
+    Returns:
+        dict: A GeoJSON FeatureCollection, plus `located` and `total`. They
+            differ because part of the roster gives no address to resolve.
+
+    Raises:
+        HTTPException: 503 when the store cannot be reached.
+    """
+    from ecoguard.database.repositories.mda_stations import mda_stations_geojson
+
+    try:
+        return mda_stations_geojson()
+    except Exception as error:
+        logging.error("MDA station query failed: %s", error, exc_info=True)
+        raise HTTPException(status_code=503, detail="MDA station data is unavailable.")
+
+
 @app.post("/api/dev/run/{source}")
 def run_collector_now(source: str):
     """Run one collector immediately instead of waiting for its next tick.

@@ -33,6 +33,16 @@ import { clusterHighRiskCells, type FireRiskCluster } from '../components/fireRi
 import { normalizeNationalRiskScanResponse, type NationalRiskScan } from '../components/fireRiskScan'
 import InfrastructureLayer from '../components/InfrastructureLayer'
 import LayersControl from '../components/LayersControl'
+import WhatToSeeControl from '../components/WhatToSeeControl'
+import FireStationsLayer, {
+  FIRE_STATIONS_LAYER_ID,
+} from '../components/layers/FireStationsLayer'
+import PoliceStationsLayer, {
+  POLICE_STATIONS_LAYER_ID,
+} from '../components/layers/PoliceStationsLayer'
+import MdaStationsLayer, {
+  MDA_STATIONS_LAYER_ID,
+} from '../components/layers/MdaStationsLayer'
 import EnvironmentalDataModal from '../components/EnvironmentalDataModal'
 
 import './visuals/dashboard.css'
@@ -300,6 +310,38 @@ function Dashboard() {
     showInfrastructure,
     setShowInfrastructure,
   ] = useState(true)
+
+  // Fire stations are reference data rather than an environmental overlay, so
+  // they live in the "I want to see" bar above the map, not in LayersControl.
+  const [
+    showFireStations,
+    setShowFireStations,
+  ] = useState(false)
+
+  const [
+    fireStationCount,
+    setFireStationCount,
+  ] = useState<{ located: number; total: number } | null>(null)
+
+  const [
+    showPoliceStations,
+    setShowPoliceStations,
+  ] = useState(false)
+
+  const [
+    policeStationCount,
+    setPoliceStationCount,
+  ] = useState<{ located: number; total: number } | null>(null)
+
+  const [
+    showMdaStations,
+    setShowMdaStations,
+  ] = useState(false)
+
+  const [
+    mdaStationCount,
+    setMdaStationCount,
+  ] = useState<{ located: number; total: number } | null>(null)
 
   const [nationalRiskScan, setNationalRiskScan] =
     useState<NationalRiskScan | null>(null)
@@ -636,6 +678,13 @@ function Dashboard() {
       return
     }
 
+    // The click hit an interactive data layer, which owns it. Without this,
+    // clicking a fire station would also drop the blue pin and fire off an
+    // environmental-data request for the station's own coordinates.
+    if (e.features?.length) {
+      return
+    }
+
     const {
       lat,
       lng,
@@ -874,11 +923,55 @@ function Dashboard() {
 
         <main className="dashboard__map">
 
+          <WhatToSeeControl
+            toggles={[
+              {
+                id: 'fire-stations',
+                label: 'Fire Stations',
+                swatch: { logo: '/FireDepIsrael.svg', ring: '#dc2626' },
+                checked: showFireStations,
+                onToggle: () =>
+                  setShowFireStations((current) => !current),
+                note: fireStationCount
+                  ? `${fireStationCount.located}/${fireStationCount.total}`
+                  : null,
+              },
+              {
+                id: 'police-stations',
+                label: 'Police Stations',
+                swatch: { logo: '/Emblem_of_Israel_Police_Blue.svg', ring: '#1d4ed8' },
+                checked: showPoliceStations,
+                onToggle: () =>
+                  setShowPoliceStations((current) => !current),
+                note: policeStationCount
+                  ? `${policeStationCount.total}`
+                  : null,
+              },
+              {
+                id: 'mda-stations',
+                label: 'MDA Stations',
+                swatch: { logo: '/Mada_logo.svg', ring: '#dc2626' },
+                checked: showMdaStations,
+                onToggle: () =>
+                  setShowMdaStations((current) => !current),
+                note: mdaStationCount
+                  ? `${mdaStationCount.located}/${mdaStationCount.total}`
+                  : null,
+              },
+            ]}
+          />
+
           <MapView
             events={events}
             onClick={handleMapClick}
             onEventClick={setOpenEvent}
             selectedLocation={selectedLocation}
+            style={{ flex: '1 1 auto', minHeight: 0 }}
+            interactiveLayerIds={[
+              ...(showFireStations ? [FIRE_STATIONS_LAYER_ID] : []),
+              ...(showPoliceStations ? [POLICE_STATIONS_LAYER_ID] : []),
+              ...(showMdaStations ? [MDA_STATIONS_LAYER_ID] : []),
+            ]}
           >
 
             {nationalRiskScan && highRiskClusters.length > 0 && dismissedFireRiskSnapshot !== nationalRiskScan.evaluation_time && (
@@ -1197,6 +1290,21 @@ function Dashboard() {
             {showFireDanger && (
               <FireDangerLayer />
             )}
+
+            <FireStationsLayer
+              visible={showFireStations}
+              onLoaded={setFireStationCount}
+            />
+
+            <PoliceStationsLayer
+              visible={showPoliceStations}
+              onLoaded={setPoliceStationCount}
+            />
+
+            <MdaStationsLayer
+              visible={showMdaStations}
+              onLoaded={setMdaStationCount}
+            />
 
             {showFireDanger && (
               <FireDangerLegend />
