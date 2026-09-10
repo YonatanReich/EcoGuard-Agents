@@ -1,0 +1,181 @@
+{
+  "case_id": "fire-04-negev-open-nothing-nearby",
+  "title": "Moderate hotspot in open Negev with nothing exposed",
+  "hazard": "fire",
+  "probes": [
+    "proportionality",
+    "over-response",
+    "grounded-none-nearby"
+  ],
+  "notes": "The geospatial layer RAN and returned zero of everything. That is a real empty result, not a failure, so the counts are 0 rather than null and population_band none_nearby is a grounded answer rather than an unknown.",
+  "expected_behaviour_notes": "The correct plan here is minimal: monitor, verify, and do not commit. Over-response is the failure mode this case exists to catch. Recommending evacuation, structure protection or a large mobilisation is wrong when nothing is exposed and conditions are only moderate.",
+  "detected_event": {
+    "metadata": {
+      "timestamp": "2026-09-03T09:00:00Z",
+      "collection_status": "success"
+    },
+    "event_type": "fire",
+    "detected": true,
+    "location": {
+      "latitude": 30.61,
+      "longitude": 34.8
+    },
+    "detection_confidence": "nominal",
+    "fire_weather_severity": "moderate",
+    "satellite_evidence": {
+      "source": "NASA FIRMS",
+      "hotspots_count": 1,
+      "selected_hotspot": {
+        "latitude": 30.61,
+        "longitude": 34.8,
+        "acquisition_date": "2026-09-03",
+        "acquisition_time": "0855",
+        "satellite": "N20",
+        "instrument": "VIIRS",
+        "confidence": "n",
+        "normalized_confidence": "nominal",
+        "frp": 14.2,
+        "daynight": "D"
+      },
+      "hotspots": [
+        {
+          "latitude": 30.61,
+          "longitude": 34.8,
+          "acquisition_date": "2026-09-03",
+          "acquisition_time": "0855",
+          "satellite": "N20",
+          "instrument": "VIIRS",
+          "confidence": "n",
+          "normalized_confidence": "nominal",
+          "frp": 14.2,
+          "daynight": "D"
+        }
+      ]
+    },
+    "fire_danger": {
+      "source": "GWIS/EFFIS",
+      "index": "FWI",
+      "danger_level": "moderate",
+      "fwi_min": 11.2,
+      "fwi_max": 21.3
+    },
+    "weather_context": {
+      "current": {
+        "temperature_c": 33.0,
+        "humidity_percent": 24,
+        "wind_speed_kmh": 15.0,
+        "precipitation_mm": 0.0,
+        "weather_code": 0
+      },
+      "forecast": {
+        "daily": {}
+      }
+    },
+    "geospatial_context": {
+      "terrain_type": null,
+      "region_type": null,
+      "vegetation_density": null,
+      "distance_to_water_m": null,
+      "nearby_settlements": [],
+      "nearby_hospitals": [],
+      "nearby_fire_stations": [],
+      "nearby_police_stations": [],
+      "nearby_roads": [],
+      "nearby_green_areas": [],
+      "nearby_water_sources": []
+    },
+    "source_status": {
+      "nasa_firms": "success",
+      "gwis_effis": "success",
+      "weather": "success",
+      "geospatial": "success"
+    }
+  },
+  "risk_assessment": {
+    "metadata": {
+      "timestamp": "2026-09-03T09:00:05Z",
+      "agent": "RiskAnalysisAgent",
+      "analysis_status": "success",
+      "model": "claude-sonnet-5",
+      "reason": null
+    },
+    "event_id": "90fda2ec34f2",
+    "event_type": "fire",
+    "location": {
+      "latitude": 30.61,
+      "longitude": 34.8
+    },
+    "risk_score": 18,
+    "risk_level": "low",
+    "risk_semantics": "detected_event_operational_risk",
+    "confidence": "medium",
+    "situational_context": {
+      "area_type": "open_natural",
+      "area_type_basis": "The geospatial search ran and returned no settlements, roads, hospitals or stations within the radius, which is consistent with open desert terrain rather than any populated or cultivated area.",
+      "population_band": "none_nearby",
+      "population_basis": "osm_population_tag",
+      "evacuation_consideration": "not_indicated",
+      "context_gaps": [],
+      "derived": {
+        "geospatial_available": true,
+        "search_radius_km": 2,
+        "settlements_count": 0,
+        "settlement_types": [],
+        "settlements_with_population_tag": 0,
+        "tagged_population_total": null,
+        "hospitals_count": 0,
+        "fire_stations_count": 0,
+        "police_stations_count": 0,
+        "roads_count": 0,
+        "road_classes": []
+      }
+    },
+    "primary_drivers": [
+      "Single hotspot at moderate radiative power (14.2 MW)",
+      "Moderate fire-weather danger class",
+      "No settlements, roads or infrastructure within the search radius"
+    ],
+    "explanation": "A single moderate-intensity hotspot in open terrain with nothing exposed. The geospatial search ran and returned no settlements, roads, hospitals or fire stations within the radius, so there are no values at risk in the immediate area. Fire-weather danger is moderate, meaning spread rates are generally within initial-attack capability. The operational priority is verification and monitoring rather than commitment of resources.",
+    "evidence_gaps": [
+      "Nothing beyond the search radius is characterised"
+    ],
+    "web_findings": [],
+    "grounding": {
+      "retriever": "bm25",
+      "retrieved_chunk_ids": [
+        "effis-fire-weather-index#interpreting-the-classes-operationally#0",
+        "usfa-risk-management-structure-fire#the-three-acceptable-risk-guidelines#0"
+      ],
+      "citations": [
+        {
+          "chunk_id": "effis-fire-weather-index#interpreting-the-classes-operationally#0",
+          "document_title": "Fire Weather Index (FWI) System and Fire Danger Classification",
+          "quoted_text": "Low and Moderate.** Fire is possible but spread rates and intensity are generally within the capability of initial-attack resources. - **High.** Conditions support rapid",
+          "supports": "Moderate danger is within initial-attack capability",
+          "document_id": "effis-fire-weather-index",
+          "source_url": "https://forest-fire.emergency.copernicus.eu/about-effis/technical-background/fire-danger-forecast",
+          "heading_path": "Fire Weather Index (FWI) System and Fire Danger Classification > Interpreting the Classes Operationally",
+          "verified": true
+        },
+        {
+          "chunk_id": "usfa-risk-management-structure-fire#the-three-acceptable-risk-guidelines#0",
+          "document_title": "Operational Risk Management and Rules of Engagement for Structure Fires",
+          "quoted_text": "No risk to the safety of members shall be acceptable when there is no possibility to save lives or property. These are ordered del",
+          "supports": "No risk is acceptable where nothing can be saved",
+          "document_id": "usfa-risk-management-structure-fire",
+          "source_url": "https://www.usfa.fema.gov/downloads/pdf/publications/risk_management_practices.pdf",
+          "heading_path": "Operational Risk Management and Rules of Engagement for Structure Fires > The Three Acceptable-Risk Guidelines",
+          "verified": true
+        }
+      ],
+      "unverified_citation_count": 0,
+      "web_search": {
+        "enabled": true,
+        "searches_used": 0,
+        "findings_verified": 0,
+        "findings_dropped": 0
+      }
+    },
+    "error": null
+  }
+}

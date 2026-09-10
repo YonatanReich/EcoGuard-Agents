@@ -22,10 +22,21 @@ The response must be a JSON object containing the following root sections:
 * **`longitude`** (Float): Geographical longitude.
 
 ### 1.3 Geospatial Context
-* **`terrain_type`** (String): Type of land (e.g., "urban", "forest", "desert").
-* **`region_type`** (String): Administrative or geographical region classification.
-* **`vegetation_density`** (Float): A normalized score (0.0 to 1.0) indicating vegetation coverage (relevant for fire risk).
-* **`distance_to_water_m`** (Float): Distance to the nearest significant water body in meters (relevant for flood risk).
+
+> **Not yet populated.** The first four fields below, together with
+> `nearby_green_areas` and `nearby_water_sources`, are part of the intended
+> contract but are hardcoded to `null` / `[]` by the current
+> `GeospatialContextAgent`. They are documented here as the target shape.
+> Downstream consumers, including `RiskAnalysisAgent`, must not build logic on
+> them and must not treat their absence as meaningful — it reflects a
+> limitation of the collection layer, not a property of any given location.
+> Only `nearby_roads`, `nearby_settlements`, `nearby_hospitals`,
+> `nearby_police_stations` and `nearby_fire_stations` carry real data today.
+
+* **`terrain_type`** (String): Type of land (e.g., "urban", "forest", "desert"). *Not yet populated.*
+* **`region_type`** (String): Administrative or geographical region classification. *Not yet populated.*
+* **`vegetation_density`** (Float): A normalized score (0.0 to 1.0) indicating vegetation coverage (relevant for fire risk). *Not yet populated.*
+* **`distance_to_water_m`** (Float): Distance to the nearest significant water body in meters (relevant for flood risk). *Not yet populated.*
 * **`nearby_roads`** (Array of Objects): Unique nearby roads and highways.
 * **`nearby_settlements`** (Array of Objects): Nearby populated areas (cities, towns, etc.).
 * **`nearby_hospitals`** (Array of Objects): Nearby medical facilities.
@@ -904,6 +915,197 @@ The following concepts must remain separate across the system:
 `FireDetectionAgent` and `FloodDetectionAgent` collect and structure the
 available event evidence.
 
-`RiskAnalysisAgent` is responsible for interpreting a detected event, combining
-the available evidence with protocol-grounded analysis, and producing the final
-operational risk assessment.
+`RiskAnalysisAgent` is responsible for interpreting the detected event,
+combining the available evidence with protocol-grounded analysis, and
+producing the final risk assessment.
+
+---
+
+## 5. Risk Assessment and Response Plan Contract
+
+`RiskAnalysisAgent` consumes a `DetectedFireEvent` and produces a
+`RiskAssessment`. `ResponsePlanningAgent` consumes both and produces a
+`ResponsePlan`. Both reason with a Claude model and both are grounded in a
+committed corpus of fire response protocols (`data/protocols/`).
+
+### 5.1 Grounding Guarantee
+
+Neither agent may answer from the model's general knowledge.
+
+1. A BM25 retriever (`services/protocol_retrieval_service.py`) selects protocol
+   passages relevant to the event, and each passage is presented to the model
+   tagged with a `chunk_id`.
+2. The model must return at least one citation. This is enforced by the schema,
+   not by prompt instruction — an uncited response fails validation.
+3. Every returned citation is verified in Python: its `chunk_id` must be one
+   that was actually retrieved, and its `quoted_text` must appear in that
+   chunk. Citations failing either check are discarded and counted in
+   `grounding.unverified_citation_count`.
+4. If no citation survives verification, the whole result is discarded and the
+   status becomes `failed` with error `ungrounded response`.
+
+Provenance in a verified citation (`document_title`, `source_url`) is taken
+from the retriever's own record, never from the model's self-report, so a real
+quotation cannot be attributed to the wrong document.
+
+### 5.2 Status Values and the No-Fabrication Rule
+
+Both agents report a status: `success`, `failed`, or `skipped`.
+
+| Status | Meaning |
+|---|---|
+| `success` | The model answered and at least one citation verified. |
+| `failed` | We attempted an assessment and could not complete one. |
+| `skipped` | No assessment was attempted. |
+
+**`risk_score` and `risk_level` are `null` for every status except `success`.**
+They are never `0` and never `"low"`. Absence of a detection is not evidence of
+low risk, and a provider outage is not evidence of safety. Consumers must render
+this state distinctly rather than defaulting it.
+
+Skip reasons (`metadata.reason`):
+
+| Reason | Cause |
+|---|---|
+| `no_event` | `detected` was `false` — the scan ran and found nothing. |
+| `detection_unavailable` | `detected` was `null` — the scan could not run. |
+| `unsupported_event` | The event was not a fire event. |
+| `analysis_not_requested` | The caller passed `include_analysis=false`. |
+| `risk_analysis_unavailable` | Planning only. Risk analysis did not succeed. |
+
+Failure categories (`error`) come from a closed vocabulary: `authentication
+error`, `rate limited`, `invalid request`, `HTTP error`, `timeout`, `network
+error`, `malformed response`, `missing credentials`, `provider error`, plus
+`no protocol match`, `protocol corpus unavailable`, and `ungrounded response`.
+
+### 5.2a Two Different Meanings of "Risk" — Read This First
+
+The system contains **two** components that emit `risk_score` and `risk_level`,
+and they are not interchangeable:
+
+| | `FireRiskPredictionAgent` | `RiskAnalysisAgent` |
+|---|---|---|
+| Question | Might a fire **start** here? | How bad is this fire that **exists**? |
+| Method | ML model over weather, terrain, land cover | LLM reasoning over detected evidence + protocols |
+| `risk_score` | Float **0.0-1.0** (calibrated probability) | Integer **0-100** (operational severity) |
+| `risk_level` | `low` \| `medium` \| `high` | `low` \| `medium` \| `high` \| `critical` |
+| `risk_semantics` | `"estimated_fire_risk"` | `"detected_event_operational_risk"` |
+| Endpoint | `POST /api/fire-risk`, `GET /api/fire-risk/national-scan` | `GET /api/detected-events` |
+
+**Every consumer must branch on `risk_semantics`, never on the score alone.**
+Reading a `0.85` probability as an `85` severity — or vice versa — is a
+two-order-of-magnitude error, and both fields are populated even when the score
+is null so the distinction survives failure paths.
+
+The two are complementary, not competing: prediction answers *where to watch*,
+analysis answers *what to do about what is already burning*.
+
+### 5.3 RiskAssessment Fields
+
+* **`metadata.analysis_status`** (String): `success` | `failed` | `skipped`.
+* **`metadata.model`** (String or null): Model id, null when no call was made.
+* **`metadata.reason`** (String or null): Skip reason, see 5.2.
+* **`event_id`** (String): Stable 12-character hash of the hotspot's position
+  and acquisition time. The join key between the assessment, the plan and the
+  map marker — the same fire keeps the same id across repeated scans.
+* **`risk_semantics`** (String): Always `"detected_event_operational_risk"`.
+  Present even when the score is null. See 5.2a.
+* **`risk_score`** (Integer or null): Operational risk, 0-100.
+* **`risk_level`** (String or null): `low` | `medium` | `high` | `critical`.
+  **Derived in Python from `risk_score`**, never requested from the model, so
+  the two cannot disagree. Bands: 0-24 low, 25-49 medium, 50-79 high, 80-100
+  critical.
+* **`confidence`** (String or null): `low` | `medium` | `high`. How well the
+  evidence supports the score.
+* **`primary_drivers`** (Array of Strings): The signals that drove the score.
+* **`explanation`** (String or null): Plain-language justification.
+* **`evidence_gaps`** (Array of Strings): What could not be determined,
+  typically because an enrichment source failed.
+* **`grounding`** (Object): See 5.5.
+* **`error`** (String or null): Failure category, see 5.2.
+
+Note this object deliberately carries **no** `recommended_units` and no
+`response_plan`. Those belong to the response plan.
+
+### 5.4 ResponsePlan Fields
+
+The plan is designed to be **self-contained**, so that a downstream resource
+allocation agent receiving only the plan can act on it. The identity block below
+is what makes that true; correlating a plan to an event by "they arrived in the
+same HTTP response" is not a contract.
+
+* **`metadata.planning_status`** (String): `success` | `failed` | `skipped`.
+* **`event_id`** (String or null): Same id as the corresponding assessment.
+  Null only when the plan was built with no event context at all.
+* **`event_type`** (String): `"fire"`.
+* **`location`** (Object): The event's coordinates.
+* **`responding_to`** (Object): The assessment this plan answers —
+  `risk_score`, `risk_level` and `risk_semantics`, all null on non-success
+  paths. Carries the semantics so a consumer knows which scale the score is on.
+* **`recommended_units`** (Array of Strings): From a closed vocabulary —
+  `fire_department`, `police`, `medical_services`, `municipal_emergency_team`,
+  `home_front_command`, `aerial_firefighting`, `forestry_service`,
+  `utility_operator`.
+* **`response_actions`** (Array of Objects): Ordered by priority; list position
+  is the order. Each has `action` (String), `responsible_unit` (one of the
+  above), and `timeframe` (`immediate` | `within_1_hour` | `within_6_hours` |
+  `ongoing`). Every `responsible_unit` must also appear in
+  `recommended_units`; a plan violating this is rejected.
+* **`plan_summary`** (String or null): One-paragraph overview.
+* **`assumptions`** (Array of Strings): What the plan takes for granted.
+* **`grounding`** (Object): See 5.5.
+* **`error`** (String or null): Failure category, see 5.2.
+
+Planning is gated on risk analysis: if `analysis_status` is not `success`, no
+model call is made and the plan is `skipped`. Planning a response to a risk that
+could not be determined would hand an operator actions justified by nothing.
+
+### 5.5 Grounding Object
+
+Attached to both the assessment and the plan.
+
+* **`retriever`** (String): Retrieval method, currently `bm25`.
+* **`retrieved_chunk_ids`** (Array of Strings): Everything retrieved, including
+  passages the model chose not to cite.
+* **`citations`** (Array of Objects): Verified citations only. Each carries
+  `chunk_id`, `document_id`, `document_title`, `source_url`, `heading_path`,
+  `quoted_text`, `supports`, and `verified` (always `true`).
+* **`unverified_citation_count`** (Integer): How many citations were discarded.
+  A non-zero value on a successful result means the model cited loosely but at
+  least one citation held.
+
+### 5.6 GET /api/detected-events
+
+| Parameter | Type | Default | Range | Description |
+|---|---|---|---|---|
+| `latitude` | Float | 31.783333 | 29.45-33.35 | Within Israel's borders. |
+| `longitude` | Float | 35.216667 | 34.26-35.90 | Within Israel's borders. |
+| `radius_km` | Float | 5.0 | 1-50 | Hotspot relevance radius. |
+| `day_range` | Integer | 2 | 1-10 | Recent days of satellite data. |
+| `include_analysis` | Boolean | true | — | False skips both model calls. |
+
+Responses:
+
+* **`200 OK`** — Always returned when the pipeline ran, including when nothing
+  was detected (`events: []`) and when satellite detection failed
+  (`events: []`, `collection_status: "failed"`). This differs from
+  `/api/environmental-data`, which returns 502 on provider failure. The
+  difference is intentional: this endpoint is fetched on dashboard load with no
+  user-visible error path, so a 5xx would silently blank the map.
+* **`422 Unprocessable Entity`** — A parameter outside the ranges above.
+* **`500 Internal Server Error`** — Unexpected internal error. The detail is
+  masked and the exception logged server-side.
+
+The response carries `metadata` (with a per-service status breakdown covering
+`detection`, `risk_analysis`, `response_planning` and `protocols`), the `query`
+that produced it, and an `events` array of zero or one event. Each event
+flattens the detection, assessment and plan into one object, with
+`response_plan` as flattened action strings and `response_actions` retaining
+unit and timeframe. Event `id` is a stable hash of the hotspot, so repeated
+scans of the same fire produce the same id.
+
+**Performance.** The full pipeline typically takes 20-90 seconds: the
+OpenStreetMap Overpass lookup alone can take 30 seconds under load, and each
+model call adds several more. Pass `include_analysis=false` for a
+detection-only response. A background-job endpoint would be the proper fix and
+is not implemented.

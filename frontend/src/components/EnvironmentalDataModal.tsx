@@ -10,7 +10,7 @@
  */
 
 import { Popup } from 'react-map-gl/maplibre'
-import { type EnvironmentalData } from '../pages/Dashboard'
+import type { EnvironmentalData } from '../types/environmentalData'
 import '../pages/visuals/environmentaldatamodal.css'
 
 type ModalProps = {

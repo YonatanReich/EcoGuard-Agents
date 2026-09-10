@@ -9,7 +9,8 @@ agents package.
 
 Endpoints:
     GET /                       Health check.
-    GET /api/detected-events    Currently-detected risk events (mock data).
+    GET /api/detected-events    Live fire detection, risk analysis and response
+                                planning for one coordinate.
     GET /api/environmental-data Live weather + geospatial context for one
                                 coordinate.
 
@@ -19,17 +20,28 @@ Run locally with:
 
 import logging
 from datetime import datetime
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-from agents.risk_analysis_agent import analyze_event
-from agents.weather_data_agent import WeatherDataAgent
-from agents.geospatial_context_agent import GeospatialContextAgent
-from backend.fire_risk_schemas import FireRiskRequest, FireRiskResponse, NationalRiskScanResponse
+from agents.fire_detection_agent import FireDetectionAgent
 from agents.fire_risk_prediction_agent import FireRiskPredictionAgent
+from agents.geospatial_context_agent import GeospatialContextAgent
+from agents.response_planning_agent import ResponsePlanningAgent
+from agents.risk_analysis_agent import RiskAnalysisAgent, build_event_id
+from agents.weather_data_agent import WeatherDataAgent
+from agents.resource_allocation_agent import ResourceAllocationAgent
+from backend.fire_risk_schemas import (
+    FireRiskRequest,
+    FireRiskResponse,
+    NationalRiskScanResponse,
+)
+from services.claude_llm_service import ClaudeLLMService
 from services.current_risk_feature_builder import CurrentRiskFeatureBuilder
-from services.national_current_risk_scan_service import NationalCurrentRiskScanService
 from services.current_risk_refresh_orchestrator import CurrentRiskRefreshOrchestrator
+from services.national_current_risk_scan_service import NationalCurrentRiskScanService
+from services.protocol_retrieval_service import ProtocolRetriever
+from agents.coordinator import FireCoordinator
 
 logging.basicConfig(
     level=logging.INFO,
@@ -61,10 +73,46 @@ app.add_middleware(
 # each is enough for the whole process — no need to build them per request.
 weather_agent = WeatherDataAgent()
 geo_agent = GeospatialContextAgent()
+fire_detection_agent = FireDetectionAgent()
+
+# --- Fire risk prediction (ML) -------------------------------------------
+# Estimates fire likelihood for a location from weather, terrain and land
+# cover. This answers "where might a fire start", independently of whether
+# any fire has been detected.
 current_risk_feature_builder = CurrentRiskFeatureBuilder()
 fire_risk_prediction_agent = FireRiskPredictionAgent()
 national_risk_scan_service = NationalCurrentRiskScanService()
 current_risk_refresh = CurrentRiskRefreshOrchestrator(scan_service=national_risk_scan_service)
+
+# --- Risk analysis and response planning (LLM + RAG) ----------------------
+# Interprets a *detected* fire event and plans a response, grounded in the
+# protocol corpus. Distinct from the prediction model above: that one
+# estimates likelihood, these two reason about an event that already exists.
+#
+# The protocol corpus is loaded and chunked once, here, and shared by both
+# reasoning agents. Three markdown documents take a few milliseconds.
+protocol_retriever = ProtocolRetriever()
+
+# Two Claude clients rather than one: the planning call runs at lower effort
+# because it works from an already-reasoned assessment, which keeps the second
+# call from doubling the latency of the first.
+risk_agent = RiskAnalysisAgent(
+    llm_service=ClaudeLLMService(effort="medium"),
+    retriever=protocol_retriever,
+)
+planning_agent = ResponsePlanningAgent(
+    llm_service=ClaudeLLMService(effort="low"),
+    retriever=protocol_retriever,
+)
+allocation_agent = ResourceAllocationAgent()
+
+# Israel's bounding box. Enforced on every coordinate parameter: it matches the
+# product scope and stops the endpoints being used to scan arbitrary parts of
+# the world through our upstream providers.
+ISRAEL_MIN_LATITUDE = 29.45
+ISRAEL_MAX_LATITUDE = 33.35
+ISRAEL_MIN_LONGITUDE = 34.26
+ISRAEL_MAX_LONGITUDE = 35.90
 
 
 @app.on_event("startup")
@@ -75,6 +123,14 @@ def start_current_risk_refresh():
 @app.on_event("shutdown")
 def stop_current_risk_refresh():
     current_risk_refresh.stop()
+
+
+fire_coordinator = FireCoordinator(
+    detection_agent=fire_detection_agent,
+    risk_agent=risk_agent,
+    planning_agent=planning_agent,
+    allocation_agent=allocation_agent,
+)
 
 @app.get("/")
 def read_root():
@@ -185,53 +241,282 @@ def national_fire_risk_scan(evaluation_time: datetime | None = Query(default=Non
 
 
 @app.get("/api/detected-events")
-def get_detected_events():
+def get_detected_events(
+    latitude: float = Query(
+        default=31.783333,
+        ge=ISRAEL_MIN_LATITUDE,
+        le=ISRAEL_MAX_LATITUDE,
+        description="Latitude must be within Israel's borders",
+    ),
+    longitude: float = Query(
+        default=35.216667,
+        ge=ISRAEL_MIN_LONGITUDE,
+        le=ISRAEL_MAX_LONGITUDE,
+        description="Longitude must be within Israel's borders",
+    ),
+    radius_km: float = Query(
+        default=5.0,
+        ge=1.0,
+        le=50.0,
+        description="How far from the requested point a hotspot counts as relevant",
+    ),
+    day_range: int = Query(
+        default=2,
+        ge=1,
+        le=10,
+        description="How many recent days of satellite data to inspect",
+    ),
+    include_analysis: bool = Query(
+        default=True,
+        description="Set false to skip risk analysis and response planning for a fast map render",
+    ),
+):
     """
-    Return the list of currently detected risk events.
+    Detect fires near a coordinate, assess their risk, and plan a response.
 
-    Mock endpoint: it always returns exactly one hard-coded wildfire event
-    near Tel Aviv, with its risk fields filled in by the risk analysis agent.
-    It exists so the dashboard's map markers and event counter have something
-    to render before real event detection is implemented.
+    Runs the full pipeline: FireDetectionAgent (NASA FIRMS satellite hotspots,
+    enriched with GWIS/EFFIS fire weather, Open-Meteo conditions and
+    OpenStreetMap context), then RiskAnalysisAgent, then ResponsePlanningAgent.
+    Both reasoning agents are grounded in the protocol corpus and cite it.
+
+    Args:
+        latitude (float): 29.45 to 33.35. Defaults to Jerusalem.
+        longitude (float): 34.26 to 35.90. Defaults to Jerusalem.
+        radius_km (float): Hotspot relevance radius from the requested point.
+        day_range (int): Recent days of FIRMS data to inspect.
+        include_analysis (bool): When false, detection runs but both model calls
+            are skipped and the event is returned with analysis and planning
+            marked "skipped".
 
     Returns:
-        dict: {"events": [...]} where each event carries its identity, its
-            map coordinates, and the risk analysis agent's assessment
-            (score, level, recommended units, response plan, explanation).
+        dict: metadata (including a per-service status breakdown), the query
+            that produced it, and an events list holding zero or one event.
+
+    Raises:
+        HTTPException: 500 for an unexpected internal error, with the detail
+            masked and the real exception logged. FastAPI returns 422 for
+            out-of-bounds coordinates.
+
+    Note this returns 200 with an empty events list when satellite detection
+    fails, rather than 502. The dashboard fetches this on page load and its only
+    failure handler logs to the console, so a 502 would blank the map with no
+    user-visible explanation. /api/environmental-data does return 502 because it
+    is user-initiated and has an error modal behind it.
+
+    Performance: this is slow, typically 20-90 seconds. The OpenStreetMap
+    Overpass lookup alone can take 30 seconds under load, and each of the two
+    model calls adds several more. Pass include_analysis=false for a detection-
+    only response. A background-job endpoint is the real fix and is not built.
     """
-    event_type = "wildfire"
-    analysis = analyze_event(event_type)
+    logging.info(
+        "Detected-events request for lat=%s, lon=%s, radius=%skm, days=%s, analysis=%s",
+        latitude, longitude, radius_km, day_range, include_analysis,
+    )
+
+    try:
+        pipeline = fire_coordinator.run_event_pipeline(
+            latitude,
+            longitude,
+            day_range=day_range,
+            radius_km=radius_km,
+            include_analysis=include_analysis,
+        )
+
+        return build_detected_events_response(
+            pipeline=pipeline,
+            query={
+                "latitude": latitude,
+                "longitude": longitude,
+                "radius_km": radius_km,
+                "day_range": day_range,
+                "include_analysis": include_analysis,
+            },
+        )
+
+    except HTTPException:
+        raise
+
+    except Exception as error:
+        logging.error(
+            "Unexpected internal error detecting events for lat=%s, lon=%s. Error: %s",
+            latitude, longitude, str(error), exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error. Please try again later.",
+        )
+
+
+def build_event_title(event: dict) -> str:
+    """
+    Name the event after the nearest settlement, falling back to coordinates.
+
+    Args:
+        event (dict): A FireDetectionAgent result.
+
+    Returns:
+        str: A human-readable title for the dashboard.
+    """
+    geospatial = event.get("geospatial_context") or {}
+    settlements = geospatial.get("nearby_settlements") or []
+
+    for settlement in settlements:
+        if isinstance(settlement, dict) and settlement.get("name"):
+            return f"Fire detected near {settlement['name']}"
+
+    location = event.get("location") or {}
+    latitude = location.get("latitude")
+    longitude = location.get("longitude")
+
+    if latitude is None or longitude is None:
+        return "Fire detected"
+
+    return f"Fire detected at {latitude:.4f}, {longitude:.4f}"
+
+
+def build_detected_events_response(*, pipeline: dict, query: dict) -> dict:
+    """
+    Flatten the coordinator pipeline result into the dashboard's event contract.
+
+    The agents each return a nested, self-describing document; the frontend
+    wants one flat object per marker. Doing that translation here keeps the
+    transport shape out of the agents, which is what lets the agents stay
+    testable without a notion of HTTP.
+
+    Args:
+        pipeline (dict): FireCoordinator result.
+        query (dict): The request parameters, echoed back.
+
+    Returns:
+        dict: The API response.
+    """
+    event = pipeline.get("detection") or {}
+    risk = pipeline.get("risk_analysis") or {}
+    plan = pipeline.get("planning") or {}
+
+    detection_status = (event.get("metadata") or {}).get("collection_status", "unknown")
+    analysis_status = (risk.get("metadata") or {}).get("analysis_status", "skipped")
+    planning_status = (plan.get("metadata") or {}).get("planning_status", "skipped")
+    allocation_status = (pipeline.get("allocated_resources") or {}).get("status", "skipped")
+
+    events = []
+
+    # Only a positive detection produces a marker. detected False means the scan
+    # ran and found nothing; detected None means it could not run at all. Neither
+    # is an event, and inventing one for either would misreport the situation.
+    if event.get("detected") is True:
+        events.append(build_dashboard_event(pipeline=pipeline))
+
+    if detection_status == "failed" or pipeline.get("status") == "error":
+        collection_status = "failed"
+    elif pipeline.get("status") == "partial":
+        collection_status = "partial_service_failure"
+    else:
+        collection_status = "success"
 
     return {
-        "events": [
-            {
-                "id": 1,
-                "type": event_type,
-                "title": "Mock wildfire risk event",
-                "description": "High wildfire risk detected near a dry vegetation area.",
-                "latitude": 32.0853,
-                "longitude": 34.7818,
-                "risk_score": analysis["risk_score"],
-                "risk_level": analysis["risk_level"],
-                "recommended_units": analysis["recommended_units"],
-                "response_plan": analysis["response_plan"],
-                "explanation": analysis["explanation"]
-            }
-        ]
+        "metadata": {
+            "timestamp": (event.get("metadata") or {}).get("timestamp"),
+            "collection_status": collection_status,
+            "services": {
+                "detection": {"status": detection_status, "source": "NASA FIRMS"},
+                "risk_analysis": {
+                    "status": analysis_status,
+                    "source": (risk.get("metadata") or {}).get("model"),
+                },
+                "response_planning": {
+                    "status": planning_status,
+                    "source": (plan.get("metadata") or {}).get("model"),
+                },
+                "resource_allocation": {
+                    "status": allocation_status,
+                    "source": "OpenStreetMap geographic candidates",
+                },
+                "protocols": {
+                    "status": "success" if protocol_retriever.available else "failed",
+                    "source": "local BM25 protocol corpus",
+                },
+            },
+        },
+        "query": query,
+        "events": events,
+    }
+
+
+def build_dashboard_event(*, pipeline: dict) -> dict:
+    """
+    Build one flat dashboard event from a coordinator pipeline result.
+
+    Args:
+        pipeline (dict): FireCoordinator result.
+
+    Returns:
+        dict: One event object for the dashboard's events list.
+    """
+    event = pipeline.get("detection") or {}
+    risk = pipeline.get("risk_analysis") or {}
+    plan = pipeline.get("planning") or {}
+    location = pipeline.get("location") or event.get("location") or {}
+    actions = plan.get("response_actions") or []
+
+    risk_citations = ((risk.get("grounding") or {}).get("citations")) or []
+    plan_citations = ((plan.get("grounding") or {}).get("citations")) or []
+
+    description = (
+        plan.get("plan_summary")
+        or risk.get("explanation")
+        or "Fire detected. Risk analysis is not available for this event."
+    )
+
+    return {
+        "id": build_event_id(event),
+        "type": event.get("event_type", "fire"),
+        "title": build_event_title(event),
+        "description": description,
+        "latitude": location.get("latitude"),
+        "longitude": location.get("longitude"),
+
+        # Detection evidence, kept distinct from the risk judgement.
+        "detection_confidence": event.get("detection_confidence"),
+        "fire_weather_severity": event.get("fire_weather_severity"),
+
+        # Risk analysis. All of these are None unless the analysis succeeded.
+        "risk_score": risk.get("risk_score"),
+        "risk_level": risk.get("risk_level"),
+        "confidence": risk.get("confidence"),
+        "primary_drivers": risk.get("primary_drivers") or [],
+        "explanation": risk.get("explanation"),
+        "evidence_gaps": risk.get("evidence_gaps") or [],
+
+        # Response plan. response_plan is the flattened form the dashboard
+        # already expects; response_actions carries the unit and timeframe.
+        "plan_summary": plan.get("plan_summary"),
+        "assumptions": plan.get("assumptions") or [],
+        "recommended_units": plan.get("recommended_units") or [],
+        "response_plan": [action["action"] for action in actions],
+        "response_actions": actions,
+        "allocated_resources": pipeline.get("allocated_resources") or {},
+        "nearby_roads": pipeline.get("nearby_roads") or [],
+
+        # Verified citations from both reasoning steps, merged.
+        "protocol_citations": risk_citations + plan_citations,
+
+        "analysis_status": (risk.get("metadata") or {}).get("analysis_status", "skipped"),
+        "planning_status": (plan.get("metadata") or {}).get("planning_status", "skipped"),
     }
 
 @app.get("/api/environmental-data")
 def get_environmental_data(
     latitude: float = Query(
-        default=31.783333, 
-        ge=29.45, 
-        le=33.35, 
+        default=31.783333,
+        ge=ISRAEL_MIN_LATITUDE,
+        le=ISRAEL_MAX_LATITUDE,
         description="Latitude must be within Israel's borders"
     ),
     longitude: float = Query(
-        default=35.216667, 
-        ge=34.26, 
-        le=35.90, 
+        default=35.216667,
+        ge=ISRAEL_MIN_LONGITUDE,
+        le=ISRAEL_MAX_LONGITUDE,
         description="Longitude must be within Israel's borders"
     )):
     """
@@ -338,4 +623,48 @@ def get_environmental_data(
         raise HTTPException(
             status_code=500, 
             detail="Internal server error. Please try again later."
+        )
+
+@app.get("/api/analyze-location")
+def analyze_location(
+    latitude: float = Query(
+        default=31.783333, 
+        ge=29.45, 
+        le=33.35, 
+        description="Latitude must be within Israel's borders"
+    ),
+    longitude: float = Query(
+        default=35.216667, 
+        ge=34.26, 
+        le=35.90, 
+        description="Longitude must be within Israel's borders"
+    )
+):
+    """
+    On-demand execution of the full fire detection pipeline for a specific coordinate.
+    Typically triggered when a user clicks on the dashboard map.
+    """
+    logging.info(f"Running on-demand fire pipeline for lat={latitude}, lon={longitude}")
+    
+    # Invoke the same coordinator pipeline used by /api/detected-events.
+    pipeline_result = fire_coordinator.run_event_pipeline(latitude, longitude)
+
+    if pipeline_result.get("status") in ("success", "partial"):
+        return {
+            "status": pipeline_result["status"],
+            "message": pipeline_result.get("message"),
+            "event_data": build_dashboard_event(pipeline=pipeline_result),
+        }
+    
+    elif pipeline_result.get("status") == "no_event":
+        return {"status": "no_event", "message": pipeline_result.get("message")}
+    elif pipeline_result.get("status") == "error":
+        raise HTTPException(
+            status_code=502,
+            detail=pipeline_result.get("message", "Pipeline execution failed.")
+        )
+    else:
+        raise HTTPException(
+            status_code=500, 
+            detail=pipeline_result.get("message", "Internal pipeline error")
         )

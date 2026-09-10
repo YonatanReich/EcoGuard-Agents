@@ -1,0 +1,211 @@
+{
+  "case_id": "fire-01-apartment-town",
+  "title": "Small apartment fire in a small town",
+  "hazard": "fire",
+  "probes": [
+    "proportionality",
+    "area-type-inference",
+    "corpus-coverage"
+  ],
+  "notes": "A compartment fire inside a third-floor flat is essentially invisible to VIIRS; a 2.1 MW hotspot at this location is artificial and the case does not claim the system detects apartment fires. Its value is downstream: the corpus was wildland-only until recently, so this probes whether the planner transplants defensible-space and aerial-drop doctrine into a residential building, or reaches for the structural rules of engagement instead.",
+  "expected_behaviour_notes": "Low score. Must NOT recommend aerial_firefighting or forestry_service, and must not talk about defensible space. A fire station is 800 m away, so extended response time is not a constraint here. Occupancy is unknown and should be named as an assumption rather than asserted.",
+  "detected_event": {
+    "metadata": {
+      "timestamp": "2026-09-03T09:00:00Z",
+      "collection_status": "success"
+    },
+    "event_type": "fire",
+    "detected": true,
+    "location": {
+      "latitude": 32.656,
+      "longitude": 35.105
+    },
+    "detection_confidence": "low",
+    "fire_weather_severity": "low",
+    "satellite_evidence": {
+      "source": "NASA FIRMS",
+      "hotspots_count": 1,
+      "selected_hotspot": {
+        "latitude": 32.656,
+        "longitude": 35.105,
+        "acquisition_date": "2026-09-03",
+        "acquisition_time": "0842",
+        "satellite": "N20",
+        "instrument": "VIIRS",
+        "confidence": "l",
+        "normalized_confidence": "low",
+        "frp": 2.1,
+        "daynight": "D"
+      },
+      "hotspots": [
+        {
+          "latitude": 32.656,
+          "longitude": 35.105,
+          "acquisition_date": "2026-09-03",
+          "acquisition_time": "0842",
+          "satellite": "N20",
+          "instrument": "VIIRS",
+          "confidence": "l",
+          "normalized_confidence": "low",
+          "frp": 2.1,
+          "daynight": "D"
+        }
+      ]
+    },
+    "fire_danger": {
+      "source": "GWIS/EFFIS",
+      "index": "FWI",
+      "danger_level": "low",
+      "fwi_min": null,
+      "fwi_max": 11.2
+    },
+    "weather_context": {
+      "current": {
+        "temperature_c": 24.0,
+        "humidity_percent": 55,
+        "wind_speed_kmh": 9.0,
+        "precipitation_mm": 0.0,
+        "weather_code": 0
+      },
+      "forecast": {
+        "daily": {}
+      }
+    },
+    "geospatial_context": {
+      "terrain_type": null,
+      "region_type": null,
+      "vegetation_density": null,
+      "distance_to_water_m": null,
+      "nearby_settlements": [
+        {
+          "name": "Yokneam Illit",
+          "type": "town",
+          "population": "21000"
+        }
+      ],
+      "nearby_hospitals": [
+        {
+          "name": "Yokneam Medical Centre"
+        }
+      ],
+      "nearby_fire_stations": [
+        {
+          "name": "Yokneam Fire Station"
+        }
+      ],
+      "nearby_police_stations": [],
+      "nearby_roads": [
+        {
+          "name": "Ha-Nasi Blvd",
+          "type": "residential"
+        },
+        {
+          "name": "Route 70",
+          "type": "trunk"
+        }
+      ],
+      "nearby_green_areas": [],
+      "nearby_water_sources": []
+    },
+    "source_status": {
+      "nasa_firms": "success",
+      "gwis_effis": "success",
+      "weather": "success",
+      "geospatial": "success"
+    }
+  },
+  "risk_assessment": {
+    "metadata": {
+      "timestamp": "2026-09-03T09:00:05Z",
+      "agent": "RiskAnalysisAgent",
+      "analysis_status": "success",
+      "model": "claude-sonnet-5",
+      "reason": null
+    },
+    "event_id": "ff66e41b3188",
+    "event_type": "fire",
+    "location": {
+      "latitude": 32.656,
+      "longitude": 35.105
+    },
+    "risk_score": 22,
+    "risk_level": "low",
+    "risk_semantics": "detected_event_operational_risk",
+    "confidence": "medium",
+    "situational_context": {
+      "area_type": "urban_residential",
+      "area_type_basis": "One settlement tagged place=town with a residential-class road and a hospital inside the search radius; no agricultural or open-natural indication is present in the collected records.",
+      "population_band": "10k_to_100k",
+      "population_basis": "osm_population_tag",
+      "evacuation_consideration": "shelter_in_place_candidate",
+      "context_gaps": [],
+      "derived": {
+        "geospatial_available": true,
+        "search_radius_km": 2,
+        "settlements_count": 1,
+        "settlement_types": [
+          "town"
+        ],
+        "settlements_with_population_tag": 1,
+        "tagged_population_total": 21000,
+        "hospitals_count": 1,
+        "fire_stations_count": 1,
+        "police_stations_count": 0,
+        "roads_count": 2,
+        "road_classes": [
+          "residential",
+          "trunk"
+        ]
+      }
+    },
+    "primary_drivers": [
+      "Very low fire radiative power (2.1 MW)",
+      "Low satellite detection confidence",
+      "Low fire-weather danger class",
+      "Fire station within the search radius"
+    ],
+    "explanation": "A weak thermal signal in a residential area under low fire-weather danger. The 2.1 MW radiative power and low detection confidence are consistent with a small, contained fire rather than a spreading one, and conditions do not favour rapid spread. A fire station lies within the search radius, so response time is not a limiting factor. The dominant unknown is occupancy of the building, which the collected evidence cannot establish and which governs how aggressively crews may be committed.",
+    "evidence_gaps": [
+      "Building occupancy is not established by the collected evidence",
+      "No information on floor of origin or internal access"
+    ],
+    "web_findings": [],
+    "grounding": {
+      "retriever": "bm25",
+      "retrieved_chunk_ids": [
+        "usfa-risk-management-structure-fire#the-three-acceptable-risk-guidelines#0",
+        "usfa-risk-management-structure-fire#unoccupied-vacant-and-abandoned-structures#0"
+      ],
+      "citations": [
+        {
+          "chunk_id": "usfa-risk-management-structure-fire#the-three-acceptable-risk-guidelines#0",
+          "document_title": "Operational Risk Management and Rules of Engagement for Structure Fires",
+          "quoted_text": "Activities that present a significant risk to the safety of members shall be limited to situations in which there is a potential to save endangered lives. 2. Activities r",
+          "supports": "Committing crews is justified only by potential to save lives",
+          "document_id": "usfa-risk-management-structure-fire",
+          "source_url": "https://www.usfa.fema.gov/downloads/pdf/publications/risk_management_practices.pdf",
+          "heading_path": "Operational Risk Management and Rules of Engagement for Structure Fires > The Three Acceptable-Risk Guidelines",
+          "verified": true
+        },
+        {
+          "chunk_id": "usfa-risk-management-structure-fire#unoccupied-vacant-and-abandoned-structures#0",
+          "document_title": "Operational Risk Management and Rules of Engagement for Structure Fires",
+          "quoted_text": "The distinguishing characteristics of unoccupied, vacant and abandoned structures influence an Incident Commander's decisions. The fundamental risk ma",
+          "supports": "Occupancy status drives the engagement decision",
+          "document_id": "usfa-risk-management-structure-fire",
+          "source_url": "https://www.usfa.fema.gov/downloads/pdf/publications/risk_management_practices.pdf",
+          "heading_path": "Operational Risk Management and Rules of Engagement for Structure Fires > Unoccupied, Vacant and Abandoned Structures",
+          "verified": true
+        }
+      ],
+      "unverified_citation_count": 0,
+      "web_search": {
+        "enabled": true,
+        "searches_used": 0,
+        "findings_verified": 0,
+        "findings_dropped": 0
+      }
+    },
+    "error": null
+  }
+}

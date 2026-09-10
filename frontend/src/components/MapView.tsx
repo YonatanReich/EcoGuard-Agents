@@ -27,7 +27,14 @@ import maplibregl from 'maplibre-gl'
 
 import 'maplibre-gl/dist/maplibre-gl.css'
 
-import { type RiskEvent } from '../pages/Dashboard'
+import type { IncidentDetails } from '../types/incidents'
+
+export type MapCoordinateClickEvent = {
+  lngLat: {
+    lat: number
+    lng: number
+  }
+}
 
 
 /**
@@ -51,7 +58,7 @@ if (
 /**
  * MapTiler API key, read from the Vite environment at build time.
  *
- * Set VITE_MAPTILER_KEY in frontend/.env.local.
+ * Set VITE_MAPTILER_KEY in the repository-level .env file loaded by Vite.
  */
 const MAPTILER_KEY =
   import.meta.env.VITE_MAPTILER_KEY
@@ -82,13 +89,53 @@ const ISRAEL_MAX_BOUNDS: [
 ]
 
 
+/**
+ * Marker colour per operational risk band.
+ *
+ * The backend sends lowercase bands. A previous version compared against
+ * 'High' with a capital H, which never matched, so every marker rendered
+ * orange regardless of severity.
+ */
+const RISK_LEVEL_COLORS: Record<string, string> = {
+  critical: '#7f1d1d',
+  high: '#dc2626',
+  medium: '#f59e0b',
+  low: '#16a34a',
+}
+
+
+/** Grey, used when no risk score exists. */
+const UNASSESSED_COLOR = '#6b7280'
+
+
+/**
+ * Pick a marker colour for a risk band.
+ *
+ * A null band means the analysis was skipped or failed, and grey says exactly
+ * that. Colouring an unassessed fire green would claim it is low risk, which is
+ * a claim nothing in the pipeline actually made.
+ */
+function riskLevelColor(
+  riskLevel: string | null | undefined
+): string {
+  if (!riskLevel) {
+    return UNASSESSED_COLOR
+  }
+
+  return (
+    RISK_LEVEL_COLORS[riskLevel] ??
+    UNASSESSED_COLOR
+  )
+}
+
+
 type MapViewProps = {
   /**
    * Detected events to plot.
    *
    * Marker colour is derived from risk_level.
    */
-  events: RiskEvent[]
+  events: IncidentDetails[]
 
   /**
    * Inline style for the wrapping container.
@@ -122,9 +169,7 @@ type MapViewProps = {
    * Called with the clicked coordinate for both
    * map clicks and event-marker clicks.
    */
-  onClick?: (
-    e: any
-  ) => void
+  onClick?: (event: MapCoordinateClickEvent) => void
 
   /**
    * Coordinate highlighted with the blue marker.
@@ -135,7 +180,7 @@ type MapViewProps = {
   } | null
 } & Pick<
   MapProps,
-  'onLoad' | 'onClick'
+  'onLoad'
 >
 
 
@@ -320,10 +365,9 @@ function MapView({
               }
 
               color={
-                event.risk_level ===
-                'High'
-                  ? 'red'
-                  : 'orange'
+                riskLevelColor(
+                  event.risk_level
+                )
               }
 
               onClick={(e) => {

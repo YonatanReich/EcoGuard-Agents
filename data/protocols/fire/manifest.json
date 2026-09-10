@@ -1,0 +1,51 @@
+{
+  "hazard": "fire",
+  "corpus_version": "1.1.0",
+  "description": "Fire response protocol corpus used to ground risk analysis and response planning. Every document is openly licensed and attributed. See ../README.md for licence terms.",
+  "documents": [
+    {
+      "document_id": "nwcg-standard-orders-watchouts",
+      "filename": "nwcg-standard-orders-watchouts.md",
+      "title": "Wildland Fire Safety Doctrine: Standard Firefighting Orders, Watch Out Situations, and LCES",
+      "publisher": "National Wildfire Coordinating Group (NWCG) / U.S. National Park Service",
+      "source_url": "https://www.nps.gov/articles/firefighting-orders-watchout-situations.htm",
+      "license": "Public domain (work of the U.S. federal government)",
+      "retrieved_at": "2026-08-27",
+      "sha256": "a786910db1694b55bfee453088ed59b354875fc81b632fb891017889858c7d39",
+      "covers": ["engagement safety", "escape routes", "situational awareness", "weather triggers"]
+    },
+    {
+      "document_id": "effis-fire-weather-index",
+      "filename": "effis-fire-weather-index.md",
+      "title": "Fire Weather Index (FWI) System and Fire Danger Classification",
+      "publisher": "Copernicus Emergency Management Service / EFFIS",
+      "source_url": "https://forest-fire.emergency.copernicus.eu/about-effis/technical-background/fire-danger-forecast",
+      "license": "Copernicus open licence (free use with attribution)",
+      "retrieved_at": "2026-08-27",
+      "sha256": "e020feeee432edf625c10363cbbddb57fde9e58731e41cd66780be4aa02933bf",
+      "covers": ["fire danger classification", "FWI thresholds", "severity interpretation"]
+    },
+    {
+      "document_id": "usfa-risk-management-structure-fire",
+      "filename": "usfa-risk-management-structure-fire.md",
+      "title": "Operational Risk Management and Rules of Engagement for Structure Fires",
+      "publisher": "U.S. Fire Administration / FEMA",
+      "source_url": "https://www.usfa.fema.gov/downloads/pdf/publications/risk_management_practices.pdf",
+      "license": "Public domain (work of the U.S. federal government)",
+      "retrieved_at": "2026-09-03",
+      "sha256": "b8cb7a1de68f8b0bc600a4c02308c9a279d562f863548f16e36c38ee8cf6168d",
+      "covers": ["structure fire", "offensive defensive decision", "acceptable risk", "incident command", "occupancy"]
+    },
+    {
+      "document_id": "usfa-structure-triage",
+      "filename": "usfa-structure-triage.md",
+      "title": "Structure Triage and Resource Allocation in the Wildland/Urban Interface",
+      "publisher": "U.S. Fire Administration / National Fire Academy, Executive Fire Officer Program",
+      "source_url": "https://apps.usfa.fema.gov/pdf/efop/tr_94kb.pdf",
+      "license": "Public domain (work prepared for a U.S. federal agency programme)",
+      "retrieved_at": "2026-08-27",
+      "sha256": "d400ddaef2a3d1514ed9e2f42717216c3bcebe8c1638daf483ae619493e43dac",
+      "covers": ["structure triage", "resource allocation", "defensible space", "evacuation planning"]
+    }
+  ]
+}

@@ -21,11 +21,14 @@ declare module '@fontsource/plus-jakarta-sans'
  * them here makes import.meta.env.VITE_MAPTILER_KEY type-checked and
  * autocompleted rather than `any`.
  *
- * Set these in frontend/.env.local, which is gitignored.
+ * Set these in the repository-level .env file, which is gitignored and loaded
+ * by Vite through envDir in vite.config.ts.
  */
 interface ImportMetaEnv {
   /** MapTiler API key used by MapView to load map tiles. */
   readonly VITE_MAPTILER_KEY: string
+  /** Cesium ion token used only when the operator opens the 3D view. */
+  readonly VITE_CESIUM_ION_TOKEN: string
 }
 
 interface ImportMeta {
