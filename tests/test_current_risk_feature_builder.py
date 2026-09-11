@@ -3,8 +3,8 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
-from scripts.build_historical_environmental_features import PriorFirmsIndex
-from scripts.train_fire_prediction_landcover_terrain_models import FULL_FEATURES
+from research.datasets.build_historical_environmental_features import PriorFirmsIndex
+from research.training.train_fire_prediction_landcover_terrain_models import FULL_FEATURES
 from services.current_risk_feature_builder import CurrentRiskFeatureBuilder
 from services.static_feature_store import STATIC_MODEL_FEATURES
 from services.weather_feature_calculator import FEATURE_FIELDS
@@ -13,9 +13,9 @@ from services.weather_feature_calculator import FEATURE_FIELDS
 NOW = datetime(2026, 8, 28, 12, tzinfo=timezone.utc)
 
 
-class FakeWeatherCache:
-    def __init__(self, path, response):
-        self.path, self.response, self.calls = path, response, []
+class FakeWeatherSource:
+    def __init__(self, response):
+        self.response, self.calls = response, []
     def features_for_cell(self, cell_id, evaluation_time):
         self.calls.append((cell_id, evaluation_time))
         return self.response
@@ -35,14 +35,14 @@ def make_grid(path):
     connection.commit(); connection.close()
 
 
-def test_assembles_exact_44_features_from_local_cache_and_static_store(tmp_path):
-    grid, cache_path = tmp_path / "grid.sqlite", tmp_path / "weather.sqlite"
-    make_grid(grid); cache_path.touch()
-    weather = FakeWeatherCache(cache_path, {
-        "status": "success", "reason": None, "weather_node_id": "node-a",
+def test_assembles_exact_44_features_from_stored_observations_and_static_store(tmp_path):
+    grid = tmp_path / "grid.sqlite"
+    make_grid(grid)
+    weather = FakeWeatherSource({
+        "status": "success", "reason": None,
         "features": {name: 1.0 for name in FEATURE_FIELDS},
     })
-    builder = CurrentRiskFeatureBuilder(grid_path=grid, weather_cache=weather, firms_index=PriorFirmsIndex([]))
+    builder = CurrentRiskFeatureBuilder(grid_path=grid, weather_source=weather, firms_index=PriorFirmsIndex([]))
     result = builder.build(31.8, 35.2, NOW)
     assert result["status"] == "success"
     assert set(result["features"]) == set(FULL_FEATURES)
@@ -53,14 +53,14 @@ def test_assembles_exact_44_features_from_local_cache_and_static_store(tmp_path)
 
 
 def test_unmapped_or_stale_weather_fails_without_fabrication(tmp_path):
-    grid, cache_path = tmp_path / "grid.sqlite", tmp_path / "weather.sqlite"
-    make_grid(grid); cache_path.touch()
+    grid = tmp_path / "grid.sqlite"
+    make_grid(grid)
     for response, reason in (
-        ({"status": "unavailable", "reason": "weather_cell_unmapped", "features": {}, "weather_node_id": None}, "weather_cell_unmapped"),
-        ({"status": "stale", "reason": "weather_history_incomplete", "features": {}, "weather_node_id": "node-a"}, "weather_history_incomplete"),
+        ({"status": "unavailable", "reason": "weather_history_unavailable", "features": {}}, "weather_history_unavailable"),
+        ({"status": "stale", "reason": "weather_history_incomplete", "features": {}}, "weather_history_incomplete"),
     ):
         builder = CurrentRiskFeatureBuilder(
-            grid_path=grid, weather_cache=FakeWeatherCache(cache_path, response), firms_index=PriorFirmsIndex([])
+            grid_path=grid, weather_source=FakeWeatherSource(response), firms_index=PriorFirmsIndex([])
         )
         result = builder.build(31.8, 35.2, NOW)
         assert result["status"] == "unavailable"

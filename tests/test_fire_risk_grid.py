@@ -5,7 +5,7 @@ import sqlite3
 import pytest
 from rasterio.transform import from_origin
 
-from scripts.build_historical_landcover_terrain_features import LAND_COVER_FEATURES, slope_from_neighborhood
+from research.datasets.build_historical_landcover_terrain_features import LAND_COVER_FEATURES, slope_from_neighborhood
 from services.grid_manager import generate_grid
 from services.static_feature_store import (
     STATIC_MODEL_FEATURES,
@@ -13,7 +13,7 @@ from services.static_feature_store import (
     build_static_grid_database,
     select_representative_land_pixel,
 )
-from scripts.train_fire_prediction_landcover_terrain_models import FULL_FEATURES
+from research.training.train_fire_prediction_landcover_terrain_models import FULL_FEATURES
 
 
 class FakeSampler:

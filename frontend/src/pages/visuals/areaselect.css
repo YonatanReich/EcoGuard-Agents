@@ -1,0 +1,128 @@
+/*
+ * The draw-an-area tool: mode buttons and the readings for whatever was drawn.
+ *
+ * Bottom-right, because the other three corners of the map are taken — layer
+ * controls top-left, navigation top-right, the fire danger legend bottom-left.
+ *
+ * The panel grows upward from the buttons rather than downward, so switching
+ * modes never makes the buttons move out from under the cursor.
+ */
+
+.area-select {
+    position: absolute;
+    right: 12px;
+    bottom: 36px;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    max-width: 280px;
+    font-size: 0.85rem;
+}
+
+/* ===== Mode buttons ===== */
+
+.area-select__modes {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 10px;
+    background: rgba(0, 24, 66, 0.92);
+    border: 1px solid rgba(0, 98, 255, 0.28);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.area-select__mode {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: #b9cbe6;
+    font: inherit;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.area-select__mode:hover {
+    background: rgba(255, 255, 255, 0.09);
+    color: #e7effb;
+}
+
+.area-select__mode[aria-pressed="true"] {
+    background: rgba(0, 98, 255, 0.32);
+    border-color: rgba(120, 180, 255, 0.55);
+    color: #fff;
+}
+
+.area-select__mode--clear {
+    color: #f0a2a2;
+}
+
+/* ===== Readings ===== */
+
+.area-select__panel {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.96);
+    color: #111827;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+    box-sizing: border-box;
+}
+
+.area-select__title {
+    margin: 0 0 8px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #0a1f44;
+}
+
+.area-select__rows {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 3px 12px;
+}
+
+.area-select__label {
+    color: #566076;
+    white-space: nowrap;
+}
+
+.area-select__value {
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    font-weight: 600;
+}
+
+/* The provenance line: how much grid is behind the averages, and when it was
+ * read. An average over one cell and an average over forty are different
+ * claims and the panel has to say which it is showing. */
+.area-select__note {
+    margin: 8px 0 0;
+    padding-top: 7px;
+    border-top: 1px solid #e5e7eb;
+    color: #6b7280;
+    font-size: 0.74rem;
+    line-height: 1.4;
+}
+
+.area-select__error {
+    margin: 0;
+    color: #b91c1c;
+    line-height: 1.4;
+}
+
+.area-select__hint {
+    padding: 7px 10px;
+    border-radius: 8px;
+    background: rgba(0, 24, 66, 0.86);
+    color: #cfe0f7;
+    font-size: 0.78rem;
+}

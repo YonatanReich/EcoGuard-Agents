@@ -98,7 +98,16 @@ Expected response:
 `GET /api/environmental-data`
 
 #### Description
-Fetches, normalizes, and unifies real-time weather forecasts and regional geospatial context around a specific coordinate. The endpoint communicates internally with the `WeatherDataAgent` and `GeospatialContextAgent`, validating inputs strictly within Israel's boundaries to prevent resource exhaustion and unauthorized out-of-bounds scanning.
+Unifies stored weather observations with live regional geospatial context around a specific coordinate. Inputs are validated strictly within Israel's boundaries.
+
+The two halves no longer work the same way. `WeatherDataAgent` **reads the collection layer's store** rather than calling Open-Meteo — the coordinate is answered by the 5 km grid cell containing it, and `metadata.services.weather.observation` names that cell, its distance in metres, and when the reading was taken. `GeospatialContextAgent` still calls OpenStreetMap Overpass live, because nothing collects that on a timer, and it is what makes this endpoint slow.
+
+Two consequences worth knowing:
+
+* `weather.forecast.daily` is **empty**. The store holds observations, and a forecast is not one.
+* A coordinate with no cell within 5 km carrying a reading under 6 hours old returns `collection_status: "failed"` for the weather half, rather than reaching out to fetch one.
+
+See [`docs/weather_collection.md`](docs/weather_collection.md) for the collection layer.
 
 #### Query Parameters
 
@@ -183,3 +192,68 @@ background-job endpoint would be the proper fix and is not implemented.
 The full field-by-field contract is in [`docs/api_contract.md`](docs/api_contract.md) §5.
 
 ---
+### 3. Summarise a Drawn Area
+`POST /api/area-summary`
+
+#### Description
+Aggregates everything in the store over a polygon the operator drew on the map —
+freehand, rectangle or circle. This replaced clicking a single coordinate: a
+point can only say what the temperature is *there*, while the operational
+question is how many people are inside a shape and what the weather is doing
+across it.
+
+Nothing is fetched from an upstream provider, so unlike the two endpoints above
+this one answers in milliseconds. Every figure is a PostGIS aggregate:
+
+| Figure | Source | How |
+| :--- | :--- | :--- |
+| `population` | `population_cells` | Summed with **area weighting** — a cell half inside the polygon contributes half its people |
+| `weather` | `observations` (`source='weather'`) | Mean of the newest reading per 5 km cell within half a grid step of the polygon. Wind direction is averaged as a vector, not as a number |
+| `fire_danger` | `observations` (`source='fire_weather'`) | Mean FWI over the same cells, plus the single worst band inside them |
+| `stations` | `fire_stations`, `police_stations`, `mda_stations` | Point-in-polygon counts |
+| `area_km2` | the polygon | `ST_Area` on the spheroid |
+
+#### Request Body
+
+```json
+{ "geometry": { "type": "Polygon", "coordinates": [[[35.0, 31.0], "..."]] } }
+```
+
+| Field | Validation |
+| :--- | :--- |
+| `geometry` | GeoJSON `Polygon`. Every ring closed and at least four positions; every vertex inside Israel's bounding box; at most 2,000 vertices in total |
+
+Self-intersecting rings are accepted rather than rejected — a freehand trace
+crossing its own line is the normal case, and PostGIS repairs it with
+`ST_MakeValid` before measuring.
+
+#### HTTP Response Status Codes
+
+* **`200 OK`** — the summary. A section with no data underneath it reports
+  `null` values and `cell_count: 0` rather than being omitted, so the UI can say
+  "no reading here" instead of silently dropping a row.
+* **`422 Unprocessable Entity`** — the geometry failed one of the checks above.
+* **`503 Service Unavailable`** — the store could not be reached.
+
+#### Loading the population grid
+
+`population_cells` is empty until the grid is loaded, and until then
+`population` reads `0`. It holds one row per raster pixel of a population
+**count** grid, as the pixel's own footprint — the footprint, not the centroid,
+is what makes the area weighting possible.
+
+Download WorldPop's constrained, UN-adjusted 100 m grid for Israel
+([`isr_ppp_2020_UNadj_constrained.tif`](https://data.worldpop.org/GIS/Population/Global_2000_2020_Constrained/2020/BSGM/ISR/isr_ppp_2020_UNadj_constrained.tif),
+1.9 MB), then:
+
+```bash
+alembic upgrade head
+python -m scripts.load_population_grid data/generated/isr_ppp_2020_UNadj_constrained.tif
+```
+
+The script prints the total it loaded — 315,600 cells and 8,655,541 people for
+the file above, which matches the UN's 2020 figure for Israel and is the sanity
+check that the right raster went in. Pass `--coarsen 2` for 200 m cells
+if the row count matters more than the resolution. It is a full reload —
+`population_cells` is truncated first — because this is reference data published
+once a year, not a feed.

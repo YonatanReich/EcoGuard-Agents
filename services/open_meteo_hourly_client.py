@@ -13,9 +13,13 @@ import requests
 
 
 FORECAST_ENDPOINT = "https://api.open-meteo.com/v1/forecast"
+# The fire-risk model uses the first seven. weather_code is collected because
+# /api/environmental-data promises it in the documented contract and the
+# reasoning agents read it as context — once this is the only path to
+# Open-Meteo, anything not collected here is simply unavailable.
 HOURLY_VARIABLES = (
     "temperature_2m", "relative_humidity_2m", "precipitation", "rain",
-    "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m",
+    "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "weather_code",
 )
 DEFAULT_BATCH_SIZE = 50
 DEFAULT_MINIMUM_INTERVAL_SECONDS = 15.0
@@ -28,6 +32,17 @@ class HourlyProviderError(RuntimeError):
         super().__init__(category)
         self.category = category
         self.transient = transient
+
+
+def _hour_param(value: datetime) -> str:
+    """Format a timestamp for Open-Meteo's start_hour/end_hour, in UTC.
+
+    Naive input is read as UTC rather than rejected: every caller in this
+    repository works in UTC, and the request already pins timezone=UTC, so
+    guessing local time here would be the only way to get it wrong.
+    """
+    moment = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:00")
 
 
 def _utc(value: object) -> datetime:
@@ -147,10 +162,17 @@ class OpenMeteoHourlyClient:
     ) -> list[dict[str, Any]]:
         if not coordinates or len(coordinates) > self.batch_size or start > end:
             raise ValueError("invalid coordinate batch or time range")
+        # start_hour/end_hour, not start_date/end_date. The date form is
+        # day-granular, so asking for the last six hours across midnight
+        # downloaded two whole calendar days — 48 hourly steps per cell to keep
+        # six. At 7 variables x 50 locations that is an eightfold overcharge
+        # against Open-Meteo's per-call weighting, and it is what put the
+        # collector into sustained 429s. The hour form asks for exactly the
+        # window the caller wants.
         params = {
             "latitude": ",".join(str(float(value[0])) for value in coordinates),
             "longitude": ",".join(str(float(value[1])) for value in coordinates),
-            "start_date": start.date().isoformat(), "end_date": end.date().isoformat(),
+            "start_hour": _hour_param(start), "end_hour": _hour_param(end),
             "hourly": ",".join(HOURLY_VARIABLES), "timezone": "UTC",
             "temperature_unit": "celsius", "wind_speed_unit": "kmh", "precipitation_unit": "mm",
         }

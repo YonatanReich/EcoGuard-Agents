@@ -2,7 +2,7 @@
  * RainRadarLayer
  *
  * Displays RainViewer precipitation radar frames as a raster overlay on top
- * of the existing MapLibre / MapTiler map.
+ * of the existing Mapbox map.
  *
  * The component fetches RainViewer metadata once, stores the available recent
  * radar frames locally, and then switches between them without performing a
@@ -21,7 +21,7 @@ import {
 import {
   Layer,
   Source,
-} from 'react-map-gl/maplibre'
+} from 'react-map-gl/mapbox'
 
 
 export type RainViewerFrame = {

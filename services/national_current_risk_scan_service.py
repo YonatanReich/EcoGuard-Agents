@@ -61,9 +61,16 @@ class NationalCurrentRiskScanService:
     def scan(self, evaluation_time: datetime | None = None, *, highest_limit: int = 10) -> dict[str, Any]:
         evaluation = self._evaluation_time(evaluation_time)
         cells, evaluated, unavailable, ready = self._active_cells(), [], [], []
-        weather_cache = getattr(self.feature_builder, "weather_cache", None)
-        session = weather_cache.read_session() if weather_cache and hasattr(weather_cache, "read_session") else _null_session()
-        with session:
+        # One query for the whole grid's weather history, held for the loop.
+        # Per-cell reads would be 1,174 round trips to a hosted database, which
+        # is minutes of pure latency before any prediction runs.
+        source = getattr(self.feature_builder, "weather_source", None)
+        window = (
+            source.window([cell["cell_id"] for cell in cells], evaluation)
+            if source is not None and hasattr(source, "window")
+            else _null_session()
+        )
+        with window:
             for cell in cells:
                 if hasattr(self.feature_builder, "build_for_cell_record"):
                     built = self.feature_builder.build_for_cell_record(cell, evaluation)

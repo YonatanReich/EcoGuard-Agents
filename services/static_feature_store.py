@@ -19,7 +19,7 @@ from rasterio.features import geometry_mask
 from rasterio.merge import merge
 from rasterio.windows import Window
 
-from scripts.build_historical_landcover_terrain_features import (
+from research.datasets.build_historical_landcover_terrain_features import (
     DEM_VERSION,
     LAND_COVER_CLASSES,
     LAND_COVER_FEATURES,

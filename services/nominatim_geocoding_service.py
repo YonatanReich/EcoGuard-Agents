@@ -73,6 +73,7 @@ class NominatimGeocoder:
         session: object | None = None,
         clock: Callable[[], float] = time.time,
         sleep: Callable[[float], None] = time.sleep,
+        country_codes: str = "il",
     ) -> None:
         configured_base_url = (
             os.getenv("NOMINATIM_BASE_URL") if base_url is None else base_url
@@ -84,6 +85,14 @@ class NominatimGeocoder:
         )
         self.base_url = (configured_base_url or "").rstrip("/")
         self.user_agent = configured_user_agent or ""
+        # Both the request filter and the accepted-result check come from this
+        # one value, so they cannot drift apart. The default keeps every
+        # existing caller on Israel alone; a caller that needs the West Bank,
+        # which OpenStreetMap files under "ps", passes "il,ps".
+        self.country_codes = country_codes
+        self._accepted_countries = frozenset(
+            code.strip() for code in country_codes.split(",") if code.strip()
+        )
         self.cache_path = Path(cache_path)
         self.session = session or requests.Session()
         self.clock = clock
@@ -110,6 +119,7 @@ class NominatimGeocoder:
         payload = json.dumps(
             {
                 "base_url": self.base_url,
+                "country_codes": self.country_codes,
                 "kind": kind,
                 "components": {
                     key: _normalize(value) for key, value in components.items()
@@ -169,13 +179,12 @@ class NominatimGeocoder:
             return
         self._blocked_until = max(self._blocked_until, self.clock() + seconds)
 
-    @staticmethod
-    def _query(kind: str, components: dict) -> tuple[dict, str]:
+    def _query(self, kind: str, components: dict) -> tuple[dict, str]:
         common = {
             "format": "jsonv2",
             "addressdetails": 1,
             "namedetails": 1,
-            "countrycodes": "il",
+            "countrycodes": self.country_codes,
             "layer": "address",
             "limit": 5,
             "accept-language": "he",
@@ -202,7 +211,10 @@ class NominatimGeocoder:
         components: dict,
     ) -> tuple[float, float, float] | None:
         address = candidate.get("address")
-        if not isinstance(address, dict) or address.get("country_code") != "il":
+        if (
+            not isinstance(address, dict)
+            or address.get("country_code") not in self._accepted_countries
+        ):
             return None
 
         expected_city = components["city"]

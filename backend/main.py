@@ -11,17 +11,23 @@ Endpoints:
     GET /                       Health check.
     GET /api/detected-events    Live fire detection, risk analysis and response
                                 planning for one coordinate.
-    GET /api/environmental-data Live weather + geospatial context for one
-                                coordinate.
+    GET /api/environmental-data Stored weather + live geospatial context for
+                                one coordinate.
+    POST /api/area-summary      Population, weather and fire danger aggregated
+                                over a polygon drawn on the map.
 
 Run locally with:
     uvicorn backend.main:app --reload
 """
 
 import logging
+import os
+import time
+from contextlib import asynccontextmanager
 from datetime import datetime
+from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from agents.fire_detection_agent import FireDetectionAgent
@@ -30,7 +36,7 @@ from agents.geospatial_context_agent import GeospatialContextAgent
 from agents.response_planning_agent import ResponsePlanningAgent
 from agents.risk_analysis_agent import RiskAnalysisAgent, build_event_id
 from agents.weather_data_agent import WeatherDataAgent
-from agents.resource_allocation_agent import ResourceAllocationAgent
+from backend.area_schemas import AreaSummaryRequest, AreaSummaryResponse
 from backend.fire_risk_schemas import (
     FireRiskRequest,
     FireRiskResponse,
@@ -40,15 +46,39 @@ from services.claude_llm_service import ClaudeLLMService
 from services.current_risk_feature_builder import CurrentRiskFeatureBuilder
 from services.current_risk_refresh_orchestrator import CurrentRiskRefreshOrchestrator
 from services.national_current_risk_scan_service import NationalCurrentRiskScanService
+from services.fire_danger_surface import build_surface as build_fire_danger_surface
 from services.protocol_retrieval_service import ProtocolRetriever
-from agents.coordinator import FireCoordinator
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start the background workers, and make sure they stop with the app.
+
+    The collection scheduler is imported here rather than at module scope so a
+    developer without DATABASE_URL set still gets a working API for the old
+    request-scoped endpoints; only collection is missing, and loudly.
+    """
+    current_risk_refresh.start()
+    collection_scheduler = None
+    try:
+        from ecoguard.scheduler import scheduler as collection_scheduler
+
+        collection_scheduler.start()
+    except Exception:
+        logging.exception("Collection scheduler did not start; no observations will be written")
+    try:
+        yield
+    finally:
+        if collection_scheduler is not None and collection_scheduler.running:
+            collection_scheduler.shutdown()
+        current_risk_refresh.stop()
+
+
+app = FastAPI(lifespan=lifespan)
 
 # Allow the Vite dev server to call the API directly during development.
 # Both localhost and 127.0.0.1 are listed because browsers treat them as
@@ -104,7 +134,6 @@ planning_agent = ResponsePlanningAgent(
     llm_service=ClaudeLLMService(effort="low"),
     retriever=protocol_retriever,
 )
-allocation_agent = ResourceAllocationAgent()
 
 # Israel's bounding box. Enforced on every coordinate parameter: it matches the
 # product scope and stops the endpoints being used to scan arbitrary parts of
@@ -114,23 +143,6 @@ ISRAEL_MAX_LATITUDE = 33.35
 ISRAEL_MIN_LONGITUDE = 34.26
 ISRAEL_MAX_LONGITUDE = 35.90
 
-
-@app.on_event("startup")
-def start_current_risk_refresh():
-    current_risk_refresh.start()
-
-
-@app.on_event("shutdown")
-def stop_current_risk_refresh():
-    current_risk_refresh.stop()
-
-
-fire_coordinator = FireCoordinator(
-    detection_agent=fire_detection_agent,
-    risk_agent=risk_agent,
-    planning_agent=planning_agent,
-    allocation_agent=allocation_agent,
-)
 
 @app.get("/")
 def read_root():
@@ -144,6 +156,236 @@ def read_root():
         "message": "EcoGuard Agents API is running",
         "status": "success"
     }
+
+
+# FWI is a daily product, so both the query and the ~500 ms numpy render are
+# worth holding briefly. The TTL is what bounds staleness after the collector
+# picks up a new day's raster; the surface itself is keyed on observed_at so a
+# new day always replaces it.
+FIRE_DANGER_CACHE_SECONDS = 600
+
+_fire_danger_surface_cache: dict[str, bytes] = {}
+_fire_danger_payload_cache: dict[str, Any] = {}
+
+
+def _fire_danger_payload():
+    from ecoguard.collection.fire_weather import area_bounds
+    from ecoguard.database.repositories.observations import latest_fire_danger_geojson
+
+    now = time.monotonic()
+    cached = _fire_danger_payload_cache.get("value")
+    if cached is not None and now - _fire_danger_payload_cache["at"] < FIRE_DANGER_CACHE_SECONDS:
+        return cached
+
+    value = (latest_fire_danger_geojson(), area_bounds())
+    _fire_danger_payload_cache["value"] = value
+    _fire_danger_payload_cache["at"] = now
+    return value
+
+
+@app.get("/api/fire-danger")
+def get_fire_danger():
+    """Describe today's Fire Weather Index surface, without shipping it.
+
+    Returns the geographic bounds and timestamp the frontend needs to place
+    /api/fire-danger.png, rather than the 620 underlying points — the map
+    renders the interpolated image, so the samples would be dead weight.
+
+    Returns:
+        dict: observed_at, bounds as [west, south, east, north], and the
+            number of cells behind the surface. cell_count is 0 when the
+            collector has not run yet.
+
+    Raises:
+        HTTPException: 503 when the observations store cannot be reached.
+    """
+    try:
+        collection, bounds = _fire_danger_payload()
+    except Exception as error:
+        logging.error("Fire danger query failed: %s", error, exc_info=True)
+        raise HTTPException(status_code=503, detail="Fire danger data is unavailable.")
+
+    return {
+        "observed_at": collection["observed_at"],
+        "bounds": list(bounds),
+        "cell_count": len(collection["features"]),
+    }
+
+
+@app.get("/api/fire-danger.png")
+def get_fire_danger_surface():
+    """Serve the Fire Weather Index as a smoothed, georeferenced RGBA PNG.
+
+    The samples sit on a 5 km grid and Mapbox has no interpolating layer type,
+    so every browser-side rendering of them — heatmap, circles, fill — draws
+    one mark per sample and the grid shows through. Interpolating here produces
+    a continuous surface, and a Gaussian-weighted average with a stated
+    bandwidth is a method rather than a rendering accident.
+
+    Transparent wherever no sample is near enough, so the Negev reads as the
+    absence of data it is: Copernicus publishes no FWI over desert.
+
+    Raises:
+        HTTPException: 503 when the observations store cannot be reached, 404
+            when no fire-weather observations exist yet.
+    """
+    try:
+        collection, bounds = _fire_danger_payload()
+    except Exception as error:
+        logging.error("Fire danger query failed: %s", error, exc_info=True)
+        raise HTTPException(status_code=503, detail="Fire danger data is unavailable.")
+
+    if not collection["features"]:
+        raise HTTPException(status_code=404, detail="No fire weather observations yet.")
+
+    key = str(collection["observed_at"])
+    png = _fire_danger_surface_cache.get(key)
+    if png is None:
+        png = build_fire_danger_surface(collection["features"], bounds)
+        _fire_danger_surface_cache.clear()
+        _fire_danger_surface_cache[key] = png
+
+    return Response(
+        content=png,
+        media_type="image/png",
+        # FWI is a daily product; an hour of browser caching costs nothing and
+        # saves re-fetching 160 KB on every toggle of the layer.
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+@app.get("/api/fire-stations")
+def get_fire_stations():
+    """Serve the national fire station list as GeoJSON points.
+
+    Reference data, not a live feed: it changes only when the Fire and Rescue
+    Authority republishes its station list and the seed script is re-run. The
+    query is 115 rows and costs a few milliseconds, so it is not cached — a
+    cache here would mostly serve to hide a re-seed until the next restart.
+
+    Returns:
+        dict: A GeoJSON FeatureCollection, plus `located` and `total`. They
+            differ because ten stations publish an address with no locality to
+            geocode, and those carry no geometry to draw.
+
+    Raises:
+        HTTPException: 503 when the store cannot be reached.
+    """
+    from ecoguard.database.repositories.fire_stations import fire_stations_geojson
+
+    try:
+        return fire_stations_geojson()
+    except Exception as error:
+        logging.error("Fire station query failed: %s", error, exc_info=True)
+        raise HTTPException(status_code=503, detail="Fire station data is unavailable.")
+
+
+@app.get("/api/police-stations")
+def get_police_stations():
+    """Serve the Israel Police station list as GeoJSON points.
+
+    Reference data like /api/fire-stations, and the same shape, but every
+    coordinate here is published rather than derived — there is no precision
+    field because there is no approximation to qualify.
+
+    Returns:
+        dict: A GeoJSON FeatureCollection, plus `located` and `total`. They are
+            always equal: police_stations.location is NOT NULL.
+
+    Raises:
+        HTTPException: 503 when the store cannot be reached.
+    """
+    from ecoguard.database.repositories.police_stations import police_stations_geojson
+
+    try:
+        return police_stations_geojson()
+    except Exception as error:
+        logging.error("Police station query failed: %s", error, exc_info=True)
+        raise HTTPException(status_code=503, detail="Police station data is unavailable.")
+
+
+@app.get("/api/mda-stations")
+def get_mda_stations():
+    """Serve the Magen David Adom station roster as GeoJSON points.
+
+    Same shape as /api/fire-stations, including `precision`: MDA publishes no
+    coordinates, so a station is placed on its mapped building where OSM covers
+    it and on its published address otherwise.
+
+    Returns:
+        dict: A GeoJSON FeatureCollection, plus `located` and `total`. They
+            differ because part of the roster gives no address to resolve.
+
+    Raises:
+        HTTPException: 503 when the store cannot be reached.
+    """
+    from ecoguard.database.repositories.mda_stations import mda_stations_geojson
+
+    try:
+        return mda_stations_geojson()
+    except Exception as error:
+        logging.error("MDA station query failed: %s", error, exc_info=True)
+        raise HTTPException(status_code=503, detail="MDA station data is unavailable.")
+
+
+@app.post("/api/area-summary", response_model=AreaSummaryResponse)
+def get_area_summary(request: AreaSummaryRequest):
+    """Summarise everything we store inside a polygon the user drew on the map.
+
+    This replaced clicking a single coordinate. A point answers "what is the
+    temperature here"; an operator's question is "how many people are inside
+    this fire's likely path, and what is the weather doing across it", and only
+    an area can answer that.
+
+    Every figure comes from the store — the population grid, the hourly weather
+    observations, today's Fire Weather Index and the station rosters — so this
+    is one round trip with no upstream provider in the path, unlike the
+    per-coordinate endpoints that wait on Open-Meteo and Overpass.
+
+    Args:
+        request: an AreaSummaryRequest carrying a GeoJSON Polygon. Its
+            validator enforces Israel's bounding box, ring closure and a vertex
+            ceiling; FastAPI turns a failure into a 422 naming the reason.
+
+    Returns:
+        AreaSummaryResponse: area in km², population, mean weather, mean and
+            worst fire danger, and station counts. A section with no data
+            underneath it reports nulls and cell_count 0 rather than vanishing.
+
+    Raises:
+        HTTPException: 503 when the store cannot be reached.
+    """
+    from ecoguard.database.repositories.area_summary import summarize_area
+
+    try:
+        return summarize_area(request.geometry)
+    except Exception as error:
+        logging.error("Area summary failed: %s", error, exc_info=True)
+        raise HTTPException(status_code=503, detail="Area summary is unavailable.")
+
+
+@app.post("/api/dev/run/{source}")
+def run_collector_now(source: str):
+    """Run one collector immediately instead of waiting for its next tick.
+
+    Off unless ECOGUARD_DEV_ENDPOINTS is set. Defined as a sync endpoint on
+    purpose: FastAPI runs it in a worker thread, which the Telegram collector
+    needs because it opens its own event loop.
+    """
+    if os.getenv("ECOGUARD_DEV_ENDPOINTS") != "1":
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    from ecoguard.scheduler import COLLECTORS, run_once
+
+    if source not in COLLECTORS:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown collector. Known sources: {sorted(COLLECTORS)}",
+        )
+
+    # run() never raises, so the outcome is in collector_runs, not the response.
+    run_once(source)
+    return {"source": source, "status": "run complete; see collector_runs for the outcome"}
 
 
 @app.post("/api/fire-risk", response_model=FireRiskResponse)
@@ -314,16 +556,26 @@ def get_detected_events(
     )
 
     try:
-        pipeline = fire_coordinator.run_event_pipeline(
-            latitude,
-            longitude,
+        event = fire_detection_agent.detect_fire(
+            latitude=latitude,
+            longitude=longitude,
             day_range=day_range,
-            radius_km=radius_km,
-            include_analysis=include_analysis,
+            max_hotspot_distance_km=radius_km,
         )
 
+        if include_analysis:
+            risk = risk_agent.analyze_event(event)
+            plan = planning_agent.plan_response(event, risk)
+        else:
+            # Detection only. Build the skipped shapes directly rather than
+            # calling the agents, so no retrieval or model work happens at all.
+            risk = risk_agent.build_skipped_assessment(event, "analysis_not_requested")
+            plan = planning_agent.build_skipped_plan("analysis_not_requested", event)
+
         return build_detected_events_response(
-            pipeline=pipeline,
+            event=event,
+            risk=risk,
+            plan=plan,
             query={
                 "latitude": latitude,
                 "longitude": longitude,
@@ -374,9 +626,9 @@ def build_event_title(event: dict) -> str:
     return f"Fire detected at {latitude:.4f}, {longitude:.4f}"
 
 
-def build_detected_events_response(*, pipeline: dict, query: dict) -> dict:
+def build_detected_events_response(*, event: dict, risk: dict, plan: dict, query: dict) -> dict:
     """
-    Flatten the coordinator pipeline result into the dashboard's event contract.
+    Flatten the three agent results into the dashboard's event contract.
 
     The agents each return a nested, self-describing document; the frontend
     wants one flat object per marker. Doing that translation here keeps the
@@ -384,20 +636,17 @@ def build_detected_events_response(*, pipeline: dict, query: dict) -> dict:
     testable without a notion of HTTP.
 
     Args:
-        pipeline (dict): FireCoordinator result.
+        event (dict): FireDetectionAgent result.
+        risk (dict): RiskAnalysisAgent result.
+        plan (dict): ResponsePlanningAgent result.
         query (dict): The request parameters, echoed back.
 
     Returns:
         dict: The API response.
     """
-    event = pipeline.get("detection") or {}
-    risk = pipeline.get("risk_analysis") or {}
-    plan = pipeline.get("planning") or {}
-
     detection_status = (event.get("metadata") or {}).get("collection_status", "unknown")
     analysis_status = (risk.get("metadata") or {}).get("analysis_status", "skipped")
     planning_status = (plan.get("metadata") or {}).get("planning_status", "skipped")
-    allocation_status = (pipeline.get("allocated_resources") or {}).get("status", "skipped")
 
     events = []
 
@@ -405,11 +654,13 @@ def build_detected_events_response(*, pipeline: dict, query: dict) -> dict:
     # ran and found nothing; detected None means it could not run at all. Neither
     # is an event, and inventing one for either would misreport the situation.
     if event.get("detected") is True:
-        events.append(build_dashboard_event(pipeline=pipeline))
+        events.append(
+            build_dashboard_event(event=event, risk=risk, plan=plan)
+        )
 
-    if detection_status == "failed" or pipeline.get("status") == "error":
+    if detection_status == "failed":
         collection_status = "failed"
-    elif pipeline.get("status") == "partial":
+    elif "failed" in (analysis_status, planning_status):
         collection_status = "partial_service_failure"
     else:
         collection_status = "success"
@@ -428,10 +679,6 @@ def build_detected_events_response(*, pipeline: dict, query: dict) -> dict:
                     "status": planning_status,
                     "source": (plan.get("metadata") or {}).get("model"),
                 },
-                "resource_allocation": {
-                    "status": allocation_status,
-                    "source": "OpenStreetMap geographic candidates",
-                },
                 "protocols": {
                     "status": "success" if protocol_retriever.available else "failed",
                     "source": "local BM25 protocol corpus",
@@ -443,20 +690,19 @@ def build_detected_events_response(*, pipeline: dict, query: dict) -> dict:
     }
 
 
-def build_dashboard_event(*, pipeline: dict) -> dict:
+def build_dashboard_event(*, event: dict, risk: dict, plan: dict) -> dict:
     """
-    Build one flat dashboard event from a coordinator pipeline result.
+    Build one flat dashboard event from the three agent results.
 
     Args:
-        pipeline (dict): FireCoordinator result.
+        event (dict): FireDetectionAgent result.
+        risk (dict): RiskAnalysisAgent result.
+        plan (dict): ResponsePlanningAgent result.
 
     Returns:
         dict: One event object for the dashboard's events list.
     """
-    event = pipeline.get("detection") or {}
-    risk = pipeline.get("risk_analysis") or {}
-    plan = pipeline.get("planning") or {}
-    location = pipeline.get("location") or event.get("location") or {}
+    location = event.get("location") or {}
     actions = plan.get("response_actions") or []
 
     risk_citations = ((risk.get("grounding") or {}).get("citations")) or []
@@ -490,13 +736,9 @@ def build_dashboard_event(*, pipeline: dict) -> dict:
 
         # Response plan. response_plan is the flattened form the dashboard
         # already expects; response_actions carries the unit and timeframe.
-        "plan_summary": plan.get("plan_summary"),
-        "assumptions": plan.get("assumptions") or [],
         "recommended_units": plan.get("recommended_units") or [],
         "response_plan": [action["action"] for action in actions],
         "response_actions": actions,
-        "allocated_resources": pipeline.get("allocated_resources") or {},
-        "nearby_roads": pipeline.get("nearby_roads") or [],
 
         # Verified citations from both reasoning steps, merged.
         "protocol_citations": risk_citations + plan_citations,
@@ -520,18 +762,22 @@ def get_environmental_data(
         description="Longitude must be within Israel's borders"
     )):
     """
-    Collect and unify live environmental data for a single coordinate.
+    Unify environmental data for a single coordinate.
 
-    Calls the weather agent and the geospatial agent for the given point and
-    merges their two results into one response. The coordinate bounds are
-    enforced by FastAPI on the Query parameters above, which restrict input
-    to Israel's bounding box — this both matches the product scope and stops
-    the endpoint being used to scan arbitrary parts of the world through our
-    upstream providers.
+    Merges two agents that no longer work the same way. The weather agent
+    reads the collection layer's stored observations, answering from the 5 km
+    grid cell containing the point — metadata.services.weather.observation
+    names the cell and its distance. The geospatial agent still calls
+    OpenStreetMap Overpass live, because nothing collects that on a timer.
+
+    The coordinate bounds are enforced by FastAPI on the Query parameters
+    above, which restrict input to Israel's bounding box — this matches the
+    product scope and, for the one remaining live provider, stops the endpoint
+    being used to scan arbitrary parts of the world through it.
 
     Because each agent reports its own collection_status instead of raising,
-    a failure in one provider degrades the response rather than breaking it.
-    Only a double failure is treated as an outage.
+    one failing degrades the response rather than breaking it. Only a double
+    failure is treated as an outage.
 
     Args:
         latitude (float): 29.45 to 33.35. Defaults to Jerusalem.
@@ -549,9 +795,9 @@ def get_environmental_data(
             so internal paths and stack traces are not leaked to clients.
             FastAPI itself returns 422 for out-of-bounds coordinates.
 
-    Performance: this typically takes several seconds, occasionally 30+.
-    The geospatial agent's Overpass call dominates; the two agents also run
-    sequentially here, so their latencies add.
+    Performance: dominated entirely by the geospatial agent's Overpass call,
+    which takes seconds and occasionally 30+. The weather half used to add its
+    own provider round trip and is now a single indexed read.
     """
     logging.info(f"Received environmental data request for lat={latitude}, lon={longitude}")
 
@@ -623,48 +869,4 @@ def get_environmental_data(
         raise HTTPException(
             status_code=500, 
             detail="Internal server error. Please try again later."
-        )
-
-@app.get("/api/analyze-location")
-def analyze_location(
-    latitude: float = Query(
-        default=31.783333, 
-        ge=29.45, 
-        le=33.35, 
-        description="Latitude must be within Israel's borders"
-    ),
-    longitude: float = Query(
-        default=35.216667, 
-        ge=34.26, 
-        le=35.90, 
-        description="Longitude must be within Israel's borders"
-    )
-):
-    """
-    On-demand execution of the full fire detection pipeline for a specific coordinate.
-    Typically triggered when a user clicks on the dashboard map.
-    """
-    logging.info(f"Running on-demand fire pipeline for lat={latitude}, lon={longitude}")
-    
-    # Invoke the same coordinator pipeline used by /api/detected-events.
-    pipeline_result = fire_coordinator.run_event_pipeline(latitude, longitude)
-
-    if pipeline_result.get("status") in ("success", "partial"):
-        return {
-            "status": pipeline_result["status"],
-            "message": pipeline_result.get("message"),
-            "event_data": build_dashboard_event(pipeline=pipeline_result),
-        }
-    
-    elif pipeline_result.get("status") == "no_event":
-        return {"status": "no_event", "message": pipeline_result.get("message")}
-    elif pipeline_result.get("status") == "error":
-        raise HTTPException(
-            status_code=502,
-            detail=pipeline_result.get("message", "Pipeline execution failed.")
-        )
-    else:
-        raise HTTPException(
-            status_code=500, 
-            detail=pipeline_result.get("message", "Internal pipeline error")
         )

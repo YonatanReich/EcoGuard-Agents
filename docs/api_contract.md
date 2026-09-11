@@ -46,19 +46,27 @@ The response must be a JSON object containing the following root sections:
 * **`nearby_water_sources`** (Array of Objects): Nearby lakes, rivers, or sea access points.
 
 ### 1.4 Weather
+
+Read from the collection layer's stored observations, not fetched per request.
+The coordinate is answered by the 5 km grid cell containing it; see
+`metadata.services.weather.observation` for which cell, how far away, and when
+the reading was taken. A coordinate with no cell within 5 km carrying a reading
+under 6 hours old gets `collection_status: "failed"` and an empty `current`.
+
 * **`current`** (Object):
-    * `temperature_c` (Float): Current temperature in Celsius.
+    * `temperature_c` (Float): Temperature in Celsius at the reading's hour.
     * `humidity_percent` (Float): Relative humidity percentage.
     * `wind_speed_kmh` (Float): Wind speed in kilometers per hour.
-    * `precipitation_mm` (Float): Current precipitation in millimeters.
+    * `precipitation_mm` (Float): Precipitation in millimeters for that hour.
     * `weather_code` (Integer): Standardized WMO weather code.
 
+  Any individual value may be `null` where the provider reported none. A null
+  is "not known" and is never defaulted to zero.
+
 * **`forecast`** (Object):
-    * **`daily`** (Object):
-        * `max_temp_c` (Array of Floats): Max temperatures for the upcoming days.
-        * `min_temp_c` (Array of Floats): Min temperatures for the upcoming days.
-        * `max_wind_speed_kmh` (Array of Floats): Maximum wind speeds for the upcoming days.
-        * `precipitation_sum_mm` (Array of Floats): Total expected precipitation per day.
+    * **`daily`** (Object): **Always empty.** The store holds observations and
+      a forecast is not one. The key is retained so the response shape is
+      stable for callers that index into it.
 
 ---
 
@@ -113,12 +121,7 @@ The response must be a JSON object containing the following root sections:
       "weather_code": 0
     },
     "forecast": {
-      "daily": {
-        "max_temp_c": [28.7, 27.0, 27.1, 28.7, 28.0, 27.6, 28.6],
-        "min_temp_c": [18.2, 17.5, 17.8, 18.0, 18.5, 17.9, 18.1],
-        "max_wind_speed_kmh": [12.5, 24.1, 18.0, 11.2, 9.5, 14.2, 22.0],
-        "precipitation_sum_mm": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-      }
+      "daily": {}
     }
   }
 }

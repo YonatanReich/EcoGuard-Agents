@@ -33,7 +33,7 @@ Hazard versatility:
 The judge deliberately has no web search. It grades against protocol, and a
 judge that could look things up would be neither reproducible nor auditable.
 
-Consumed by: scripts.run_response_plan_evaluation
+Consumed by: research.evaluation.run_response_plan_evaluation
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from agents.evaluation_schemas import (
+from research.evaluation.evaluation_schemas import (
     DIMENSION_WEIGHTS,
     MAX_DIMENSION_SCORE,
     PlanVerdict,

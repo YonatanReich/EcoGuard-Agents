@@ -11,31 +11,130 @@ import {
   type CSSProperties,
 } from 'react'
 
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 
-import MapView, { type MapCoordinateClickEvent } from '../components/MapView'
+import MapView from '../components/MapView'
 
 import RainRadarLayer, {
   type RainViewerFrame,
 } from '../components/layers/RainRadarLayer'
 
 import FireDangerLayer from '../components/layers/FireDangerLayer'
+import EventCard from '../components/EventCard'
+import EventLegend from '../components/EventLegend'
+import EventModal from '../components/EventModal'
+import { classify } from '../components/hazards'
 import FireRiskLayer from '../components/layers/FireRiskLayer'
 import WindParticleLayer from '../components/layers/WindParticleLayer'
 
 import FireDangerLegend from '../components/FireDangerLegend'
 import FireRiskAlert from '../components/FireRiskAlert'
 import { clusterHighRiskCells, type FireRiskCluster } from '../components/fireRiskClusters'
-import InfrastructureLayer from '../components/InfrastructureLayer'
+import { normalizeNationalRiskScanResponse, type NationalRiskScan } from '../components/fireRiskScan'
+import AreaSelect from '../components/AreaSelect'
 import LayersControl from '../components/LayersControl'
-import EnvironmentalDataModal from '../components/EnvironmentalDataModal'
-import { fetchDetectedEventsResponse } from '../api/detectedEvents'
-import { fetchEnvironmentalData } from '../api/environmentalData'
-import { useNationalRiskScan } from '../hooks/useNationalRiskScan'
-import type { EnvironmentalData } from '../types/environmentalData'
-import type { DetectedEventsResponse, IncidentDetails } from '../types/incidents'
+import WhatToSeeControl from '../components/WhatToSeeControl'
+import FireStationsLayer from '../components/layers/FireStationsLayer'
+import PoliceStationsLayer from '../components/layers/PoliceStationsLayer'
+import MdaStationsLayer from '../components/layers/MdaStationsLayer'
 
 import './visuals/dashboard.css'
+
+
+/** Operational risk bands, lowest to highest. Derived from the score server-side. */
+export type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
+
+/** Outcome of one reasoning step. Only "success" carries results. */
+export type StepStatus = 'success' | 'failed' | 'skipped'
+
+/**
+ * One verified reference from a reasoning step back to a protocol document.
+ *
+ * The backend only emits citations it has checked against the retrieved source
+ * text, so anything appearing here has been confirmed to quote the document it
+ * names.
+ */
+export type ProtocolCitation = {
+  chunk_id: string
+  document_id: string
+  document_title: string
+  source_url: string | null
+  heading_path: string
+  quoted_text: string
+  supports: string
+  verified: boolean
+}
+
+/** One action in a response plan, with its owning unit and urgency. */
+export type ResponseAction = {
+  action: string
+  responsible_unit: string
+  timeframe: 'immediate' | 'within_1_hour' | 'within_6_hours' | 'ongoing'
+}
+
+/**
+ * One detected fire event, as returned by GET /api/detected-events.
+ *
+ * Combines satellite detection evidence, the risk assessment, and the response
+ * plan into one flat object per map marker.
+ *
+ * Nullable fields are load-bearing rather than defensive. When analysis is
+ * skipped or fails, `risk_score` and `risk_level` are null — not zero, not
+ * "low". Absence of an assessment is not evidence that an area is safe, so the
+ * UI must render that state distinctly instead of defaulting it.
+ */
+export type RiskEvent = {
+  /** Stable hash of the hotspot, so the React key survives repeated polls. */
+  id: string
+  type: string
+  title: string
+  description: string
+  latitude: number
+  longitude: number
+
+  /** Detection evidence, kept distinct from the risk judgement. */
+  detection_confidence: string | null
+  fire_weather_severity: string | null
+
+  /** Risk analysis. All null unless analysis_status is "success". */
+  risk_score: number | null
+  risk_level: RiskLevel | null
+  confidence: 'low' | 'medium' | 'high' | null
+  primary_drivers: string[]
+  explanation: string | null
+  /** What the model could not determine, e.g. a failed weather lookup. */
+  evidence_gaps: string[]
+
+  /** Response plan. Empty unless planning_status is "success". */
+  recommended_units: string[]
+  /** Flattened action text, for compact display. */
+  response_plan: string[]
+  /** The same actions with their unit and timeframe. */
+  response_actions: ResponseAction[]
+
+  /** Verified citations from the risk and planning steps, merged. */
+  protocol_citations: ProtocolCitation[]
+
+  analysis_status: StepStatus
+  planning_status: StepStatus
+}
+
+/** Full payload of GET /api/detected-events. */
+export type DetectedEventsResponse = {
+  metadata: {
+    timestamp: string | null
+    collection_status: string
+    services: Record<string, { status: string; source: string | null }>
+  }
+  query: {
+    latitude: number
+    longitude: number
+    radius_km: number
+    day_range: number
+    include_analysis: boolean
+  }
+  events: RiskEvent[]
+}
 
 
 const WIND_MIN_HOURS = -6
@@ -45,23 +144,6 @@ const WIND_MAX_HOURS = 12
  * Delay between RainViewer animation frames.
  */
 const RAIN_ANIMATION_INTERVAL_MS = 800
-
-const OFFICIAL_AGENT_ROLES = [
-  'Data Collection Agents',
-  'Shared Data Layer / PostGIS',
-  'Anomaly Detectors',
-  'Coordinator / Strainer',
-  'Emergency / Non-emergency Routing',
-  'Response Planning',
-  'Resource Allocation / Response Implementation',
-] as const
-
-const WORKSPACE_LINKS = [
-  { path: '/data-layers', label: 'Inspect data & layers' },
-  { path: '/event-detection', label: 'Review event evidence' },
-  { path: '/response-planning', label: 'Open response planning' },
-  { path: '/explanation-audit', label: 'Review explanation & audit' },
-] as const
 
 
 /**
@@ -90,124 +172,42 @@ function formatIsraelTime(
 }
 
 
-/**
- * Sidebar card for one detected event.
- *
- * Renders the assessment, the plan, and — importantly — the protocol passages
- * the reasoning actually cited. Showing the verbatim quote and its source is
- * what lets a reader confirm the analysis was grounded in the corpus rather
- * than taking the claim on trust.
- */
-function EventSummaryCard({ event }: { event: IncidentDetails }) {
-  const hasAssessment =
-    event.analysis_status === 'success' &&
-    event.risk_score != null
-  const primaryDrivers = event.primary_drivers ?? []
-  const responseActions = event.response_actions ?? []
-  const evidenceGaps = event.evidence_gaps ?? []
-  const protocolCitations = event.protocol_citations ?? []
-
-  return (
-    <article className="event-card">
-
-      <header className="event-card__header">
-        <span
-          className={`event-card__badge event-card__badge--${event.risk_level ?? 'unknown'}`}
-        >
-          {hasAssessment
-            ? `${event.risk_level} · ${event.risk_score}`
-            : 'not assessed'}
-        </span>
-        <h3 className="event-card__title">{event.title}</h3>
-      </header>
-
-      {/* An unassessed event is stated plainly rather than shown with a
-          default score. A fabricated "low" would read as an all-clear. */}
-      {!hasAssessment && (
-        <p className="event-card__warning">
-          Risk analysis {event.analysis_status ?? 'status unavailable'}. The event was
-          detected, but no risk score is available for it.
-        </p>
-      )}
-
-      {event.explanation && (
-        <p className="event-card__text">{event.explanation}</p>
-      )}
-
-      {primaryDrivers.length > 0 && (
-        <ul className="event-card__drivers">
-          {primaryDrivers.map((driver) => (
-            <li key={driver}>{driver}</li>
-          ))}
-        </ul>
-      )}
-
-      {responseActions.length > 0 && (
-        <>
-          <h4 className="event-card__subheading">Response plan</h4>
-          <ol className="event-card__actions">
-            {responseActions.map((action) => (
-              <li key={action.action}>
-                <span className="event-card__timeframe">
-                  {action.timeframe.replace(/_/g, ' ')}
-                </span>
-                {' '}
-                <strong>{action.responsible_unit.replace(/_/g, ' ')}</strong>
-                {' — '}
-                {action.action}
-              </li>
-            ))}
-          </ol>
-        </>
-      )}
-
-      {evidenceGaps.length > 0 && (
-        <>
-          <h4 className="event-card__subheading">Evidence gaps</h4>
-          <ul className="event-card__gaps">
-            {evidenceGaps.map((gap) => (
-              <li key={gap}>{gap}</li>
-            ))}
-          </ul>
-        </>
-      )}
-
-      {protocolCitations.length > 0 && (
-        <>
-          <h4 className="event-card__subheading">
-            Grounded in {protocolCitations.length} protocol passage
-            {protocolCitations.length === 1 ? '' : 's'}
-          </h4>
-          {protocolCitations.map((citation) => (
-            <blockquote key={citation.chunk_id} className="event-card__citation">
-              <p className="event-card__quote">“{citation.quoted_text}”</p>
-              <footer className="event-card__source">
-                {citation.source_url ? (
-                  <a href={citation.source_url} target="_blank" rel="noreferrer">
-                    {citation.document_title}
-                  </a>
-                ) : (
-                  citation.document_title
-                )}
-                {citation.heading_path && ` · ${citation.heading_path}`}
-              </footer>
-            </blockquote>
-          ))}
-        </>
-      )}
-
-      <Link className="event-card__workspace-link" to="/event-detection">
-        Review event evidence
-      </Link>
-
-    </article>
-  )
-}
-
 
 function Dashboard() {
   const [events, setEvents] =
-    useState<IncidentDetails[]>([])
+    useState<RiskEvent[]>([])
+
+  /** The event whose modal is open, from either a card or a map marker. */
+  const [openEvent, setOpenEvent] =
+    useState<RiskEvent | null>(null)
+
+  /**
+   * Split the feed into the two panels.
+   *
+   * Emergencies sort hardest-first, so the top of the right panel is always
+   * the thing most in need of a decision.
+   */
+  const emergencyEvents = useMemo(
+    () => events
+      .filter((event) => classify(event) === 'emergency')
+      .sort((a, b) => (b.risk_score ?? 0) - (a.risk_score ?? 0)),
+    [events],
+  )
+
+  const advisoryEvents = useMemo(
+    () => events.filter((event) => classify(event) !== 'emergency'),
+    [events],
+  )
+
+  /**
+   * Drop the modal when its event leaves the feed, rather than leaving a stale
+   * record open over a fire that is no longer being reported.
+   */
+  useEffect(() => {
+    if (openEvent && !events.some((event) => event.id === openEvent.id)) {
+      setOpenEvent(null)
+    }
+  }, [events, openEvent])
 
   /**
    * True while the detection scan is running.
@@ -218,10 +218,6 @@ function Dashboard() {
    */
   const [isLoadingEvents, setIsLoadingEvents] =
     useState(true)
-  const [eventsError, setEventsError] =
-    useState<string | null>(null)
-  const [detectedEventsResponse, setDetectedEventsResponse] =
-    useState<DetectedEventsResponse | null>(null)
 
   const [leaving, setLeaving] =
     useState(false)
@@ -251,15 +247,42 @@ function Dashboard() {
     setShowWind,
   ] = useState(false)
 
+  // Fire stations are reference data rather than an environmental overlay, so
+  // they live in the "I want to see" bar above the map, not in LayersControl.
   const [
-    showInfrastructure,
-    setShowInfrastructure,
-  ] = useState(true)
+    showFireStations,
+    setShowFireStations,
+  ] = useState(false)
 
-  const {
-    scan: nationalRiskScan,
-    error: nationalRiskError,
-  } = useNationalRiskScan()
+  const [
+    fireStationCount,
+    setFireStationCount,
+  ] = useState<{ located: number; total: number } | null>(null)
+
+  const [
+    showPoliceStations,
+    setShowPoliceStations,
+  ] = useState(false)
+
+  const [
+    policeStationCount,
+    setPoliceStationCount,
+  ] = useState<{ located: number; total: number } | null>(null)
+
+  const [
+    showMdaStations,
+    setShowMdaStations,
+  ] = useState(false)
+
+  const [
+    mdaStationCount,
+    setMdaStationCount,
+  ] = useState<{ located: number; total: number } | null>(null)
+
+  const [nationalRiskScan, setNationalRiskScan] =
+    useState<NationalRiskScan | null>(null)
+  const [nationalRiskError, setNationalRiskError] =
+    useState<string | null>(null)
   const [focusedFireRiskCluster, setFocusedFireRiskCluster] =
     useState<FireRiskCluster | null>(null)
   const [dismissedFireRiskSnapshot, setDismissedFireRiskSnapshot] =
@@ -332,39 +355,6 @@ function Dashboard() {
   ] = useState(false)
 
 
-  // =========================================================
-  // Environmental data
-  // =========================================================
-
-  const [
-    envData,
-    setEnvData,
-  ] = useState<EnvironmentalData | null>(null)
-
-  const [
-    isLoadingEnvData,
-    setIsLoadingEnvData,
-  ] = useState(false)
-
-  const [
-    envDataError,
-    setEnvDataError,
-  ] = useState<string | null>(null)
-
-  const [
-    selectedLocation,
-    setSelectedLocation,
-  ] = useState<{
-    lat: number
-    lng: number
-  } | null>(null)
-
-  const [
-    isPopupOpen,
-    setIsPopupOpen,
-  ] = useState(false)
-
-
   const navigate = useNavigate()
 
 
@@ -373,34 +363,65 @@ function Dashboard() {
   // =========================================================
 
   useEffect(() => {
-    let active = true
-
-    void fetchDetectedEventsResponse()
-      .then((response) => {
-        if (!active) return
-        setDetectedEventsResponse(response)
-        setEvents(response.events)
+    // No setIsLoadingEvents(true) here: the state already initializes to true
+    // and this effect runs once on mount, so setting it again would only
+    // trigger a cascading render.
+    fetch('/api/detected-events')
+      .then((response) =>
+        response.json() as Promise<DetectedEventsResponse>
+      )
+      .then((data) => {
+        // An empty list is a valid answer — it means the scan ran and found
+        // nothing — so this assigns unconditionally rather than only on a
+        // truthy list. Guarding on `if (data.events)` would leave stale events
+        // on the map after a clean scan.
+        setEvents(data.events ?? [])
       })
-      .catch((reason: unknown) => {
-        if (!active) return
-        setEventsError(
-          reason instanceof Error
-            ? reason.message
-            : 'Detected event data is unavailable',
+      .catch((error) =>
+        console.error(
+          'Error fetching events:',
+          error
         )
-      })
-      .finally(() => {
-        if (active) setIsLoadingEvents(false)
-      })
-
-    return () => {
-      active = false
-    }
+      )
+      .finally(() =>
+        setIsLoadingEvents(false)
+      )
   }, [])
 
-  const detectionProviderFailed =
-    detectedEventsResponse?.metadata.collection_status === 'failed'
-    || detectedEventsResponse?.metadata.services.detection?.status === 'failed'
+  useEffect(() => {
+    let active = true
+    let requestInFlight = false
+    let controller: AbortController | null = null
+
+    const loadNationalRiskScan = async () => {
+      if (requestInFlight) return
+      requestInFlight = true
+      controller = new AbortController()
+      try {
+        const response = await fetch('/api/fire-risk/national-scan', { signal: controller.signal })
+        if (!response.ok) throw new Error('National risk scan is unavailable')
+        const scan = normalizeNationalRiskScanResponse(await response.json() as unknown)
+        if (active) {
+          setNationalRiskScan(scan)
+          setNationalRiskError(null)
+        }
+      } catch (reason: unknown) {
+        if (active && !controller.signal.aborted) {
+          setNationalRiskError(reason instanceof Error ? reason.message : 'National risk scan is unavailable')
+        }
+      } finally {
+        requestInFlight = false
+      }
+    }
+
+    void loadNationalRiskScan()
+    const intervalId = window.setInterval(() => void loadNationalRiskScan(), 5 * 60 * 1000)
+    return () => {
+      active = false
+      controller?.abort()
+      window.clearInterval(intervalId)
+    }
+  }, [])
 
   const highRiskClusters = useMemo(
     () => clusterHighRiskCells(nationalRiskScan?.cells ?? []),
@@ -410,20 +431,6 @@ function Dashboard() {
   const viewHighRiskOnMap = (cluster: FireRiskCluster) => {
     setFocusedFireRiskCluster(cluster)
   }
-
-  const primaryEvent = events[0] ?? null
-  const recommendationActions = primaryEvent?.response_actions?.length
-    ? primaryEvent.response_actions.map((action) => action.action)
-    : primaryEvent
-      ? Array.isArray(primaryEvent.response_plan)
-        ? primaryEvent.response_plan
-        : primaryEvent.response_plan
-          ? [primaryEvent.response_plan]
-          : []
-      : []
-  const hasGroundedPlan =
-    primaryEvent?.planning_status === 'success' &&
-    (primaryEvent.response_actions?.length ?? 0) > 0
 
 
   // =========================================================
@@ -473,6 +480,18 @@ function Dashboard() {
   ])
 
 
+  /**
+   * Stop radar animation if the radar layer is switched off.
+   */
+  useEffect(() => {
+    if (!showRainRadar) {
+      setRainPlaying(false)
+    }
+  }, [
+    showRainRadar,
+  ])
+
+
   // =========================================================
   // Logout
   // =========================================================
@@ -483,76 +502,6 @@ function Dashboard() {
     setTimeout(
       () => navigate('/'),
       700
-    )
-  }
-
-
-  // =========================================================
-  // Environmental data
-  // =========================================================
-
-  const loadEnvironmentalData = (
-    latitude: number,
-    longitude: number
-  ) => {
-    setIsLoadingEnvData(true)
-    setEnvDataError(null)
-    setEnvData(null)
-
-    fetchEnvironmentalData(
-      latitude,
-      longitude
-    )
-      .then((data) => {
-        setEnvData(data)
-      })
-      .catch((error) => {
-        setEnvDataError(
-          error.message ||
-          'Error loading data'
-        )
-      })
-      .finally(() => {
-        setIsLoadingEnvData(false)
-      })
-  }
-
-
-  const handleMapClick = (
-    e: MapCoordinateClickEvent
-  ) => {
-    if (!e.lngLat) {
-      return
-    }
-
-    const {
-      lat,
-      lng,
-    } = e.lngLat
-
-    if (
-      lat < 29.45 ||
-      lat > 33.35 ||
-      lng < 34.26 ||
-      lng > 35.90
-    ) {
-      console.warn(
-        'Clicked outside Israel borders. Ignoring.'
-      )
-
-      return
-    }
-
-    setSelectedLocation({
-      lat,
-      lng,
-    })
-
-    setIsPopupOpen(true)
-
-    loadEnvironmentalData(
-      lat,
-      lng
     )
   }
 
@@ -726,14 +675,85 @@ function Dashboard() {
       </header>
 
 
+      <EventLegend
+        emergencyCount={emergencyEvents.length}
+        advisoryCount={advisoryEvents.length}
+      />
+
+
       <div className="dashboard__body">
+
+        <aside className="dashboard__panel dashboard__panel--advisory">
+
+          <div className="panel__header">
+            Advisory
+            <span className="panel__count">{advisoryEvents.length}</span>
+          </div>
+
+          <div className="panel__list">
+            {isLoadingEvents ? (
+              <p className="panel__empty">Scanning…</p>
+            ) : advisoryEvents.length === 0 ? (
+              <p className="panel__empty">Nothing requiring advice.</p>
+            ) : (
+              advisoryEvents.map((event) => (
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  onOpen={setOpenEvent}
+                  isSelected={openEvent?.id === event.id}
+                />
+              ))
+            )}
+          </div>
+
+        </aside>
+
 
         <main className="dashboard__map">
 
+          <WhatToSeeControl
+            toggles={[
+              {
+                id: 'fire-stations',
+                label: 'Fire Stations',
+                swatch: { logo: '/FireDepIsrael.svg', ring: '#dc2626' },
+                checked: showFireStations,
+                onToggle: () =>
+                  setShowFireStations((current) => !current),
+                note: fireStationCount
+                  ? `${fireStationCount.located}/${fireStationCount.total}`
+                  : null,
+              },
+              {
+                id: 'police-stations',
+                label: 'Police Stations',
+                swatch: { logo: '/Emblem_of_Israel_Police_Blue.svg', ring: '#1d4ed8' },
+                checked: showPoliceStations,
+                onToggle: () =>
+                  setShowPoliceStations((current) => !current),
+                note: policeStationCount
+                  ? `${policeStationCount.total}`
+                  : null,
+              },
+              {
+                id: 'mda-stations',
+                label: 'MDA Stations',
+                swatch: { logo: '/Mada_logo.svg', ring: '#dc2626' },
+                checked: showMdaStations,
+                onToggle: () =>
+                  setShowMdaStations((current) => !current),
+                note: mdaStationCount
+                  ? `${mdaStationCount.located}/${mdaStationCount.total}`
+                  : null,
+              },
+            ]}
+          />
+
           <MapView
             events={events}
-            onClick={handleMapClick}
-            selectedLocation={selectedLocation}
+            onEventClick={setOpenEvent}
+            style={{ flex: '1 1 auto', minHeight: 0 }}
           >
 
             {nationalRiskScan && highRiskClusters.length > 0 && dismissedFireRiskSnapshot !== nationalRiskScan.evaluation_time && (
@@ -1053,6 +1073,21 @@ function Dashboard() {
               <FireDangerLayer />
             )}
 
+            <FireStationsLayer
+              visible={showFireStations}
+              onLoaded={setFireStationCount}
+            />
+
+            <PoliceStationsLayer
+              visible={showPoliceStations}
+              onLoaded={setPoliceStationCount}
+            />
+
+            <MdaStationsLayer
+              visible={showMdaStations}
+              onLoaded={setMdaStationCount}
+            />
+
             {showFireDanger && (
               <FireDangerLegend />
             )}
@@ -1069,35 +1104,6 @@ function Dashboard() {
 
 
             {/* ================================================= */}
-            {/* Nearby infrastructure                             */}
-            {/* ================================================= */}
-
-            {showInfrastructure &&
-              envData && (
-                <InfrastructureLayer
-                  hospitals={
-                    envData
-                      .geospatial_context
-                      .nearby_hospitals ??
-                    []
-                  }
-                  policeStations={
-                    envData
-                      .geospatial_context
-                      .nearby_police_stations ??
-                    []
-                  }
-                  fireStations={
-                    envData
-                      .geospatial_context
-                      .nearby_fire_stations ??
-                    []
-                  }
-                />
-              )}
-
-
-            {/* ================================================= */}
             {/* Layer controls                                    */}
             {/* ================================================= */}
 
@@ -1106,16 +1112,10 @@ function Dashboard() {
                 showRainRadar
               }
               onToggleRainRadar={() =>
-                {
-                  if (showRainRadar) {
-                    setRainPlaying(false)
-                  }
-
-                  setShowRainRadar(
-                    (current) =>
-                      !current
-                  )
-                }
+                setShowRainRadar(
+                  (current) =>
+                    !current
+                )
               }
 
               showFireDanger={
@@ -1148,167 +1148,56 @@ function Dashboard() {
                 )
               }
 
-              showInfrastructure={
-                showInfrastructure
-              }
-              onToggleInfrastructure={() =>
-                setShowInfrastructure(
-                  (current) =>
-                    !current
-                )
-              }
             />
 
 
-            <EnvironmentalDataModal
-              isOpen={
-                isPopupOpen
-              }
-              onClose={() =>
-                setIsPopupOpen(
-                  false
-                )
-              }
-              latitude={
-                selectedLocation
-                  ?.lat ?? null
-              }
-              longitude={
-                selectedLocation
-                  ?.lng ?? null
-              }
-              envData={
-                envData
-              }
-              isLoading={
-                isLoadingEnvData
-              }
-              error={
-                envDataError
-              }
-            />
+            {/* ================================================= */}
+            {/* Draw an area, read what is inside it              */}
+            {/* ================================================= */}
+
+            <AreaSelect />
 
           </MapView>
 
         </main>
 
 
-        <aside className="dashboard__sidebar">
+        <aside className="dashboard__panel dashboard__panel--emergency">
 
-          <section className="dashboard-summary" aria-labelledby="active-incidents-title">
-            <div className="dashboard-summary__heading">
-              <h2 id="active-incidents-title">Detected events / anomaly candidates</h2>
-              <span>{events.length}</span>
-            </div>
-            {isLoadingEvents && (
-              <p className="dashboard-summary__notice">
-                Scanning for detected environmental events. Analysis may take up to 90 seconds.
-              </p>
-            )}
-            {eventsError && (
-              <p className="dashboard-summary__error" role="alert">
-                Detection scan unavailable: {eventsError}
-              </p>
-            )}
-            {!eventsError && detectionProviderFailed && (
-              <p className="dashboard-summary__error" role="alert">
-                Detection provider could not complete the current scan. No-event status is unknown.
-              </p>
-            )}
-            <div className="dashboard-incident-list">
-              {!isLoadingEvents && !eventsError && !detectionProviderFailed && events.length === 0 && (
-                <p className="dashboard-summary__empty">
-                  The current detection scan returned no detected events.
-                </p>
-              )}
-              {!isLoadingEvents && events.map((event) => (
-                <EventSummaryCard key={event.id} event={event} />
-              ))}
-            </div>
-          </section>
+          <div className="panel__header">
+            Emergency
+            <span className="panel__count">{emergencyEvents.length}</span>
+          </div>
 
-          <section className="dashboard-summary" aria-labelledby="risk-outlook-title">
-            <h2 id="risk-outlook-title">Risk outlook</h2>
-            <p>
-              National current risk is a conditions-based estimate, not a detected incident.
-            </p>
-            <div className="dashboard-risk-status">
-              <span>Status</span>
-              <strong>{nationalRiskError || nationalRiskScan?.status || 'Loading'}</strong>
-            </div>
-            {nationalRiskScan && (
-              <div className="dashboard-risk-status">
-                <span>High-risk areas</span>
-                <strong>{highRiskClusters.length}</strong>
-              </div>
-            )}
-            <Link className="dashboard-summary__link" to="/data-layers">
-              Inspect source details
-            </Link>
-          </section>
-
-          <section className="dashboard-summary" aria-labelledby="recommendation-title">
-            <h2 id="recommendation-title">Recommendation summary</h2>
-            {recommendationActions.length > 0 ? (
-              <>
-                <p className="dashboard-summary__notice">
-                  {hasGroundedPlan
-                    ? 'Grounded response-planning output. Operator verification is still required.'
-                    : 'Legacy or provisional response information—not a verified operational instruction.'}
-                </p>
-                <ol className="dashboard-recommendations">
-                  {recommendationActions.slice(0, 2).map((action) => (
-                    <li key={action}>{action}</li>
-                  ))}
-                </ol>
-              </>
+          <div className="panel__list">
+            {isLoadingEvents ? (
+              <p className="panel__empty">Scanning…</p>
+            ) : emergencyEvents.length === 0 ? (
+              <p className="panel__empty">No active emergencies.</p>
             ) : (
-              <p className="dashboard-summary__empty">
-                No trustworthy operational recommendation is available.
-              </p>
+              emergencyEvents.map((event) => (
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  onOpen={setOpenEvent}
+                  isSelected={openEvent?.id === event.id}
+                />
+              ))
             )}
-            <Link className="dashboard-summary__link" to="/response-planning">
-              Open response workspace
-            </Link>
-          </section>
+          </div>
 
         </aside>
 
       </div>
 
-      <div className="dashboard-footer">
-        <footer className="dashboard-footer__content">
-          <section aria-labelledby="agent-status-title">
-            <div className="dashboard-footer__heading">
-              <h2 id="agent-status-title">Architecture overview</h2>
-              <span>Intended flow; stage runtime and Coordinator correlation are not confirmed here</span>
-            </div>
-            <div className="dashboard-agent-grid">
-              {OFFICIAL_AGENT_ROLES.map((role) => (
-                <div className="dashboard-agent" key={role}>
-                  <strong>{role}</strong>
-                  <span>
-                    {role === 'Data Collection Agents' && envData
-                      ? `Latest context request: ${envData.metadata.collection_status}`
-                      : role === 'Resource Allocation / Response Implementation'
-                        ? `Resource selection: ${primaryEvent?.allocated_resources?.status ?? 'Not provided'}. Operational dispatch not exposed.`
-                      : 'Stage runtime / connection not exposed here'}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
 
-          <nav className="dashboard-workflow" aria-label="Incident workflow">
-            <h2>Continue workflow</h2>
-            <div className="dashboard-workflow__links">
-              {WORKSPACE_LINKS.map((workspace) => (
-                <Link key={workspace.path} to={workspace.path}>{workspace.label}</Link>
-              ))}
-            </div>
-          </nav>
-        </footer>
-      </div>
+      {openEvent && (
+        <EventModal
+          event={openEvent}
+          onClose={() => setOpenEvent(null)}
+        />
+      )}
+
     </main>
   )
 }

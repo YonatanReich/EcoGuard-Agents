@@ -1,118 +1,112 @@
 /**
- * FireDangerLayer
+ * FireDangerLayer — the Fire Weather Index, as a smooth interpolated surface.
  *
- * Displays the GWIS/EFFIS Fire Weather Index (FWI) raster over Israel.
+ * Renders GWIS/EFFIS FWI over Israel from a georeferenced PNG our own backend
+ * builds at /api/fire-danger.png, positioned with bounds from
+ * /api/fire-danger.
  *
- * Unlike RainViewer, GWIS/EFFIS exposes the FWI data through a WMS service
- * rather than standard XYZ tiles. Therefore this component requests one
- * georeferenced PNG covering Israel and uses it as a MapLibre image source.
+ * Why an image rather than a Mapbox layer over the points: the data is 620
+ * samples on a 5 km grid, and Mapbox has no interpolating layer type. A
+ * heatmap measures how crowded points are, which on a uniform grid is constant
+ * and discards the values entirely. Circles and fills draw one mark per sample,
+ * so the grid shows through as dots however they are tuned. Interpolating
+ * server-side is the only way to get a continuous surface, and a
+ * Gaussian-weighted average with a stated bandwidth is a method rather than a
+ * rendering accident.
  *
- * The layer visualizes environmental fire-weather danger only.
- * It does NOT represent active fires and does NOT represent the final
- * operational risk score calculated by RiskAnalysisAgent.
+ * The image is transparent wherever no sample is close enough, so the Negev
+ * reads as the absence of data it is: Copernicus publishes no FWI over desert,
+ * because desert has no fuel to index.
  *
- * Data source:
- *   GWIS / EFFIS
+ * This layer shows environmental fire-weather danger only. It is NOT active
+ * fire, and NOT the operational risk score from RiskAnalysisAgent.
  *
- * WMS layer:
- *   mf010.fwi
+ * Data source: GWIS / EFFIS, WMS layer mf010.fwi, sampled per 5 km cell by
+ * ecoguard's fire_weather collector.
  */
 
-import { Layer, Source } from 'react-map-gl/maplibre'
+import { useEffect, useState } from 'react'
+import { Layer, Source } from 'react-map-gl/mapbox'
 
 
 type FireDangerLayerProps = {
   /** Whether the FWI overlay is visible. */
   visible?: boolean
 
-  /** Transparency of the FWI raster above the base map. */
+  /** Opacity of the surface above the base map. */
   opacity?: number
 }
 
 
-// Bounding box covering Israel and a small surrounding area.
-//
-// WMS BBOX order for version 1.1.1 with EPSG:4326:
-// west,south,east,north
-const FIRE_DANGER_BOUNDS = {
-  west: 33.5,
-  south: 29.0,
-  east: 36.5,
-  north: 33.6,
+type FireDangerMeta = {
+  observed_at: string | null
+  /** west, south, east, north */
+  bounds: [number, number, number, number]
+  cell_count: number
 }
-
-const GWIS_WMS_URL =
-  'https://maps.effis.emergency.copernicus.eu/effis'
 
 
 function FireDangerLayer({
   visible = true,
-  opacity = 0.55,
+  opacity = 0.6,
 }: FireDangerLayerProps) {
-  if (!visible) {
+  const [meta, setMeta] = useState<FireDangerMeta | null>(null)
+
+  useEffect(() => {
+    if (!visible) return
+
+    let cancelled = false
+
+    fetch('/api/fire-danger')
+      .then((response) => {
+        if (!response.ok) throw new Error(String(response.status))
+        return response.json()
+      })
+      .then((value: FireDangerMeta) => {
+        if (!cancelled) setMeta(value)
+      })
+      .catch(() => {
+        // A missing FWI layer is a missing layer, not a broken dashboard.
+        if (!cancelled) setMeta(null)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [visible])
+
+  if (!visible || !meta || meta.cell_count === 0) {
     return null
   }
 
-  /**
-   * Build the WMS GetMap request dynamically so the date always represents
-   * the current day rather than being hard-coded into the frontend.
-   */
-  const today = new Date().toISOString().split('T')[0]
-
-  const params = new URLSearchParams({
-    SERVICE: 'WMS',
-    VERSION: '1.1.1',
-    REQUEST: 'GetMap',
-    LAYERS: 'mf010.fwi',
-    STYLES: '',
-    SRS: 'EPSG:4326',
-    BBOX: [
-      FIRE_DANGER_BOUNDS.west,
-      FIRE_DANGER_BOUNDS.south,
-      FIRE_DANGER_BOUNDS.east,
-      FIRE_DANGER_BOUNDS.north,
-    ].join(','),
-    WIDTH: '900',
-    HEIGHT: '1200',
-    FORMAT: 'image/png',
-    TRANSPARENT: 'true',
-    TIME: today,
-  })
-
-  const imageUrl = `${GWIS_WMS_URL}?${params.toString()}`
+  const [west, south, east, north] = meta.bounds
 
   return (
     <Source
       id="gwis-fwi-source"
       type="image"
-      url={imageUrl}
+      // observed_at busts the browser cache exactly when the data changes and
+      // never in between; the endpoint sets a one-hour Cache-Control.
+      url={`/api/fire-danger.png?t=${encodeURIComponent(meta.observed_at ?? '')}`}
       coordinates={[
-        // MapLibre image coordinates must be:
-        // top-left, top-right, bottom-right, bottom-left.
-        [
-          FIRE_DANGER_BOUNDS.west,
-          FIRE_DANGER_BOUNDS.north,
-        ],
-        [
-          FIRE_DANGER_BOUNDS.east,
-          FIRE_DANGER_BOUNDS.north,
-        ],
-        [
-          FIRE_DANGER_BOUNDS.east,
-          FIRE_DANGER_BOUNDS.south,
-        ],
-        [
-          FIRE_DANGER_BOUNDS.west,
-          FIRE_DANGER_BOUNDS.south,
-        ],
+        // Mapbox image coordinates run top-left, top-right, bottom-right,
+        // bottom-left.
+        [west, north],
+        [east, north],
+        [east, south],
+        [west, south],
       ]}
     >
       <Layer
-        id="gwis-fwi-layer"
+        id="gwis-fwi-surface"
         type="raster"
         paint={{
           'raster-opacity': opacity,
-          'raster-fade-duration': 0,
+          // The PNG is already smooth and is being scaled up; nearest-neighbour
+          // resampling would reintroduce the very pixel edges it exists to
+          // avoid.
+          'raster-resampling': 'linear',
+          'raster-fade-duration': 300,
         }}
       />
     </Source>

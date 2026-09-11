@@ -14,13 +14,9 @@
 
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import cesium from 'vite-plugin-cesium'
 
 export default defineConfig({
-  // EcoGuard keeps shared VITE_-prefixed frontend configuration in the
-  // repository-level .env file rather than duplicating it under frontend/.
-  envDir: '..',
-  plugins: [react(), cesium({ rebuildCesium: true })],
+  plugins: [react()],
   server: {
     proxy: {
       '/api': {

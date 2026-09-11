@@ -22,7 +22,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from agents.evaluation_schemas import DIMENSION_WEIGHTS, PlanVerdict, case_score
+from research.evaluation.evaluation_schemas import DIMENSION_WEIGHTS, PlanVerdict, case_score
 from agents.response_plan_judge_agent import ResponsePlanJudgeAgent
 from services.claude_llm_service import ClaudeProviderError
 

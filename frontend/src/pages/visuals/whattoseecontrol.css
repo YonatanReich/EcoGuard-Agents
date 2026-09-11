@@ -1,0 +1,133 @@
+/*
+ * "I want to see" — the layer bar above the map.
+ *
+ * The toggles are chips rather than raw checkboxes, and each carries a swatch
+ * in its layer's own map colours. That is not decoration: it is the map legend,
+ * so the bar answers "which dots are which" without a second panel.
+ *
+ * The checkbox itself is still a real <input>, only visually replaced. Chips
+ * built out of <div onClick> lose keyboard focus, space-to-toggle and the
+ * checked state screen readers announce.
+ */
+
+.see-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 14px;
+    background: linear-gradient(180deg, rgba(0, 37, 100, 0.92), rgba(0, 24, 66, 0.92));
+    border-bottom: 1px solid rgba(0, 98, 255, 0.28);
+    /* A row in the map column, so it must not be squeezed when the map claims
+     * the remaining height. */
+    flex: 0 0 auto;
+}
+
+.see-bar__title {
+    margin-inline-end: 4px;
+    color: #8fa9cf;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.see-chip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 12px 5px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.04);
+    color: #b9cbe6;
+    font-size: 0.8rem;
+    font-weight: 500;
+    line-height: 1.2;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+    transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.see-chip:hover {
+    background: rgba(255, 255, 255, 0.09);
+    border-color: rgba(255, 255, 255, 0.24);
+    color: #e7effb;
+}
+
+.see-chip--on {
+    background: rgba(0, 98, 255, 0.18);
+    border-color: rgba(0, 98, 255, 0.62);
+    color: #ffffff;
+    font-weight: 600;
+}
+
+/* The input stays in the DOM and keeps focus and keyboard behaviour; only its
+ * default rendering is replaced. */
+.see-chip__input {
+    position: absolute;
+    opacity: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    inset: 0;
+    cursor: pointer;
+}
+
+.see-chip__input:focus-visible + .see-chip__swatch {
+    outline: 2px solid #6ea8ff;
+    outline-offset: 2px;
+}
+
+/* The map badge at bar size: the service emblem on a white disc in its ring. */
+.see-chip__swatch {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #ffffff;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    /* Dimmed while the layer is off, so the bar reads as a set of switches
+     * first and a legend second. */
+    opacity: 0.5;
+    transition: opacity 140ms ease;
+}
+
+/*
+ * The three emblems are 1.09, 1.06 and 1.00 to 1, and one has no viewBox at
+ * all. A fixed box plus contain is what makes them the same size on screen
+ * instead of the same nominal dimensions.
+ */
+.see-chip__swatch img {
+    width: 76%;
+    height: 76%;
+    object-fit: contain;
+    display: block;
+}
+
+.see-chip--on .see-chip__swatch {
+    opacity: 1;
+}
+
+.see-chip__note {
+    color: #8fa9cf;
+    font-size: 0.7rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.see-chip--on .see-chip__note {
+    color: #a8c2e6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .see-chip,
+    .see-chip__swatch {
+        transition: none;
+    }
+}

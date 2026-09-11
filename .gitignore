@@ -5,7 +5,12 @@ __pycache__/
 backend/__pycache__/
 *.pyc
 *.bak
-.env
+
+# Every .env variant — .env alone does not match .env.local, .env.backup and
+# friends, and one `git add -A` on such a file publishes every credential.
+.env*
+!.env.example
+
 .pytest_cache/
 
 # Telethon authentication sessions
@@ -97,3 +102,8 @@ data/generated/ml/forecast_risk_pilot/
 
 # Generated evaluation runs
 data/generated/evaluation/
+
+# WorldPop population raster, downloaded once and loaded into population_cells
+# by scripts/load_population_grid.py. Republished yearly by WorldPop; there is
+# no reason to carry a copy in the history.
+data/generated/isr_ppp_*.tif

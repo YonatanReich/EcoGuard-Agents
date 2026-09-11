@@ -1,0 +1,5 @@
+country_id,latitude,longitude,bright_ti4,scan,track,acq_date,acq_time,satellite,instrument,confidence,version,bright_ti5,frp,daynight
+ISR,31.7833,35.2167,330.5,0.42,0.38,2026-09-06,1042,N20,VIIRS,n,2.0NRT,295.1,4.7,D
+ISR,31.7845,35.2180,341.2,0.42,0.38,2026-09-06,1042,N20,VIIRS,h,2.0NRT,301.4,9.3,D
+ISR,31.7833,35.2167,318.0,0.42,0.38,2026-09-06,2231,N20,VIIRS,l,2.0NRT,288.0,1.2,N
+EGY,30.0444,31.2357,335.0,0.42,0.38,2026-09-06,1042,N20,VIIRS,n,2.0NRT,298.0,6.1,D

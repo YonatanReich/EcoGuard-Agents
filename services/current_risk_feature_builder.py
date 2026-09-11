@@ -4,14 +4,20 @@ from __future__ import annotations
 
 import math
 import sqlite3
-from datetime import datetime, timezone
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from scripts.build_historical_environmental_features import PriorFirmsIndex, historical_fire_features
-from scripts.build_historical_fire_negative_samples import FIRMS_INPUT, NegativeSampleError, load_firms_incidents
-from services.rolling_weather_cache import DEFAULT_CACHE_PATH, RollingWeatherCache, WeatherCacheError
+from sqlalchemy.exc import SQLAlchemyError
+
+from ecoguard.database.repositories.weather_history import (
+    HISTORY_HOURS, hourly_for_cell, hourly_for_cells,
+)
+from research.datasets.build_historical_environmental_features import PriorFirmsIndex, historical_fire_features
+from research.datasets.build_historical_fire_negative_samples import FIRMS_INPUT, NegativeSampleError, load_firms_incidents
 from services.static_feature_store import DEFAULT_DATABASE_PATH, STATIC_MODEL_FEATURES
+from services.weather_feature_calculator import compute_features
 
 
 SEASON_FEATURES = ("sin_day_of_year", "cos_day_of_year", "sin_hour", "cos_hour")
@@ -32,6 +38,60 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * radius * math.asin(min(1.0, math.sqrt(value)))
 
 
+def feature_window(evaluation: datetime) -> tuple[datetime, datetime]:
+    """The hours compute_features reads behind an evaluation time.
+
+    Its widest window is precipitation_sum_7d, which sums [evaluation - 168h,
+    evaluation). The newest hour that can contribute is therefore evaluation-1h
+    and the oldest is evaluation-168h — 168 hours inclusive, which is what
+    HISTORY_HOURS names and what the collector backfills to.
+    """
+    end = evaluation - timedelta(hours=1)
+    return end - timedelta(hours=HISTORY_HOURS - 1), end
+
+
+class StoredWeatherFeatures:
+    """Model weather features read from the observations table.
+
+    Replaced a private SQLite cache that fetched its own copy of the same seven
+    variables from Open-Meteo. The model and its feature definitions did not
+    change: compute_features is pure, so swapping where the hourly series comes
+    from is invisible to it.
+
+    `window` preloads many cells for one evaluation time. A national scan asks
+    for all 1,174, and against a hosted database the per-cell round trip is the
+    whole cost.
+    """
+
+    def __init__(self) -> None:
+        self._preloaded: dict[str, dict[str, Any]] | None = None
+
+    @contextmanager
+    def window(self, cell_ids, evaluation: datetime):
+        start, end = feature_window(evaluation)
+        self._preloaded = hourly_for_cells(list(cell_ids), start, end)
+        try:
+            yield self
+        finally:
+            self._preloaded = None
+
+    def features_for_cell(self, cell_id: str, evaluation_time: datetime) -> dict[str, Any]:
+        stored = (self._preloaded or {}).get(cell_id)
+        if stored is None:
+            start, end = feature_window(evaluation_time)
+            stored = hourly_for_cell(cell_id, start, end)
+        features, status = compute_features(stored, evaluation_time)
+        if stored["status"] != "success" or status != "success":
+            # An incomplete history is reported, never smoothed over. A model
+            # scored on a series with holes in it produces a number that looks
+            # exactly like a real one.
+            return {
+                "status": "stale", "reason": "weather_history_incomplete",
+                "missing_hours": stored["missing_hours"], "features": features,
+            }
+        return {"status": "success", "reason": None, "missing_hours": 0, "features": features}
+
+
 class CurrentRiskFeatureBuilder:
     """Build model input without provider calls or static-feature recomputation."""
 
@@ -39,13 +99,13 @@ class CurrentRiskFeatureBuilder:
         self,
         *,
         grid_path: Path | str = DEFAULT_DATABASE_PATH,
-        weather_cache: RollingWeatherCache | None = None,
+        weather_source: StoredWeatherFeatures | None = None,
         firms_path: Path | str = FIRMS_INPUT,
         firms_index: PriorFirmsIndex | None = None,
         maximum_cell_distance_km: float = 5.0,
     ):
         self.grid_path = Path(grid_path)
-        self.weather_cache = weather_cache or RollingWeatherCache(DEFAULT_CACHE_PATH)
+        self.weather_source = weather_source or StoredWeatherFeatures()
         self.firms_path = Path(firms_path)
         self._firms_index = firms_index
         self.maximum_cell_distance_km = maximum_cell_distance_km
@@ -113,16 +173,14 @@ class CurrentRiskFeatureBuilder:
             return {"status": "unavailable", "reason": "active_grid_cell_not_found", "features": None, "cell_id": requested_cell_id}
         if cell.get("feature_status") != "complete" or any(cell.get(name) is None for name in STATIC_MODEL_FEATURES):
             return {"status": "unavailable", "reason": "static_features_incomplete", "features": None, "cell_id": cell["cell_id"]}
-        if not self.weather_cache.path.exists():
-            return {"status": "unavailable", "reason": "weather_cache_missing", "features": None, "cell_id": cell["cell_id"]}
         try:
-            weather = self.weather_cache.features_for_cell(cell["cell_id"], evaluation)
-        except (OSError, sqlite3.Error, WeatherCacheError):
-            return {"status": "unavailable", "reason": "weather_cache_unavailable", "features": None, "cell_id": cell["cell_id"]}
+            weather = self.weather_source.features_for_cell(cell["cell_id"], evaluation)
+        except SQLAlchemyError:
+            return {"status": "unavailable", "reason": "weather_history_unavailable", "features": None, "cell_id": cell["cell_id"]}
         if weather["status"] != "success":
             return {
-                "status": "unavailable", "reason": weather.get("reason", "weather_cache_stale"),
-                "features": None, "cell_id": cell["cell_id"], "weather_node_id": weather.get("weather_node_id"),
+                "status": "unavailable", "reason": weather.get("reason", "weather_history_incomplete"),
+                "features": None, "cell_id": cell["cell_id"],
             }
         try:
             firms = historical_fire_features(
@@ -144,6 +202,6 @@ class CurrentRiskFeatureBuilder:
             features["days_since_previous_firms_candidate_within_10km"] = float("nan")
         return {
             "status": "success", "reason": None, "features": features,
-            "cell_id": cell["cell_id"], "weather_node_id": weather["weather_node_id"],
+            "cell_id": cell["cell_id"],
             "evaluation_time": evaluation.isoformat().replace("+00:00", "Z"),
         }
