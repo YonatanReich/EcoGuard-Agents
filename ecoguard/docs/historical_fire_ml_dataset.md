@@ -44,7 +44,7 @@ new request. Failed provider requests remain eligible for a later retry.
 Start or resume negative weather collection:
 
 ```console
-python -m scripts.build_historical_negative_weather_features
+python -m ecoguard.scripts.build_historical_negative_weather_features
 ```
 
 ## Label semantics
@@ -62,7 +62,7 @@ python -m scripts.build_historical_negative_weather_features
 After negative weather collection finishes:
 
 ```console
-python -m scripts.build_fire_prediction_ml_dataset
+python -m ecoguard.scripts.build_fire_prediction_ml_dataset
 ```
 
 Output:

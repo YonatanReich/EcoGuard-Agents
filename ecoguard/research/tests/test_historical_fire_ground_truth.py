@@ -1,4 +1,4 @@
-from research.datasets.build_historical_fire_ground_truth import (
+from ecoguard.research.datasets.build_historical_fire_ground_truth import (
     deduplicate_records,
     normalize_column_name,
     normalize_records,

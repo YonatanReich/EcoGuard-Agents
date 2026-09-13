@@ -36,8 +36,8 @@ Four deliberate choices:
 
 Run as a module, like the other scripts here:
 
-    python -m scripts.load_surface_grid                # ~270 m cells
-    python -m scripts.load_surface_grid --coarsen 1    # native 90 m
+    python -m ecoguard.scripts.load_surface_grid                # ~270 m cells
+    python -m ecoguard.scripts.load_surface_grid --coarsen 1    # native 90 m
 
 This is a full reload: surface_cells is emptied first. The ground does not
 move, so this runs once and then only when a source publishes a new version.
@@ -58,7 +58,7 @@ from sqlalchemy import text
 
 from ecoguard.database.engine import Session
 from ecoguard.database.repositories.surface import COVER_COLUMNS, bearing_degrees
-from research.datasets.build_historical_landcover_terrain_features import (
+from ecoguard.research.datasets.build_historical_landcover_terrain_features import (
     DEM_VERSION,
     LAND_COVER_CLASSES,
     WORLDCOVER_VERSION,

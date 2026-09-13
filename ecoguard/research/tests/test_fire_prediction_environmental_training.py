@@ -3,16 +3,16 @@ from datetime import datetime, timezone
 
 import joblib
 
-from research.datasets.build_historical_environmental_features import ENVIRONMENTAL_FEATURES
-from research.datasets.build_historical_fire_weather_features import FEATURE_FIELDS
-from research.training.train_fire_prediction_environmental_models import (
+from ecoguard.research.datasets.build_historical_environmental_features import ENVIRONMENTAL_FEATURES
+from ecoguard.research.datasets.build_historical_fire_weather_features import FEATURE_FIELDS
+from ecoguard.research.training.train_fire_prediction_environmental_models import (
     ABLATIONS,
     FULL_FEATURES,
     assert_environmental_features,
     load_environmental_dataset,
     matrix_for,
 )
-from research.training.train_fire_prediction_models import FORBIDDEN_FEATURES, temporal_split
+from ecoguard.research.training.train_fire_prediction_models import FORBIDDEN_FEATURES, temporal_split
 from ecoguard.paths import GENERATED
 
 

@@ -18,7 +18,7 @@ The provenance manifest records the service URL, download time, feature count,
 and SHA-256 hash. Both generated files are ignored by Git. Refresh explicitly:
 
 ```console
-python -m scripts.build_firms_fire_rescue_ground_truth --refresh-boundaries
+python -m ecoguard.scripts.build_firms_fire_rescue_ground_truth --refresh-boundaries
 ```
 
 Subsequent runs use the local cache and make no per-candidate geocoding calls.

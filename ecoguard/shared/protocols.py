@@ -21,7 +21,7 @@ Why BM25 by hand rather than a library or embeddings:
 Why no on-disk index:
     Deliberate. Chunking three markdown files takes a few milliseconds at
     import, so the process-lifetime in-memory index built in __init__ is
-    sufficient. A SQLite index in data/generated/ would be ceremony. Revisit
+    sufficient. A SQLite index in ecoguard/data/generated/ would be ceremony. Revisit
     only if the corpus grows by an order of magnitude.
 
 Swap seam:

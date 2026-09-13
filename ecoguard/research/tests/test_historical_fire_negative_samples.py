@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from research.datasets.build_historical_fire_negative_samples import (
+from ecoguard.research.datasets.build_historical_fire_negative_samples import (
     FirmsIncident,
     FirmsSpaceTimeIndex,
     generate_negative_samples,

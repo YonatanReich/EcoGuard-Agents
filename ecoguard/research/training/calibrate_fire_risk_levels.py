@@ -18,7 +18,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import average_precision_score, brier_score_loss, roc_auc_score
 from sklearn.model_selection import StratifiedKFold, cross_val_predict
 
-from research.training.train_fire_prediction_landcover_terrain_models import (
+from ecoguard.research.training.train_fire_prediction_landcover_terrain_models import (
     DATASET_PATH,
     IMPORTANCE_NAME,
     MODEL_NAME,

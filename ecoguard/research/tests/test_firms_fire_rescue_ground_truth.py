@@ -1,4 +1,4 @@
-from research.datasets.build_firms_fire_rescue_ground_truth import (
+from ecoguard.research.datasets.build_firms_fire_rescue_ground_truth import (
     SettlementSpatialIndex,
     build_official_index,
     match_candidates,

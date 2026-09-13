@@ -7,7 +7,7 @@ an operational risk assessment, grounded in retrieved fire-protocol text.
 This replaces an earlier stub that branched on a hardcoded event_type string and
 returned fixed numbers. Two things changed. It now consumes the actual nested
 event object, and its judgement is produced by a Claude call that may only cite
-protocol passages retrieved from data/protocols — every citation is verified in
+protocol passages retrieved from response_planner/protocols — every citation is verified in
 Python against the chunk it claims to quote before the result is returned.
 
 What this agent does NOT do:

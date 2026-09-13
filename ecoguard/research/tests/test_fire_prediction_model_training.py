@@ -6,7 +6,7 @@ import joblib
 import numpy as np
 import pytest
 
-from research.training.train_fire_prediction_models import (
+from ecoguard.research.training.train_fire_prediction_models import (
     FORBIDDEN_FEATURES,
     ML_FEATURES,
     TrainingError,

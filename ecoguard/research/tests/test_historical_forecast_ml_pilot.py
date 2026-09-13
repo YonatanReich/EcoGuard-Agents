@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 import requests
 
-from research.datasets.build_historical_forecast_ml_pilot_dataset import (
+from ecoguard.research.datasets.build_historical_forecast_ml_pilot_dataset import (
     BatchedSingleRunClient, ForecastRunCache, ForecastRunUnavailableError,
     _archive_utc, acquire, complete_for_horizons, deterministic_select, fallback_runs,
     snapshot_plan,

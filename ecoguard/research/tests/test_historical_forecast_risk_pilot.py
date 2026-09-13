@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from research.pilots.build_historical_forecast_risk_pilot import (
+from ecoguard.research.pilots.build_historical_forecast_risk_pilot import (
     deterioration, forecast_indicators, load_pilot_rows, select_available_run, validate_forecast,
 )
 
@@ -61,7 +61,7 @@ def test_loader_uses_retained_t0_as_actual_event_time(tmp_path):
 
 def test_pilot_does_not_train_model_or_consume_event_firms_evidence():
     import inspect
-    import research.pilots.build_historical_forecast_risk_pilot as module
+    import ecoguard.research.pilots.build_historical_forecast_risk_pilot as module
     source = inspect.getsource(module)
     assert ".fit(" not in source
     assert "FireRiskPredictionAgent" not in source

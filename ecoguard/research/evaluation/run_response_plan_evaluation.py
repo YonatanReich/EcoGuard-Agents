@@ -22,11 +22,11 @@ What the number is, and is not:
     it.
 
 Usage:
-    python scripts/run_response_plan_evaluation.py                 # full suite
-    python scripts/run_response_plan_evaluation.py --dry-run       # no API calls
-    python scripts/run_response_plan_evaluation.py --case fire-04-negev-open-nothing-nearby
-    python scripts/run_response_plan_evaluation.py --mode plan-only --repeat 3
-    python scripts/run_response_plan_evaluation.py --replay data/generated/evaluation/latest.json
+    python -m ecoguard.research.evaluation.run_response_plan_evaluation                 # full suite
+    python -m ecoguard.research.evaluation.run_response_plan_evaluation --dry-run       # no API calls
+    python -m ecoguard.research.evaluation.run_response_plan_evaluation --case fire-04-negev-open-nothing-nearby
+    python -m ecoguard.research.evaluation.run_response_plan_evaluation --mode plan-only --repeat 3
+    python -m ecoguard.research.evaluation.run_response_plan_evaluation --replay ecoguard/data/generated/evaluation/latest.json
 
 Needs ANTHROPIC_API_KEY except with --dry-run.
 """

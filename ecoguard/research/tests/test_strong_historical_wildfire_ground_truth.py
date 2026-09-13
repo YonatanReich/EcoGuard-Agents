@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from research.datasets.build_strong_historical_wildfire_ground_truth import (
+from ecoguard.research.datasets.build_strong_historical_wildfire_ground_truth import (
     confidence_tier, match_firms, normalize_external_events,
 )
 

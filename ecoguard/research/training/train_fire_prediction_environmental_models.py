@@ -14,13 +14,13 @@ import numpy as np
 import sklearn
 from sklearn.inspection import permutation_importance
 
-from research.datasets.build_historical_environmental_features import (
+from ecoguard.research.datasets.build_historical_environmental_features import (
     FIRE_HISTORY_FEATURES,
     SEASON_FEATURES,
     TOPOGRAPHY_FEATURES,
 )
-from research.datasets.build_historical_fire_weather_features import FEATURE_FIELDS
-from research.training.train_fire_prediction_models import (
+from ecoguard.research.datasets.build_historical_fire_weather_features import FEATURE_FIELDS
+from ecoguard.research.training.train_fire_prediction_models import (
     FORBIDDEN_FEATURES,
     RANDOM_SEED,
     calculate_metrics,

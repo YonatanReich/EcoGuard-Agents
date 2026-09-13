@@ -17,7 +17,7 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 
 import requests
 
-from research.pilots.build_historical_forecast_risk_pilot import (
+from ecoguard.research.pilots.build_historical_forecast_risk_pilot import (
     ENDPOINT, MODEL, MODEL_AVAILABILITY_DELAY_HOURS, VARIABLES,
     ForecastPilotError, parse_utc, select_available_run, validate_forecast,
 )

@@ -22,11 +22,11 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from research.evaluation.evaluation_schemas import DIMENSION_WEIGHTS, PlanVerdict, case_score
+from ecoguard.research.evaluation.evaluation_schemas import DIMENSION_WEIGHTS, PlanVerdict, case_score
 from ecoguard.response_planner.fire.plan_judge import ResponsePlanJudgeAgent
 from ecoguard.shared.llm import ClaudeProviderError
 
-from tests.test_risk_analysis_agent import (  # shared fakes, per the house precedent
+from ecoguard.tests.analyzers.test_risk_analysis_agent import (  # shared fakes, per the house precedent
     CHUNK,
     CHUNK_TEXT,
     FakeLLM,

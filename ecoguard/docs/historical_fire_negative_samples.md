@@ -91,5 +91,5 @@ Important limitations:
 Build deterministically:
 
 ```console
-python -m scripts.build_historical_fire_negative_samples
+python -m ecoguard.scripts.build_historical_fire_negative_samples
 ```

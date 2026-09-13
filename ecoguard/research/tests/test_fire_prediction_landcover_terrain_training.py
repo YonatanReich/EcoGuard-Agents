@@ -3,12 +3,12 @@ from pathlib import Path
 
 import joblib
 
-from research.datasets.build_historical_landcover_terrain_features import LAND_COVER_FEATURES, TERRAIN_FEATURES
-from research.training.train_fire_prediction_landcover_terrain_models import (
+from ecoguard.research.datasets.build_historical_landcover_terrain_features import LAND_COVER_FEATURES, TERRAIN_FEATURES
+from ecoguard.research.training.train_fire_prediction_landcover_terrain_models import (
     ABLATIONS, FULL_FEATURES, assert_feature_allowlist,
 )
-from research.training.train_fire_prediction_environmental_models import FULL_FEATURES as CURRENT_FEATURES
-from research.training.train_fire_prediction_models import FORBIDDEN_FEATURES
+from ecoguard.research.training.train_fire_prediction_environmental_models import FULL_FEATURES as CURRENT_FEATURES
+from ecoguard.research.training.train_fire_prediction_models import FORBIDDEN_FEATURES
 from ecoguard.paths import GENERATED
 
 

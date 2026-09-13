@@ -23,7 +23,7 @@ Hazard versatility:
     system prompt. No fire vocabulary appears in the dimension definitions, the
     scoring anchors, or the arithmetic — all domain knowledge lives in the
     retrieved corpus. A flood evaluation therefore needs no change to this file:
-    only ``data/protocols/flood/``, some flood cases, and ``hazard="flood"``.
+    only ``response_planner/protocols/flood/``, some flood cases, and ``hazard="flood"``.
 
     Be aware of the limit, and do not let this file imply otherwise: the
     *pipeline* is not hazard-versatile. RiskAnalysisAgent skips any event whose
@@ -41,7 +41,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from research.evaluation.evaluation_schemas import (
+from ecoguard.research.evaluation.evaluation_schemas import (
     DIMENSION_WEIGHTS,
     MAX_DIMENSION_SCORE,
     PlanVerdict,

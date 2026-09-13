@@ -19,7 +19,7 @@ from ecoguard.response_planner.fire.planning_agent import ResponsePlanningAgent
 from ecoguard.shared.schemas import ResponsePlan
 from ecoguard.shared.llm import ClaudeProviderError
 
-from tests.test_risk_analysis_agent import (  # reuse the shared fakes
+from ecoguard.tests.analyzers.test_risk_analysis_agent import (  # reuse the shared fakes
     CHUNK,
     FakeLLM,
     FakeRetriever,

@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from research.datasets.build_historical_telegram_wildfire_pilot import CuratedLocation, normalize_message
+from ecoguard.research.datasets.build_historical_telegram_wildfire_pilot import CuratedLocation, normalize_message
 
 
 def test_normalization_preserves_provenance_and_existing_tier_rules():

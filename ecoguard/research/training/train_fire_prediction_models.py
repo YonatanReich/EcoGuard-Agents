@@ -32,7 +32,7 @@ from sklearn.metrics import (
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from research.datasets.build_historical_fire_weather_features import FEATURE_FIELDS
+from ecoguard.research.datasets.build_historical_fire_weather_features import FEATURE_FIELDS
 from ecoguard.paths import GENERATED
 
 

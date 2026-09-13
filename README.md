@@ -250,7 +250,7 @@ Download WorldPop's constrained, UN-adjusted 100 m grid for Israel
 
 ```bash
 alembic upgrade head
-python -m scripts.load_population_grid data/generated/isr_ppp_2020_UNadj_constrained.tif
+python -m ecoguard.scripts.load_population_grid data/generated/isr_ppp_2020_UNadj_constrained.tif
 ```
 
 The script prints the total it loaded — 315,600 cells and 8,655,541 people for
@@ -284,7 +284,7 @@ expected and skipped:
 
 ```bash
 alembic upgrade head
-python -m scripts.load_surface_grid
+python -m ecoguard.scripts.load_surface_grid
 ```
 
 That loads 429,876 cells of about 270 m. The printed summary is the sanity
@@ -463,8 +463,8 @@ September regardless of what this September is doing, so an hour is compared
 against a decade instead of against itself.
 
 ```bash
-python -m scripts.build_weather_baselines            # 10 years, ~15 min
-python -m scripts.build_weather_baselines --years 5  # thinner, faster
+python -m ecoguard.scripts.build_weather_baselines            # 10 years, ~15 min
+python -m ecoguard.scripts.build_weather_baselines --years 5  # thinner, faster
 ```
 
 One row per **cell × variable × month × hour** — 288 buckets per cell per

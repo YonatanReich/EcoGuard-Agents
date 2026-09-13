@@ -13,8 +13,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 import requests
 
-from research.datasets.build_historical_fire_weather_features import FEATURE_FIELDS as HISTORICAL_FIELDS
-from research.datasets.build_historical_fire_weather_features import compute_features as historical_compute
+from ecoguard.research.datasets.build_historical_fire_weather_features import FEATURE_FIELDS as HISTORICAL_FIELDS
+from ecoguard.research.datasets.build_historical_fire_weather_features import compute_features as historical_compute
 from ecoguard.collection.shared.open_meteo.client import (
     HOURLY_VARIABLES, HourlyProviderError, OpenMeteoHourlyClient, validate_location_response,
 )

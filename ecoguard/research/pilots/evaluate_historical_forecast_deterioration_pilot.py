@@ -18,15 +18,15 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from ecoguard.analyzers.emergency.fire.risk_prediction_agent import FireRiskPredictionAgent
-from research.datasets.build_historical_environmental_features import PriorFirmsIndex, historical_fire_features
-from research.datasets.build_historical_fire_negative_samples import load_firms_incidents
-from research.datasets.build_historical_fire_weather_features import WeatherCheckpoint, checkpoint_configuration
-from research.datasets.build_historical_forecast_ml_pilot_dataset import (
+from ecoguard.research.datasets.build_historical_environmental_features import PriorFirmsIndex, historical_fire_features
+from ecoguard.research.datasets.build_historical_fire_negative_samples import load_firms_incidents
+from ecoguard.research.datasets.build_historical_fire_weather_features import WeatherCheckpoint, checkpoint_configuration
+from ecoguard.research.datasets.build_historical_forecast_ml_pilot_dataset import (
     CACHE_PATH, MANIFEST_PATH, MODEL_AVAILABILITY_DELAY_HOURS, SNAPSHOT_PLAN_PATH,
     ForecastRunCache, parse_utc, payload_contains_target,
 )
-from research.training.train_fire_prediction_landcover_terrain_models import DATASET_PATH as FEATURE_DATASET_PATH, FULL_FEATURES
-from research.training.train_fire_prediction_models import RANDOM_SEED, calculate_metrics, select_threshold
+from ecoguard.research.training.train_fire_prediction_landcover_terrain_models import DATASET_PATH as FEATURE_DATASET_PATH, FULL_FEATURES
+from ecoguard.research.training.train_fire_prediction_models import RANDOM_SEED, calculate_metrics, select_threshold
 from ecoguard.shared.weather_features import compute_features
 from ecoguard.paths import GENERATED
 

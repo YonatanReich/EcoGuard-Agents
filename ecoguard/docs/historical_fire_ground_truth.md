@@ -9,7 +9,7 @@ otherwise downloads the official CSV resource.
 Run the builder from the repository root:
 
 ```console
-python -m scripts.build_historical_fire_ground_truth
+python -m ecoguard.scripts.build_historical_fire_ground_truth
 ```
 
 The generated file is

@@ -38,7 +38,7 @@ scans should read these values locally and must not reacquire static data.
 Build:
 
 ```powershell
-python -m scripts.build_fire_risk_grid
+python -m ecoguard.scripts.build_fire_risk_grid
 ```
 
 Inspect one active cell:

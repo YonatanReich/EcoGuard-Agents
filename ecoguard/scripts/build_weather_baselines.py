@@ -5,8 +5,8 @@ and it is a one-off backfill rather than something that accumulates: the archive
 serves hourly reanalysis back to 1940, so a decade of context is available now
 instead of in ten years' time.
 
-    python -m scripts.build_weather_baselines
-    python -m scripts.build_weather_baselines --years 5 --stride 3
+    python -m ecoguard.scripts.build_weather_baselines
+    python -m ecoguard.scripts.build_weather_baselines --years 5 --stride 3
 
 What it does, per cell: pull every hour of the last ten complete calendar years,
 sort those hours into 288 buckets by (month, hour-of-day), and reduce each

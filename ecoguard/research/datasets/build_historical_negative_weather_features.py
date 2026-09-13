@@ -9,7 +9,7 @@ from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
-from research.datasets.build_historical_fire_weather_features import (
+from ecoguard.research.datasets.build_historical_fire_weather_features import (
     ARCHIVE_ENDPOINT,
     FEATURE_FIELDS,
     REQUEST_PAUSE_SECONDS,

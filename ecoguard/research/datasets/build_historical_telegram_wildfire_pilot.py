@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from research.datasets.build_strong_historical_wildfire_ground_truth import (
+from ecoguard.research.datasets.build_strong_historical_wildfire_ground_truth import (
     FIRMS_INPUT,
     confidence_tier,
     load_firms,

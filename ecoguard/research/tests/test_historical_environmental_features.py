@@ -1,12 +1,12 @@
 from datetime import datetime, timezone
 
-from research.datasets.build_historical_environmental_features import (
+from ecoguard.research.datasets.build_historical_environmental_features import (
     PriorFirmsIndex,
     collect_elevations,
     enrich_rows,
     historical_fire_features,
 )
-from research.datasets.build_historical_fire_negative_samples import FirmsIncident
+from ecoguard.research.datasets.build_historical_fire_negative_samples import FirmsIncident
 
 
 def incident(identifier, timestamp, lat=31.9, lon=34.9):

@@ -14,10 +14,10 @@ import numpy as np
 import sklearn
 from sklearn.inspection import permutation_importance
 
-from research.datasets.build_historical_landcover_terrain_features import LAND_COVER_FEATURES, TERRAIN_FEATURES
-from research.training.train_fire_prediction_environmental_models import FULL_FEATURES as CURRENT_FEATURES
-from research.training.train_fire_prediction_environmental_models import matrix_for
-from research.training.train_fire_prediction_models import (
+from ecoguard.research.datasets.build_historical_landcover_terrain_features import LAND_COVER_FEATURES, TERRAIN_FEATURES
+from ecoguard.research.training.train_fire_prediction_environmental_models import FULL_FEATURES as CURRENT_FEATURES
+from ecoguard.research.training.train_fire_prediction_environmental_models import matrix_for
+from ecoguard.research.training.train_fire_prediction_models import (
     FORBIDDEN_FEATURES, RANDOM_SEED, calculate_metrics, fit_and_compare,
     geographic_audit, parse_timestamp, split_counts, temporal_split,
 )

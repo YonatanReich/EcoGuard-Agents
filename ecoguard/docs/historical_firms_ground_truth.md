@@ -7,7 +7,7 @@ Availability APIs. It is separate from EcoGuard's production point-based
 Run it from the repository root:
 
 ```console
-python -m scripts.build_historical_firms_dataset \
+python -m ecoguard.scripts.build_historical_firms_dataset \
   --start 2023-01-01 --end 2026-08-27
 ```
 

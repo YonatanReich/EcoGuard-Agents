@@ -16,7 +16,7 @@ from pathlib import Path
 from statistics import median
 from typing import Any
 
-from research.datasets.build_firms_fire_rescue_ground_truth import (
+from ecoguard.research.datasets.build_firms_fire_rescue_ground_truth import (
     BOUNDARY_CACHE,
     FIRE_RESCUE_RECORDS,
     SettlementSpatialIndex,

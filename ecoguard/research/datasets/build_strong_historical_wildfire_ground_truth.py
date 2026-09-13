@@ -14,7 +14,7 @@ from typing import Any, Iterable, Mapping
 
 import rasterio
 
-from research.datasets.build_historical_landcover_terrain_features import (
+from ecoguard.research.datasets.build_historical_landcover_terrain_features import (
     LAND_COVER_CLASSES, SOURCE_DIRECTORY, sample_land_cover, worldcover_tile,
 )
 from ecoguard.paths import GENERATED

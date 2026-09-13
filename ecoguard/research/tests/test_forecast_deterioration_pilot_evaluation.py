@@ -5,12 +5,12 @@ import inspect
 
 import numpy as np
 
-from research.pilots.evaluate_historical_forecast_deterioration_pilot import (
+from ecoguard.research.pilots.evaluate_historical_forecast_deterioration_pilot import (
     BASELINE_FEATURES, ENHANCED_FEATURES, FORECAST_FEATURES,
     build_evaluation_rows, evaluate, temporal_split,
 )
-from research.training.train_fire_prediction_landcover_terrain_models import FULL_FEATURES
-from research.datasets.build_historical_environmental_features import PriorFirmsIndex
+from ecoguard.research.training.train_fire_prediction_landcover_terrain_models import FULL_FEATURES
+from ecoguard.research.datasets.build_historical_environmental_features import PriorFirmsIndex
 
 
 UTC = timezone.utc

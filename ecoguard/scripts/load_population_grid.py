@@ -17,8 +17,8 @@ inheriting a smear of the nearest town's population.
 Run as a module, like the other scripts here — the repository root has to be
 on the path for `ecoguard` and `services` to import:
 
-    python -m scripts.load_population_grid data/generated/isr_ppp_2020_UNadj_constrained.tif
-    python -m scripts.load_population_grid raster.tif --coarsen 2   # 200 m cells
+    python -m ecoguard.scripts.load_population_grid ecoguard/data/generated/isr_ppp_2020_UNadj_constrained.tif
+    python -m ecoguard.scripts.load_population_grid raster.tif --coarsen 2   # 200 m cells
 
 This is a full reload: population_cells is emptied first. It is reference data
 published once a year, not a feed.

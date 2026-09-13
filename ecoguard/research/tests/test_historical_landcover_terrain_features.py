@@ -4,7 +4,7 @@ import numpy as np
 import rasterio
 from rasterio.transform import from_origin
 
-from research.datasets.build_historical_landcover_terrain_features import (
+from ecoguard.research.datasets.build_historical_landcover_terrain_features import (
     DEM_VERSION, LAND_COVER_CLASSES, LAND_COVER_FEATURES, WORLDCOVER_VERSION,
     collect_static_features, enrich_rows, sample_land_cover, sample_slope,
     slope_from_neighborhood, sample_slope_across_tiles,

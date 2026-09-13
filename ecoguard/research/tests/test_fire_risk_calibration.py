@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from research.training.calibrate_fire_risk_levels import (
+from ecoguard.research.training.calibrate_fire_risk_levels import (
     assign_risk_levels,
     bucket_statistics,
     compare_calibration_methods,

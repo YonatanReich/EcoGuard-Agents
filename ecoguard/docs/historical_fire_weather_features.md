@@ -81,7 +81,7 @@ between uncached candidate requests.
 Start or resume:
 
 ```console
-python -m scripts.build_historical_fire_weather_features
+python -m ecoguard.scripts.build_historical_fire_weather_features
 ```
 
 The generated CSV and checkpoint directory are ignored by Git.

@@ -22,7 +22,7 @@ from ecoguard.database.repositories.climatology import (
     assess,
     baseline_cell_for,
 )
-from scripts.build_weather_baselines import (
+from ecoguard.scripts.build_weather_baselines import (
     MIN_SAMPLES,
     bucket_index,
     summarise,

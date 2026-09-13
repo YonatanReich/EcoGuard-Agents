@@ -14,8 +14,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from ecoguard.database.repositories.weather_history import (
     HISTORY_HOURS, hourly_for_cell, hourly_for_cells,
 )
-from research.datasets.build_historical_environmental_features import PriorFirmsIndex, historical_fire_features
-from research.datasets.build_historical_fire_negative_samples import FIRMS_INPUT, NegativeSampleError, load_firms_incidents
+from ecoguard.research.datasets.build_historical_environmental_features import PriorFirmsIndex, historical_fire_features
+from ecoguard.research.datasets.build_historical_fire_negative_samples import FIRMS_INPUT, NegativeSampleError, load_firms_incidents
 from ecoguard.analyzers.emergency.fire.static_feature_store import DEFAULT_DATABASE_PATH, STATIC_MODEL_FEATURES
 from ecoguard.shared.weather_features import compute_features
 

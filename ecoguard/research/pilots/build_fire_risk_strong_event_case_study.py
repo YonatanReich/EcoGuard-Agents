@@ -17,12 +17,12 @@ import rasterio
 from rasterio.windows import Window
 
 from ecoguard.analyzers.emergency.fire.risk_prediction_agent import FireRiskPredictionAgent
-from research.datasets.build_historical_environmental_features import (
+from ecoguard.research.datasets.build_historical_environmental_features import (
     PriorFirmsIndex,
     historical_fire_features,
 )
-from research.datasets.build_historical_fire_negative_samples import FirmsIncident, load_firms_incidents, parse_timestamp
-from research.datasets.build_historical_fire_weather_features import (
+from ecoguard.research.datasets.build_historical_fire_negative_samples import FirmsIncident, load_firms_incidents, parse_timestamp
+from ecoguard.research.datasets.build_historical_fire_weather_features import (
     FEATURE_FIELDS,
     OpenMeteoHistoricalClient,
     ProviderError,
@@ -30,14 +30,14 @@ from research.datasets.build_historical_fire_weather_features import (
     checkpoint_configuration,
     compute_features,
 )
-from research.datasets.build_historical_landcover_terrain_features import (
+from ecoguard.research.datasets.build_historical_landcover_terrain_features import (
     LAND_COVER_CLASSES,
     SOURCE_DIRECTORY,
     collect_static_features,
     dem_tile,
     enrich_rows as enrich_static_rows,
 )
-from research.training.train_fire_prediction_landcover_terrain_models import FULL_FEATURES
+from ecoguard.research.training.train_fire_prediction_landcover_terrain_models import FULL_FEATURES
 from ecoguard.paths import GENERATED
 
 STRONG_INPUT = GENERATED / "historical_wildfire_ground_truth_strong_2023_2026.csv"

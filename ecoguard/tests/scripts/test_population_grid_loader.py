@@ -15,7 +15,7 @@ import pytest
 import rasterio
 from rasterio.transform import from_origin
 
-from scripts.load_population_grid import cells_from_raster
+from ecoguard.scripts.load_population_grid import cells_from_raster
 
 # 1 degree pixels starting at (30 E, 40 N) — nothing to do with Israel, but a
 # grid whose corners are whole numbers is readable in an assertion.

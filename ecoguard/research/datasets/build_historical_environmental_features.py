@@ -14,7 +14,7 @@ from typing import Any
 
 import requests
 
-from research.datasets.build_historical_fire_negative_samples import (
+from ecoguard.research.datasets.build_historical_fire_negative_samples import (
     FIRMS_INPUT,
     FirmsIncident,
     haversine_km,

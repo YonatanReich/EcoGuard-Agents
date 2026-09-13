@@ -28,7 +28,7 @@ from ecoguard.database.repositories.surface import (
     bearing_degrees,
     shape_fuel,
 )
-from scripts.load_surface_grid import (
+from ecoguard.scripts.load_surface_grid import (
     COVER_CODES,
     required_cover_tiles,
     required_dem_tiles,

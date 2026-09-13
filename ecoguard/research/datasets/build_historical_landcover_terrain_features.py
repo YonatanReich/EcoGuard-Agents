@@ -17,7 +17,7 @@ import rasterio
 import requests
 from rasterio.windows import Window
 
-from research.datasets.build_historical_environmental_features import coordinate_key
+from ecoguard.research.datasets.build_historical_environmental_features import coordinate_key
 from ecoguard.paths import GENERATED
 
 

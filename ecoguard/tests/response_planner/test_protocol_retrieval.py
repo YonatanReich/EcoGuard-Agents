@@ -613,7 +613,7 @@ def test_missing_hazard_corpus_degrades_without_raising():
     The forward-compatibility guarantee.
 
     A flood judge can be constructed today and will simply have nothing to say
-    until data/protocols/flood exists. Constructing it must not raise, and it
+    until response_planner/protocols/flood exists. Constructing it must not raise, and it
     must not silently fall back to the fire corpus — answering flood questions
     from fire doctrine would be worse than answering nothing.
     """

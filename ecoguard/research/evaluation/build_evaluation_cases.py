@@ -13,7 +13,7 @@ Re-run after editing a case definition or after changing the corpus:
     python scripts/build_evaluation_cases.py
 
 Every generated file is committed. They are inputs, not output, so they do not
-live in data/generated.
+live in ecoguard/data/generated.
 """
 
 from __future__ import annotations

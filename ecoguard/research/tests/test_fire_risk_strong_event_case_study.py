@@ -4,16 +4,16 @@ import csv
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from research.pilots.build_fire_risk_strong_event_case_study import (
+from ecoguard.research.pilots.build_fire_risk_strong_event_case_study import (
     TIER_B,
     discover_tier_b_events,
     resolve_reference_time,
     score_rows,
     trajectory_events,
 )
-from research.datasets.build_historical_environmental_features import PriorFirmsIndex, historical_fire_features
-from research.datasets.build_historical_fire_negative_samples import FirmsIncident
-from research.training.train_fire_prediction_landcover_terrain_models import FULL_FEATURES
+from ecoguard.research.datasets.build_historical_environmental_features import PriorFirmsIndex, historical_fire_features
+from ecoguard.research.datasets.build_historical_fire_negative_samples import FirmsIncident
+from ecoguard.research.training.train_fire_prediction_landcover_terrain_models import FULL_FEATURES
 
 
 def _write(path: Path, rows: list[dict[str, str]]) -> None:

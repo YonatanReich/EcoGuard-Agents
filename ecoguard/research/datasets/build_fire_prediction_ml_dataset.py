@@ -11,8 +11,8 @@ from pathlib import Path
 from statistics import median
 from typing import Any
 
-from research.datasets.build_historical_fire_weather_features import FEATURE_FIELDS
-from research.datasets.build_historical_negative_weather_features import (
+from ecoguard.research.datasets.build_historical_fire_weather_features import FEATURE_FIELDS
+from ecoguard.research.datasets.build_historical_negative_weather_features import (
     OUTPUT_PATH as NEGATIVE_WEATHER_PATH,
 )
 from ecoguard.paths import GENERATED

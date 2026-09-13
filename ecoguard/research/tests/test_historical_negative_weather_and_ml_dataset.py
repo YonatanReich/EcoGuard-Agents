@@ -1,15 +1,15 @@
 import csv
 from datetime import datetime, timedelta, timezone
 
-from research.datasets.build_fire_prediction_ml_dataset import (
+from ecoguard.research.datasets.build_fire_prediction_ml_dataset import (
     FORBIDDEN_ML_FIELDS,
     ML_FEATURE_FIELDS,
     OUTPUT_FIELDS as UNIFIED_FIELDS,
     combine_datasets,
     summarize_dataset,
 )
-from research.datasets.build_historical_fire_weather_features import FEATURE_FIELDS, compute_features
-from research.datasets.build_historical_negative_weather_features import (
+from ecoguard.research.datasets.build_historical_fire_weather_features import FEATURE_FIELDS, compute_features
+from ecoguard.research.datasets.build_historical_negative_weather_features import (
     NEGATIVE_FIELDS,
     build_negative_feature_row,
     build_negative_weather_features,

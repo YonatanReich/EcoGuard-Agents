@@ -4,9 +4,9 @@ from unittest.mock import MagicMock
 
 import pytest
 import requests
-import research.datasets.build_historical_firms_dataset as historical_firms
+import ecoguard.research.datasets.build_historical_firms_dataset as historical_firms
 
-from research.datasets.build_historical_firms_dataset import (
+from ecoguard.research.datasets.build_historical_firms_dataset import (
     CheckpointError,
     CheckpointStore,
     FirmsProviderError,

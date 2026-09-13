@@ -11,7 +11,7 @@ from typing import Any, Mapping
 import joblib
 import numpy as np
 
-from research.training.calibrate_fire_risk_levels import apply_calibration
+from ecoguard.research.training.calibrate_fire_risk_levels import apply_calibration
 from ecoguard.paths import GENERATED
 
 DEFAULT_MODEL_PATH = GENERATED / "ml" / "fire_prediction_landcover_terrain_model.joblib"
