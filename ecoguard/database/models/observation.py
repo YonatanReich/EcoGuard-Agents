@@ -19,7 +19,16 @@ class Observation(Base):
         # Makes a re-fetch of an overlapping window a no-op rather than a
         # duplicate row. Every collector therefore needs a cell_id that is
         # stable for the same underlying reading.
-        UniqueConstraint("source", "cell_id", "observed_at", name="observations_identity"),
+        #
+        # postgresql_nulls_not_distinct is load-bearing: issued_at is NULL for
+        # every measured row, and under the default rule two NULLs count as
+        # different, so each re-fetch would insert a duplicate instead of
+        # conflicting.
+        UniqueConstraint(
+            "source", "cell_id", "observed_at", "issued_at",
+            name="observations_identity",
+            postgresql_nulls_not_distinct=True,
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -33,4 +42,9 @@ class Observation(Base):
     # cursors compare on ingested_at because only that one is monotonic.
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ingested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # The forecast run this row came from, and NULL when nothing produced it —
+    # that is, when it was measured. observed_at keeps meaning "the hour this
+    # describes" either way, so a forecast lines up with the observation of the
+    # same hour once that hour arrives.
+    issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False)

@@ -34,6 +34,9 @@ def _row(source: str, record: dict[str, Any], ingested_at: datetime) -> dict[str
         "location": _point(record),
         "observed_at": observed_at.astimezone(timezone.utc),
         "ingested_at": ingested_at,
+        # Absent for every measured source, which is what makes it NULL and
+        # what the identity constraint reads as "this was not predicted".
+        "issued_at": record.get("issued_at"),
         "payload": record["payload"],
     }
 

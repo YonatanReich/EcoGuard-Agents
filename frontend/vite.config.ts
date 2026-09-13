@@ -20,7 +20,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        // The Python backend, as started by `uvicorn backend.main:app`.
+        // The Python backend, as started by `uvicorn ecoguard.api.main:app`.
         target: 'http://127.0.0.1:8000',
         // Rewrite the Host header to match the target, so the backend sees a
         // request that looks like it was addressed to it directly.

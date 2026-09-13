@@ -10,6 +10,7 @@ from pathlib import Path
 
 from alembic import op
 from sqlalchemy import text
+from ecoguard.paths import REFERENCE
 
 revision = "0006"
 down_revision = "0005"
@@ -25,7 +26,7 @@ depends_on = None
 #
 # Kept beside the migration as JSON rather than inlined: 133 KB of Hebrew data
 # embedded in a Python file is unreadable and unreviewable in a diff.
-SEED_PATH = Path("data/reference/stations_seed.json")
+SEED_PATH = REFERENCE / "stations_seed.json"
 
 INSERTS = {
     "fire_stations": """
