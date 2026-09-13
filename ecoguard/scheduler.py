@@ -13,10 +13,14 @@ import os
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from ecoguard.collection.fire_weather import FireWeatherCollector
-from ecoguard.collection.firms import FirmsCollector
-from ecoguard.collection.telegram import TelegramCollector
-from ecoguard.collection.weather import WeatherCollector
+from ecoguard.collection.fire.effis.collector import FireWeatherCollector
+from ecoguard.collection.fire.firms.collector import FirmsCollector
+from ecoguard.collection.fire.fwi.collector import FireWeatherIndexCollector
+from ecoguard.collection.fire.telegram.collector import TelegramCollector
+from ecoguard.collection.fire.gibs.collector import VegetationCollector
+from ecoguard.collection.shared.open_meteo.observations import WeatherCollector
+from ecoguard.collection.shared.open_meteo.forecast import WeatherForecastCollector
+from ecoguard import retention
 
 logger = logging.getLogger(__name__)
 
@@ -39,19 +43,52 @@ logger = logging.getLogger(__name__)
 #                 the new raster promptly whenever it lands.
 #   telegram      The only low-latency source, and the only one where a message
 #                 can be minutes old and still matter.
+#
+#   weather_forecast
+#                 Open-Meteo refreshes its runs a few times a day, and a
+#                 forecast that has not been re-issued is the same rows again.
+#                 Six hours keeps every run without re-storing any of them.
+#                 Note this writes far more rows per tick than the observation
+#                 collector — 48 hours of lead time for every cell it samples —
+#                 which is why it samples a coarser grid.
+#
+#   fwi           Computes rather than fetches, so the interval is not about a
+#                 provider. It needs one value per day, at a noon that has
+#                 fully passed; running four times a day means a tick that
+#                 finds the day already written does nothing, and a tick after
+#                 an outage catches up the missed days in order. Running it
+#                 daily would make a single failed run a permanent hole in an
+#                 accumulator that cannot be rebuilt from later data.
+#
+#   vegetation    An 8-day composite, republished daily as it rolls forward.
+#                 Twelve hours catches the new one without asking twice for
+#                 an image that has not changed.
 INTERVAL_MINUTES = {
     "firms": 30,
     "weather": 60,
+    "weather_forecast": 360,
     "fire_weather": 360,
+    "fwi": 360,
+    "vegetation": 720,
     "telegram": 5,
 }
 
 COLLECTORS = {
     "firms": FirmsCollector,
     "weather": WeatherCollector,
+    "weather_forecast": WeatherForecastCollector,
     "fire_weather": FireWeatherCollector,
+    "fwi": FireWeatherIndexCollector,
+    "vegetation": VegetationCollector,
     "telegram": TelegramCollector,
 }
+
+# fwi reads the hours the weather collector wrote, so on a cold start it has
+# nothing to compute from. Nothing enforces the order — it simply finds no noon
+# weather and writes nothing, then catches up on a later tick once weather has
+# landed. Stated here because "the FWI collector wrote zero rows on a fresh
+# database" is otherwise a puzzle rather than the expected first tick.
+DEPENDS_ON_STORED_WEATHER = ("fwi",)
 
 # A source with no credentials cannot be collected, and scheduling it anyway
 # means a failed row every interval forever — 288 a day for Telegram alone.
@@ -92,6 +129,23 @@ for name, collector_class in COLLECTORS.items():
         # interval that elapsed.
         coalesce=True,
     )
+
+
+# Retention is not a collector — it writes nothing and talks to no provider —
+# but it belongs on the same timer board, and logging it to collector_runs means
+# "is anything pruning?" is answered the same way as "is anything collecting?".
+#
+# Daily, and deliberately not more often: the deletes are bounded by one day of
+# arrivals either way, and a job that removes nothing on most runs is cheaper to
+# reason about than one that removes a handful every hour.
+scheduler.add_job(
+    retention.run,
+    "interval",
+    hours=24,
+    id="prune_observations",
+    max_instances=1,
+    coalesce=True,
+)
 
 
 def run_once(source: str) -> None:

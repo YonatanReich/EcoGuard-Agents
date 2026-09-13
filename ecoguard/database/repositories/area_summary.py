@@ -26,7 +26,8 @@ from sqlalchemy import text
 
 from ecoguard.database.engine import Session
 from ecoguard.database.repositories.observations import FWI_BAND_VALUE
-from services.grid_manager import GRID_RESOLUTION_KM
+from ecoguard.database.repositories.surface import SURFACE_AGGREGATE, shape_fuel, shape_terrain
+from ecoguard.shared.grid import GRID_RESOLUTION_KM
 
 # Half a grid step. A weather cell this close to the polygon is the cell the
 # polygon is standing on, even when the polygon is far too small to contain the
@@ -182,6 +183,21 @@ def _fire_danger(session, geojson: str) -> dict[str, Any]:
     }
 
 
+def _surface(session, geojson: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The static ground inside the polygon: its shape, and what grows on it.
+
+    Like population this is a grid of footprints, so it is intersected rather
+    than sampled within a radius — the ground has no observation time and no
+    gaps to reach across. One query returns both halves because they are one
+    row in one table; the aggregate itself lives in the surface repository,
+    which the agents call directly around a fire's coordinate.
+    """
+    row = session.execute(
+        text(AREA_CTE + SURFACE_AGGREGATE), {"geojson": geojson}
+    ).mappings().one()
+    return shape_terrain(row), shape_fuel(row)
+
+
 def _stations(session, geojson: str) -> dict[str, int]:
     """How many of each service's stations stand inside the polygon."""
     row = session.execute(
@@ -232,6 +248,7 @@ def summarize_area(geometry: dict[str, Any]) -> dict[str, Any]:
     """
     geojson = json.dumps(geometry)
     with Session() as session:
+        terrain, fuel = _surface(session, geojson)
         return {
             "area_km2": _rounded(_area_km2(session, geojson)),
             # People do not come in tenths, and the raster's own precision is
@@ -239,5 +256,7 @@ def summarize_area(geometry: dict[str, Any]) -> dict[str, Any]:
             "population": round(_population(session, geojson)),
             "weather": _weather(session, geojson),
             "fire_danger": _fire_danger(session, geojson),
+            "terrain": terrain,
+            "fuel": fuel,
             "stations": _stations(session, geojson),
         }

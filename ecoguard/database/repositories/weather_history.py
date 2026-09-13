@@ -24,7 +24,7 @@ from typing import Any, Iterable, Sequence
 from sqlalchemy import text
 
 from ecoguard.database.engine import Session
-from services.open_meteo_hourly_client import HOURLY_VARIABLES
+from ecoguard.collection.shared.open_meteo.client import HOURLY_VARIABLES
 
 SOURCE = "weather"
 
