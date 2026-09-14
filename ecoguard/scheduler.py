@@ -13,6 +13,7 @@ import os
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
+from ecoguard.collection.air_pollution import AirPollutionCollector
 from ecoguard.collection.fire_weather import FireWeatherCollector
 from ecoguard.collection.firms import FirmsCollector
 from ecoguard.collection.telegram import TelegramCollector
@@ -40,6 +41,9 @@ logger = logging.getLogger(__name__)
 #   telegram      The only low-latency source, and the only one where a message
 #                 can be minutes old and still matter.
 INTERVAL_MINUTES = {
+    # Preserve the previous Ministry runtime's five-minute polling interval.
+    # Guest authentication is automatic; no operator credentials are required.
+    "air_pollution": 5,
     "firms": 30,
     "weather": 60,
     "fire_weather": 360,
@@ -47,6 +51,7 @@ INTERVAL_MINUTES = {
 }
 
 COLLECTORS = {
+    "air_pollution": AirPollutionCollector,
     "firms": FirmsCollector,
     "weather": WeatherCollector,
     "fire_weather": FireWeatherCollector,

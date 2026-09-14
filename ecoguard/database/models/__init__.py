@@ -16,5 +16,15 @@ class Base(DeclarativeBase):
 
 from ecoguard.database.models.collector_run import CollectorRun  # noqa: E402
 from ecoguard.database.models.observation import Observation  # noqa: E402
+from ecoguard.database.models.air_pollution_baseline import (  # noqa: E402
+    AirPollutionBaselineBucket,
+    AirPollutionBaselineProfile,
+    AirPollutionBaselineVersion,
+    AirPollutionStationCatalog,
+)
 
-__all__ = ["Base", "CollectorRun", "Observation"]
+__all__ = [
+    "Base", "CollectorRun", "Observation", "AirPollutionStationCatalog",
+    "AirPollutionBaselineProfile", "AirPollutionBaselineVersion",
+    "AirPollutionBaselineBucket",
+]
