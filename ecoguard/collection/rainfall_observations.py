@@ -395,6 +395,26 @@ def _database_rows(
     return observations, accumulations, unlinked_stations
 
 
+def _rainfall_observation_upsert(rows: list[dict[str, Any]]) -> Any:
+    """Insert new samples and apply genuine corrections to existing samples."""
+    statement = insert(RAINFALL_OBSERVATIONS).values(rows)
+    return statement.on_conflict_do_update(
+        constraint="rainfall_observations_identity",
+        set_={
+            "rain_station_id": statement.excluded.rain_station_id,
+            "rainfall_mm": statement.excluded.rainfall_mm,
+            "source_payload": statement.excluded.source_payload,
+            # For a corrected sample this becomes the time at which the
+            # corrected value was collected. Identical repeats do not reach
+            # this update and therefore leave collected_at unchanged.
+            "collected_at": statement.excluded.collected_at,
+        },
+        where=RAINFALL_OBSERVATIONS.c.rainfall_mm.is_distinct_from(
+            statement.excluded.rainfall_mm
+        ),
+    ).returning(RAINFALL_OBSERVATIONS.c.id)
+
+
 def persist_rainfall_observations(
     batch: RainfallObservationBatch,
 ) -> dict[str, int]:
@@ -465,13 +485,8 @@ def persist_rainfall_observations(
             batch, station_ids, collected_at
         )
         for start in range(0, len(observations), CHUNK_SIZE):
-            statement = (
-                insert(RAINFALL_OBSERVATIONS)
-                .values(observations[start : start + CHUNK_SIZE])
-                .on_conflict_do_nothing(
-                    constraint="rainfall_observations_identity"
-                )
-                .returning(RAINFALL_OBSERVATIONS.c.id)
+            statement = _rainfall_observation_upsert(
+                observations[start : start + CHUNK_SIZE]
             )
             observations_written += len(session.execute(statement).scalars().all())
 

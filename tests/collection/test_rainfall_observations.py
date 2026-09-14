@@ -5,10 +5,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from ecoguard.collection.rainfall_observations import (
     RainfallObservationError,
     _database_rows,
+    _rainfall_observation_upsert,
     fetch_rainfall_observations,
     parse_rainfall_observations,
 )
@@ -148,6 +150,32 @@ def test_database_rows_keep_unknown_source_stations_unlinked():
     assert unlinked == 1
     assert all(row["collected_at"] == collected_at for row in observations)
     assert all(row["collected_at"] == collected_at for row in accumulations)
+
+
+def test_observation_upsert_only_updates_a_changed_rainfall_value():
+    statement = _rainfall_observation_upsert(
+        [
+            {
+                "source_station_id": 205,
+                "rain_station_id": 700,
+                "observed_at": datetime(2026, 9, 10, 9, 20, tzinfo=timezone.utc),
+                "rainfall_mm": 0.6,
+                "source_payload": 0.6,
+                "collected_at": datetime(2026, 9, 10, 9, 30, tzinfo=timezone.utc),
+            }
+        ]
+    )
+
+    sql = str(statement.compile(dialect=postgresql.dialect()))
+
+    assert (
+        "ON CONFLICT ON CONSTRAINT rainfall_observations_identity DO UPDATE" in sql
+    )
+    assert "rainfall_mm = excluded.rainfall_mm" in sql
+    assert (
+        "WHERE rainfall_observations.rainfall_mm "
+        "IS DISTINCT FROM excluded.rainfall_mm" in sql
+    )
 
 
 class _Response:
