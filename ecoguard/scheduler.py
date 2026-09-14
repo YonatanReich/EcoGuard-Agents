@@ -13,14 +13,15 @@ import os
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
+from ecoguard import retention
+from ecoguard.collection.pollution.collector import AirPollutionCollector
 from ecoguard.collection.fire.effis.collector import FireWeatherCollector
 from ecoguard.collection.fire.firms.collector import FirmsCollector
 from ecoguard.collection.fire.fwi.collector import FireWeatherIndexCollector
-from ecoguard.collection.fire.telegram.collector import TelegramCollector
 from ecoguard.collection.fire.gibs.collector import VegetationCollector
-from ecoguard.collection.shared.open_meteo.observations import WeatherCollector
+from ecoguard.collection.fire.telegram.collector import TelegramCollector
 from ecoguard.collection.shared.open_meteo.forecast import WeatherForecastCollector
-from ecoguard import retention
+from ecoguard.collection.shared.open_meteo.observations import WeatherCollector
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,9 @@ logger = logging.getLogger(__name__)
 #                 Twelve hours catches the new one without asking twice for
 #                 an image that has not changed.
 INTERVAL_MINUTES = {
+    # Preserve the previous Ministry runtime's five-minute polling interval.
+    # Guest authentication is automatic; no operator credentials are required.
+    "air_pollution": 5,
     "firms": 30,
     "weather": 60,
     "weather_forecast": 360,
@@ -74,6 +78,7 @@ INTERVAL_MINUTES = {
 }
 
 COLLECTORS = {
+    "air_pollution": AirPollutionCollector,
     "firms": FirmsCollector,
     "weather": WeatherCollector,
     "weather_forecast": WeatherForecastCollector,
