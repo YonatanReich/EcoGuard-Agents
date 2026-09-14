@@ -79,6 +79,49 @@ def _population(session, geojson: str) -> float:
     ).scalar_one()
 
 
+def population_intersection(
+    geometry: dict[str, Any], *, session_factory=Session
+) -> dict[str, Any]:
+    """Read the shared population grid for one polygon without hiding absence.
+
+    This is the population-only counterpart to :func:`summarize_area`.  Its
+    explicit global-grid check distinguishes a genuine zero inside a query
+    polygon from an empty/unloaded ``population_cells`` table.  It performs
+    one SELECT and never mutates the shared reference data.
+    """
+
+    geojson = json.dumps(geometry)
+    statement = text(
+        AREA_CTE
+        + """
+        SELECT
+          EXISTS (SELECT 1 FROM population_cells LIMIT 1) AS grid_available,
+          (
+            SELECT count(*)
+            FROM population_cells cells, area
+            WHERE ST_Intersects(cells.cell, area.geom)
+          ) AS intersected_cell_count,
+          (
+            SELECT coalesce(sum(
+                     cells.population
+                     * ST_Area(ST_Intersection(cells.cell, area.geom))
+                     / ST_Area(cells.cell)
+                   ), 0)
+            FROM population_cells cells, area
+            WHERE ST_Intersects(cells.cell, area.geom)
+          ) AS weighted_population
+        FROM area
+        """
+    )
+    with session_factory() as session:
+        row = session.execute(statement, {"geojson": geojson}).mappings().one()
+    return {
+        "grid_available": bool(row["grid_available"]),
+        "intersected_cell_count": int(row["intersected_cell_count"]),
+        "weighted_population": float(row["weighted_population"]),
+    }
+
+
 def _weather(session, geojson: str) -> dict[str, Any]:
     """Mean current conditions over the weather cells covering the polygon.
 

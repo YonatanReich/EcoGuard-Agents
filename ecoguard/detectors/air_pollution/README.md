@@ -1,7 +1,12 @@
 # detectors/air_pollution/
 
-Empty. Air-quality candidate detection lands here (EA-307).
+Air-quality candidate detection and its compact historical baseline support.
 
-Note this hazard is **advisory**, so its analyzer belongs under
-`analyzers/non_emergency/`, not `emergency/`. Detection is the same shape as
-any other hazard: find the anomaly, attach the evidence, score nothing.
+The persisted-observation processor adapts shared `observations` rows, resolves
+the exact active `five_minute_observation` baseline, and applies the candidate
+rule in `detector.py`. Spatial enrichment and correlation attach evidence to a
+suspected anomaly. None of these modules assign severity, route an event,
+persist a candidate, or plan a response.
+
+This hazard is **advisory**, so its analyzer belongs under
+`ecoguard/analyzers/non_emergency/air_pollution/`, not `emergency/`.
