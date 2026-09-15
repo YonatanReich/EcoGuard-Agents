@@ -21,7 +21,9 @@ from typing import Any, Protocol
 import unicodedata
 
 
+# Provider thresholds describe discharges expected once every N years.
 RETURN_PERIODS = (2, 5, 10, 20, 50, 100)
+# Several windows show both immediate and sustained hydrological change.
 TREND_WINDOWS_MINUTES = (10, 30, 60)
 HYDROMETRIC_COLLECTOR_SOURCE = (
     "water_authority_hydrometric_observations"
@@ -34,6 +36,8 @@ HYDROLOGY_COLLECTOR_SOURCES = (
 
 
 class StationHistoryRepository(Protocol):
+    """Cached data access required by the detector."""
+
     def load_station_histories(
         self,
         *,
@@ -60,14 +64,17 @@ class FloodDetectionPolicy:
     explicit and allows calibration when historical labelled events exist.
     """
 
+    # Freshness limits prevent old readings from looking like current floods.
     max_observation_age: timedelta = timedelta(minutes=30)
     history_window: timedelta = timedelta(minutes=90)
     rainfall_history_window: timedelta = timedelta(hours=24)
     max_rainfall_age: timedelta = timedelta(minutes=30)
+    # A rapid rise must persist across observations to reject one-point spikes.
     minimum_consecutive_rises: int = 2
     threshold_persistence_observations: int = 2
     rapid_stage_rise_m_per_hour: float = 0.25
     rapid_discharge_rise_q2_per_hour: float = 0.25
+    # Stream matching is intentionally conservative because it drives routing.
     stream_candidate_radius_m: float = 2_000.0
     stream_candidate_limit: int = 20
     strong_stream_distance_m: float = 100.0
@@ -158,6 +165,7 @@ class FloodDetectionAgent:
             self.policy.rainfall_history_window
             + self.policy.max_rainfall_age
         )
+        # Histories arrive pre-enriched with basin, rain and stream candidates.
         try:
             histories = self.repository.load_station_histories(
                 observed_since=observed_since,
@@ -169,6 +177,7 @@ class FloodDetectionAgent:
                 stream_candidate_limit=self.policy.stream_candidate_limit,
             )
         except Exception as error:
+            # A primary-data failure is inconclusive, never "no flood".
             return {
                 "metadata": {
                     "timestamp": checked_at.isoformat(),
@@ -185,6 +194,7 @@ class FloodDetectionAgent:
                 "error": f"{type(error).__name__}: {error}",
             }
 
+        # Collector-run metadata is optional diagnostic context for cache health.
         collector_runs_available = True
         collector_runs_error: str | None = None
         try:
@@ -201,6 +211,7 @@ class FloodDetectionAgent:
         unassessed_stations: list[dict[str, Any]] = []
         assessed_station_count = 0
 
+        # Keep detected, watch and unassessed outcomes separate for consumers.
         for history in histories:
             outcome = self._evaluate_station(history, checked_at)
             if outcome["status"] == "detected":
@@ -215,6 +226,7 @@ class FloodDetectionAgent:
                 unassessed_stations.append(outcome["station"])
 
         event_outputs = [*detected_events, *watch_events]
+        # Load the network only when an event has a reliable origin stream.
         stream_network_required = any(
             event["stream_context"]["matched"]
             for event in event_outputs
@@ -237,6 +249,7 @@ class FloodDetectionAgent:
                 network_available=stream_network_status != "failed",
             )
 
+        # Overall detection is tri-state: true, clear false, or unknown.
         if detected_events:
             detected: bool | None = True
         elif not histories or unassessed_stations:
@@ -244,6 +257,7 @@ class FloodDetectionAgent:
         else:
             detected = False
 
+        # Cache health describes coverage independently of detection outcome.
         hydrometric_cache = _hydrometric_cache_health(
             histories,
             checked_at=checked_at,
@@ -304,6 +318,9 @@ class FloodDetectionAgent:
         snapshot: dict[str, Any],
         checked_at: datetime,
     ) -> dict[str, Any]:
+        """Classify one station as detected, watch, clear or unassessed."""
+
+        # Missing, future or stale observations cannot prove a clear condition.
         observed_at_value = snapshot.get("observed_at")
         if observed_at_value is None:
             return _unassessed(
@@ -330,6 +347,7 @@ class FloodDetectionAgent:
         if discharge is None and water_height is None:
             return _unassessed(snapshot, "hydrological_measurements_unavailable")
 
+        # Partial threshold sets remain useful; invalid sets are rejected.
         (
             threshold_status,
             thresholds,
@@ -348,6 +366,7 @@ class FloodDetectionAgent:
             else None
         )
 
+        # Flow start is the station-specific stage at which channel flow begins.
         flow_start_level = _optional_float(
             snapshot.get("flow_start_water_level_m")
         )
@@ -384,6 +403,7 @@ class FloodDetectionAgent:
         active_flow = flow_started is True or (
             flow_started is None and discharge is not None and discharge > 0
         )
+        # Rainfall corroborates a hydrological signal but cannot create one.
         rainfall_evidence = _normalized_rainfall_evidence(snapshot)
         rainfall_context = _rainfall_context(
             rainfall_evidence,
@@ -413,6 +433,7 @@ class FloodDetectionAgent:
                 observation_count=len(observations),
             )
         if detection_state == "no_signal":
+            # Clear stations are counted at scan level, not returned as events.
             return {"status": "clear"}
 
         latitude = _optional_float(snapshot.get("latitude"))
@@ -430,6 +451,7 @@ class FloodDetectionAgent:
             ],
         )
 
+        # Event coordinates describe the gauge, not the inundated area.
         event = {
             "event_key": (
                 "flood:water_authority:"
@@ -505,6 +527,8 @@ class FloodDetectionAgent:
         rapid_rise: bool,
         active_flow: bool,
     ) -> tuple[str, list[str]]:
+        """Apply detection rules from strong evidence to watch/no-signal."""
+
         q2 = thresholds.get(2)
         crossed_q2 = (
             discharge is not None and q2 is not None and discharge >= q2
@@ -589,6 +613,8 @@ def _optional_float(value: Any) -> float | None:
 def _normalized_observations(
     snapshot: dict[str, Any], checked_at: datetime
 ) -> list[dict[str, Any]]:
+    """Clean, de-duplicate and time-sort a station's usable history."""
+
     raw_history = snapshot.get("observations")
     candidates = raw_history if isinstance(raw_history, list) else []
     candidates = [
@@ -628,6 +654,8 @@ def _normalized_observations(
 def _validated_thresholds(
     snapshot: dict[str, Any],
 ) -> tuple[str, dict[int, float], list[int], list[int]]:
+    """Keep only positive, monotonically increasing discharge thresholds."""
+
     values = {
         period: _optional_float(
             snapshot.get(f"flow_threshold_{period}y_m3s")
@@ -698,6 +726,8 @@ def _recent_rate(
 def _window_changes(
     observations: list[dict[str, Any]], window_minutes: int
 ) -> dict[str, Any] | None:
+    """Compare with the observation closest to the requested time window."""
+
     latest = observations[-1]
     target = timedelta(minutes=window_minutes)
     lower = target / 2
@@ -741,6 +771,8 @@ def _window_changes(
 def _trend_evidence(
     observations: list[dict[str, Any]], q2: float | None
 ) -> dict[str, Any]:
+    """Summarize consecutive rises, hourly rates and fixed-window changes."""
+
     stage_rises = _consecutive_rises(observations, "water_height_m")
     discharge_rises = _consecutive_rises(observations, "discharge_m3s")
     stage_rate = _recent_rate(observations, "water_height_m", stage_rises)
@@ -784,6 +816,8 @@ def _flow_intensity(
     flow_start_level: float | None,
     thresholds: dict[int, float],
 ) -> str:
+    """Rank current flow rarity; this is not flood damage severity."""
+
     flow_below_start = (
         water_height is not None
         and flow_start_level is not None
@@ -813,6 +847,8 @@ def _confidence(
     location_known: bool,
     rainfall_supports_signal: bool,
 ) -> str:
+    """Rate evidence quality, not the probability or severity of flooding."""
+
     thresholds_usable = threshold_status in {"valid", "partial"}
     if detection_state == "flood_watch":
         return "low"
@@ -835,6 +871,8 @@ _GENERIC_STREAM_NAME_TOKENS = frozenset(
 
 
 def _name_tokens(value: Any) -> tuple[str, ...]:
+    """Normalize names while ignoring generic words such as river or wadi."""
+
     if not isinstance(value, str):
         return ()
     normalized = unicodedata.normalize("NFKC", value).casefold()
@@ -863,6 +901,8 @@ def _stream_name_matches_station(
 def _normalized_stream_candidates(
     snapshot: dict[str, Any],
 ) -> list[dict[str, Any]]:
+    """Validate nearby stream candidates and sort them by distance."""
+
     raw_candidates = snapshot.get("stream_candidates")
     if not isinstance(raw_candidates, list):
         return []
@@ -899,6 +939,8 @@ def _normalized_stream_candidates(
 
 
 def _stream_identity(candidate: dict[str, Any]) -> tuple[str, Any]:
+    """Identify one river across multiple GeoJSON line segments."""
+
     water_source_id = candidate.get("water_source_id")
     if water_source_id is not None:
         return "water_source_id", water_source_id
@@ -1158,6 +1200,8 @@ def _downstream_route(
 def _normalized_rainfall_evidence(
     snapshot: dict[str, Any],
 ) -> list[dict[str, Any]]:
+    """Normalize basin rain gauges without converting missing values to zero."""
+
     evidence = snapshot.get("rainfall_evidence")
     if not isinstance(evidence, list):
         return []
@@ -1225,6 +1269,8 @@ def _cache_health_from_timestamps(
     checked_at: datetime,
     max_age: timedelta,
 ) -> dict[str, Any]:
+    """Describe cache coverage from the latest timestamp per station."""
+
     timestamps = list(timestamps_by_station.values())
     fresh = [
         timestamp
@@ -1318,6 +1364,8 @@ def _collector_source_health(
     cache: dict[str, Any],
     run_history_available: bool,
 ) -> dict[str, Any]:
+    """Combine collector-run status with actual cached-data freshness."""
+
     latest_status: str | None = None
     if isinstance(latest_run, dict) and isinstance(
         latest_run.get("status"), str
