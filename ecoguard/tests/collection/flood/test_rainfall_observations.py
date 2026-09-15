@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from ecoguard.collection.flood.rainfall_observations import (
+    RAINFALL_ACCUMULATIONS,
     RainfallObservationError,
     _database_rows,
     _rainfall_observation_upsert,
@@ -116,6 +117,10 @@ def test_preserves_an_unavailable_accumulation_as_null():
 
     assert summary["rainfall_6h_mm"] is None
     assert summary["hourly_values"] is None
+
+
+def test_persists_unavailable_hourly_values_as_sql_null():
+    assert RAINFALL_ACCUMULATIONS.c.hourly_values.type.none_as_null is True
 
 
 def test_rejects_a_non_object_hourly_accumulation():

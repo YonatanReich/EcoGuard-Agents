@@ -77,7 +77,9 @@ RAINFALL_ACCUMULATIONS = Table(
     Column("rainfall_24h_mm", Float),
     Column("rainfall_month_mm", Float),
     Column("rainfall_season_mm", Float),
-    Column("hourly_values", JSONB),
+    # Missing hourly detail must be SQL NULL. JSONB's default serializes Python
+    # None as JSON null, which violates the database's object-or-NULL contract.
+    Column("hourly_values", JSONB(none_as_null=True)),
     Column("source_payload", JSONB, nullable=False),
     Column("collected_at", DateTime(timezone=True), nullable=False),
 )
