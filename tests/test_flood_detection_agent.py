@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+import agents.flood_detection_agent as flood_detection_module
 from agents.flood_detection_agent import (
     FloodDetectionAgent,
     FloodDetectionPolicy,
@@ -23,41 +24,22 @@ class FakeRepository:
     ):
         self.histories = histories or []
         self.error = error
-        self.stream_network = (
+        raw_stream_network = (
             stream_network
             if stream_network is not None
             else [
-                {
-                    "stream_id": 21,
-                    "object_id": 301,
-                    "name_he": "נחל בדיקה",
-                    "water_source_id": 9001,
-                    "draining_water_id": 9002,
-                    "draining_water_name": "נחל מוצא",
-                    "representative_latitude": 30.09001,
-                    "representative_longitude": 34.09001,
-                },
-                {
-                    "stream_id": 22,
-                    "object_id": 302,
-                    "name_he": "נחל מוצא",
-                    "water_source_id": 9002,
-                    "draining_water_id": 9003,
-                    "draining_water_name": "הים",
-                    "representative_latitude": 30.09002,
-                    "representative_longitude": 34.09002,
-                },
-                {
-                    "stream_id": 23,
-                    "object_id": 303,
-                    "name_he": "הים",
-                    "water_source_id": 9003,
-                    "draining_water_id": None,
-                    "draining_water_name": None,
-                    "representative_latitude": 30.09003,
-                    "representative_longitude": 34.09003,
-                },
+                network_stream(9001, 9002, object_id=301),
+                network_stream(9002, 9003, object_id=302),
+                network_stream(9003, None, object_id=303),
             ]
+        )
+        self.stream_network = (
+            raw_stream_network
+            if isinstance(raw_stream_network, dict)
+            else {
+                item["water_source_id"]: item
+                for item in raw_stream_network
+            }
         )
         self.stream_error = stream_error
         self.stream_network_calls = 0
@@ -130,12 +112,20 @@ def observation(minutes_ago, discharge, height):
     }
 
 
-def network_stream(water_source_id, draining_water_id, *, object_id=None):
+def network_stream(
+    water_source_id,
+    draining_water_id,
+    *,
+    object_id=None,
+    object_ids=None,
+    topology_conflict=False,
+):
+    canonical_object_id = object_id or water_source_id
     return {
-        "stream_id": object_id or water_source_id,
-        "object_id": object_id or water_source_id,
         "name_he": f"נחל {water_source_id}",
         "water_source_id": water_source_id,
+        "object_ids": object_ids or [canonical_object_id],
+        "feature_count": len(object_ids or [canonical_object_id]),
         "main_catchment_code": "12",
         "main_catchment_name": "אגן בדיקה",
         "draining_water_id": draining_water_id,
@@ -144,8 +134,11 @@ def network_stream(water_source_id, draining_water_id, *, object_id=None):
             if draining_water_id is not None
             else None
         ),
-        "representative_latitude": 30.0 + water_source_id / 100_000,
-        "representative_longitude": 34.0 + water_source_id / 100_000,
+        "representative_location": {
+            "latitude": 30.0 + water_source_id / 100_000,
+            "longitude": 34.0 + water_source_id / 100_000,
+        },
+        "topology_conflict": topology_conflict,
     }
 
 
@@ -281,6 +274,9 @@ def test_detects_high_flow_with_stable_event_key_and_separate_intensity():
         "latest_observed_at": "2026-09-14T09:50:00+00:00",
     }
     assert event["rainfall_evidence"][0]["rainfall_6h_mm"] == 31.0
+    assert event["rainfall_evidence"][0]["latest_observed_at"] == (
+        "2026-09-14T09:50:00+00:00"
+    )
     assert event["rainfall_context"] == {
         "association": "same_drainage_basin",
         "basin_id": 12,
@@ -486,6 +482,27 @@ def test_basin_rain_uses_maximum_and_mean_without_summing_gauges():
     assert context["mean_1h_mm"] == 6.0
 
 
+def test_rainfall_evidence_is_normalized_once_per_station(monkeypatch):
+    calls = 0
+    normalize = flood_detection_module._normalized_rainfall_evidence
+
+    def recording_normalize(snapshot):
+        nonlocal calls
+        calls += 1
+        return normalize(snapshot)
+
+    monkeypatch.setattr(
+        flood_detection_module,
+        "_normalized_rainfall_evidence",
+        recording_normalize,
+    )
+    agent = FloodDetectionAgent(FakeRepository([station_history()]))
+
+    agent.detect_floods(now=NOW)
+
+    assert calls == 1
+
+
 def test_active_unknown_station_without_enough_trend_remains_explicit():
     unknown = station_history(
         source_station_id=999,
@@ -507,11 +524,20 @@ def test_active_unknown_station_without_enough_trend_remains_explicit():
     assert result["detected"] is None
     assert result["assessed_station_count"] == 0
     assert result["unassessed_stations"][0]["reason"] == (
-        "active_flow_without_valid_discharge_thresholds_or_trend"
+        "active_flow_without_usable_q2_threshold_or_trend"
     )
     assert result["unassessed_stations"][0]["threshold_status"] == (
         "unavailable"
     )
+    assert result["unassessed_stations"][0]["available_return_periods"] == []
+    assert result["unassessed_stations"][0]["missing_return_periods"] == [
+        2,
+        5,
+        10,
+        20,
+        50,
+        100,
+    ]
 
 
 def test_non_monotonic_thresholds_are_not_used_for_intensity():
@@ -537,6 +563,81 @@ def test_non_monotonic_thresholds_are_not_used_for_intensity():
     assert event["hydrological_evidence"]["threshold_status"] == (
         "non_monotonic"
     )
+
+
+def test_contiguous_partial_thresholds_are_used_conservatively():
+    history = station_history(
+        flow_threshold_20y_m3s=None,
+        flow_threshold_50y_m3s=None,
+        flow_threshold_100y_m3s=None,
+    )
+    agent = FloodDetectionAgent(FakeRepository([history]))
+
+    result = agent.detect_floods(now=NOW)
+
+    event = result["detected_events"][0]
+    evidence = event["hydrological_evidence"]
+    assert event["detection_state"] == "observed_high_flow"
+    assert event["flow_intensity"] == "high"
+    assert evidence["threshold_status"] == "partial"
+    assert evidence["available_return_periods"] == [2, 5, 10]
+    assert evidence["missing_return_periods"] == [20, 50, 100]
+    assert evidence["highest_crossed_return_period_years"] == 10
+
+
+def test_threshold_gap_is_partial_and_remaining_thresholds_are_used():
+    history = station_history(flow_threshold_5y_m3s=None)
+    agent = FloodDetectionAgent(FakeRepository([history]))
+
+    result = agent.detect_floods(now=NOW)
+
+    event = result["detected_events"][0]
+    evidence = event["hydrological_evidence"]
+    assert event["detection_state"] == "observed_high_flow"
+    assert event["flow_intensity"] == "high"
+    assert event["reasons"][0] == "discharge_at_or_above_10_year_threshold"
+    assert evidence["threshold_status"] == "partial"
+    assert evidence["available_return_periods"] == [2, 10, 20, 50, 100]
+    assert evidence["missing_return_periods"] == [5]
+    assert evidence["highest_crossed_return_period_years"] == 10
+
+
+def test_thresholds_above_missing_q2_remain_usable():
+    history = station_history(flow_threshold_2y_m3s=None)
+    agent = FloodDetectionAgent(FakeRepository([history]))
+
+    result = agent.detect_floods(now=NOW)
+
+    event = result["detected_events"][0]
+    evidence = event["hydrological_evidence"]
+    assert event["detection_state"] == "observed_high_flow"
+    assert event["flow_intensity"] == "high"
+    assert event["reasons"][0] == "discharge_at_or_above_5_year_threshold"
+    assert evidence["threshold_status"] == "partial"
+    assert evidence["available_return_periods"] == [5, 10, 20, 50, 100]
+    assert evidence["missing_return_periods"] == [2]
+    assert evidence["q2_persistence_observations"] == 0
+
+
+def test_missing_q2_keeps_sub_q5_active_flow_unassessed_without_a_trend():
+    latest = observation(10, 20.0, 1.3)
+    history = station_history(
+        **latest,
+        observations=[latest],
+        flow_threshold_2y_m3s=None,
+    )
+    agent = FloodDetectionAgent(FakeRepository([history]))
+
+    result = agent.detect_floods(now=NOW)
+
+    station = result["unassessed_stations"][0]
+    assert result["detected"] is None
+    assert station["reason"] == (
+        "active_flow_without_usable_q2_threshold_or_trend"
+    )
+    assert station["threshold_status"] == "partial"
+    assert station["available_return_periods"] == [5, 10, 20, 50, 100]
+    assert station["missing_return_periods"] == [2]
 
 
 def test_duplicate_history_timestamps_do_not_fake_persistence():
@@ -580,6 +681,24 @@ def test_stale_station_makes_an_empty_scan_inconclusive():
     assert result["unassessed_stations"][0]["reason"] == "stale_observation"
 
 
+def test_active_station_without_observations_is_an_explicit_coverage_gap():
+    station = station_history(
+        observed_at=None,
+        discharge_m3s=None,
+        water_height_m=None,
+        observations=[],
+    )
+    agent = FloodDetectionAgent(FakeRepository([station]))
+
+    result = agent.detect_floods(now=NOW)
+
+    assert result["detected"] is None
+    assert result["assessed_station_count"] == 0
+    assert result["unassessed_stations"][0]["reason"] == (
+        "hydrometric_observation_unavailable"
+    )
+
+
 def test_height_only_below_flow_start_is_clear_without_thresholds():
     observations = [
         observation(30, None, 0.8),
@@ -603,6 +722,27 @@ def test_height_only_below_flow_start_is_clear_without_thresholds():
 
     assert result["detected"] is False
     assert result["assessed_station_count"] == 1
+
+
+def test_water_height_equal_to_flow_start_is_not_negligible():
+    observations = [
+        observation(30, 10.0, 0.8),
+        observation(20, 12.0, 0.9),
+        observation(10, 14.0, 1.0),
+    ]
+    history = station_history(
+        **observations[-1],
+        observations=observations,
+        flow_start_water_level_m=1.0,
+    )
+    agent = FloodDetectionAgent(FakeRepository([history]))
+
+    result = agent.detect_floods(now=NOW)
+
+    event = result["detected_events"][0]
+    assert event["hydrological_evidence"]["flow_started"] is True
+    assert event["detection_state"] == "rapid_flow_detected"
+    assert event["flow_intensity"] == "low"
 
 
 def test_database_failure_is_not_reported_as_no_flood():
@@ -941,8 +1081,12 @@ def test_conflicting_duplicate_topology_is_not_guessed():
     repository = FakeRepository(
         [station_history()],
         stream_network=[
-            network_stream(9001, 9002, object_id=301),
-            network_stream(9001, 9003, object_id=302),
+            network_stream(
+                9001,
+                None,
+                object_ids=[301, 302],
+                topology_conflict=True,
+            ),
             network_stream(9002, None),
             network_stream(9003, None),
         ],

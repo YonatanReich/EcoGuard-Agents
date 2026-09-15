@@ -17,13 +17,25 @@ HYDROMETRIC_STATION_HISTORIES = text(
         observation.discharge_m3s,
         observation.water_height_m
       FROM hydrometric_observations AS observation
+      WHERE observation.observed_at <= :as_of
       ORDER BY
         observation.source_station_id,
         observation.observed_at DESC,
         observation.id DESC
+    ),
+    station_scope AS (
+      SELECT station.source_station_id
+      FROM hydrometric_stations AS station
+      WHERE station.is_active
+
+      UNION
+
+      SELECT latest.source_station_id
+      FROM latest_observation AS latest
+      WHERE latest.observed_at >= :observed_since
     )
     SELECT
-      latest.source_station_id,
+      scope.source_station_id,
       latest.observed_at,
       latest.discharge_m3s,
       latest.water_height_m,
@@ -47,9 +59,11 @@ HYDROMETRIC_STATION_HISTORIES = text(
       history.water_height_m AS history_water_height_m,
       COALESCE(rainfall.evidence, '[]'::jsonb) AS rainfall_evidence,
       COALESCE(stream_match.candidates, '[]'::jsonb) AS stream_candidates
-    FROM latest_observation AS latest
+    FROM station_scope AS scope
+    LEFT JOIN latest_observation AS latest
+      ON latest.source_station_id = scope.source_station_id
     LEFT JOIN hydrometric_stations AS station
-      ON station.source_station_id = latest.source_station_id
+      ON station.source_station_id = scope.source_station_id
     LEFT JOIN LATERAL (
       SELECT
         candidate.basin_id,
@@ -74,8 +88,9 @@ HYDROMETRIC_STATION_HISTORIES = text(
           observation.water_height_m ORDER BY observation.observed_at
         ) AS water_height_m
       FROM hydrometric_observations AS observation
-      WHERE observation.source_station_id = latest.source_station_id
+      WHERE observation.source_station_id = scope.source_station_id
         AND observation.observed_at >= :observed_since
+        AND observation.observed_at <= :as_of
     ) AS history ON true
     LEFT JOIN LATERAL (
       SELECT jsonb_agg(
@@ -185,7 +200,7 @@ HYDROMETRIC_STATION_HISTORIES = text(
           rain_station.location::geometry
         )
     ) AS rainfall ON true
-    ORDER BY latest.source_station_id
+    ORDER BY scope.source_station_id
     """
 )
 
@@ -193,20 +208,22 @@ HYDROMETRIC_STATION_HISTORIES = text(
 STREAM_NETWORK = text(
     """
     SELECT
-      stream.id AS stream_id,
-      stream.object_id,
-      stream.name_he,
-      stream.water_source_id,
-      stream.main_catchment_code,
-      stream.main_catchment_name,
-      stream.draining_water_id,
-      stream.draining_water_name,
-      ST_Y(ST_PointOnSurface(stream.geometry)) AS representative_latitude,
-      ST_X(ST_PointOnSurface(stream.geometry)) AS representative_longitude
-    FROM streams AS stream
-    ORDER BY
-      stream.water_source_id NULLS LAST,
-      stream.object_id
+      node.water_source_id,
+      node.name_he,
+      node.object_ids,
+      node.feature_count,
+      node.main_catchment_code,
+      node.main_catchment_name,
+      edge.downstream_water_source_id AS draining_water_id,
+      edge.downstream_water_name AS draining_water_name,
+      ST_Y(node.representative_location) AS representative_latitude,
+      ST_X(node.representative_location) AS representative_longitude,
+      node.topology_conflict
+    FROM stream_network_nodes AS node
+    LEFT JOIN stream_network_edges AS edge
+      ON edge.upstream_water_source_id = node.water_source_id
+     AND NOT node.topology_conflict
+    ORDER BY node.water_source_id
     """
 )
 
@@ -273,13 +290,26 @@ class PostgresFloodDetectionRepository:
             histories.append(row)
         return histories
 
-    def load_stream_network(self) -> list[dict[str, Any]]:
-        """Load the small static stream graph once per detector invocation."""
+    def load_stream_network(self) -> dict[int, dict[str, Any]]:
+        """Load the precomputed static stream topology keyed by source id."""
         from ecoguard.database.engine import Session
 
         with Session() as session:
             rows = session.execute(STREAM_NETWORK).mappings().all()
-        return [dict(row) for row in rows]
+
+        network: dict[int, dict[str, Any]] = {}
+        for result in rows:
+            row = dict(result)
+            water_source_id = int(row["water_source_id"])
+            latitude = row.pop("representative_latitude", None)
+            longitude = row.pop("representative_longitude", None)
+            row["representative_location"] = (
+                {"latitude": latitude, "longitude": longitude}
+                if latitude is not None and longitude is not None
+                else None
+            )
+            network[water_source_id] = row
+        return network
 
     def load_latest_collector_runs(
         self, *, sources: tuple[str, ...]

@@ -44,7 +44,7 @@ class StationHistoryRepository(Protocol):
         stream_candidate_limit: int,
     ) -> list[dict[str, Any]]: ...
 
-    def load_stream_network(self) -> list[dict[str, Any]]: ...
+    def load_stream_network(self) -> dict[int, dict[str, Any]]: ...
 
     def load_latest_collector_runs(
         self, *, sources: tuple[str, ...]
@@ -219,7 +219,7 @@ class FloodDetectionAgent:
             event["stream_context"]["matched"]
             for event in event_outputs
         )
-        stream_network: list[dict[str, Any]] = []
+        stream_network: dict[int, dict[str, Any]] = {}
         stream_network_status = "not_required"
         stream_network_error: str | None = None
         if stream_network_required:
@@ -305,6 +305,10 @@ class FloodDetectionAgent:
         checked_at: datetime,
     ) -> dict[str, Any]:
         observed_at_value = snapshot.get("observed_at")
+        if observed_at_value is None:
+            return _unassessed(
+                snapshot, "hydrometric_observation_unavailable"
+            )
         if not isinstance(observed_at_value, datetime):
             return _unassessed(snapshot, "invalid_observation_timestamp")
         try:
@@ -326,7 +330,12 @@ class FloodDetectionAgent:
         if discharge is None and water_height is None:
             return _unassessed(snapshot, "hydrological_measurements_unavailable")
 
-        threshold_status, thresholds = _validated_thresholds(snapshot)
+        (
+            threshold_status,
+            thresholds,
+            available_return_periods,
+            missing_return_periods,
+        ) = _validated_thresholds(snapshot)
         q2 = thresholds.get(2)
         crossed = [
             {"return_period_years": period, "threshold_m3s": threshold}
@@ -375,8 +384,10 @@ class FloodDetectionAgent:
         active_flow = flow_started is True or (
             flow_started is None and discharge is not None and discharge > 0
         )
+        rainfall_evidence = _normalized_rainfall_evidence(snapshot)
         rainfall_context = _rainfall_context(
-            snapshot,
+            rainfall_evidence,
+            basin_id=snapshot.get("basin_id"),
             checked_at=checked_at,
             max_age=self.policy.max_rainfall_age,
         )
@@ -397,6 +408,8 @@ class FloodDetectionAgent:
                 snapshot,
                 reasons[0],
                 threshold_status=threshold_status,
+                available_return_periods=available_return_periods,
+                missing_return_periods=missing_return_periods,
                 observation_count=len(observations),
             )
         if detection_state == "no_signal":
@@ -463,6 +476,8 @@ class FloodDetectionAgent:
                 "flow_start_water_level_m": flow_start_level,
                 "flow_started": flow_started,
                 "threshold_status": threshold_status,
+                "available_return_periods": available_return_periods,
+                "missing_return_periods": missing_return_periods,
                 "crossed_thresholds": crossed,
                 "highest_crossed_return_period_years": highest_crossed,
                 "q2_persistence_observations": q2_persistence,
@@ -471,7 +486,9 @@ class FloodDetectionAgent:
                 "trend": trend,
             },
             "rainfall_context": rainfall_context,
-            "rainfall_evidence": _rainfall_evidence(snapshot),
+            "rainfall_evidence": _public_rainfall_evidence(
+                rainfall_evidence
+            ),
         }
         return {
             "status": "detected" if detected else "watch",
@@ -489,16 +506,26 @@ class FloodDetectionAgent:
         active_flow: bool,
     ) -> tuple[str, list[str]]:
         q2 = thresholds.get(2)
-        q5 = thresholds.get(5)
         crossed_q2 = (
             discharge is not None and q2 is not None and discharge >= q2
         )
-        crossed_q5 = (
-            discharge is not None and q5 is not None and discharge >= q5
+        crossed_high_flow_period = next(
+            (
+                period
+                for period in RETURN_PERIODS
+                if period >= 5
+                and (threshold := thresholds.get(period)) is not None
+                and discharge is not None
+                and discharge >= threshold
+            ),
+            None,
         )
 
-        if crossed_q5:
-            reasons = ["discharge_at_or_above_5_year_threshold"]
+        if crossed_high_flow_period is not None:
+            reasons = [
+                "discharge_at_or_above_"
+                f"{crossed_high_flow_period}_year_threshold"
+            ]
             if threshold_persistent:
                 reasons.append("discharge_threshold_crossing_persisted")
             if rapid_rise:
@@ -521,7 +548,7 @@ class FloodDetectionAgent:
         if active_flow and rapid_rise:
             state = (
                 "flood_wave_likely"
-                if threshold_status != "valid"
+                if q2 is None
                 else "rapid_flow_detected"
             )
             return state, [
@@ -535,9 +562,9 @@ class FloodDetectionAgent:
                 "single_discharge_threshold_crossing_awaiting_persistence"
             ]
 
-        if threshold_status != "valid" and active_flow:
+        if q2 is None and active_flow:
             return "data_uncertain", [
-                "active_flow_without_valid_discharge_thresholds_or_trend"
+                "active_flow_without_usable_q2_threshold_or_trend"
             ]
 
         return "no_signal", []
@@ -600,21 +627,38 @@ def _normalized_observations(
 
 def _validated_thresholds(
     snapshot: dict[str, Any],
-) -> tuple[str, dict[int, float]]:
-    values = [
-        _optional_float(snapshot.get(f"flow_threshold_{period}y_m3s"))
+) -> tuple[str, dict[int, float], list[int], list[int]]:
+    values = {
+        period: _optional_float(
+            snapshot.get(f"flow_threshold_{period}y_m3s")
+        )
         for period in RETURN_PERIODS
+    }
+    available = [
+        period for period, value in values.items() if value is not None
     ]
-    present = [value for value in values if value is not None]
-    if not present:
-        return "unavailable", {}
-    if len(present) != len(RETURN_PERIODS):
-        return "incomplete", {}
-    if any(value <= 0 for value in present):
-        return "non_positive", {}
-    if any(later < earlier for earlier, later in zip(present, present[1:])):
-        return "non_monotonic", {}
-    return "valid", dict(zip(RETURN_PERIODS, present))
+    missing = [
+        period for period, value in values.items() if value is None
+    ]
+    if not available:
+        return "unavailable", {}, available, missing
+
+    thresholds = {
+        period: value
+        for period in RETURN_PERIODS
+        if (value := values[period]) is not None
+    }
+    ordered_values = list(thresholds.values())
+    if any(value <= 0 for value in ordered_values):
+        return "non_positive", {}, available, missing
+    if any(
+        later < earlier
+        for earlier, later in zip(ordered_values, ordered_values[1:])
+    ):
+        return "non_monotonic", {}, available, missing
+
+    status = "valid" if not missing else "partial"
+    return status, thresholds, available, missing
 
 
 def _consecutive_rises(
@@ -740,31 +784,24 @@ def _flow_intensity(
     flow_start_level: float | None,
     thresholds: dict[int, float],
 ) -> str:
-    if thresholds and discharge is not None:
-        if discharge >= thresholds[50]:
-            return "extreme"
-        if discharge >= thresholds[20]:
-            return "very_high"
-        if discharge >= thresholds[10]:
-            return "high"
-        if discharge >= thresholds[5]:
-            return "medium"
-        if discharge >= thresholds[2]:
-            return "low"
-        if (
-            water_height is not None
-            and flow_start_level is not None
-            and water_height <= flow_start_level
-        ):
-            return "negligible"
-        return "low"
-    if (
+    flow_below_start = (
         water_height is not None
         and flow_start_level is not None
-        and water_height <= flow_start_level
-    ):
-        return "negligible"
-    return "unranked"
+        and water_height < flow_start_level
+    )
+    if thresholds and discharge is not None:
+        for period, intensity in (
+            (50, "extreme"),
+            (20, "very_high"),
+            (10, "high"),
+            (5, "medium"),
+            (2, "low"),
+        ):
+            threshold = thresholds.get(period)
+            if threshold is not None and discharge >= threshold:
+                return intensity
+        return "negligible" if flow_below_start else "low"
+    return "negligible" if flow_below_start else "unranked"
 
 
 def _confidence(
@@ -776,10 +813,11 @@ def _confidence(
     location_known: bool,
     rainfall_supports_signal: bool,
 ) -> str:
+    thresholds_usable = threshold_status in {"valid", "partial"}
     if detection_state == "flood_watch":
         return "low"
     if (
-        threshold_status == "valid"
+        thresholds_usable
         and threshold_persistent
         and location_known
     ):
@@ -788,7 +826,7 @@ def _confidence(
         return "high"
     if rapid_rise and location_known:
         return "medium"
-    return "medium" if threshold_status == "valid" else "low"
+    return "medium" if thresholds_usable else "low"
 
 
 _GENERIC_STREAM_NAME_TOKENS = frozenset(
@@ -1029,99 +1067,9 @@ def _optional_identifier(value: Any) -> int | None:
         return None
 
 
-def _stream_network_graph(
-    rows: list[dict[str, Any]],
-) -> dict[int, dict[str, Any]]:
-    grouped: dict[int, list[dict[str, Any]]] = {}
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        water_source_id = _optional_identifier(row.get("water_source_id"))
-        if water_source_id is None:
-            continue
-        grouped.setdefault(water_source_id, []).append(row)
-
-    graph: dict[int, dict[str, Any]] = {}
-    for water_source_id, features in grouped.items():
-        outgoing_ids = {
-            _optional_identifier(feature.get("draining_water_id"))
-            for feature in features
-        }
-        topology_conflict = len(outgoing_ids) > 1
-        draining_water_id = (
-            next(iter(outgoing_ids)) if not topology_conflict else None
-        )
-        canonical = min(
-            features,
-            key=lambda item: (
-                _optional_identifier(item.get("object_id")) is None,
-                _optional_identifier(item.get("object_id")) or 0,
-            ),
-        )
-        draining_names = [
-            feature.get("draining_water_name")
-            for feature in features
-            if _optional_identifier(feature.get("draining_water_id"))
-            == draining_water_id
-            and isinstance(feature.get("draining_water_name"), str)
-            and feature.get("draining_water_name").strip()
-        ]
-        object_ids = sorted(
-            {
-                object_id
-                for feature in features
-                if (
-                    object_id := _optional_identifier(
-                        feature.get("object_id")
-                    )
-                )
-                is not None
-            }
-        )
-        graph[water_source_id] = {
-            "water_source_id": water_source_id,
-            "name_he": canonical.get("name_he"),
-            "object_ids": object_ids,
-            "feature_count": len(features),
-            "main_catchment_code": canonical.get(
-                "main_catchment_code"
-            ),
-            "main_catchment_name": canonical.get(
-                "main_catchment_name"
-            ),
-            "draining_water_id": draining_water_id,
-            "draining_water_name": (
-                draining_names[0]
-                if draining_names
-                else canonical.get("draining_water_name")
-            ),
-            "representative_location": (
-                {
-                    "latitude": _optional_float(
-                        canonical.get("representative_latitude")
-                    ),
-                    "longitude": _optional_float(
-                        canonical.get("representative_longitude")
-                    ),
-                }
-                if _optional_float(
-                    canonical.get("representative_latitude")
-                )
-                is not None
-                and _optional_float(
-                    canonical.get("representative_longitude")
-                )
-                is not None
-                else None
-            ),
-            "topology_conflict": topology_conflict,
-        }
-    return graph
-
-
 def _downstream_route(
     stream_context: dict[str, Any],
-    network_rows: list[dict[str, Any]],
+    network: dict[int, dict[str, Any]],
     *,
     max_hops: int,
     network_available: bool,
@@ -1157,8 +1105,7 @@ def _downstream_route(
         result["termination"] = "stream_network_unavailable"
         return result
 
-    graph = _stream_network_graph(network_rows)
-    if not graph:
+    if not network:
         result["termination"] = "stream_network_empty"
         return result
 
@@ -1172,7 +1119,7 @@ def _downstream_route(
             termination = "cycle_detected"
             result["confidence"] = "low"
             break
-        node = graph.get(current_id)
+        node = network.get(current_id)
         if node is None:
             termination = (
                 "origin_stream_missing_from_network"
@@ -1208,7 +1155,9 @@ def _downstream_route(
     return result
 
 
-def _rainfall_evidence(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+def _normalized_rainfall_evidence(
+    snapshot: dict[str, Any],
+) -> list[dict[str, Any]]:
     evidence = snapshot.get("rainfall_evidence")
     if not isinstance(evidence, list):
         return []
@@ -1224,9 +1173,7 @@ def _rainfall_evidence(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
                 "name_en": item.get("name_en"),
                 "latitude": _optional_float(item.get("latitude")),
                 "longitude": _optional_float(item.get("longitude")),
-                "latest_observed_at": (
-                    observed_at.isoformat() if observed_at is not None else None
-                ),
+                "latest_observed_at": observed_at,
                 **{
                     field: _nonnegative_float(item.get(field))
                     for field in (
@@ -1239,6 +1186,22 @@ def _rainfall_evidence(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
     return normalized
+
+
+def _public_rainfall_evidence(
+    evidence: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return [
+        {
+            **item,
+            "latest_observed_at": (
+                item["latest_observed_at"].isoformat()
+                if item["latest_observed_at"] is not None
+                else None
+            ),
+        }
+        for item in evidence
+    ]
 
 
 def _optional_timestamp(value: Any) -> datetime | None:
@@ -1418,8 +1381,9 @@ def _collector_source_health(
 
 
 def _rainfall_context(
-    snapshot: dict[str, Any],
+    evidence: list[dict[str, Any]],
     *,
+    basin_id: Any,
     checked_at: datetime,
     max_age: timedelta,
 ) -> dict[str, Any]:
@@ -1428,42 +1392,26 @@ def _rainfall_context(
     Values from different gauges are never summed: doing so would count the
     same storm multiple times. Basin context reports maxima and means instead.
     """
-    evidence = _rainfall_evidence(snapshot)
-    basin_known = snapshot.get("basin_id") is not None
-    normalized: list[dict[str, Any]] = []
-    for item in evidence:
-        observed_at = _optional_timestamp(item.get("latest_observed_at"))
-        age = checked_at - observed_at if observed_at is not None else None
-        is_fresh = (
-            age is not None and timedelta(0) <= age <= max_age
-        )
-        normalized.append(
-            {
-                "observed_at": observed_at,
-                "is_fresh": is_fresh,
-                **{
-                    field: _nonnegative_float(item.get(field))
-                    for field in (
-                        "rainfall_10m_mm",
-                        "rainfall_1h_mm",
-                        "rainfall_6h_mm",
-                        "rainfall_24h_mm",
-                    )
-                },
-            }
-        )
-
     timestamps = [
-        item["observed_at"]
-        for item in normalized
-        if item["observed_at"] is not None
+        item["latest_observed_at"]
+        for item in evidence
+        if item["latest_observed_at"] is not None
     ]
-    fresh = [item for item in normalized if item["is_fresh"]]
+    fresh = [
+        item
+        for item in evidence
+        if item["latest_observed_at"] is not None
+        and timedelta(0)
+        <= checked_at - item["latest_observed_at"]
+        <= max_age
+    ]
     summary: dict[str, Any] = {
         "association": (
-            "same_drainage_basin" if basin_known else "unavailable"
+            "same_drainage_basin"
+            if basin_id is not None
+            else "unavailable"
         ),
-        "basin_id": snapshot.get("basin_id"),
+        "basin_id": basin_id,
         "station_count": len(evidence),
         "stations_with_observations": len(timestamps),
         "fresh_station_count": len(fresh),
