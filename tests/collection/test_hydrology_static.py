@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import sys
+from types import ModuleType
 from datetime import datetime, timezone
 
 import pytest
@@ -12,6 +14,7 @@ from ecoguard.collection.hydrology_static import (
     StaticHydrologyLayerError,
     download_layers,
     parse_layer,
+    persist_layers,
 )
 
 
@@ -172,3 +175,98 @@ def test_downloads_each_static_layer_once_with_a_timeout():
     assert all(call[1]["timeout"] == 60 for call in http.calls)
     assert all("EcoGuard-Agents/1.0" in call[1]["headers"]["User-Agent"] for call in http.calls)
     assert all("page=hydro_obs" in call[1]["headers"]["Referer"] for call in http.calls)
+
+
+class _ScalarResult:
+    def __init__(self, value=None):
+        self.value = value
+
+    def scalar_one_or_none(self):
+        return self.value
+
+
+class _RecordingSession:
+    def __init__(self, *, layer_checksum, network_checksum):
+        self.layer_checksum = layer_checksum
+        self.network_checksum = network_checksum
+        self.calls = []
+        self.committed = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return None
+
+    def execute(self, statement, parameters=None):
+        sql = str(statement)
+        self.calls.append((sql, parameters))
+        if "FROM static_layer_imports" in sql:
+            return _ScalarResult(self.layer_checksum)
+        if "FROM stream_network_metadata" in sql:
+            return _ScalarResult(self.network_checksum)
+        return _ScalarResult()
+
+    def commit(self):
+        self.committed = True
+
+
+def _stream_layer():
+    feature = {
+        "type": "Feature",
+        "properties": {
+            "OBJECTID": 1,
+            "STREAM_NAME_H": "גרר",
+            "WATER_SOURCE_ID": 199851,
+            "DRAINING_WATER_ID": 199776,
+        },
+        "geometry": {
+            "type": "LineString",
+            "coordinates": [[34.8, 31.2], [34.9, 31.3]],
+        },
+    }
+    return parse_layer(LAYERS[1], _content(feature), imported_at=NOW)
+
+
+def _use_session(monkeypatch, session):
+    engine_module = ModuleType("ecoguard.database.engine")
+    engine_module.Session = lambda: session
+    monkeypatch.setitem(sys.modules, "ecoguard.database.engine", engine_module)
+
+
+def test_rebuilds_missing_topology_without_rewriting_unchanged_streams(
+    monkeypatch,
+):
+    layer = _stream_layer()
+    session = _RecordingSession(
+        layer_checksum=layer.checksum,
+        network_checksum=None,
+    )
+    _use_session(monkeypatch, session)
+
+    result = persist_layers([layer])
+
+    sql = [call[0] for call in session.calls]
+    assert result == {"streams": 0}
+    assert "DELETE FROM streams" not in sql
+    assert "DELETE FROM stream_network_nodes" in sql
+    assert any("INSERT INTO stream_network_nodes" in item for item in sql)
+    assert any("INSERT INTO stream_network_edges" in item for item in sql)
+    assert any("INSERT INTO stream_network_metadata" in item for item in sql)
+    assert session.committed is True
+
+
+def test_skips_topology_rebuild_when_its_checksum_is_current(monkeypatch):
+    layer = _stream_layer()
+    session = _RecordingSession(
+        layer_checksum=layer.checksum,
+        network_checksum=layer.checksum,
+    )
+    _use_session(monkeypatch, session)
+
+    persist_layers([layer])
+
+    sql = [call[0] for call in session.calls]
+    assert "DELETE FROM stream_network_nodes" not in sql
+    assert not any("INSERT INTO stream_network_nodes" in item for item in sql)
+    assert session.committed is True

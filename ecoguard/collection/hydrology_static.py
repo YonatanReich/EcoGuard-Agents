@@ -225,6 +225,105 @@ INSERT_STATEMENTS = {
 }
 
 
+INSERT_STREAM_NETWORK_NODES = text(
+    """
+    INSERT INTO stream_network_nodes
+      (water_source_id, name_he, object_ids, feature_count,
+       main_catchment_code, main_catchment_name,
+       representative_location, topology_conflict)
+    SELECT
+      stream.water_source_id,
+      (array_agg(stream.name_he ORDER BY stream.object_id)
+        FILTER (WHERE stream.name_he IS NOT NULL))[1],
+      array_agg(stream.object_id ORDER BY stream.object_id),
+      count(*)::integer,
+      (array_agg(stream.main_catchment_code ORDER BY stream.object_id)
+        FILTER (WHERE stream.main_catchment_code IS NOT NULL))[1],
+      (array_agg(stream.main_catchment_name ORDER BY stream.object_id)
+        FILTER (WHERE stream.main_catchment_name IS NOT NULL))[1],
+      ST_PointOnSurface(ST_Collect(stream.geometry))::geometry(Point, 4326),
+      (
+        count(DISTINCT stream.draining_water_id)
+        + CASE
+            WHEN bool_or(stream.draining_water_id IS NULL) THEN 1
+            ELSE 0
+          END
+      ) > 1
+    FROM streams AS stream
+    WHERE stream.water_source_id IS NOT NULL
+    GROUP BY stream.water_source_id
+    """
+)
+
+
+INSERT_STREAM_NETWORK_EDGES = text(
+    """
+    INSERT INTO stream_network_edges
+      (upstream_water_source_id, downstream_water_source_id,
+       downstream_water_name, source_feature_count)
+    SELECT
+      stream.water_source_id,
+      stream.draining_water_id,
+      (array_agg(stream.draining_water_name ORDER BY stream.object_id)
+        FILTER (WHERE stream.draining_water_name IS NOT NULL))[1],
+      count(*)::integer
+    FROM streams AS stream
+    WHERE stream.water_source_id IS NOT NULL
+      AND stream.draining_water_id IS NOT NULL
+    GROUP BY stream.water_source_id, stream.draining_water_id
+    """
+)
+
+
+UPSERT_STREAM_NETWORK_METADATA = text(
+    """
+    INSERT INTO stream_network_metadata
+      (singleton, source_content_sha256, source_feature_count,
+       node_count, edge_count, built_at)
+    SELECT
+      true,
+      :source_content_sha256,
+      (SELECT count(*)::integer FROM streams),
+      (SELECT count(*)::integer FROM stream_network_nodes),
+      (SELECT count(*)::integer FROM stream_network_edges),
+      :built_at
+    ON CONFLICT (singleton) DO UPDATE SET
+      source_content_sha256 = EXCLUDED.source_content_sha256,
+      source_feature_count = EXCLUDED.source_feature_count,
+      node_count = EXCLUDED.node_count,
+      edge_count = EXCLUDED.edge_count,
+      built_at = EXCLUDED.built_at
+    """
+)
+
+
+STREAM_NETWORK_CHECKSUM = text(
+    """
+    SELECT source_content_sha256
+    FROM stream_network_metadata
+    WHERE singleton
+    """
+)
+
+
+def _rebuild_stream_network(
+    session: Any,
+    *,
+    source_content_sha256: str,
+    built_at: datetime,
+) -> None:
+    """Replace the topology derived from the newly imported stream layer."""
+    session.execute(text("DELETE FROM stream_network_edges"))
+    session.execute(text("DELETE FROM stream_network_nodes"))
+    parameters = {
+        "source_content_sha256": source_content_sha256,
+        "built_at": built_at,
+    }
+    session.execute(INSERT_STREAM_NETWORK_NODES)
+    session.execute(INSERT_STREAM_NETWORK_EDGES)
+    session.execute(UPSERT_STREAM_NETWORK_METADATA, parameters)
+
+
 def _canonical_checksum(document: dict[str, Any]) -> str:
     canonical = json.dumps(
         document, ensure_ascii=False, sort_keys=True, separators=(",", ":")
@@ -323,6 +422,16 @@ def persist_layers(layers: list[DownloadedLayer]) -> dict[str, int]:
             ).scalar_one_or_none()
 
             if existing_checksum == layer.checksum:
+                if layer.spec.name == "streams":
+                    network_checksum = session.execute(
+                        STREAM_NETWORK_CHECKSUM
+                    ).scalar_one_or_none()
+                    if network_checksum != layer.checksum:
+                        _rebuild_stream_network(
+                            session,
+                            source_content_sha256=layer.checksum,
+                            built_at=checked_at,
+                        )
                 session.execute(
                     text(
                         "UPDATE static_layer_imports SET checked_at = :checked_at "
@@ -339,6 +448,13 @@ def persist_layers(layers: list[DownloadedLayer]) -> dict[str, int]:
             statement = INSERT_STATEMENTS[layer.spec.name]
             for chunk in _chunks(layer.rows):
                 session.execute(statement, chunk)
+
+            if layer.spec.name == "streams":
+                _rebuild_stream_network(
+                    session,
+                    source_content_sha256=layer.checksum,
+                    built_at=checked_at,
+                )
 
             session.execute(
                 text(
