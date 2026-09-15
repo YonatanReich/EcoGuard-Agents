@@ -93,7 +93,7 @@ def _baseline_cells() -> tuple[tuple[str, float, float], ...]:
                 text("SELECT DISTINCT cell_id FROM weather_baselines")
             ).scalars().all()
         )
-    from ecoguard.collection.base import service_area_cells
+    from ecoguard.shared.cells import service_area_cells
 
     return tuple(
         (cell.cell_id, cell.latitude, cell.longitude)
