@@ -37,104 +37,14 @@ import WhatToSeeControl from '../components/WhatToSeeControl'
 import FireStationsLayer from '../components/layers/FireStationsLayer'
 import PoliceStationsLayer from '../components/layers/PoliceStationsLayer'
 import MdaStationsLayer from '../components/layers/MdaStationsLayer'
+import AirPollutionCorridorLayer from '../components/layers/AirPollutionCorridorLayer'
+import {
+  detectedFireToSharedEvent,
+  type DetectedEventsResponse,
+  type SharedEvent,
+} from '../types/events'
 
 import './visuals/dashboard.css'
-
-
-/** Operational risk bands, lowest to highest. Derived from the score server-side. */
-export type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
-
-/** Outcome of one reasoning step. Only "success" carries results. */
-export type StepStatus = 'success' | 'failed' | 'skipped'
-
-/**
- * One verified reference from a reasoning step back to a protocol document.
- *
- * The backend only emits citations it has checked against the retrieved source
- * text, so anything appearing here has been confirmed to quote the document it
- * names.
- */
-export type ProtocolCitation = {
-  chunk_id: string
-  document_id: string
-  document_title: string
-  source_url: string | null
-  heading_path: string
-  quoted_text: string
-  supports: string
-  verified: boolean
-}
-
-/** One action in a response plan, with its owning unit and urgency. */
-export type ResponseAction = {
-  action: string
-  responsible_unit: string
-  timeframe: 'immediate' | 'within_1_hour' | 'within_6_hours' | 'ongoing'
-}
-
-/**
- * One detected fire event, as returned by GET /api/detected-events.
- *
- * Combines satellite detection evidence, the risk assessment, and the response
- * plan into one flat object per map marker.
- *
- * Nullable fields are load-bearing rather than defensive. When analysis is
- * skipped or fails, `risk_score` and `risk_level` are null — not zero, not
- * "low". Absence of an assessment is not evidence that an area is safe, so the
- * UI must render that state distinctly instead of defaulting it.
- */
-export type RiskEvent = {
-  /** Stable hash of the hotspot, so the React key survives repeated polls. */
-  id: string
-  type: string
-  title: string
-  description: string
-  latitude: number
-  longitude: number
-
-  /** Detection evidence, kept distinct from the risk judgement. */
-  detection_confidence: string | null
-  fire_weather_severity: string | null
-
-  /** Risk analysis. All null unless analysis_status is "success". */
-  risk_score: number | null
-  risk_level: RiskLevel | null
-  confidence: 'low' | 'medium' | 'high' | null
-  primary_drivers: string[]
-  explanation: string | null
-  /** What the model could not determine, e.g. a failed weather lookup. */
-  evidence_gaps: string[]
-
-  /** Response plan. Empty unless planning_status is "success". */
-  recommended_units: string[]
-  /** Flattened action text, for compact display. */
-  response_plan: string[]
-  /** The same actions with their unit and timeframe. */
-  response_actions: ResponseAction[]
-
-  /** Verified citations from the risk and planning steps, merged. */
-  protocol_citations: ProtocolCitation[]
-
-  analysis_status: StepStatus
-  planning_status: StepStatus
-}
-
-/** Full payload of GET /api/detected-events. */
-export type DetectedEventsResponse = {
-  metadata: {
-    timestamp: string | null
-    collection_status: string
-    services: Record<string, { status: string; source: string | null }>
-  }
-  query: {
-    latitude: number
-    longitude: number
-    radius_km: number
-    day_range: number
-    include_analysis: boolean
-  }
-  events: RiskEvent[]
-}
 
 
 const WIND_MIN_HOURS = -6
@@ -174,12 +84,38 @@ function formatIsraelTime(
 
 
 function Dashboard() {
-  const [events, setEvents] =
-    useState<RiskEvent[]>([])
+  const [liveEvents, setLiveEvents] =
+    useState<SharedEvent[]>([])
+  const [airPollutionPreview, setAirPollutionPreview] =
+    useState<SharedEvent | null>(null)
+
+  const events = useMemo(
+    () => airPollutionPreview
+      ? [airPollutionPreview, ...liveEvents]
+      : liveEvents,
+    [airPollutionPreview, liveEvents],
+  )
 
   /** The event whose modal is open, from either a card or a map marker. */
   const [openEvent, setOpenEvent] =
-    useState<RiskEvent | null>(null)
+    useState<SharedEvent | null>(null)
+
+  useEffect(() => {
+    if (
+      !import.meta.env.DEV ||
+      new URLSearchParams(window.location.search).get('airPollutionPreview') !== '1'
+    ) {
+      return
+    }
+
+    let active = true
+    void import('../dev/airPollutionPreview').then(({ airPollutionPreviewEvent }) => {
+      if (active) setAirPollutionPreview(airPollutionPreviewEvent)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   /**
    * Split the feed into the two panels.
@@ -190,7 +126,11 @@ function Dashboard() {
   const emergencyEvents = useMemo(
     () => events
       .filter((event) => classify(event) === 'emergency')
-      .sort((a, b) => (b.risk_score ?? 0) - (a.risk_score ?? 0)),
+      .sort((a, b) => {
+        const left = a.type === 'fire' ? a.details.risk_score ?? 0 : 0
+        const right = b.type === 'fire' ? b.details.risk_score ?? 0 : 0
+        return right - left
+      }),
     [events],
   )
 
@@ -199,15 +139,11 @@ function Dashboard() {
     [events],
   )
 
-  /**
-   * Drop the modal when its event leaves the feed, rather than leaving a stale
-   * record open over a fire that is no longer being reported.
-   */
-  useEffect(() => {
-    if (openEvent && !events.some((event) => event.id === openEvent.id)) {
-      setOpenEvent(null)
-    }
-  }, [events, openEvent])
+  const corridorEvent = openEvent?.type === 'air_pollution'
+    ? openEvent
+    : airPollutionPreview?.type === 'air_pollution'
+      ? airPollutionPreview
+      : null
 
   /**
    * True while the detection scan is running.
@@ -375,7 +311,8 @@ function Dashboard() {
         // nothing — so this assigns unconditionally rather than only on a
         // truthy list. Guarding on `if (data.events)` would leave stale events
         // on the map after a clean scan.
-        setEvents(data.events ?? [])
+        const nextEvents = (data.events ?? []).map(detectedFireToSharedEvent)
+        setLiveEvents(nextEvents)
       })
       .catch((error) =>
         console.error(
@@ -480,18 +417,6 @@ function Dashboard() {
   ])
 
 
-  /**
-   * Stop radar animation if the radar layer is switched off.
-   */
-  useEffect(() => {
-    if (!showRainRadar) {
-      setRainPlaying(false)
-    }
-  }, [
-    showRainRadar,
-  ])
-
-
   // =========================================================
   // Logout
   // =========================================================
@@ -503,6 +428,11 @@ function Dashboard() {
       () => navigate('/'),
       700
     )
+  }
+
+  const toggleRainRadar = () => {
+    if (showRainRadar) setRainPlaying(false)
+    setShowRainRadar((current) => !current)
   }
 
 
@@ -764,6 +694,10 @@ function Dashboard() {
                 onViewOnMap={viewHighRiskOnMap}
                 onDismiss={() => setDismissedFireRiskSnapshot(nationalRiskScan.evaluation_time)}
               />
+            )}
+
+            {corridorEvent?.details.transport?.corridor && (
+              <AirPollutionCorridorLayer event={corridorEvent} />
             )}
 
             {/* ================================================= */}
@@ -1111,12 +1045,7 @@ function Dashboard() {
               showRainRadar={
                 showRainRadar
               }
-              onToggleRainRadar={() =>
-                setShowRainRadar(
-                  (current) =>
-                    !current
-                )
-              }
+              onToggleRainRadar={toggleRainRadar}
 
               showFireDanger={
                 showFireDanger
