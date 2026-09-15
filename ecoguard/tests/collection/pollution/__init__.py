@@ -1,0 +1,1 @@
+"""Pollution collection tests."""

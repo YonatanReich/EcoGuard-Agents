@@ -21,89 +21,89 @@ backend/__pycache__/
 .telegram-sessions/
 
 # Generated data.gov.il location cache
-data/generated/israel_locations.sqlite3*
-data/generated/israel_locations.manifest.json
+ecoguard/data/generated/israel_locations.sqlite3*
+ecoguard/data/generated/israel_locations.manifest.json
 
 # Generated Nominatim response cache
-data/generated/nominatim_geocode_cache.sqlite3*
+ecoguard/data/generated/nominatim_geocode_cache.sqlite3*
 
 # Generated historical Fire and Rescue ground-truth data
-data/generated/israel_fire_rescue_open_area_2023_2026.csv
+ecoguard/data/generated/israel_fire_rescue_open_area_2023_2026.csv
 
 # Generated historical NASA FIRMS observations and candidate incidents
-data/generated/firms_israel_hotspots_2023_2026.csv
-data/generated/firms_israel_candidate_incidents_2023_2026.csv
-data/generated/firms_history_checkpoint/
+ecoguard/data/generated/firms_israel_hotspots_2023_2026.csv
+ecoguard/data/generated/firms_israel_candidate_incidents_2023_2026.csv
+ecoguard/data/generated/firms_history_checkpoint/
 
 # Generated official settlement-boundary cache and matched ground truth
-data/generated/israel_settlement_boundaries.geojson
-data/generated/israel_settlement_boundaries.manifest.json
-data/generated/firms_fire_rescue_matched_events_2023_2026.csv
+ecoguard/data/generated/israel_settlement_boundaries.geojson
+ecoguard/data/generated/israel_settlement_boundaries.manifest.json
+ecoguard/data/generated/firms_fire_rescue_matched_events_2023_2026.csv
 
 # Generated historical pre-event weather features and resumable cache
-data/generated/historical_fire_weather_features_2023_2026.csv
-data/generated/historical_fire_weather_checkpoint/
+ecoguard/data/generated/historical_fire_weather_features_2023_2026.csv
+ecoguard/data/generated/historical_fire_weather_checkpoint/
 
 # Generated historical FIRMS-excluded proxy-negative samples
-data/generated/historical_fire_negative_samples_2023_2026.csv
+ecoguard/data/generated/historical_fire_negative_samples_2023_2026.csv
 
 # Generated proxy-negative weather and unified ML-ready dataset
-data/generated/historical_fire_negative_weather_features_2023_2026.csv
-data/generated/historical_fire_negative_weather_checkpoint/
-data/generated/fire_prediction_ml_dataset_2023_2026.csv
+ecoguard/data/generated/historical_fire_negative_weather_features_2023_2026.csv
+ecoguard/data/generated/historical_fire_negative_weather_checkpoint/
+ecoguard/data/generated/fire_prediction_ml_dataset_2023_2026.csv
 
 # Workspace-local baseline ML environment and generated model artifacts
 .ml-venv/
-data/generated/ml/
+ecoguard/data/generated/ml/
 
 # Generated historical environmental feature dataset and static elevation cache
-data/generated/fire_prediction_ml_environmental_dataset_2023_2026.csv
-data/generated/historical_environmental_elevation_cache.json
+ecoguard/data/generated/fire_prediction_ml_environmental_dataset_2023_2026.csv
+ecoguard/data/generated/historical_environmental_elevation_cache.json
 
 # Generated authoritative static land-cover/terrain sources and model dataset
-data/generated/static_environmental_sources/
-data/generated/historical_landcover_terrain_cache.json
-data/generated/fire_prediction_ml_landcover_terrain_dataset_2023_2026.csv
+ecoguard/data/generated/static_environmental_sources/
+ecoguard/data/generated/historical_landcover_terrain_cache.json
+ecoguard/data/generated/fire_prediction_ml_landcover_terrain_dataset_2023_2026.csv
 
 # Generated offline nationwide fire-risk grid
-data/generated/fire_risk_grid.sqlite*
+ecoguard/data/generated/fire_risk_grid.sqlite*
 
 # Generated rolling hourly weather cache
-data/generated/fire_risk_weather_cache.sqlite*
-data/generated/national_current_risk_scan.json
-data/generated/fire_risk_refresh_status.json
+ecoguard/data/generated/fire_risk_weather_cache.sqlite*
+ecoguard/data/generated/national_current_risk_scan.json
+ecoguard/data/generated/fire_risk_refresh_status.json
 
 # Generated tiered historical wildfire ground truth and curated input
-data/generated/historical_wildfire_external_events_2023_2026.csv
-data/generated/historical_wildfire_telegram_pilot_2023_2026.csv
-data/generated/historical_wildfire_ground_truth_strong_2023_2026.csv
-data/generated/historical_wildfire_ground_truth_sources.json
+ecoguard/data/generated/historical_wildfire_external_events_2023_2026.csv
+ecoguard/data/generated/historical_wildfire_telegram_pilot_2023_2026.csv
+ecoguard/data/generated/historical_wildfire_ground_truth_strong_2023_2026.csv
+ecoguard/data/generated/historical_wildfire_ground_truth_sources.json
 
 # Generated qualitative strong-event fire-risk case study and caches
-data/generated/fire_risk_strong_event_case_study_features.csv
-data/generated/fire_risk_strong_event_case_study_results.csv
-data/generated/fire_risk_strong_event_trajectory_results.csv
-data/generated/fire_risk_strong_event_weather_checkpoint/
-data/generated/fire_risk_strong_event_static_cache.json
+ecoguard/data/generated/fire_risk_strong_event_case_study_features.csv
+ecoguard/data/generated/fire_risk_strong_event_case_study_results.csv
+ecoguard/data/generated/fire_risk_strong_event_trajectory_results.csv
+ecoguard/data/generated/fire_risk_strong_event_weather_checkpoint/
+ecoguard/data/generated/fire_risk_strong_event_static_cache.json
 
 # Generated archived-forecast qualitative pilot
-data/generated/historical_forecast_risk_pilot.csv
-data/generated/historical_forecast_risk_pilot_cache/
+ecoguard/data/generated/historical_forecast_risk_pilot.csv
+ecoguard/data/generated/historical_forecast_risk_pilot_cache/
 
 # Generated combined early-warning qualitative pilot
-data/generated/combined_early_warning_pilot_results.csv
+ecoguard/data/generated/combined_early_warning_pilot_results.csv
 
 # Generated medium archived-forecast ML pilot
-data/generated/fire_forecast_risk_pilot_manifest.csv
-data/generated/fire_forecast_risk_pilot_snapshots.csv
-data/generated/fire_forecast_risk_pilot_dataset.csv
-data/generated/forecast_risk_pilot_cache/
-data/generated/ml/forecast_risk_pilot/
+ecoguard/data/generated/fire_forecast_risk_pilot_manifest.csv
+ecoguard/data/generated/fire_forecast_risk_pilot_snapshots.csv
+ecoguard/data/generated/fire_forecast_risk_pilot_dataset.csv
+ecoguard/data/generated/forecast_risk_pilot_cache/
+ecoguard/data/generated/ml/forecast_risk_pilot/
 
 # Generated evaluation runs
-data/generated/evaluation/
+ecoguard/data/generated/evaluation/
 
 # WorldPop population raster, downloaded once and loaded into population_cells
 # by scripts/load_population_grid.py. Republished yearly by WorldPop; there is
 # no reason to carry a copy in the history.
-data/generated/isr_ppp_*.tif
+ecoguard/data/generated/isr_ppp_*.tif

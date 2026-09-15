@@ -14,7 +14,7 @@ from typing import Any
 from ecoguard.database.locks import single_flight
 from ecoguard.database.repositories.collector_runs import log_finish, log_start
 from ecoguard.database.repositories.observations import upsert_observations
-from services.grid_manager import (
+from ecoguard.shared.grid import (
     GRID_RESOLUTION_KM,
     ISRAEL_RISK_BOUNDS,
     LATITUDE_KM_PER_DEGREE,
@@ -22,7 +22,7 @@ from services.grid_manager import (
     GridCell,
     generate_grid,
 )
-from services.service_area import ServiceArea
+from ecoguard.shared.service_area import ServiceArea
 
 logger = logging.getLogger(__name__)
 
