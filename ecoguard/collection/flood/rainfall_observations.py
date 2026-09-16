@@ -27,6 +27,9 @@ from ecoguard.collection.flood.hydrometric_stations import (
     TOKEN_PATTERN,
     USER_AGENT,
 )
+from ecoguard.collection.base import cell_for
+from ecoguard.collection.flood.signal_rows import rainfall_signal_records
+from ecoguard.database.repositories.observations import upsert_observations_in_session
 
 
 SOURCE = "water_authority_rainfall_observations"
@@ -88,17 +91,18 @@ RAINFALL_ACCUMULATIONS = Table(
 RAIN_STATION_UPSERT = text(
     """
     INSERT INTO rain_stations
-      (source_station_id, name_he, name_en, location, source_owner_id,
+      (source_station_id, name_he, name_en, location, cell_id, source_owner_id,
        owner_id, is_active, source_metadata, synced_at)
     VALUES
       (:source_station_id, :name_he, :name_en,
        ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
-       :source_owner_id, :owner_id, true,
+       :cell_id, :source_owner_id, :owner_id, true,
        CAST(:source_metadata AS jsonb), :synced_at)
     ON CONFLICT ON CONSTRAINT rain_stations_identity DO UPDATE SET
       name_he = EXCLUDED.name_he,
       name_en = EXCLUDED.name_en,
       location = EXCLUDED.location,
+      cell_id = EXCLUDED.cell_id,
       source_owner_id = EXCLUDED.source_owner_id,
       owner_id = EXCLUDED.owner_id,
       is_active = true,
@@ -440,6 +444,7 @@ def persist_rainfall_observations(
         station_rows = [
             {
                 **station,
+                "cell_id": cell_for(station["latitude"], station["longitude"]),
                 "owner_id": owner_ids.get(station["source_owner_id"]),
                 "source_metadata": json.dumps(
                     station["source_metadata"],
@@ -463,6 +468,19 @@ def persist_rainfall_observations(
                 text("SELECT source_station_id, id FROM rain_stations")
             ).all()
         )
+        station_metadata = {
+            row["source_station_id"]: dict(row)
+            for row in session.execute(
+                text(
+                    """
+                    SELECT source_station_id, cell_id, name_he, name_en,
+                           ST_Y(location::geometry) AS latitude,
+                           ST_X(location::geometry) AS longitude
+                    FROM rain_stations
+                    """
+                )
+            ).mappings()
+        }
 
         # Repair nullable links if a previously unknown source station has now
         # appeared in the provider's metadata.
@@ -498,6 +516,14 @@ def persist_rainfall_observations(
             )
             observations_written += len(session.execute(statement).scalars().all())
 
+        detector_observations_written = upsert_observations_in_session(
+            session,
+            SOURCE,
+            rainfall_signal_records(batch.rows, station_metadata),
+            ingested_at=collected_at,
+            update_existing=True,
+        )
+
         for start in range(0, len(accumulations), CHUNK_SIZE):
             statement = insert(RAINFALL_ACCUMULATIONS).values(
                 accumulations[start : start + CHUNK_SIZE]
@@ -528,6 +554,7 @@ def persist_rainfall_observations(
         "stations": len(batch.stations),
         "observations_received": len(batch.rows),
         "observations_written": observations_written,
+        "detector_observations_written": detector_observations_written,
         "accumulations": len(batch.accumulations),
         "unlinked_stations": unlinked_stations,
         "unlinked_owners": len(

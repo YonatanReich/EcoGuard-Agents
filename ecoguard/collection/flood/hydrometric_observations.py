@@ -27,6 +27,8 @@ from ecoguard.collection.flood.hydrometric_stations import (
     TOKEN_PATTERN,
     USER_AGENT,
 )
+from ecoguard.collection.flood.signal_rows import hydrometric_signal_records
+from ecoguard.database.repositories.observations import upsert_observations_in_session
 
 
 SOURCE = "water_authority_hydrometric_observations"
@@ -269,23 +271,65 @@ def persist_hydrometric_observations(
                 text("SELECT source_station_id, id FROM hydrometric_stations")
             ).all()
         )
+        station_metadata = {
+            row["source_station_id"]: dict(row)
+            for row in session.execute(
+                text(
+                    """
+                    SELECT source_station_id, cell_id, name_he, name_en,
+                           ST_Y(location::geometry) AS latitude,
+                           ST_X(location::geometry) AS longitude,
+                           flow_start_water_level_m,
+                           flow_threshold_2y_m3s,
+                           flow_threshold_5y_m3s,
+                           flow_threshold_10y_m3s,
+                           flow_threshold_20y_m3s,
+                           flow_threshold_50y_m3s,
+                           flow_threshold_100y_m3s
+                    FROM hydrometric_stations
+                    """
+                )
+            ).mappings()
+        }
         rows, unlinked_stations = _database_rows(batch, station_ids, collected_at)
 
         for start in range(0, len(rows), CHUNK_SIZE):
-            statement = (
-                insert(HYDROMETRIC_OBSERVATIONS)
-                .values(rows[start:start + CHUNK_SIZE])
-                .on_conflict_do_nothing(
-                    constraint="hydrometric_observations_identity"
-                )
-                .returning(HYDROMETRIC_OBSERVATIONS.c.id)
+            statement = insert(HYDROMETRIC_OBSERVATIONS).values(
+                rows[start:start + CHUNK_SIZE]
             )
+            statement = statement.on_conflict_do_update(
+                constraint="hydrometric_observations_identity",
+                set_={
+                    "hydrometric_station_id": statement.excluded.hydrometric_station_id,
+                    "discharge_m3s": statement.excluded.discharge_m3s,
+                    "water_height_m": statement.excluded.water_height_m,
+                    "source_payload": statement.excluded.source_payload,
+                    "collected_at": statement.excluded.collected_at,
+                },
+                where=(
+                    HYDROMETRIC_OBSERVATIONS.c.discharge_m3s.is_distinct_from(
+                        statement.excluded.discharge_m3s
+                    )
+                    | HYDROMETRIC_OBSERVATIONS.c.water_height_m.is_distinct_from(
+                        statement.excluded.water_height_m
+                    )
+                ),
+            ).returning(HYDROMETRIC_OBSERVATIONS.c.id)
             written += len(session.execute(statement).scalars().all())
+
+        detector_observations_written = upsert_observations_in_session(
+            session,
+            SOURCE,
+            hydrometric_signal_records(batch.rows, station_metadata),
+            ingested_at=collected_at,
+            update_existing=True,
+        )
         session.commit()
 
     return {
         "received": len(batch.rows),
         "written": written,
+        "detector_observations_written": detector_observations_written,
         "unlinked_stations": unlinked_stations,
     }
 

@@ -20,6 +20,7 @@ from ecoguard.collection.flood.hydrology_static import (
     BASE_URL,
     REQUEST_TIMEOUT_SECONDS,
 )
+from ecoguard.collection.base import cell_for
 
 
 SOURCE = "water_authority_hydrometric_stations"
@@ -292,14 +293,14 @@ OWNER_UPSERT = text(
 STATION_UPSERT = text(
     """
     INSERT INTO hydrometric_stations
-      (source_station_id, name_he, name_en, location, owner_id, map_zoom_level,
+      (source_station_id, name_he, name_en, location, cell_id, owner_id, map_zoom_level,
        flow_start_water_level_m, flow_threshold_2y_m3s, flow_threshold_5y_m3s,
        flow_threshold_10y_m3s, flow_threshold_20y_m3s, flow_threshold_50y_m3s,
        flow_threshold_100y_m3s, is_active, source_metadata, synced_at)
     VALUES
       (:source_station_id, :name_he, :name_en,
        ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
-       :owner_id, :map_zoom_level, :flow_start_water_level_m,
+       :cell_id, :owner_id, :map_zoom_level, :flow_start_water_level_m,
        :flow_threshold_2y_m3s, :flow_threshold_5y_m3s,
        :flow_threshold_10y_m3s, :flow_threshold_20y_m3s,
        :flow_threshold_50y_m3s, :flow_threshold_100y_m3s,
@@ -308,6 +309,7 @@ STATION_UPSERT = text(
       name_he = EXCLUDED.name_he,
       name_en = EXCLUDED.name_en,
       location = EXCLUDED.location,
+      cell_id = EXCLUDED.cell_id,
       owner_id = EXCLUDED.owner_id,
       map_zoom_level = EXCLUDED.map_zoom_level,
       flow_start_water_level_m = EXCLUDED.flow_start_water_level_m,
@@ -368,7 +370,11 @@ def persist_hydrometric_station_catalog(
             "SELECT source_owner_id, id FROM water_authority_station_owners"
         )).all())
         station_rows = [
-            {**station, "owner_id": owner_ids[station["owner_source_id"]]}
+            {
+                **station,
+                "cell_id": cell_for(station["latitude"], station["longitude"]),
+                "owner_id": owner_ids[station["owner_source_id"]],
+            }
             for station in catalog.stations
         ]
         session.execute(STATION_UPSERT, station_rows)

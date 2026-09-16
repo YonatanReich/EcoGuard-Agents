@@ -32,6 +32,7 @@ joblib==1.5.3
 threadpoolctl==3.6.0
 scikit-learn==1.7.2
 rasterio==1.4.4
+h5py==3.16.0
 
 # Risk analysis and response planning (LLM + RAG)
 anthropic==1.1.0

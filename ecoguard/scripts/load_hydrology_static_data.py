@@ -18,6 +18,7 @@ from ecoguard.collection.flood.hydrology_static import (
 from ecoguard.collection.flood.hydrometric_stations import (
     load_hydrometric_station_catalog,
 )
+from ecoguard.collection.flood.static_context import refresh_flood_static_context
 
 
 def main() -> None:
@@ -29,12 +30,21 @@ def main() -> None:
     station_result = load_hydrometric_station_catalog()
     if not any(station_result.values()):
         print("hydrometric station catalog: unchanged")
-        return
+    else:
+        print(
+            "hydrometric station catalog: "
+            f"{station_result['owners']:,} owners, "
+            f"{station_result['stations']:,} stations, "
+            f"{station_result['rain_links']:,} rain-station links synchronized"
+        )
+
+    context = refresh_flood_static_context()
     print(
-        "hydrometric station catalog: "
-        f"{station_result['owners']:,} owners, "
-        f"{station_result['stations']:,} stations, "
-        f"{station_result['rain_links']:,} rain-station links synchronized"
+        "flood context: "
+        f"{context['cells']:,} cells, "
+        f"{context['hydrometric_stations']:,} hydrometric stations, "
+        f"{context['rain_stations']:,} rain stations, "
+        f"{context['baselines']:,} monthly baselines"
     )
 
 
