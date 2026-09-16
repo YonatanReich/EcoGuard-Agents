@@ -158,7 +158,7 @@ scheduler.add_job(
 
 
 def detect_and_coordinate() -> None:
-    """Sweep stored observations for Fire and Fire-weather signals.
+    """Sweep stored observations for shared hazard signals and coordinate once.
 
     The two detectors intentionally emit separate hazard streams. Satellite
     hotspots emit ``fire`` signals for emergency routing; weather anomalies
@@ -188,10 +188,11 @@ def detect_and_coordinate() -> None:
     their own, and were running before any of this existed.
     """
     from ecoguard.coordinator.agent import run as coordinate
+    from ecoguard.detectors.air_pollution import observation_processing
     from ecoguard.detectors.fire import satellite, weather
 
     signals = []
-    for detector in (satellite, weather):
+    for detector in (satellite, weather, observation_processing):
         try:
             signals.extend(detector.detect_new())
         except Exception:

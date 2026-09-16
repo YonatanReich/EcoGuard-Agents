@@ -2,6 +2,8 @@
 
 from datetime import date, datetime, timezone
 
+import pytest
+
 from ecoguard.detectors.air_pollution.detector import AirPollutionAnomalyDetector
 from ecoguard.detectors.air_pollution.baseline_schemas import (
     BaselineBucketStatistics,
@@ -11,8 +13,11 @@ from ecoguard.detectors.air_pollution.baseline_schemas import (
 from ecoguard.detectors.air_pollution.live_baseline import AirPollutionLiveBaselineContextService
 from ecoguard.detectors.air_pollution.observation_processing import (
     AirPollutionObservationProcessor,
+    RUN_SOURCE,
     air_quality_observation_from_row,
+    detect_new,
 )
+from ecoguard.shared.signals import AIR_POLLUTION
 from ecoguard.shared.air_quality_schemas import AirQualityObservation, LIVE_QUALITY_POLICY
 
 OBSERVED = datetime(2026, 9, 13, 17, 15, tzinfo=timezone.utc)
@@ -228,3 +233,128 @@ def test_read_and_process_forwards_a_bounded_air_pollution_query():
         "ingested_through": INGESTED,
         "limit": 25,
     }]
+
+
+def _bookmark_recorder(monkeypatch, *, since):
+    from ecoguard.database.repositories import collector_runs
+
+    finished = []
+    monkeypatch.setattr(
+        collector_runs,
+        "last_success_at",
+        lambda source: since if source == RUN_SOURCE else None,
+    )
+    monkeypatch.setattr(collector_runs, "log_start", lambda source: 91)
+    monkeypatch.setattr(
+        collector_runs,
+        "log_finish",
+        lambda run_id, **values: finished.append((run_id, values)),
+    )
+    return finished
+
+
+def test_detect_new_turns_only_persisted_qualified_anomalies_into_signals(
+    monkeypatch,
+):
+    calls = []
+
+    def reader(**kwargs):
+        calls.append(kwargs)
+        return [row(11, 10.0), row(12, 21.0), row(13, 20.0)]
+
+    service, _ = processor(reader=reader)
+    since = INGESTED.replace(minute=0)
+    finished = _bookmark_recorder(monkeypatch, since=since)
+
+    signals = detect_new(processor=service, at=DETECTED)
+
+    assert len(signals) == 1
+    assert signals[0].hazard == AIR_POLLUTION
+    assert signals[0].observed_at == OBSERVED
+    assert signals[0].observed_at != INGESTED
+    assert signals[0].value == 21.0
+    assert signals[0].rarity is None
+    assert signals[0].severity is None
+    assert signals[0].confidence is None
+    assert calls == [{
+        "source": "air_pollution",
+        "ingested_after": since,
+        "after_id": 0,
+        "ingested_through": DETECTED,
+        "limit": 500,
+    }]
+    assert finished == [(91, {"status": "ok", "rows_written": 1})]
+
+
+def test_detect_new_normal_and_not_evaluated_results_emit_nothing(monkeypatch):
+    unavailable = UnavailableActiveLookup()
+    service, _ = processor(
+        unavailable,
+        reader=lambda **_: [row(11, 10.0), row(12, 21.0)],
+    )
+    finished = _bookmark_recorder(monkeypatch, since=INGESTED.replace(minute=0))
+
+    assert detect_new(processor=service, at=DETECTED) == []
+    assert finished == [(91, {"status": "ok", "rows_written": 0})]
+
+
+def test_failed_processing_keeps_previous_bookmark_for_retry(monkeypatch):
+    since = INGESTED.replace(minute=0)
+    finished = _bookmark_recorder(monkeypatch, since=since)
+    attempts = []
+
+    def reader(**kwargs):
+        attempts.append(kwargs)
+        if len(attempts) == 1:
+            raise RuntimeError("temporary database failure")
+        return [row(12, 21.0)]
+
+    service, _ = processor(reader=reader)
+    with pytest.raises(RuntimeError, match="temporary database failure"):
+        detect_new(processor=service, at=DETECTED)
+
+    signals = detect_new(processor=service, at=DETECTED)
+
+    assert len(signals) == 1
+    assert [attempt["ingested_after"] for attempt in attempts] == [since, since]
+    assert finished[0][1]["status"] == "failed"
+    assert finished[1] == (91, {"status": "ok", "rows_written": 1})
+
+
+def test_detect_new_paginates_equal_ingestion_timestamps_by_id(monkeypatch):
+    from ecoguard.detectors.air_pollution import observation_processing
+
+    supplied = [row(11, 21.0), row(12, 10.0), row(13, 21.0)]
+    calls = []
+
+    def reader(**kwargs):
+        calls.append(kwargs)
+        after_id = kwargs["after_id"]
+        return [item for item in supplied if item["id"] > after_id][
+            : kwargs["limit"]
+        ]
+
+    monkeypatch.setattr(observation_processing, "DETECTION_BATCH_SIZE", 2)
+    _bookmark_recorder(monkeypatch, since=INGESTED.replace(minute=0))
+    service, _ = processor(reader=reader)
+
+    signals = detect_new(processor=service, at=DETECTED)
+
+    assert len(signals) == 2
+    assert [call["after_id"] for call in calls] == [0, 12]
+    assert all(call["ingested_after"] <= INGESTED for call in calls)
+
+
+def test_first_run_starts_at_beginning_of_persisted_stream(monkeypatch):
+    calls = []
+
+    def reader(**kwargs):
+        calls.append(kwargs)
+        return []
+
+    _bookmark_recorder(monkeypatch, since=None)
+    service, _ = processor(reader=reader)
+
+    assert detect_new(processor=service, at=DETECTED) == []
+    assert calls[0]["ingested_after"] is None
+    assert calls[0]["after_id"] is None
