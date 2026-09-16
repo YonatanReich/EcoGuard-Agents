@@ -37,7 +37,7 @@ from ecoguard.shared.grid import (
     LONGITUDE_KM_PER_DEGREE_AT_EQUATOR,
     travel_bearing,
 )
-from ecoguard.shared.signals import AIR_QUALITY, FIRE
+from ecoguard.shared.signals import AIR_POLLUTION, FIRE
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ class CausalRule:
 # incident into an unrelated one — the failure mode nobody notices, because the
 # result is one plausible incident rather than two.
 CAUSAL_RULES: dict[tuple[str, str], CausalRule] = {
-    (FIRE, AIR_QUALITY): CausalRule(
+    (FIRE, AIR_POLLUTION): CausalRule(
         max_km=25.0, max_lag=timedelta(hours=6), downwind=True
     ),
 }
@@ -164,7 +164,7 @@ def causal_link(
     Returns:
         A link record naming the rule, distance, bearing and lag — or None.
         The rationale travels with the link so a merged hybrid can explain
-        itself: "air_quality joined to fire: 12.4 km downwind on bearing 199".
+        itself: "air_pollution joined to fire: 12.4 km downwind on bearing 199".
         A merge nobody can account for is one nobody can correct.
     """
     for cause_hazard in cause.get("hazards") or ():

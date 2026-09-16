@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from ecoguard.shared.signals import (
-    AIR_QUALITY,
+    AIR_POLLUTION,
     CORROBORATION_WINDOW,
     EITHER,
     FIRE,
@@ -169,7 +169,7 @@ def test_rain_points_opposite_ways_for_flood_and_fire_weather():
 def test_an_undeclared_variable_has_no_direction_rather_than_a_default():
     # Forces a deliberate decision per variable instead of silently assuming
     # that big numbers are the bad ones.
-    assert direction_for(AIR_QUALITY, "pollen_count") is None
+    assert direction_for(AIR_POLLUTION, "pollen_count") is None
 
 
 def test_greenness_and_dryness_are_declared_low():

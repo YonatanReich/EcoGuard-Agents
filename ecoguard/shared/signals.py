@@ -68,7 +68,7 @@ FIRE = "fire"
 FIRE_WEATHER = "fire_weather"
 
 FLOOD = "flood"
-AIR_QUALITY = "air_quality"
+AIR_POLLUTION = "air_pollution"
 HEAT = "heat"
 
 # --- which tail is the concerning one --------------------------------------
@@ -108,10 +108,10 @@ CONCERNING_DIRECTION: dict[tuple[str, str], str] = {
     (FLOOD, "precipitation"): HIGH,
     (FLOOD, "soil_moisture_0_to_7cm"): HIGH,
     (FLOOD, "water_level"): HIGH,
-    (AIR_QUALITY, "pm25"): HIGH,
-    (AIR_QUALITY, "pm10"): HIGH,
-    (AIR_QUALITY, "ozone"): HIGH,
-    (AIR_QUALITY, "no2"): HIGH,
+    (AIR_POLLUTION, "pm25"): HIGH,
+    (AIR_POLLUTION, "pm10"): HIGH,
+    (AIR_POLLUTION, "ozone"): HIGH,
+    (AIR_POLLUTION, "no2"): HIGH,
     (HEAT, "temperature_2m"): HIGH,
 }
 
