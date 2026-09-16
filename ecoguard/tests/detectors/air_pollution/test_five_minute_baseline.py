@@ -18,6 +18,7 @@ from ecoguard.detectors.air_pollution.five_minute_baseline_validation import (
     validate_artifacts,
     validate_profile,
 )
+from ecoguard.shared.air_pollution_history import read_history_month
 
 
 def point(timestamp, value=1.0, *, valid=True, unit="µg/m³", channel=4, pollutant="NO2"):
@@ -108,6 +109,25 @@ def test_quality_rejections_signed_values_and_last_accepted_duplicate(tmp_path):
     assert audit["sentinel"] == audit["provider_invalid"] == 1
     assert audit["missing_malformed_or_nonfinite"] == 1
     assert audit["reading_unit_missing"] == 2
+
+
+def test_shared_reader_refactor_preserves_baseline_quality_and_values(tmp_path):
+    stamp = "2021-01-01T01:00:00+02:00"
+    points = [
+        point(stamp, -2.0), point(stamp, -1.0),
+        point("2021-01-01T01:05:00+02:00", 3.0, valid=False),
+        point("2021-01-01T01:10:00+02:00", 5.0),
+    ]
+    files = profile_files(tmp_path, {(2021, 1): points})
+    month = read_history_month(files[0])
+    profile = build_profile(files, minimum_samples=1, minimum_days=1, minimum_years=1)
+    assert profile["quality_summary"] == month.quality_summary
+    assert [item.value for item in month.observations] == [-1.0, 5.0]
+    result = bucket(profile)
+    assert result["sample_count"] == 2
+    assert result["mean"] == result["median"] == 2.0
+    assert result["p05"] == pytest.approx(-0.7)
+    assert result["p95"] == pytest.approx(4.7)
 
 
 def test_off_grid_and_non_fixed_clock_are_rejected_not_snapped(tmp_path):

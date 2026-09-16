@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
+from urllib.parse import quote
 
 from geoalchemy2 import Geometry, WKTElement
 from sqlalchemy import and_, cast, func, or_, select, text
@@ -17,6 +18,9 @@ from ecoguard.database.models import Observation
 CHUNK_SIZE = 500
 DEFAULT_READ_BATCH_SIZE = 500
 MAX_READ_BATCH_SIZE = 5000
+AIR_POLLUTION_SOURCE = "air_pollution"
+AIR_POLLUTION_TREND_LOOKBACK_MINUTES = 120
+MAX_AIR_POLLUTION_HISTORY_ROWS = 100
 
 
 def _aware(value: datetime | None, *, name: str) -> datetime | None:
@@ -99,6 +103,95 @@ def read_observations_batch(
     )
     with Session() as session:
         return [dict(row) for row in session.execute(statement).mappings().all()]
+
+
+def air_pollution_series_cell_id(
+    station_id: str,
+    channel_id: str,
+    pollutant: str,
+    unit: str,
+) -> str:
+    """Build the collector's canonical source-local Air Pollution identity."""
+
+    parts = (station_id, channel_id, pollutant, unit)
+    if any(not isinstance(part, str) or not part.strip() for part in parts):
+        raise ValueError("Air Pollution series identity fields must be non-empty")
+    encoded = ":".join(quote(part, safe="") for part in parts)
+    return f"ministry:{encoded}"
+
+
+def air_pollution_series_history_statement(
+    *,
+    station_id: str,
+    channel_id: str,
+    pollutant: str,
+    unit: str,
+    prediction_time: datetime,
+    lookback_minutes: int = AIR_POLLUTION_TREND_LOOKBACK_MINUTES,
+    limit: int = MAX_AIR_POLLUTION_HISTORY_ROWS,
+):
+    """Build one bounded causal read for one exact measured series."""
+
+    through = _aware(prediction_time, name="prediction_time")
+    if type(lookback_minutes) is not int or lookback_minutes < 120:
+        raise ValueError("lookback_minutes must be at least 120")
+    if type(limit) is not int or not 1 <= limit <= MAX_AIR_POLLUTION_HISTORY_ROWS:
+        raise ValueError(
+            f"limit must be between 1 and {MAX_AIR_POLLUTION_HISTORY_ROWS}"
+        )
+    cell_id = air_pollution_series_cell_id(
+        station_id, channel_id, pollutant, unit
+    )
+    point = cast(Observation.location, Geometry(geometry_type="POINT", srid=4326))
+    return (
+        select(
+            Observation.id,
+            Observation.source,
+            Observation.cell_id,
+            Observation.observed_at,
+            Observation.ingested_at,
+            Observation.payload,
+            func.ST_Y(point).label("latitude"),
+            func.ST_X(point).label("longitude"),
+        )
+        .where(
+            Observation.source == AIR_POLLUTION_SOURCE,
+            Observation.cell_id == cell_id,
+            Observation.issued_at.is_(None),
+            Observation.observed_at >= through - timedelta(minutes=lookback_minutes),
+            Observation.observed_at <= through,
+        )
+        .order_by(Observation.observed_at.desc(), Observation.id.desc())
+        .limit(limit)
+    )
+
+
+def read_air_pollution_series_history(
+    *,
+    station_id: str,
+    channel_id: str,
+    pollutant: str,
+    unit: str,
+    prediction_time: datetime,
+    lookback_minutes: int = AIR_POLLUTION_TREND_LOOKBACK_MINUTES,
+    limit: int = MAX_AIR_POLLUTION_HISTORY_ROWS,
+) -> list[dict[str, Any]]:
+    """Read an exact series causally and return it in chronological order."""
+
+    statement = air_pollution_series_history_statement(
+        station_id=station_id,
+        channel_id=channel_id,
+        pollutant=pollutant,
+        unit=unit,
+        prediction_time=prediction_time,
+        lookback_minutes=lookback_minutes,
+        limit=limit,
+    )
+    with Session() as session:
+        newest_first = [
+            dict(row) for row in session.execute(statement).mappings().all()
+        ]
+    return list(reversed(newest_first))
 
 
 def _point(record: dict[str, Any]) -> WKTElement | None:

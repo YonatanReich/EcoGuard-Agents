@@ -7,6 +7,7 @@ identity.  They do not define, emulate, or persist a shared Coordinator.
 from __future__ import annotations
 
 from datetime import timezone
+import math
 from typing import Annotated, Generic, Literal, TypeVar
 
 from pydantic import AwareDatetime, Field, StringConstraints, field_validator, model_validator
@@ -86,16 +87,46 @@ class EventSeverityAssessment(AnomalyContract):
     five_minute_anomaly_evidence_is_separate: Literal[True] = True
 
 
-class PollutantConcentrationPrediction(AnomalyContract):
-    """Reserved trend-model result; this implementation leaves it unavailable."""
+class AirPollutionTrendPrediction(AnomalyContract):
+    """Auditable categorical concentration-trend evidence around +30 minutes."""
 
+    trend: Literal["RISING", "STABLE", "FALLING"]
+    confidence: float = Field(ge=0, le=1, strict=True)
+    probabilities: dict[Literal["RISING", "STABLE", "FALLING"], float]
+    horizon_minutes: Literal[30] = 30
     pollutant: Text
-    predicted_value: float
+    station_id: Text
+    channel_id: Text
     unit: Text
     issued_at: AwareDatetime
-    valid_at: AwareDatetime
-    model_id: Text
+    as_of: AwareDatetime
     model_version: Text
+    artifact_version: Text
+    feature_policy_version: Text
+    preprocessing_version: Text
+    epsilon_policy_version: Text
+
+    @field_validator("issued_at", "as_of")
+    @classmethod
+    def _trend_time_to_utc(cls, value: AwareDatetime) -> AwareDatetime:
+        return value.astimezone(timezone.utc)
+
+    @model_validator(mode="after")
+    def _coherent_probabilities(self) -> "AirPollutionTrendPrediction":
+        if set(self.probabilities) != {"RISING", "STABLE", "FALLING"}:
+            raise ValueError("trend probabilities require all three classes")
+        values = list(self.probabilities.values())
+        if any(not math.isfinite(value) or not 0 <= value <= 1 for value in values):
+            raise ValueError("trend probabilities must be finite and bounded")
+        if not math.isclose(sum(values), 1.0, abs_tol=1e-6):
+            raise ValueError("trend probabilities must sum to one")
+        if not math.isclose(
+            self.confidence, self.probabilities[self.trend], abs_tol=1e-12
+        ):
+            raise ValueError("trend confidence must match the selected class")
+        if self.issued_at < self.as_of:
+            raise ValueError("trend prediction cannot predate its as-of timestamp")
+        return self
 
 
 class RelevantSettlementPopulationContext(AnomalyContract):
@@ -206,7 +237,7 @@ class AirPollutionEventAnalysis(AirPollutionAnalysisInput):
     generated_at: AwareDatetime
     status: TransportDataStatus
     severity_assessment: AnalysisComponent[EventSeverityAssessment]
-    future_prediction: AnalysisComponent[PollutantConcentrationPrediction]
+    future_prediction: AnalysisComponent[AirPollutionTrendPrediction]
     transport_analysis: AnalysisComponent[AirPollutionTransportPredictionExecution]
     population_impact: AnalysisComponent[PopulationImpactContext]
     limitations: list[Text] = Field(min_length=1)

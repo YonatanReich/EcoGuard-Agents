@@ -7,7 +7,11 @@ from pydantic import ValidationError
 
 from ecoguard.detectors.air_pollution.schemas import AirPollutionAnomaly, AirPollutionBaselineEvidence
 from ecoguard.detectors.air_pollution.correlation import correlation_candidate
-from ecoguard.analyzers.non_emergency.air_pollution.event_analysis_schemas import AirPollutionAnalysisInput
+from ecoguard.analyzers.non_emergency.air_pollution.event_analysis_schemas import (
+    AirPollutionAnalysisInput,
+    AirPollutionTrendPrediction,
+    AnalysisComponent,
+)
 from ecoguard.analyzers.non_emergency.air_pollution.event_analyzer import AirPollutionNonEmergencyAnalyzer
 from ecoguard.detectors.air_pollution.spatial_schemas import (
     PollutionSpatialContext,
@@ -336,7 +340,7 @@ def test_missing_wind_is_explicit_and_safe():
     assert "provider unavailable" not in report.model_dump_json()
 
 
-def test_unimplemented_population_trend_and_severity_are_not_fabricated():
+def test_unavailable_population_trend_and_severity_are_not_fabricated():
     report = AirPollutionNonEmergencyAnalyzer(
         transport_service=None, clock=lambda: GENERATED_AT
     ).analyze(_analysis_input())
@@ -346,6 +350,88 @@ def test_unimplemented_population_trend_and_severity_are_not_fabricated():
     assert report.severity_assessment.status == "unavailable"
     assert report.transport_analysis.status == "unavailable"
     assert report.exposure_not_confirmed is True
+
+
+def _trend_component():
+    return AnalysisComponent[AirPollutionTrendPrediction](
+        status="success",
+        result=AirPollutionTrendPrediction(
+            trend="RISING",
+            confidence=0.7,
+            probabilities={"FALLING": 0.1, "STABLE": 0.2, "RISING": 0.7},
+            pollutant="NO2",
+            station_id="42",
+            channel_id="7001",
+            unit="ppb",
+            issued_at=GENERATED_AT,
+            as_of=OBSERVED_AT,
+            model_version="test-model-v1",
+            artifact_version="test-artifact-v1",
+            feature_policy_version="test-features-v1",
+            preprocessing_version="test-preprocessing-v1",
+            epsilon_policy_version="test-epsilon-v1",
+        ),
+        evidence=[
+            TransportEvidenceReference(
+                evidence_id="trend-ml:test",
+                source_name="test trend model",
+                source_type="sgd_logistic_trend_model",
+            )
+        ],
+    )
+
+
+def test_trend_component_is_integrated_without_blocking_transport():
+    transport, _ = _transport_service()
+    trend = Mock()
+    trend.predict.return_value = _trend_component()
+
+    report = AirPollutionNonEmergencyAnalyzer(
+        transport_service=transport,
+        trend_inference_service=trend,
+        clock=lambda: GENERATED_AT,
+    ).analyze(_analysis_input())
+
+    trend.predict.assert_called_once()
+    assert report.future_prediction.result.trend == "RISING"
+    assert report.transport_analysis.result is not None
+
+
+def test_trend_failure_does_not_block_other_analysis_components():
+    transport, _ = _transport_service()
+    trend = Mock()
+    trend.predict.side_effect = RuntimeError("private inference detail")
+
+    report = AirPollutionNonEmergencyAnalyzer(
+        transport_service=transport,
+        trend_inference_service=trend,
+        clock=lambda: GENERATED_AT,
+    ).analyze(_analysis_input())
+
+    assert report.future_prediction.unavailable_reason == "trend_inference_failure"
+    assert report.transport_analysis.result is not None
+    assert "private inference detail" not in report.model_dump_json()
+
+
+def test_multiple_candidates_at_origin_make_only_trend_unavailable():
+    second_payload = _candidate().model_dump(round_trip=True)
+    second_payload["anomaly"]["detection_id"] = "air-pollution:test-2"
+    second = type(_candidate()).model_validate(second_payload)
+    trend = Mock()
+
+    report = AirPollutionNonEmergencyAnalyzer(
+        transport_service=None,
+        trend_inference_service=trend,
+        clock=lambda: GENERATED_AT,
+    ).analyze(
+        _analysis_input(correlated_detections=[_candidate(), second])
+    )
+
+    trend.predict.assert_not_called()
+    assert report.future_prediction.unavailable_reason == "ambiguous_origin_series"
+    assert report.severity_assessment.unavailable_reason == (
+        "ministry_air_quality_index_service_unavailable"
+    )
 
 
 def test_analyzer_preserves_native_ministry_index_separately_from_p95_evidence():

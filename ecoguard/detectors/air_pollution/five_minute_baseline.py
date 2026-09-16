@@ -2,28 +2,29 @@
 
 from __future__ import annotations
 
-import gzip
 import hashlib
 import json
 import math
 import statistics
 from collections import Counter, defaultdict
-from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable
 
 from ecoguard.shared.air_quality_schemas import MINISTRY_PROVIDER_ID
-from ecoguard.shared.ministry_air_quality_client import _canonical_unit
+from ecoguard.shared.air_pollution_history import (
+    CACHE_SCHEMA_VERSION,
+    QUALITY_POLICY_VERSION,
+    SOURCE_NAME,
+    AirPollutionHistoryError,
+    _strict_object as _history_strict_object,
+    discover_history_series,
+    read_history_month,
+)
 
 SCHEMA_VERSION = "air-pollution-five-minute-observation-baseline-v1"
-CACHE_SCHEMA_VERSION = "ecoguard-air-pollution-five-minute-cache-v1"
 BASELINE_FAMILY = "five_minute_observation"
 METHOD_VERSION = "pooled-provider-five-minute-month-hour-v1"
-QUALITY_POLICY_VERSION = "ministry-envista-five-minute-provider-valid-signed-reading-unit-v1"
 AGGREGATION_POLICY_VERSION = "ministry-envista-five-minute-no-average-last-accepted-v1"
-SOURCE_NAME = "Israel Ministry of Environmental Protection / Envista"
-SENTINEL = -9999.0
-EXPECTED_OFFSET = timedelta(hours=2)
 STAT_FIELDS = ("mean", "median", "std", "mad", "p05", "p25", "p75", "p95")
 
 
@@ -32,12 +33,12 @@ class FiveMinuteBaselineError(ValueError):
 
 
 def _strict_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in result:
-            raise FiveMinuteBaselineError(f"duplicate JSON key: {key}")
-        result[key] = value
-    return result
+    """Compatibility hook used by the baseline artifact validator."""
+
+    try:
+        return _history_strict_object(pairs)
+    except AirPollutionHistoryError as exc:
+        raise FiveMinuteBaselineError(str(exc)) from exc
 
 
 def percentile(values: list[float], fraction: float) -> float:
@@ -63,58 +64,9 @@ def _input_digest(month_files: list[dict[str, Any]]) -> str:
     ).hexdigest()
 
 
-def _load_cache(path: Path) -> tuple[dict[str, Any], str]:
-    raw = path.read_bytes()
-    digest = hashlib.sha256(raw).hexdigest()
-    try:
-        payload = json.loads(gzip.decompress(raw), object_pairs_hook=_strict_object)
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise FiveMinuteBaselineError(f"unreadable cache artifact: {path.name}") from exc
-    if not isinstance(payload, dict):
-        raise FiveMinuteBaselineError("cache payload must be an object")
-    return payload, digest
-
-
 def discover_cache_profiles(cache_dir: str | Path) -> list[list[Path]]:
     """Return profile month files grouped by cache identity directory."""
-    root = Path(cache_dir)
-    groups: list[list[Path]] = []
-    for channel_dir in sorted(root.glob("station_*/channel_*")):
-        files = sorted(channel_dir.glob("????-??.json.gz"))
-        if files:
-            groups.append(files)
-    return groups
-
-
-def _cache_header(payload: dict[str, Any]) -> tuple[str, str, str, str, str, int, int]:
-    semantics = payload.get("request_semantics")
-    expected_semantics = {
-        "resolution": "provider five-minute averages",
-        "timeBeginning": False,
-        "quality_filter_applied": False,
-        "unit_filter_applied": False,
-        "off_grid_filter_applied": False,
-    }
-    if payload.get("schema_version") != CACHE_SCHEMA_VERSION or payload.get("complete") is not True:
-        raise FiveMinuteBaselineError("cache schema/completion mismatch")
-    if semantics != expected_semantics:
-        raise FiveMinuteBaselineError("cache request semantics mismatch")
-    source = payload.get("source")
-    station_id = payload.get("station_id")
-    station_name = payload.get("station_name")
-    channel_id = payload.get("channel_id")
-    pollutant = payload.get("pollutant")
-    year, month = payload.get("year"), payload.get("month")
-    if source != SOURCE_NAME:
-        raise FiveMinuteBaselineError("unexpected historical source")
-    if not all(isinstance(value, str) and value.strip() for value in (station_id, station_name, channel_id, pollutant)):
-        raise FiveMinuteBaselineError("missing cache identity")
-    if type(year) is not int or type(month) is not int or not 2021 <= year <= 2025 or not 1 <= month <= 12:
-        raise FiveMinuteBaselineError("invalid cache year/month")
-    points = payload.get("points")
-    if not isinstance(points, list) or payload.get("point_count") != len(points):
-        raise FiveMinuteBaselineError("cache point_count mismatch")
-    return source, station_id, station_name, channel_id, pollutant, year, month
+    return discover_history_series(cache_dir)
 
 
 def _statistics(values: list[float]) -> dict[str, float]:
@@ -153,8 +105,17 @@ def build_profile(
     audit: Counter[str] = Counter()
 
     for path in paths:
-        payload, digest = _load_cache(path)
-        source, sid, name, cid, pollutant, year, month = _cache_header(payload)
+        try:
+            history = read_history_month(path)
+        except AirPollutionHistoryError as exc:
+            raise FiveMinuteBaselineError(str(exc)) from exc
+        sid = history.identity.station_id
+        cid = history.identity.channel_id
+        pollutant = history.identity.pollutant
+        name = history.station_name
+        year, month = history.year, history.month
+        source = SOURCE_NAME
+        digest = history.content_sha256
         current = (source, sid, cid, pollutant, name)
         if identity is None:
             identity, station_name = current, name
@@ -168,69 +129,16 @@ def build_profile(
             "month": month,
             "cache_file": path.name,
             "content_sha256": digest,
-            "point_count": payload["point_count"],
+            "point_count": history.point_count,
         })
-
-        accepted_by_timestamp: dict[str, tuple[float, str, int]] = {}
-        for point in payload["points"]:
-            audit["raw_points"] += 1
-            if not isinstance(point, dict) or not isinstance(point.get("channels"), list):
-                audit["malformed_points"] += 1
-                continue
-            timestamp = point.get("datetime")
-            try:
-                parsed = datetime.fromisoformat(str(timestamp))
-            except (TypeError, ValueError):
-                audit["malformed_timestamps"] += 1
-                continue
-            if parsed.tzinfo is None or parsed.utcoffset() != EXPECTED_OFFSET:
-                audit["wrong_provider_offset"] += 1
-                continue
-            if parsed.year != year or parsed.month != month:
-                audit["timestamp_month_mismatch"] += 1
-                continue
-            if parsed.minute % 5 or parsed.second or parsed.microsecond:
-                audit["off_grid_timestamps"] += 1
-                continue
-
-            matches = [
-                channel for channel in point["channels"]
-                if isinstance(channel, dict)
-                and str(channel.get("id")) == cid
-                and str(channel.get("name", "")).upper().replace("PM25", "PM2.5") == pollutant.upper()
-            ]
-            if len(matches) != 1:
-                audit["identity_mismatch"] += 1
-                continue
-            channel = matches[0]
-            if channel.get("valid") is not True:
-                audit["provider_invalid"] += 1
-                continue
-            value = channel.get("value")
-            if isinstance(value, bool) or type(value) not in (int, float) or not math.isfinite(value):
-                audit["missing_malformed_or_nonfinite"] += 1
-                continue
-            if float(value) == SENTINEL:
-                audit["sentinel"] += 1
-                continue
-            reading_unit = channel.get("units")
-            if not isinstance(reading_unit, str) or not reading_unit.strip():
-                audit["reading_unit_missing"] += 1
-                continue
-            canonical = _canonical_unit(reading_unit)
-            if canonical is None:
-                audit["reading_unit_missing"] += 1
-                continue
-            provider_units.add(reading_unit.strip())
-            canonical_units.add(canonical)
-            key = str(timestamp)
-            if key in accepted_by_timestamp:
-                audit["duplicate_timestamp_revisions"] += 1
-            accepted_by_timestamp[key] = (float(value), parsed.date().isoformat(), parsed.hour)
-
-        audit["accepted_unique_observations"] += len(accepted_by_timestamp)
-        for timestamp, (value, day, hour) in accepted_by_timestamp.items():
-            grouped[(month, hour)].append((timestamp, value, day, year))
+        audit.update(history.quality_summary)
+        provider_units.update(history.provider_units)
+        canonical_units.update(history.canonical_units)
+        for observation in history.observations:
+            parsed = observation.observed_at
+            grouped[(month, parsed.hour)].append(
+                (str(parsed.isoformat()), observation.value, parsed.date().isoformat(), year)
+            )
 
     if identity is None or station_name is None:
         raise FiveMinuteBaselineError("empty cache profile")
