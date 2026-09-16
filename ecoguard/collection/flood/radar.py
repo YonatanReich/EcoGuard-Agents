@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import logging
 import math
 import os
 import re
@@ -36,6 +37,9 @@ MIN_STORED_RATE_MM_H = 0.05
 PPI_LINK = re.compile(
     r"href=[\"']([^\"']+\.PPI\.\d+\.h5)[\"']", re.IGNORECASE
 )
+PPI_TIMESTAMP = re.compile(r"\.(\d{14})\.PPI\.", re.IGNORECASE)
+
+logger = logging.getLogger(__name__)
 
 
 class RadarFormatError(ValueError):
@@ -43,7 +47,7 @@ class RadarFormatError(ValueError):
 
 
 class RadarAuthenticationError(RuntimeError):
-    """The configured IMS radar session is missing, invalid or expired."""
+    """The configured IMS radar credentials were rejected."""
 
 
 @dataclass(frozen=True)
@@ -326,16 +330,109 @@ def load_or_build_mapping(frame: RadarFrame) -> list[RadarCellMapping]:
     return mappings
 
 
+def _ppi_observed_at(name: str) -> datetime | None:
+    match = PPI_TIMESTAMP.search(name)
+    if match is None:
+        return None
+    return datetime.strptime(match.group(1), "%Y%m%d%H%M%S").replace(
+        tzinfo=timezone.utc
+    )
+
+
+def _all_ppi_links(index_html: str) -> list[tuple[datetime, str]]:
+    links = {html.unescape(match) for match in PPI_LINK.findall(index_html)}
+    parsed = [(_ppi_observed_at(name), name) for name in links]
+    return sorted(
+        (observed_at, name)
+        for observed_at, name in parsed
+        if observed_at is not None
+    )
+
+
 def ppi_links(index_html: str, *, limit: int = 6) -> list[str]:
     """Return the newest unique PPI files advertised by the IMS index."""
     if limit < 1:
         raise ValueError("limit must be positive")
-    links = {html.unescape(match) for match in PPI_LINK.findall(index_html)}
-    return sorted(links)[-limit:]
+    return [name for _, name in _all_ppi_links(index_html)[-limit:]]
+
+
+def ppi_links_since(
+    index_html: str,
+    latest_cached_at: datetime | None,
+    *,
+    initial_frames: int = 6,
+    overlap_frames: int = 2,
+) -> list[str]:
+    """Return every uncached frame plus a small idempotent overlap."""
+    if initial_frames < 1:
+        raise ValueError("initial_frames must be positive")
+    if overlap_frames < 0:
+        raise ValueError("overlap_frames must be non-negative")
+    links = _all_ppi_links(index_html)
+    if latest_cached_at is None:
+        return [name for _, name in links[-initial_frames:]]
+    if latest_cached_at.tzinfo is None or latest_cached_at.utcoffset() is None:
+        raise ValueError("latest_cached_at must carry a UTC offset")
+    latest_utc = latest_cached_at.astimezone(timezone.utc)
+    first_new = next(
+        (
+            index
+            for index, (observed_at, _) in enumerate(links)
+            if observed_at > latest_utc
+        ),
+        len(links),
+    )
+    start = max(0, first_new - overlap_frames)
+    return [name for _, name in links[start:]]
+
+
+def _latest_cached_frame_time() -> datetime | None:
+    from ecoguard.database.engine import Session
+
+    with Session() as session:
+        return session.execute(
+            text("SELECT max(observed_at) FROM radar_frame_cache")
+        ).scalar_one()
+
+
+def _persist_batch(
+    records: list[dict[str, Any]],
+    frames: list[dict[str, Any]],
+) -> int:
+    """Cache observations and provider frame watermarks atomically."""
+    from ecoguard.database.engine import Session
+    from ecoguard.database.repositories.flood_observations import (
+        upsert_flood_observations_in_session,
+    )
+
+    ingested_at = datetime.now(timezone.utc)
+    with Session() as session:
+        written = upsert_flood_observations_in_session(
+            session,
+            SOURCE,
+            records,
+            ingested_at=ingested_at,
+        )
+        if frames:
+            session.execute(
+                text(
+                    """
+                    INSERT INTO radar_frame_cache (
+                      source_file, observed_at, cached_at
+                    ) VALUES (
+                      :source_file, :observed_at, :cached_at
+                    )
+                    ON CONFLICT (source_file) DO NOTHING
+                    """
+                ),
+                [{**frame, "cached_at": ingested_at} for frame in frames],
+            )
+        session.commit()
+    return written
 
 
 class RadarPPICollector(BaseCollector):
-    """Download a small overlap of recent PPI frames and store numeric cells."""
+    """Catch up every unseen PPI frame and store its numeric 5 km cells."""
 
     source = SOURCE
 
@@ -344,13 +441,15 @@ class RadarPPICollector(BaseCollector):
         http_session: requests.Session | None = None,
         *,
         index_url: str = INDEX_URL,
-        overlap_frames: int = 6,
+        initial_frames: int = 6,
+        overlap_frames: int = 2,
         cookie: str | None = None,
         username: str | None = None,
         password: str | None = None,
     ) -> None:
         self.http = http_session or requests.Session()
         self.index_url = index_url
+        self.initial_frames = initial_frames
         self.overlap_frames = overlap_frames
         # IMS radar files are behind a web login. Keep the resulting session
         # cookie outside the source code and database, and never log its value.
@@ -397,18 +496,28 @@ class RadarPPICollector(BaseCollector):
             )
         response.raise_for_status()
 
-    def fetch(self) -> list[dict[str, Any]]:
+    def _fetch_batch(self) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         index = self.http.get(self.index_url, timeout=REQUEST_TIMEOUT_SECONDS)
         self._require_success(index)
         records: list[dict[str, Any]] = []
+        frames: list[dict[str, Any]] = []
         active_rain_cells = _load_active_rain_cells()
         mapping_cache: dict[str, list[RadarCellMapping]] = {}
-        for name in ppi_links(index.text, limit=self.overlap_frames):
+        names = ppi_links_since(
+            index.text,
+            _latest_cached_frame_time(),
+            initial_frames=self.initial_frames,
+            overlap_frames=self.overlap_frames,
+        )
+        for name in names:
             response = self.http.get(
                 urljoin(self.index_url, name), timeout=REQUEST_TIMEOUT_SECONDS
             )
             self._require_success(response)
             frame = read_radar_frame(response.content, source_name=name)
+            frames.append(
+                {"source_file": name, "observed_at": frame.observed_at}
+            )
             signature = radar_geometry_signature(frame)
             mappings = mapping_cache.get(signature)
             if mappings is None:
@@ -421,4 +530,45 @@ class RadarPPICollector(BaseCollector):
                     include_dry_cells=active_rain_cells,
                 )
             )
+        return records, frames
+
+    def fetch(self) -> list[dict[str, Any]]:
+        records, _ = self._fetch_batch()
         return records
+
+    def run(self) -> None:
+        """Persist frame watermarks with observations so catch-up cannot skip."""
+        from ecoguard.database.locks import single_flight
+        from ecoguard.database.repositories.collector_runs import (
+            log_finish,
+            log_start,
+        )
+
+        try:
+            with single_flight(f"collect_{self.source}") as acquired:
+                if not acquired:
+                    logger.info(
+                        "%s collector: previous run still going, skipping tick",
+                        self.source,
+                    )
+                    return
+                run_id = log_start(self.source)
+                try:
+                    records, frames = self._fetch_batch()
+                    written = _persist_batch(records, frames)
+                    log_finish(run_id, status="ok", rows_written=written)
+                    logger.info(
+                        "%s collector: %s new observations from %s frames",
+                        self.source,
+                        written,
+                        len(frames),
+                    )
+                except Exception as error:
+                    log_finish(
+                        run_id,
+                        status="failed",
+                        error=f"{type(error).__name__}: {error}",
+                    )
+                    logger.exception("%s collector failed", self.source)
+        except Exception:
+            logger.exception("%s collector could not reach the database", self.source)

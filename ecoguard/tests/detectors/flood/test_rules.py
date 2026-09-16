@@ -440,7 +440,7 @@ def test_missing_observations_never_resolve_an_active_event():
     assert evaluate_resolutions([], CONTEXT, [active]) == []
 
 
-def test_rain_event_resolves_from_two_dry_radar_heartbeats():
+def test_urban_rain_event_does_not_resolve_after_only_two_dry_frames():
     opened_at = NOW - timedelta(minutes=20)
     active = {
         "event_key": f"flood:rain:{CELL}",
@@ -482,6 +482,48 @@ def test_rain_event_resolves_from_two_dry_radar_heartbeats():
                 "valid_pixel_fraction": 0.95,
             },
         },
+    ]
+
+    resolutions = evaluate_resolutions(observations, urban, [active])
+
+    assert resolutions == []
+
+
+def test_urban_rain_event_resolves_after_minimum_age_and_dry_period():
+    opened_at = NOW - timedelta(hours=1)
+    active = {
+        "event_key": f"flood:rain:{CELL}",
+        "candidate_key": "candidate-2",
+        "cell_id": CELL,
+        "opened_at": opened_at,
+        "trigger": "urban_rain_10m",
+        "evidence": {"threshold": 8.0},
+    }
+    urban = {**CONTEXT, "built_up_fraction": 0.75}
+    observations = [
+        {
+            "source": RADAR_SOURCE,
+            "cell_id": CELL,
+            "observed_at": opened_at,
+            "payload": {
+                "rainfall_mm": 9.0,
+                "rain_rate_max_mm_h": 108.0,
+                "valid_pixel_fraction": 0.95,
+            },
+        },
+        *[
+            {
+                "source": RADAR_SOURCE,
+                "cell_id": CELL,
+                "observed_at": NOW - timedelta(minutes=minutes_ago),
+                "payload": {
+                    "rainfall_mm": 0.0,
+                    "rain_rate_max_mm_h": 0.0,
+                    "valid_pixel_fraction": 0.95,
+                },
+            }
+            for minutes_ago in (30, 20, 10, 0)
+        ],
     ]
 
     resolutions = evaluate_resolutions(observations, urban, [active])

@@ -267,15 +267,22 @@ def test_numeric_radar_pipeline_opens_then_resolves_an_urban_event():
         "evidence": stored_candidate.evidence,
     }
 
-    dry_at_15 = _radar_observation(21, NOW + timedelta(minutes=15), 0.0)
-    dry_at_20 = _radar_observation(22, NOW + timedelta(minutes=20), 0.0)
+    dry_observations = [
+        _radar_observation(
+            21 + index,
+            NOW + timedelta(minutes=minutes),
+            0.0,
+        )
+        for index, minutes in enumerate((30, 40, 50, 60))
+    ]
+    last_dry = dry_observations[-1]
     closing_cursor = CursorPosition(
         RADAR_SOURCE,
-        dry_at_20["ingested_at"],
-        dry_at_20["id"],
+        last_dry["ingested_at"],
+        last_dry["id"],
     )
     closing_repository = Repository(
-        PendingBatch([dry_at_15, dry_at_20], [closing_cursor]),
+        PendingBatch(dry_observations, [closing_cursor]),
         {CELL: [active_event]},
     )
 
@@ -288,7 +295,7 @@ def test_numeric_radar_pipeline_opens_then_resolves_an_urban_event():
             "candidate_key": stored_candidate.candidate_key,
             "event_type": "flood",
             "cell_id": CELL,
-            "observed_at": dry_at_20["observed_at"],
+            "observed_at": last_dry["observed_at"],
             "status": "resolved",
             "reason": "rain_below_exit_threshold",
         }

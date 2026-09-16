@@ -14,6 +14,7 @@ from ecoguard.collection.flood.radar import (
     RadarCellMapping,
     RadarPPICollector,
     ppi_links,
+    ppi_links_since,
     read_radar_frame,
     records_from_frame,
 )
@@ -91,6 +92,48 @@ def test_index_parser_returns_only_latest_unique_ppi_files():
     """
 
     assert ppi_links(page, limit=1) == ["iltlv.20260916080503.PPI.2.h5"]
+
+
+def test_cold_start_keeps_a_small_initial_radar_window():
+    page = "".join(
+        f'<a href="iltlv.2026091608{minute:02d}03.PPI.{minute}.h5">frame</a>'
+        for minute in range(0, 25, 5)
+    )
+
+    assert ppi_links_since(page, None, initial_frames=2) == [
+        "iltlv.20260916081503.PPI.15.h5",
+        "iltlv.20260916082003.PPI.20.h5",
+    ]
+
+
+def test_radar_catch_up_returns_every_new_frame_plus_overlap():
+    page = "".join(
+        f'<a href="iltlv.2026091608{minute:02d}03.PPI.{minute}.h5">frame</a>'
+        for minute in range(0, 25, 5)
+    )
+    latest_cached = datetime(2026, 9, 16, 8, 10, 3, tzinfo=timezone.utc)
+
+    links = ppi_links_since(page, latest_cached, overlap_frames=2)
+
+    assert links == [
+        "iltlv.20260916080503.PPI.5.h5",
+        "iltlv.20260916081003.PPI.10.h5",
+        "iltlv.20260916081503.PPI.15.h5",
+        "iltlv.20260916082003.PPI.20.h5",
+    ]
+
+
+def test_radar_catch_up_fetches_only_overlap_when_nothing_is_new():
+    page = "".join(
+        f'<a href="iltlv.2026091608{minute:02d}03.PPI.{minute}.h5">frame</a>'
+        for minute in range(0, 25, 5)
+    )
+    latest_cached = datetime(2026, 9, 16, 8, 30, 3, tzinfo=timezone.utc)
+
+    assert ppi_links_since(page, latest_cached, overlap_frames=2) == [
+        "iltlv.20260916081503.PPI.15.h5",
+        "iltlv.20260916082003.PPI.20.h5",
+    ]
 
 
 def test_collector_reads_cookie_from_environment(monkeypatch):

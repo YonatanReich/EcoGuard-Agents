@@ -31,15 +31,16 @@ The older station-centric implementation is kept temporarily in
 
 Each candidate has an internal stable `event_key`. A threshold crossing opens
 one active row in `flood_candidates`; repeated high readings do not open more
-rows for that event. The worker resolves the row only after two fresh readings
-are both below 80% of the opening threshold. This lower exit threshold avoids
-rapid open/close changes around the boundary.
+rows for that event. Source-specific exit rules use 80% of the opening
+threshold to avoid rapid open/close changes around the boundary.
 
 Gauge events use two consecutive readings from the same station and metric.
-Rain events use two consecutive rainfall frames for the same cell and require
-all applicable rolling accumulations to be below their exit thresholds. The
-radar collector therefore retains otherwise-dry frames only for cells with an
-active rain event. Missing or stale data never resolves an event.
+Natural rain events use two consecutive rainfall frames and also check basin
+support. Urban rain events remain active for at least one hour and resolve only
+after a continuous 30-minute low-rain period, with no observation gap longer
+than 15 minutes. The radar collector therefore retains otherwise-dry frames
+for cells with an active rain event. Missing or stale data never resolves an
+event.
 
 Opening candidates and resolutions are persisted with cursor advances in the
 same transaction. The worker returns newly committed candidates separately
@@ -128,6 +129,12 @@ against IMS using NTLM alone.
 An authentication failure is recorded as a failed collector run and never
 advances a detector cursor. Repeated frames are safe: observation identity and
 upsert logic make an immediate second collector run write zero duplicate rows.
+On an empty cache the collector starts with the newest six frames. Later runs
+read the last cached provider frame from `radar_frame_cache`, fetch every newer
+frame advertised by IMS, and re-fetch two older frames as a safe overlap. Frame
+watermarks and cell observations commit together, including completely dry
+frames, so a long collector outage can be filled without silently skipping
+provider data.
 
 The current implementation uses cached elevation, slope, basin, stream distance
 and urban classification. It intentionally does not yet model DEM flow

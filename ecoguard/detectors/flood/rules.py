@@ -34,6 +34,9 @@ class FloodPolicy:
     saturated_antecedent_24h_mm: float = 25.0
     resolution_threshold_ratio: float = 0.8
     resolution_consecutive_samples: int = 2
+    urban_minimum_active_duration: timedelta = timedelta(hours=1)
+    urban_resolution_dry_period: timedelta = timedelta(minutes=30)
+    urban_resolution_max_sample_gap: timedelta = timedelta(minutes=15)
 
 
 @dataclass(frozen=True)
@@ -699,13 +702,36 @@ def _rain_resolution(
     if len(times) < required:
         return None
 
-    recent = times[-required:]
+    urban = _urban_classification(context, policy)
+    if urban is None:
+        return None
+    if urban:
+        latest_time = times[-1]
+        if latest_time - event["opened_at"] < policy.urban_minimum_active_duration:
+            return None
+        dry_window_start = latest_time - policy.urban_resolution_dry_period
+        starts = [
+            observed_at
+            for observed_at in times
+            if observed_at <= dry_window_start
+        ]
+        if not starts:
+            return None
+        recent = [observed_at for observed_at in times if observed_at >= starts[-1]]
+        if recent[-1] - recent[0] < policy.urban_resolution_dry_period:
+            return None
+        if any(
+            current - previous > policy.urban_resolution_max_sample_gap
+            for previous, current in zip(recent, recent[1:])
+        ):
+            return None
+    else:
+        recent = times[-required:]
+
     recent_metrics: list[RainMetrics] = []
     for observed_at in recent:
         metrics = rain_metrics(observations, observed_at, policy)
-        urban, opening_thresholds = _rain_thresholds(context, metrics, policy)
-        if urban is None:
-            return None
+        _, opening_thresholds = _rain_thresholds(context, metrics, policy)
         if not urban and catchment_observations:
             catchment = rain_metrics(
                 catchment_observations,
