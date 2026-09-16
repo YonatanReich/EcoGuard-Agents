@@ -206,13 +206,25 @@ def detect_and_coordinate():
     try:
         from ecoguard.coordinator.dispatcher import dispatch_touched
 
-        return dispatch_touched(coordination.touched_ids)
+        processing_results = dispatch_touched(coordination.touched_ids)
     except Exception:
         # Incidents are already safely persisted. Analysis/planning is a
         # downstream attempt and must never turn successful coordination into
         # a failed detection tick.
         logger.exception("incident dispatch failed after coordination")
         return []
+
+    try:
+        from ecoguard.coordinator.event_projection import project_processing_results
+
+        project_processing_results(processing_results)
+    except Exception:
+        # Projection is delivery state. It must not erase completed processing
+        # or affect the authoritative persisted Coordinator incident.
+        logger.exception(
+            "incident event projection failed; processing results are unaffected"
+        )
+    return processing_results
 
 
 # Every thirty minutes, set by the satellite rather than the weather.

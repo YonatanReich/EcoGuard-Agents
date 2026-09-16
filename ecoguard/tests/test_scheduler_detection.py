@@ -89,7 +89,7 @@ def test_shared_detection_job_is_registered_exactly_once():
 
 def test_scheduler_dispatches_only_coordinator_touched_incidents(monkeypatch):
     from ecoguard import scheduler as shared_runtime
-    from ecoguard.coordinator import agent, dispatcher
+    from ecoguard.coordinator import agent, dispatcher, event_projection
     from ecoguard.detectors.air_pollution import observation_processing
     from ecoguard.detectors.fire import satellite, weather
 
@@ -98,6 +98,7 @@ def test_scheduler_dispatches_only_coordinator_touched_incidents(monkeypatch):
         updated=["INC-2", "INC-1"],
     )
     dispatched = []
+    projected = []
     monkeypatch.setattr(satellite, "detect_new", lambda: [])
     monkeypatch.setattr(weather, "detect_new", lambda: [])
     monkeypatch.setattr(observation_processing, "detect_new", lambda: [])
@@ -107,6 +108,44 @@ def test_scheduler_dispatches_only_coordinator_touched_incidents(monkeypatch):
         "dispatch_touched",
         lambda identifiers: dispatched.extend(identifiers) or ["processed"],
     )
+    monkeypatch.setattr(
+        event_projection,
+        "project_processing_results",
+        lambda results: projected.extend(results),
+    )
 
     assert shared_runtime.detect_and_coordinate() == ["processed"]
     assert dispatched == ["INC-1", "INC-2"]
+    assert projected == ["processed"]
+
+
+def test_scheduler_projection_failure_does_not_erase_processing_results(monkeypatch):
+    from ecoguard import scheduler as shared_runtime
+    from ecoguard.coordinator import agent, dispatcher, event_projection
+    from ecoguard.detectors.air_pollution import observation_processing
+    from ecoguard.detectors.fire import satellite, weather
+
+    monkeypatch.setattr(satellite, "detect_new", lambda: [])
+    monkeypatch.setattr(weather, "detect_new", lambda: [])
+    monkeypatch.setattr(observation_processing, "detect_new", lambda: [])
+    monkeypatch.setattr(
+        agent,
+        "run",
+        lambda signals: agent.CoordinationResult(created=["INC-1"]),
+    )
+    monkeypatch.setattr(
+        dispatcher,
+        "dispatch_touched",
+        lambda identifiers: ["processed"],
+    )
+
+    def fail_projection(results):
+        raise RuntimeError("projection unavailable")
+
+    monkeypatch.setattr(
+        event_projection,
+        "project_processing_results",
+        fail_projection,
+    )
+
+    assert shared_runtime.detect_and_coordinate() == ["processed"]

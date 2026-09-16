@@ -66,7 +66,7 @@ class AirPollutionIncidentHandler:
         if context.hazard != "air_pollution" or context.route != "non_emergency":
             raise ValueError("Air Pollution handler requires its advisory route")
         try:
-            candidates = _pollution_candidates(incident)
+            candidates = pollution_candidates_from_incident(incident)
             latest = max(candidates, key=lambda item: item.anomaly.observed_at)
             evidence = [_candidate_reference(item) for item in candidates]
             origin_reference = _candidate_reference(latest).evidence_id
@@ -168,7 +168,7 @@ class AirPollutionIncidentHandler:
         return value.astimezone(timezone.utc)
 
 
-def _pollution_candidates(
+def pollution_candidates_from_incident(
     incident: Mapping[str, Any],
 ) -> list[PollutionCorrelationCandidate]:
     """Read only candidates preserved by Air Pollution CellSignals."""
