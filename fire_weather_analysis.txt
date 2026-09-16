@@ -1,0 +1,167 @@
+==============================================================================
+FIRE WEATHER DETECTOR - QUALITY ANALYSIS OF A REAL RUN
+run at 2026-09-15, against the live database
+==============================================================================
+
+Companion files:
+  fire_weather_run.txt     the run itself, with full context per signal
+  fire_weather_replay.txt  the same detector replayed over 14 days of history
+
+
+------------------------------------------------------------------------------
+WHAT IT PRODUCED
+------------------------------------------------------------------------------
+
+1,174 cells swept, 518 assessable, 2,072 rarity computations, 4 signals.
+All four: relative_humidity_2m = 16%, rarity 1.0, in four adjacent cells
+centred on 30.60 N 34.54 E - the central Negev highlands, near Sde Boker.
+
+The coordinator folded them into one incident in the emergency queue.
+
+
+------------------------------------------------------------------------------
+IS THE STATISTIC CORRECT?  Yes. Verified three ways.
+------------------------------------------------------------------------------
+
+The baseline claims median humidity of 74% for that cell at 06:00 UTC in
+September. That looked wrong for a desert, so it was checked against our own
+stored observations for the same cell and hour:
+
+    75, 84, 80, 83, 73, 81, 48, 48, 40, 38, 36, 16
+
+Median 74. The baseline is right, and 16% is below the decade minimum of 17%.
+The reading is genuinely the driest that cell has been at that hour in ten
+years, and `beyond_record=True` correctly says the rarity is a floor.
+
+An independent check agrees the area is dangerous: the CFFDRS fire weather
+index stored for those exact cells reads FWI 23.9-25.0, danger_class "high".
+
+So the claim "this is exceptionally dry for here" is true.
+
+
+------------------------------------------------------------------------------
+IS IT A FIRE CANDIDATE?  No. Three reasons, worst last.
+------------------------------------------------------------------------------
+
+REASON 1 - the rest of the hour disagrees.
+
+    relative_humidity_2m     16.0 %      rarity 1.0000   <- the signal
+    vapour_pressure_deficit   2.8 kPa    rarity 0.9578
+    temperature_2m           25.7 C      rarity 0.8332
+    wind_speed_10m            2.9 km/h   rarity 0.0662   <- 6th percentile
+
+The wind is not merely unremarkable, it is anomalously CALM - the 6th
+percentile. 25.7 C is mild. Fire needs fuel, ignition and spread; this hour
+offers dry air and nothing else. One variable out of four is extreme and the
+one that governs spread points the other way.
+
+REASON 2 - sparse fuel.
+
+NDVI in the four cells is 0.113 - 0.123, against a national median of 0.163
+and p25 of 0.118. Bottom quartile: desert scrub. Not nothing, but not the
+Carmel. Nothing in the detector looks at fuel at all, although the vegetation
+collector has been storing NDVI per cell all along.
+
+REASON 3 - and this is the real problem - THE DETECTOR IS BLIND WHEN IT
+MATTERS AND LOUD WHEN IT DOES NOT.
+
+Baselines are per hour of day. A reading is "rare" only against that same hour
+on other days. Afternoons in the Negev are reliably hot and dry, so an extreme
+afternoon is statistically ordinary. Dawns are reliably humid, so any dry dawn
+is extreme.
+
+The same 16% humidity, in the same cell, judged at each hour:
+
+     UTC  local   RH median   rarity of 16%   reported?
+       0     3h          90          1.0000   YES
+       4     7h          92          1.0000   YES
+       6     9h          74          1.0000   YES   <- today's signal
+       8    11h          53          0.9846   no
+      10    13h          43          0.9713   no
+      12    15h          39          0.9691   no
+      14    17h          46          0.9800   no
+      16    19h          62          1.0000   YES
+      20    23h          87          1.0000   YES
+
+16% humidity at 3 a.m. is reported. The identical 16% humidity at 3 p.m. -
+alongside 30 C and the day's peak wind - is not.
+
+This is not theoretical. Replaying 14 days of stored weather, by hour:
+
+     UTC local signals
+       3    6h      90  ########################
+       4    7h      61  ################
+       9   12h       3                            <<< fire-danger window
+      10   13h       6  #                         <<< fire-danger window
+      11   14h      15  ####                      <<< fire-danger window
+      12   15h      14  ###                       <<< fire-danger window
+      13   16h      25  ######                    <<< fire-danger window
+      14   17h      35  #########                 <<< fire-danger window
+      18   21h      96  ##########################
+
+    12:00-17:00 local, the fire-danger window : 98 of 975 signals (10%)
+    six of twenty-four hours, so neutral      : 25%
+
+The detector is under-weighted 2.5x in the window when fires actually start,
+and during that window the only variable that fires at all is wind - humidity,
+temperature and VPD are silent from 10:00 to 17:00 local.
+
+Rarity is ANTI-CORRELATED with fire danger across the daily cycle. This is
+exactly the failure `shared/signals.py` warns about in its own docstring -
+"40 C in a Negev August is statistically dull and is what burns the country
+down" - appearing inside the detector rather than downstream of it.
+
+
+------------------------------------------------------------------------------
+SIGNAL RATE
+------------------------------------------------------------------------------
+
+14-day replay: 975 signals in 477,608 assessments = 0.00204.
+That is twice the 0.001 the 0.999 threshold implies, and very uneven:
+
+    2026-09-12   0.00030      quiet
+    2026-09-14   0.00356
+    2026-09-15   0.01751      17x budget
+
+The budget arithmetic in coordinator/README.md assumes independent cells.
+Weather is spatially correlated, so a real dry spell lights dozens at once.
+That is correct behaviour, not a bug, but "~28 signals a day" should be read
+as "a handful on quiet days, a few hundred on event days".
+
+
+------------------------------------------------------------------------------
+ONE HYPOTHESIS TESTED AND DISPROVED
+------------------------------------------------------------------------------
+
+Expected failure: a signal per variable means a windy but humid or rainy day
+emits FIRE signals. Checked all 328 wind-triggered signals in the replay -
+zero occurred at RH >= 60%, zero during rain. In September, anomalous wind
+travels with hot dry air (typically 36 C at 21-26% RH).
+
+The concern still stands for winter, when a gale is wet and cold, but the
+stored history is all September and cannot show it.
+
+
+------------------------------------------------------------------------------
+WHAT WOULD FIX IT
+------------------------------------------------------------------------------
+
+Not a rewrite. The statistics are sound and the plumbing works; what is
+missing is a floor on absolute conditions, so that "unusual" is only asked
+where fire is physically possible.
+
+  1. A minimum-conditions gate - no signal below roughly 25 C, or above
+     roughly 40% humidity, whatever the rarity. Same category as the
+     precipitation exclusion: refusing to ask a question whose answer cannot
+     mean anything. Costs about five lines.
+
+  2. A fuel gate on NDVI. The data is already collected per cell.
+
+  3. Prefer FWI. The CFFDRS index is already stored per cell with a
+     danger_class, is absolute rather than relative, and is the domain's own
+     answer to "is this fire weather". It needs a baseline table before it can
+     express rarity, but the absolute value is usable immediately.
+
+Item 1 alone would have suppressed all four of today's signals, and would
+leave the 15:00 wind signals - the ones that point at real fire weather -
+untouched.

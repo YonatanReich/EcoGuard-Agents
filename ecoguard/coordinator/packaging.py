@@ -35,6 +35,7 @@ from ecoguard.shared.cells import cell_by_id, service_area_cells
 from ecoguard.shared.grid import (
     LATITUDE_KM_PER_DEGREE,
     LONGITUDE_KM_PER_DEGREE_AT_EQUATOR,
+    travel_bearing,
 )
 from ecoguard.shared.signals import AIR_QUALITY, FIRE
 
@@ -64,16 +65,6 @@ CAUSAL_RULES: dict[tuple[str, str], CausalRule] = {
         max_km=25.0, max_lag=timedelta(hours=6), downwind=True
     ),
 }
-
-
-def travel_bearing(wind_direction_deg: float) -> float:
-    """Where the air is going, from where the wind is coming.
-
-    `wind_direction_10m` is meteorological convention — the bearing the wind
-    blows *from*. A northerly at 019 degrees carries smoke toward 199. Getting
-    this backwards searches the exact half of the map the plume is not in.
-    """
-    return (wind_direction_deg + 180.0) % 360.0
 
 
 def bearing_between(

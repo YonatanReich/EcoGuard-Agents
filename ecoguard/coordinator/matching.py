@@ -41,6 +41,10 @@ from ecoguard.shared.signals import CORROBORATION_WINDOW, CellSignal
 # resumes, and calling that two episodes would double-count it.
 QUIET_PERIOD: dict[str, timedelta] = {
     "fire": timedelta(hours=6),
+    # A khamsin runs for days and dips below threshold every night as the air
+    # cools. At the six-hour default that becomes a new incident every morning
+    # — the same weather system reported as a fresh event daily.
+    "fire_weather": timedelta(hours=24),
     "flood": timedelta(hours=12),
     "air_quality": timedelta(hours=18),
     "heat": timedelta(hours=24),

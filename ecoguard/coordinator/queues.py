@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from ecoguard.shared.signals import AIR_QUALITY, FIRE, FLOOD, HEAT
+from ecoguard.shared.signals import AIR_QUALITY, FIRE, FIRE_WEATHER, FLOOD, HEAT
 
 EMERGENCY = "emergency"
 NON_EMERGENCY = "non_emergency"
@@ -28,7 +28,13 @@ NON_EMERGENCY = "non_emergency"
 EMERGENCY_HAZARDS = frozenset({FIRE, FLOOD, "earthquake"})
 
 # Hazards that produce advice.
-ADVISORY_HAZARDS = frozenset({AIR_QUALITY, HEAT, "water_level"})
+#
+# FIRE_WEATHER sits here and FIRE sits above, which is the whole point of
+# keeping them apart. "This region will burn fast if anything starts" is worth
+# publishing and worth pre-positioning for; it is not worth dispatching to,
+# because there is nowhere to send anyone. A fire in the same cell is a
+# different row in a different queue, and that one rolls an engine.
+ADVISORY_HAZARDS = frozenset({AIR_QUALITY, HEAT, FIRE_WEATHER, "water_level"})
 
 
 class UnroutableHazard(ValueError):

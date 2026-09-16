@@ -307,6 +307,25 @@ def test_the_queues_hold_incidents_not_signals(clean, cells):
 
 # --- requirement 3, end to end: the hybrid ---------------------------------
 
+def _weather_hour(database):
+    """The newest stored weather hour, which is the 'now' these tests need.
+
+    Anchored to the data rather than to the wall clock. `wind_direction_at`
+    looks back six hours, so a test that asked about the real present passed
+    only while the collector was up to date and began failing a few hours
+    after it fell behind - a red suite caused by collection lag, in tests that
+    are about causal linking and have nothing to say about freshness.
+    """
+    with database.connect() as connection:
+        newest = connection.execute(
+            text("SELECT max(observed_at) FROM observations "
+                 "WHERE source = 'weather' AND issued_at IS NULL")
+        ).scalar()
+    if newest is None:
+        pytest.skip("no stored weather to take a wind direction from")
+    return newest.replace(minute=0, second=0, microsecond=0)
+
+
 def _windy_cell(at):
     """A cell with stored wind AND room on both sides, so the causal tests run.
 
@@ -357,8 +376,8 @@ def _wind_split(cell_id, at):
     return cone[0][0], upwind[0]
 
 
-def test_pollution_downwind_of_a_fire_becomes_one_hybrid_incident(clean):
-    at = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+def test_pollution_downwind_of_a_fire_becomes_one_hybrid_incident(clean, database):
+    at = _weather_hour(database)
     origin = _windy_cell(at)
     assert origin is not None, "no cell has both stored wind and room either side"
     split = _wind_split(origin, at)
@@ -380,8 +399,8 @@ def test_pollution_downwind_of_a_fire_becomes_one_hybrid_incident(clean):
     assert result.emergency[0]["id"] == result.non_emergency[0]["id"]
 
 
-def test_pollution_upwind_of_a_fire_stays_its_own_incident(clean):
-    at = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+def test_pollution_upwind_of_a_fire_stays_its_own_incident(clean, database):
+    at = _weather_hour(database)
     origin = _windy_cell(at)
     assert origin is not None, "no cell has both stored wind and room either side"
     split = _wind_split(origin, at)
@@ -401,8 +420,8 @@ def test_pollution_upwind_of_a_fire_stays_its_own_incident(clean):
     assert result.emergency[0]["id"] != result.non_emergency[0]["id"]
 
 
-def test_a_merged_incident_records_why(clean):
-    at = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+def test_a_merged_incident_records_why(clean, database):
+    at = _weather_hour(database)
     origin = _windy_cell(at)
     assert origin is not None, "no cell has both stored wind and room either side"
     split = _wind_split(origin, at)

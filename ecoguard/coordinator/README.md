@@ -46,7 +46,19 @@ So `corroborates()` deliberately does **not** filter on `reportable`. Two weak
 signals agreeing is evidence; discarding them individually first throws away
 exactly what this stage exists to find.
 
+## What runs
+
+`agent.coordinate()` is the entry point: signals in, two queues of incidents
+out. One run closes what has gone quiet, matches each signal to an open
+incident or opens a new one, merges causally linked incidents into hybrids, and
+queues the result. `incidents.py` is the store, `matching.py` the dedup rules,
+`packaging.py` the causal merge, `queues.py` the routing.
+
 ## Not built yet
 
-The merge itself — grouping corroborating signals into one incident, giving it
-a stable identity, and deciding when an incident is updated versus superseded.
+Corroboration is not yet *required*. `coordinate()` opens an incident for every
+signal it is handed, so the "two weak sources agreeing" case the section above
+describes is unreachable from here — detectors filter on `reportable` before
+calling, and a pair of sub-threshold signals never arrives to be combined.
+Closing that gap means letting detectors emit below the bar and having this
+stage promote only what corroborates.

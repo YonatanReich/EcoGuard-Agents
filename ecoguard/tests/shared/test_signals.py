@@ -26,6 +26,7 @@ from ecoguard.shared.signals import (
     CORROBORATION_WINDOW,
     EITHER,
     FIRE,
+    FIRE_WEATHER,
     FLOOD,
     HIGH,
     LOW,
@@ -158,11 +159,11 @@ def test_rate_rarity_shares_the_scale_with_baseline_rarity():
 
 # --- direction table -------------------------------------------------------
 
-def test_rain_points_opposite_ways_for_fire_and_flood():
+def test_rain_points_opposite_ways_for_flood_and_fire_weather():
     # The reason the table is keyed by both. One shared direction per variable
     # would make every storm a fire signal.
     assert direction_for(FLOOD, "precipitation") == HIGH
-    assert direction_for(FIRE, "precipitation") == LOW
+    assert direction_for(FIRE_WEATHER, "precipitation") == LOW
 
 
 def test_an_undeclared_variable_has_no_direction_rather_than_a_default():
@@ -172,9 +173,22 @@ def test_an_undeclared_variable_has_no_direction_rather_than_a_default():
 
 
 def test_greenness_and_dryness_are_declared_low():
-    assert direction_for(FIRE, "ndvi") == LOW
-    assert direction_for(FIRE, "soil_moisture_0_to_7cm") == LOW
-    assert direction_for(FIRE, "relative_humidity_2m") == LOW
+    assert direction_for(FIRE_WEATHER, "ndvi") == LOW
+    assert direction_for(FIRE_WEATHER, "soil_moisture_0_to_7cm") == LOW
+    assert direction_for(FIRE_WEATHER, "relative_humidity_2m") == LOW
+
+
+def test_burning_and_the_conditions_for_burning_are_different_hazards():
+    """FIRE is combustion measured; FIRE_WEATHER is the conditions for it.
+
+    Keeping them apart is what stops a dry afternoon being routed to the queue
+    that rolls an engine — and the tables have to agree, or a detector would
+    ask for a direction that does not exist and raise mid-sweep.
+    """
+    assert direction_for(FIRE, "frp") == HIGH
+    assert direction_for(FIRE, "temperature_2m") is None
+    assert direction_for(FIRE_WEATHER, "temperature_2m") == HIGH
+    assert direction_for(FIRE_WEATHER, "frp") is None
 
 
 # --- the signal record -----------------------------------------------------

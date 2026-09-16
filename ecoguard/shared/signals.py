@@ -51,6 +51,22 @@ from ecoguard.shared.grid import (
 # --- hazards ---------------------------------------------------------------
 
 FIRE = "fire"
+
+# Conditions under which a fire starts and runs, as distinct from a fire.
+#
+# The two are different claims and the difference is not pedantry: it decides
+# who gets woken. "Something is burning at this point" sends an engine;
+# "this region is hot, dry and windy" is a warning nobody drives to. They were
+# one hazard until a live run put five undispatchable weather incidents above a
+# real 90 MW fire in the emergency queue, which is what conflating them looks
+# like in practice.
+#
+# Deliberately not "fire_risk". Risk is the analysers' word, and this module
+# spends thirty lines above keeping rarity and severity apart; a detector that
+# advertised "risk" in its output would be the first step in collapsing them
+# again. This names what was measured and stops there.
+FIRE_WEATHER = "fire_weather"
+
 FLOOD = "flood"
 AIR_QUALITY = "air_quality"
 HEAT = "heat"
@@ -71,17 +87,24 @@ EITHER = "either"  # both tails matter
 # assuming HIGH — silently inverts every variable where low is bad, and
 # "unusually green vegetation" would be reported as a fire anomaly.
 CONCERNING_DIRECTION: dict[tuple[str, str], str] = {
-    (FIRE, "temperature_2m"): HIGH,
-    (FIRE, "relative_humidity_2m"): LOW,
-    (FIRE, "wind_speed_10m"): HIGH,
-    (FIRE, "wind_gusts_10m"): HIGH,
-    (FIRE, "vapour_pressure_deficit"): HIGH,
-    (FIRE, "soil_moisture_0_to_7cm"): LOW,
-    (FIRE, "precipitation"): LOW,
-    (FIRE, "ndvi"): LOW,
+    # FIRE is measurement of combustion itself. Only a satellite produces these.
     (FIRE, "brightness"): HIGH,
     (FIRE, "frp"): HIGH,
-    (FIRE, "fwi"): HIGH,
+
+    # FIRE_WEATHER is everything that makes combustion likely and fast. None of
+    # it can tell you a fire exists — a weather model has no knowledge one does.
+    (FIRE_WEATHER, "temperature_2m"): HIGH,
+    (FIRE_WEATHER, "relative_humidity_2m"): LOW,
+    (FIRE_WEATHER, "wind_speed_10m"): HIGH,
+    (FIRE_WEATHER, "wind_gusts_10m"): HIGH,
+    (FIRE_WEATHER, "vapour_pressure_deficit"): HIGH,
+    (FIRE_WEATHER, "soil_moisture_0_to_7cm"): LOW,
+    (FIRE_WEATHER, "precipitation"): LOW,
+    # Fuel rather than weather, and filed here because it is the same kind of
+    # claim: a precondition, not an event. It moves if a fuel detector ever
+    # wants its own hazard.
+    (FIRE_WEATHER, "ndvi"): LOW,
+    (FIRE_WEATHER, "fwi"): HIGH,
     (FLOOD, "precipitation"): HIGH,
     (FLOOD, "soil_moisture_0_to_7cm"): HIGH,
     (FLOOD, "water_level"): HIGH,
@@ -325,6 +348,14 @@ def corroborates(
 # the same dot tells an operator the second one is as trustworthy as the first.
 VIIRS_PIXEL_M = 375.0
 MODIS_PIXEL_M = 1000.0
+# Meteosat, via the geostationary feed. The detections come back on a grid
+# whose nearest-neighbour spacing measures about 1.4 km over Israel, but the
+# instrument's true footprint is coarser than its reporting grid and widens off
+# nadir - and Israel is a long way off nadir from 0 degrees longitude. Three
+# kilometres is the conservative reading, and conservative is the right
+# direction: this number becomes the radius a crew is told the fire sits
+# within, so overstating precision sends people to the wrong field.
+GEOSTATIONARY_PIXEL_M = 3000.0
 STREET_ADDRESS_M = 100.0
 LOCALITY_M = 2000.0
 # No point at all — the cell is the location. 5 km cell, so half-diagonal.

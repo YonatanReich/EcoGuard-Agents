@@ -1,9 +1,13 @@
-"""The collection layer's timers.
+"""The timers.
 
 Each collector wakes on its own interval, does its work, and writes rows. No
 collector calls another, and none of them return anything to a caller. This is
 the only place in the system that reaches out to an upstream provider —
 everything else reads what these wrote.
+
+One job is not a collector: detection. It reads what the collectors stored and
+hands the result to the coordinator, and it is here because that is where the
+clocks live, not because it fetches anything.
 """
 
 from __future__ import annotations
@@ -143,6 +147,72 @@ scheduler.add_job(
     "interval",
     hours=24,
     id="prune_observations",
+    max_instances=1,
+    coalesce=True,
+)
+
+
+def detect_and_coordinate() -> None:
+    """Sweep the stored hours for candidates and fold them into incidents.
+
+    One job rather than two because the coordinator deduplicates *across*
+    detectors: handing it satellite hotspots now and fire weather ten minutes
+    later would let the same fire open an incident twice, once per arrival.
+    Every detector's output goes into one call, which is the whole reason that
+    stage exists.
+
+    The satellite comes first in the list for readability only — the
+    coordinator sorts by observation time — but the distinction it stands for
+    matters. FIRMS *sees* fires; the weather sweep sees the conditions they
+    spread in and cannot detect a fire at all, because the feed is a numerical
+    model that has no knowledge one exists. Corroboration between the two is
+    what turns a lone hotspot into a confident incident.
+
+    A detector that raises must not take the others down with it, so each is
+    called separately. Losing the satellite for a tick is a detection outage;
+    losing the whole run because the weather sweep hit a bad row would be a
+    worse one.
+
+    Each detector reads what has arrived since its own last successful run
+    rather than what falls inside a fixed window, so a tick that never happened
+    — a hang, a restart, a deploy — costs latency and nothing else. A window
+    would have dropped everything older than itself and said nothing about it,
+    which for a fire detector is the one unacceptable failure.
+
+    Imported inside the function so a failure to import the coordinator cannot
+    take the collection timers down with it — the collectors are useful on
+    their own, and were running before any of this existed.
+    """
+    from ecoguard.coordinator.agent import run as coordinate
+    from ecoguard.detectors.fire import satellite, weather
+
+    signals = []
+    for detector in (satellite, weather):
+        try:
+            signals.extend(detector.detect_new())
+        except Exception:
+            logger.exception("detector %s failed; continuing without it",
+                             detector.__name__)
+
+    coordinate(signals)
+
+
+# Every thirty minutes, set by the satellite rather than the weather.
+#
+# The weather half only changes hourly and a second look at the same stored
+# hour finds the same anomaly. But FIRMS is the half that detects fires, its
+# overpasses arrive irregularly, and the collector already polls at thirty
+# minutes — so an hourly detector would sit on a fresh hotspot for up to an
+# hour after it landed. That is the one delay in this pipeline that costs
+# something real.
+#
+# The cost of the extra tick is re-reporting detections already attached to an
+# open incident, which the coordinator absorbs by design.
+scheduler.add_job(
+    detect_and_coordinate,
+    "interval",
+    minutes=30,
+    id="detect_and_coordinate",
     max_instances=1,
     coalesce=True,
 )

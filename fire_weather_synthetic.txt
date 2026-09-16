@@ -1,0 +1,55 @@
+================================================================================================
+SYNTHETIC GROUND TRUTH - does the detector find them, and only them?
+================================================================================================
+cells 12   seasons 2   variables 4   assessments 96   threshold 0.999
+
+Every planting is positioned from the SPECIFICATION of percentile_of,
+not by running the scorer. 'expect' below is arithmetic done by hand.
+
+season  climate   variable                 planting           value   rarity  expect    got  verdict
+------------------------------------------------------------------------------------------------
+winter  coast     temperature_2m           beyond_record     32.000   1.0000    True   True  ok
+winter  coast     relative_humidity_2m     beyond_record     25.000   1.0000    True   True  ok
+winter  coast     wind_speed_10m           beyond_record     53.000   1.0000    True   True  ok
+winter  coast     vapour_pressure_deficit  beyond_record      7.000   1.0000    True   True  ok
+winter  interior  temperature_2m           just_over         28.930   0.9995    True   True  ok
+winter  interior  relative_humidity_2m     just_over         12.100   0.9995    True   True  ok
+winter  interior  temperature_2m           just_under        28.300   0.9950   False  False  ok
+winter  interior  relative_humidity_2m     just_under        13.000   0.9950   False  False  ok
+winter  interior  relative_humidity_2m     p05               22.000   0.9500   False  False  ok
+winter  interior  temperature_2m           p95               22.000   0.9500   False  False  ok
+winter  interior  vapour_pressure_deficit  p95                2.000   0.9500   False  False  ok
+winter  interior  wind_speed_10m           p95               21.000   0.9500   False  False  ok
+winter  interior  vapour_pressure_deficit  just_under         3.080   0.9950   False  False  ok
+winter  interior  wind_speed_10m           just_over         35.850   0.9995    True   True  ok
+summer  coast     temperature_2m           beyond_record     45.000   1.0000    True   True  ok
+summer  coast     relative_humidity_2m     beyond_record     30.000   1.0000    True   True  ok
+summer  coast     wind_speed_10m           beyond_record     55.000   1.0000    True   True  ok
+summer  coast     vapour_pressure_deficit  beyond_record      9.000   1.0000    True   True  ok
+summer  interior  temperature_2m           just_over         47.940   0.9995    True   True  ok
+summer  interior  relative_humidity_2m     just_over          5.050   0.9995    True   True  ok
+summer  interior  temperature_2m           just_under        47.400   0.9950   False  False  ok
+summer  interior  relative_humidity_2m     just_under         5.500   0.9950   False  False  ok
+summer  interior  relative_humidity_2m     p05               10.000   0.9500   False  False  ok
+summer  interior  temperature_2m           p95               42.000   0.9500   False  False  ok
+summer  interior  vapour_pressure_deficit  p95                7.500   0.9500   False  False  ok
+summer  interior  wind_speed_10m           p95               24.000   0.9500   False  False  ok
+summer  interior  vapour_pressure_deficit  just_under        10.650   0.9950   False  False  ok
+summer  interior  wind_speed_10m           just_over         39.840   0.9995    True   True  ok
+------------------------------------------------------------------------------------------------
+(the 68 median plantings are omitted above; all behaved)
+
+CONFUSION MATRIX
+  planted anomalies        : 14
+  detected                 : 14
+  true positives           : 14
+  false positives (extras) : 0
+  false negatives (misses) : 0
+
+  precision 1.000   recall 1.000
+
+================================================================================================
+VERDICT: PASS - found them, and only them
+================================================================================================
+
+[artificial world removed; 750 borrowed baseline rows restored]
