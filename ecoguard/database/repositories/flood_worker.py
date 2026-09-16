@@ -43,9 +43,12 @@ PENDING_OBSERVATIONS = text(
     FROM observations
     WHERE source = :source
       AND (
-        :last_ingested_at IS NULL
-        OR ingested_at > :last_ingested_at
-        OR (ingested_at = :last_ingested_at AND id > :last_observation_id)
+        CAST(:last_ingested_at AS timestamptz) IS NULL
+        OR ingested_at > CAST(:last_ingested_at AS timestamptz)
+        OR (
+          ingested_at = CAST(:last_ingested_at AS timestamptz)
+          AND id > CAST(:last_observation_id AS bigint)
+        )
       )
     ORDER BY ingested_at, id
     LIMIT :limit

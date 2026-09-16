@@ -8,6 +8,7 @@ import pytest
 
 from ecoguard.collection.flood.historical_stations import (
     HistoricalStationRegistryError,
+    UPSERT_HISTORICAL_STATION,
     automatic_station_links,
     fetch_historical_station_catalog,
     parse_historical_station_catalog,
@@ -74,6 +75,13 @@ def test_keeps_a_registry_station_without_coordinates_unmatched():
     assert catalog.rows[0]["latitude"] is None
     assert catalog.rows[0]["longitude"] is None
     assert automatic_station_links(catalog.rows, [], matched_at=NOW) == []
+
+
+def test_upsert_types_nullable_coordinates_for_postgres():
+    statement = str(UPSERT_HISTORICAL_STATION)
+
+    assert "CAST(:longitude AS double precision)" in statement
+    assert "CAST(:latitude AS double precision)" in statement
 
 
 class _Response:

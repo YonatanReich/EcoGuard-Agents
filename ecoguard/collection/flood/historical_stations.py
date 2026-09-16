@@ -390,8 +390,15 @@ UPSERT_HISTORICAL_STATION = text(
       :catchment_area_km2, :shared_catchment, :israel_grid_x, :israel_grid_y,
       :group_source_station_id, :main_drainage_name, :current_status,
       CASE
-        WHEN :longitude IS NULL OR :latitude IS NULL THEN NULL
-        ELSE ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography
+        WHEN CAST(:longitude AS double precision) IS NULL
+          OR CAST(:latitude AS double precision) IS NULL THEN NULL
+        ELSE ST_SetSRID(
+          ST_MakePoint(
+            CAST(:longitude AS double precision),
+            CAST(:latitude AS double precision)
+          ),
+          4326
+        )::geography
       END,
       CAST(:source_metadata AS jsonb), :synced_at, :is_in_current_registry
     )
