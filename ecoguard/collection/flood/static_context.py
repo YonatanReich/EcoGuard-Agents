@@ -123,11 +123,37 @@ ENRICH_CELLS = text(
 
 REBUILD_BASELINES = text(
     """
-    WITH historical AS (
-      SELECT observation.*
+    WITH baseline_input AS (
+      SELECT observation.hydrometric_station_id,
+             observation.observed_at,
+             observation.discharge_m3s,
+             observation.water_height_m
       FROM hydrometric_observations AS observation
       WHERE observation.hydrometric_station_id IS NOT NULL
         AND observation.observed_at < :computed_at - interval '7 days'
+      UNION ALL
+      SELECT station_link.hydrometric_station_id,
+             observation.observed_at,
+             observation.discharge_m3s,
+             NULL::double precision AS water_height_m
+      FROM historical_hydrometric_observations AS observation
+      JOIN hydrometric_station_history_links AS station_link
+        ON station_link.historical_station_id =
+           observation.historical_station_id
+      WHERE NOT observation.is_sewage
+    ),
+    historical AS (
+      -- Segment boundaries repeat some source timestamps. Collapse them once
+      -- before calculating counts and percentiles. MAX keeps a non-null value
+      -- and avoids lowering the fallback threshold on a conflicting boundary.
+      -- Historical water elevation is cached for audit but excluded here
+      -- because its datum has not been proven equivalent to the live height.
+      SELECT observation.hydrometric_station_id,
+             observation.observed_at,
+             max(observation.discharge_m3s) AS discharge_m3s,
+             max(observation.water_height_m) AS water_height_m
+      FROM baseline_input AS observation
+      GROUP BY observation.hydrometric_station_id, observation.observed_at
     ),
     station_coverage AS (
       SELECT observation.hydrometric_station_id,
@@ -181,6 +207,15 @@ REBUILD_BASELINES = text(
              EXTRACT(MONTH FROM observation.observed_at),
              coverage.covered_months,
              coverage.history_span_days
+    HAVING (
+      count(observation.discharge_m3s) >= 300 AND
+      count(DISTINCT observation.observed_at::date)
+        FILTER (WHERE observation.discharge_m3s IS NOT NULL) >= 10
+    ) OR (
+      count(observation.water_height_m) >= 300 AND
+      count(DISTINCT observation.observed_at::date)
+        FILTER (WHERE observation.water_height_m IS NOT NULL) >= 10
+    )
     """
 )
 
@@ -212,6 +247,33 @@ def _station_context_rows(session: Any, table: str) -> list[dict[str, Any]]:
         }
         for row in rows
     ]
+
+
+def rebuild_flood_station_baselines_in_session(
+    session: Any,
+    *,
+    computed_at: datetime,
+) -> int:
+    """Replace compact baseline rows inside the caller's transaction."""
+    session.execute(text("DELETE FROM flood_station_baselines"))
+    baseline_count = session.execute(
+        REBUILD_BASELINES,
+        {"computed_at": computed_at},
+    ).rowcount
+    return max(baseline_count or 0, 0)
+
+
+def refresh_flood_station_baselines() -> int:
+    """Rebuild monthly baselines without repeating spatial materialization."""
+    from ecoguard.database.engine import Session
+
+    with Session() as session:
+        baseline_count = rebuild_flood_station_baselines_in_session(
+            session,
+            computed_at=datetime.now(timezone.utc),
+        )
+        session.commit()
+    return baseline_count
 
 
 def refresh_flood_static_context() -> dict[str, int]:
@@ -266,10 +328,10 @@ def refresh_flood_static_context() -> dict[str, int]:
                 rain_rows,
             )
 
-        session.execute(text("DELETE FROM flood_station_baselines"))
-        baseline_count = session.execute(
-            REBUILD_BASELINES, {"computed_at": refreshed_at}
-        ).rowcount
+        baseline_count = rebuild_flood_station_baselines_in_session(
+            session,
+            computed_at=refreshed_at,
+        )
         session.commit()
 
     return {

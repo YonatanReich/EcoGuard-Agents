@@ -27,7 +27,16 @@ CONTEXT = {
 }
 
 
-def _gauge(at, discharge, *, q2=10.0):
+def _gauge(at, discharge, *, q2=10.0, has_rating_curve=True):
+    # Most stations supply the complete curve. The q2 override also lets one
+    # test prove that a partially populated official curve remains usable.
+    q5, q10, q20, q50, q100 = (
+        (20.0, 30.0, 40.0, 50.0, 60.0)
+        if has_rating_curve
+        else (None, None, None, None, None)
+    )
+    if not has_rating_curve:
+        q2 = None
     return {
         "source": HYDROMETRIC_SOURCE,
         "cell_id": CELL,
@@ -41,11 +50,11 @@ def _gauge(at, discharge, *, q2=10.0):
                     "discharge_m3s": discharge,
                     "water_height_m": 1.0,
                     "flow_threshold_2y_m3s": q2,
-                    "flow_threshold_5y_m3s": 20.0,
-                    "flow_threshold_10y_m3s": 30.0,
-                    "flow_threshold_20y_m3s": 40.0,
-                    "flow_threshold_50y_m3s": 50.0,
-                    "flow_threshold_100y_m3s": 60.0,
+                    "flow_threshold_5y_m3s": q5,
+                    "flow_threshold_10y_m3s": q10,
+                    "flow_threshold_20y_m3s": q20,
+                    "flow_threshold_50y_m3s": q50,
+                    "flow_threshold_100y_m3s": q100,
                 }
             ]
         },
@@ -128,8 +137,8 @@ def test_gauge_finds_a_crossing_when_several_new_samples_arrive_together():
 
 def test_station_month_baseline_is_used_when_rating_curve_is_missing():
     observations = [
-        _gauge(NOW - timedelta(minutes=10), 4.0, q2=None),
-        _gauge(NOW, 6.0, q2=None),
+        _gauge(NOW - timedelta(minutes=10), 4.0, has_rating_curve=False),
+        _gauge(NOW, 6.0, has_rating_curve=False),
     ]
     baselines = {
         (50, 9): {
@@ -150,10 +159,31 @@ def test_station_month_baseline_is_used_when_rating_curve_is_missing():
     assert candidate.confidence == 0.76
 
 
+def test_discharge_baseline_does_not_override_an_official_rating_curve():
+    observations = [
+        _gauge(NOW - timedelta(minutes=10), 4.0, q2=10.0),
+        _gauge(NOW, 6.0, q2=10.0),
+    ]
+    baselines = {
+        (50, 9): {
+            "discharge_sample_count": 400,
+            "discharge_distinct_days": 20,
+            "stage_sample_count": 0,
+            "stage_distinct_days": 0,
+            "covered_months": 12,
+            "history_span_days": 365,
+            "discharge_p95_m3s": 5.0,
+            "stage_p95_m": None,
+        }
+    }
+
+    assert evaluate_cell(CELL, observations, CONTEXT, baselines) == []
+
+
 def test_short_history_is_not_treated_as_a_seasonal_baseline():
     observations = [
-        _gauge(NOW - timedelta(minutes=10), 4.0, q2=None),
-        _gauge(NOW, 6.0, q2=None),
+        _gauge(NOW - timedelta(minutes=10), 4.0, has_rating_curve=False),
+        _gauge(NOW, 6.0, has_rating_curve=False),
     ]
     baselines = {
         (50, 9): {

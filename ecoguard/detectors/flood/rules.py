@@ -370,7 +370,11 @@ def _gauge_candidates(
                 ("rating_curve", threshold, period)
                 for period, threshold in official_thresholds[:1]
             ]
-            if baseline_discharge is not None and float(baseline_discharge) > 0:
+            if (
+                not official_thresholds
+                and baseline_discharge is not None
+                and float(baseline_discharge) > 0
+            ):
                 discharge_thresholds.append(
                     ("seasonal_baseline", float(baseline_discharge), None)
                 )

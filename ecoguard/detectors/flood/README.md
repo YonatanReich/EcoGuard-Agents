@@ -69,20 +69,40 @@ are limited to 100 m by coordinates alone, or 500 m when name similarity is at
 least 0.72. The mapping keeps distance, similarity, confidence and review state;
 reviewed links are never overwritten by a later automatic refresh.
 
+Historical hydrograph CSV exports are loaded separately and explicitly:
+
+```text
+python -m ecoguard.scripts.import_historical_hydrographs <file.csv> [file.csv ...]
+```
+
+The importer expects the Water Authority's CP1255 export format. It validates
+the complete file before writing, identifies unchanged content by SHA-256 and
+replaces a changed file atomically. Source rows are cached in
+`historical_hydrometric_observations`, never in the real-time `observations`
+stream, so a historical import cannot advance a detector cursor or emit an
+event. Rows marked as sewage remain available for audit but are excluded from
+baseline calculations. Repeated segment-boundary timestamps are collapsed
+before statistics are calculated. Historical water elevation is retained but
+is not mixed into the live stage baseline until both sources' vertical datum is
+verified; the historical files currently strengthen discharge baselines only.
+
 Urban cover is sampled at nine fixed points per 5 km operational cell and
 stored as `built_up_fraction`, `is_urban` and a classification status. At least
 five valid WorldCover samples are required; missing coverage remains `unknown`
 instead of silently becoming natural terrain. Hydrometric and rain stations are
 also assigned directly to drainage basins during this same static refresh.
 
-A monthly baseline is eligible only after the station cache covers all twelve
+A monthly baseline combines mapped historical hydrographs with sufficiently old
+live readings. It is eligible only after the station cache covers all twelve
 months and at least 330 days. The selected metric also needs 300 valid samples
-across ten distinct days in that month. The newest seven days are excluded so
-an active flood cannot raise its own baseline. Until those conditions are met,
-official Q2-Q100 rating thresholds remain the primary station rule.
+across ten distinct days in that month. The newest seven days of live readings
+are excluded so an active flood cannot raise its own baseline. Until those
+conditions are met, official Q2-Q100 rating thresholds remain the primary
+station rule.
 The lowest available official return-period threshold opens an event, while the
 highest Q2, Q5, Q10, Q20, Q50 or Q100 threshold exceeded determines the
-severity evidence.
+severity evidence. A discharge p95 baseline is used only when that station has
+no usable official return-period threshold.
 
 ## Entry points
 
