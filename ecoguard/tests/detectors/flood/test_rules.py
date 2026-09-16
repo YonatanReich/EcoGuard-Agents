@@ -2,12 +2,15 @@
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from ecoguard.detectors.flood.rules import (
     HYDROMETRIC_SOURCE,
     RADAR_SOURCE,
     RAIN_GAUGE_SOURCE,
     evaluate_cell,
     evaluate_resolutions,
+    rain_metrics,
 )
 
 
@@ -63,6 +66,43 @@ def test_gauge_emits_only_when_an_official_threshold_is_crossed():
     assert candidate.severity_hint == "moderate"
     assert candidate.confidence == 0.88
     assert candidate.location_uncertainty_m == 100.0
+
+
+@pytest.mark.parametrize(
+    ("discharge", "return_period", "severity"),
+    [
+        (12.0, 2, "moderate"),
+        (22.0, 5, "moderate"),
+        (32.0, 10, "high"),
+        (42.0, 20, "critical"),
+        (52.0, 50, "critical"),
+        (62.0, 100, "critical"),
+    ],
+)
+def test_all_official_return_periods_contribute_to_severity(
+    discharge, return_period, severity
+):
+    observations = [
+        _gauge(NOW - timedelta(minutes=10), 9.0),
+        _gauge(NOW, discharge),
+    ]
+
+    candidate = evaluate_cell(CELL, observations, CONTEXT, {})[0]
+
+    assert candidate.evidence["exceeded_return_period_years"] == return_period
+    assert candidate.severity_hint == severity
+
+
+def test_first_available_official_threshold_can_open_an_event():
+    observations = [
+        _gauge(NOW - timedelta(minutes=10), 19.0, q2=None),
+        _gauge(NOW, 21.0, q2=None),
+    ]
+
+    candidate = evaluate_cell(CELL, observations, CONTEXT, {})[0]
+
+    assert candidate.evidence["opening_return_period_years"] == 5
+    assert candidate.evidence["threshold"] == 20.0
 
 
 def test_gauge_does_not_repeat_while_it_remains_above_threshold():
@@ -166,6 +206,7 @@ def test_accumulated_radar_rain_emits_for_an_ungauged_natural_cell():
             "payload": {
                 "rainfall_mm": 4.0,
                 "rain_rate_max_mm_h": 50.0,
+                "valid_pixel_fraction": 0.95,
             },
         }
         for index in range(4)
@@ -186,6 +227,7 @@ def test_rain_finds_a_crossing_before_the_latest_still_high_frame():
             "payload": {
                 "rainfall_mm": 4.0,
                 "rain_rate_max_mm_h": 50.0,
+                "valid_pixel_fraction": 0.95,
             },
         }
         for index in range(5)
@@ -202,11 +244,118 @@ def test_rain_only_detection_requires_materialized_geographic_context():
             "source": RADAR_SOURCE,
             "cell_id": CELL,
             "observed_at": NOW,
-            "payload": {"rainfall_mm": 20.0, "rain_rate_max_mm_h": 80.0},
+            "payload": {
+                "rainfall_mm": 20.0,
+                "rain_rate_max_mm_h": 80.0,
+                "valid_pixel_fraction": 0.95,
+            },
         }
     ]
 
     assert evaluate_cell(CELL, observations, None, {}) == []
+
+
+def test_low_quality_radar_pixels_do_not_open_an_event():
+    observations = [
+        {
+            "source": RADAR_SOURCE,
+            "cell_id": CELL,
+            "observed_at": NOW,
+            "payload": {
+                "rainfall_mm": 30.0,
+                "rain_rate_max_mm_h": 100.0,
+                "valid_pixel_fraction": 0.2,
+            },
+        }
+    ]
+
+    assert evaluate_cell(CELL, observations, CONTEXT, {}) == []
+
+
+def test_unknown_urban_classification_is_not_assumed_to_be_natural():
+    unknown = {
+        **CONTEXT,
+        "built_up_fraction": None,
+        "is_urban": None,
+        "urban_classification_status": "unknown",
+    }
+    observations = [
+        {
+            "source": RADAR_SOURCE,
+            "cell_id": CELL,
+            "observed_at": NOW,
+            "payload": {
+                "rainfall_mm": 30.0,
+                "rain_rate_max_mm_h": 100.0,
+                "valid_pixel_fraction": 0.95,
+            },
+        }
+    ]
+
+    assert evaluate_cell(CELL, observations, unknown, {}) == []
+
+
+def test_basin_average_rain_increases_natural_event_confidence():
+    local = [
+        {
+            "source": RADAR_SOURCE,
+            "cell_id": CELL,
+            "observed_at": NOW - timedelta(minutes=15 - 5 * index),
+            "payload": {
+                "rainfall_mm": 4.0,
+                "rain_rate_max_mm_h": 50.0,
+                "valid_pixel_fraction": 0.95,
+            },
+        }
+        for index in range(4)
+    ]
+    catchment = [
+        {
+            "source": RADAR_SOURCE,
+            "cell_id": f"upstream-{cell}",
+            "spatial_cell_count": 3,
+            "observed_at": NOW - timedelta(minutes=15 - 5 * frame),
+            "payload": {
+                "rainfall_mm": 3.0,
+                "rain_rate_max_mm_h": 40.0,
+                "valid_pixel_fraction": 0.95,
+            },
+        }
+        for frame in range(4)
+        for cell in range(3)
+    ]
+
+    without_basin = evaluate_cell(CELL, local, CONTEXT, {})[0]
+    with_basin = evaluate_cell(
+        CELL,
+        local,
+        CONTEXT,
+        {},
+        catchment_observations=catchment,
+    )[0]
+
+    assert with_basin.confidence > without_basin.confidence
+    assert with_basin.evidence["catchment_rainfall_1h_mm"] == 12.0
+
+
+def test_sparse_catchment_radar_counts_missing_cells_as_dry():
+    observations = [
+        {
+            "source": RADAR_SOURCE,
+            "cell_id": "wet-cell",
+            "spatial_cell_count": 3,
+            "observed_at": NOW,
+            "payload": {
+                "rainfall_mm": 6.0,
+                "rain_rate_max_mm_h": 72.0,
+                "valid_pixel_fraction": 0.95,
+            },
+        }
+    ]
+
+    metrics = rain_metrics(observations, NOW, spatial_average=True)
+
+    assert metrics.rainfall_1h_mm == 2.0
 
 
 def test_gauge_event_resolves_after_two_readings_below_the_exit_threshold():
@@ -277,19 +426,31 @@ def test_rain_event_resolves_from_two_dry_radar_heartbeats():
             "source": RADAR_SOURCE,
             "cell_id": CELL,
             "observed_at": opened_at,
-            "payload": {"rainfall_mm": 9.0, "rain_rate_max_mm_h": 80.0},
+            "payload": {
+                "rainfall_mm": 9.0,
+                "rain_rate_max_mm_h": 80.0,
+                "valid_pixel_fraction": 0.95,
+            },
         },
         {
             "source": RADAR_SOURCE,
             "cell_id": CELL,
             "observed_at": NOW - timedelta(minutes=5),
-            "payload": {"rainfall_mm": 0.0, "rain_rate_max_mm_h": 0.0},
+            "payload": {
+                "rainfall_mm": 0.0,
+                "rain_rate_max_mm_h": 0.0,
+                "valid_pixel_fraction": 0.95,
+            },
         },
         {
             "source": RADAR_SOURCE,
             "cell_id": CELL,
             "observed_at": NOW,
-            "payload": {"rainfall_mm": 0.0, "rain_rate_max_mm_h": 0.0},
+            "payload": {
+                "rainfall_mm": 0.0,
+                "rain_rate_max_mm_h": 0.0,
+                "valid_pixel_fraction": 0.95,
+            },
         },
     ]
 

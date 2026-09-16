@@ -1,6 +1,6 @@
 """Contract tests for the current flood detection agent."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from ecoguard.detectors.flood.detection_agent import FloodDetectionAgent
 from ecoguard.detectors.flood.rules import RAIN_GAUGE_SOURCE
@@ -35,6 +35,8 @@ def test_agent_evaluates_an_urban_rain_threshold_crossing():
         "latitude": 32.0,
         "longitude": 34.8,
         "built_up_fraction": 0.8,
+        "is_urban": True,
+        "urban_classification_status": "classified",
         "slope_deg": 0.0,
         "distance_to_stream_m": 1000.0,
     }
@@ -54,6 +56,15 @@ def test_agent_evaluates_an_urban_rain_threshold_crossing():
 
 def test_agent_exposes_the_required_observation_lookback():
     assert FloodDetectionAgent().lookback.total_seconds() >= 24 * 60 * 60
+
+
+def test_agent_rejects_a_delayed_backfill_as_a_realtime_signal():
+    observation = {
+        "observed_at": NOW - timedelta(days=2),
+        "ingested_at": NOW,
+    }
+
+    assert FloodDetectionAgent().accepts_pending(observation) is False
 
 
 def test_agent_does_not_reopen_an_event_that_is_already_active():
@@ -80,6 +91,8 @@ def test_agent_does_not_reopen_an_event_that_is_already_active():
         "latitude": 32.0,
         "longitude": 34.8,
         "built_up_fraction": 0.8,
+        "is_urban": True,
+        "urban_classification_status": "classified",
         "distance_to_stream_m": 1000.0,
     }
     opened = agent.evaluate(

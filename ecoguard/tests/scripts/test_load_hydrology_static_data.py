@@ -14,6 +14,10 @@ def test_main_invokes_collectors_and_materializes_context(monkeypatch, capsys):
         calls.append("stations")
         return {"owners": 27, "stations": 126, "rain_links": 133}
 
+    def load_history():
+        calls.append("history")
+        return {"historical_stations": 458, "automatic_links": 105}
+
     def refresh_context():
         calls.append("context")
         return {
@@ -35,15 +39,21 @@ def test_main_invokes_collectors_and_materializes_context(monkeypatch, capsys):
     )
     monkeypatch.setattr(
         load_hydrology_static_data,
+        "load_historical_station_registry",
+        load_history,
+    )
+    monkeypatch.setattr(
+        load_hydrology_static_data,
         "refresh_flood_static_context",
         refresh_context,
     )
 
     load_hydrology_static_data.main()
 
-    assert calls == ["layers", "stations", "context"]
+    assert calls == ["layers", "stations", "history", "context"]
     output = capsys.readouterr().out
     assert "drainage_basins: loaded 139 features" in output
     assert "streams: unchanged" in output
     assert "27 owners, 126 stations, 133 rain-station links" in output
+    assert "loaded 458 stations, 105 automatic links" in output
     assert "1,200 cells" in output

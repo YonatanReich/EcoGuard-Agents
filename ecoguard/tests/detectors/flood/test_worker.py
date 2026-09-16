@@ -37,10 +37,18 @@ class Repository:
                 "longitude": 34.8,
                 "drainage_basin_id": 1,
                 "built_up_fraction": 0.8,
+                "is_urban": True,
+                "urban_classification_status": "classified",
+                "urban_sample_count": 9,
                 "slope_deg": 0.0,
                 "distance_to_stream_m": 1000.0,
             }
         }
+
+    def load_basin_rain_window(
+        self, basin_ids, sources, *, observed_since, observed_through
+    ):
+        return []
 
     def load_baselines(self, source_station_ids):
         return {}
@@ -121,6 +129,9 @@ def test_evaluation_failure_does_not_advance_a_cursor():
     class FailingAgent:
         lookback = timedelta(hours=30)
 
+        def accepts_pending(self, observation):
+            return True
+
         def evaluate(self, **kwargs):
             raise RuntimeError("bad data")
 
@@ -182,4 +193,21 @@ def test_worker_resolves_an_active_gauge_event_and_advances_the_cursor():
     assert result.candidates == []
     assert result.resolutions[0]["event_key"] == event_key
     assert result.resolutions[0]["status"] == "resolved"
+    assert repository.commits[0][2] == pending.high_watermarks
+
+
+def test_stale_backfill_advances_the_cursor_without_opening_an_event():
+    pending = _pending()
+    stale = {
+        **pending.observations[0],
+        "observed_at": NOW - timedelta(days=2),
+        "ingested_at": NOW,
+    }
+    repository = Repository(PendingBatch([stale], pending.high_watermarks))
+
+    result = worker.FloodDetectorWorker(repository).run_once()
+
+    assert result.observations_processed == 1
+    assert result.cells_evaluated == 0
+    assert result.candidates == []
     assert repository.commits[0][2] == pending.high_watermarks

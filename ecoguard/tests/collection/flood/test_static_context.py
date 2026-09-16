@@ -1,6 +1,9 @@
 """Offline checks for conservative seasonal-baseline construction."""
 
-from ecoguard.collection.flood.static_context import REBUILD_BASELINES
+from ecoguard.collection.flood.static_context import (
+    ENRICH_CELLS,
+    REBUILD_BASELINES,
+)
 
 
 def test_baselines_exclude_the_current_event_and_track_coverage_per_metric():
@@ -14,3 +17,12 @@ def test_baselines_exclude_the_current_event_and_track_coverage_per_metric():
     assert "stage_distinct_days" in sql
     assert "coverage.covered_months = 12" in sql
     assert "coverage.history_span_days >= 330" in sql
+
+
+def test_static_context_samples_urban_cover_and_preserves_unknown_status():
+    sql = " ".join(str(ENRICH_CELLS).split())
+
+    assert "sample_offset(east_m, north_m)" in sql
+    assert "count(sampled.built_up)" in sql
+    assert "urban.sample_count >= :minimum_urban_samples" in sql
+    assert "THEN 'classified' ELSE 'unknown'" in sql

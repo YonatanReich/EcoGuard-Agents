@@ -19,6 +19,7 @@ def test_stations_in_one_cell_and_time_share_one_sorted_payload():
             "longitude": 34.8,
             "name_he": "א",
             "name_en": "A",
+            "drainage_basin_id": 11,
         },
         2: {
             "cell_id": "cell-a",
@@ -36,3 +37,4 @@ def test_stations_in_one_cell_and_time_share_one_sorted_payload():
     assert [
         item["source_station_id"] for item in records[0]["payload"]["stations"]
     ] == [1, 2]
+    assert records[0]["payload"]["stations"][0]["drainage_basin_id"] == 11

@@ -16,8 +16,11 @@ The older station-centric implementation is kept temporarily in
    `observations` stream. IMS PPI HDF5 frames are converted from numeric `RATE`
    pixels to 5 km cell observations and cached in `observations`.
 2. The worker reads `detector_cursors` and fetches only newly ingested rows.
+   Delayed backfills and implausible future timestamps advance the cursor but
+   cannot open or resolve a real-time event.
 3. For affected cells it reloads at least 24 hours of observations and joins
-   the precomputed `flood_cell_context` and monthly station baselines.
+   the precomputed `flood_cell_context`, monthly station baselines and
+   basin-wide rain window.
 4. `FloodDetectionAgent.evaluate()` applies transparent threshold-crossing
    rules. It covers gauged rivers, rain-only natural catchments and short
    intense urban rain.
@@ -45,6 +48,12 @@ from `resolutions`; it does not delete historical events.
 No detector code fetches an external service. Scheduling also remains outside
 this package.
 
+Radar rows participate only when at least half of their mapped pixels are
+valid. Basin rainfall is the area-normalized accumulation across all 5 km cells
+in the basin; sparse, absent radar cells count as dry. It can increase
+confidence in a natural-flood candidate and prevent premature resolution, but
+it cannot open an event without a local threshold crossing.
+
 ## One-time/static preparation
 
 After migrations and the existing hydrology/surface loaders have been applied,
@@ -53,11 +62,27 @@ station-to-cell links, basin/terrain/urban/stream context, and per-station
 monthly baselines. Re-run it only after static layers change or after enough new
 history has accumulated to refresh baselines.
 
+The same command caches the official historical-station registry from
+data.gov.il. Hydrograph station numbers are mapped to live-endpoint station ids
+once using WGS84 distance and normalized Hebrew/English names. Automatic links
+are limited to 100 m by coordinates alone, or 500 m when name similarity is at
+least 0.72. The mapping keeps distance, similarity, confidence and review state;
+reviewed links are never overwritten by a later automatic refresh.
+
+Urban cover is sampled at nine fixed points per 5 km operational cell and
+stored as `built_up_fraction`, `is_urban` and a classification status. At least
+five valid WorldCover samples are required; missing coverage remains `unknown`
+instead of silently becoming natural terrain. Hydrometric and rain stations are
+also assigned directly to drainage basins during this same static refresh.
+
 A monthly baseline is eligible only after the station cache covers all twelve
 months and at least 330 days. The selected metric also needs 300 valid samples
 across ten distinct days in that month. The newest seven days are excluded so
 an active flood cannot raise its own baseline. Until those conditions are met,
 official Q2-Q100 rating thresholds remain the primary station rule.
+The lowest available official return-period threshold opens an event, while the
+highest Q2, Q5, Q10, Q20, Q50 or Q100 threshold exceeded determines the
+severity evidence.
 
 ## Entry points
 

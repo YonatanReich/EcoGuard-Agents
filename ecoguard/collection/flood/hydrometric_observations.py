@@ -278,7 +278,8 @@ def persist_hydrometric_observations(
             for row in session.execute(
                 text(
                     """
-                    SELECT source_station_id, cell_id, name_he, name_en,
+                    SELECT source_station_id, cell_id, drainage_basin_id,
+                           name_he, name_en,
                            ST_Y(location::geometry) AS latitude,
                            ST_X(location::geometry) AS longitude,
                            flow_start_water_level_m,

@@ -19,9 +19,101 @@ def upgrade() -> None:
     # the national grid changes. Store it once instead of spatially joining on
     # every detector tick.
     op.execute("ALTER TABLE hydrometric_stations ADD COLUMN cell_id text")
+    op.execute(
+        "ALTER TABLE hydrometric_stations ADD COLUMN drainage_basin_id bigint "
+        "REFERENCES drainage_basins(id) ON DELETE SET NULL"
+    )
     op.execute("CREATE INDEX hydrometric_stations_cell_id_idx ON hydrometric_stations (cell_id)")
+    op.execute(
+        "CREATE INDEX hydrometric_stations_basin_id_idx "
+        "ON hydrometric_stations (drainage_basin_id)"
+    )
     op.execute("ALTER TABLE rain_stations ADD COLUMN cell_id text")
+    op.execute(
+        "ALTER TABLE rain_stations ADD COLUMN drainage_basin_id bigint "
+        "REFERENCES drainage_basins(id) ON DELETE SET NULL"
+    )
     op.execute("CREATE INDEX rain_stations_cell_id_idx ON rain_stations (cell_id)")
+    op.execute(
+        "CREATE INDEX rain_stations_basin_id_idx "
+        "ON rain_stations (drainage_basin_id)"
+    )
+
+    # The historical hydrograph files and the live endpoint use different
+    # station identifiers. Cache the official registry and keep the mapping
+    # explicit, auditable and separate from both source namespaces.
+    op.execute(
+        """
+        CREATE TABLE historical_hydrometric_stations (
+          source_station_id        integer PRIMARY KEY,
+          name_he                  text,
+          name_en                  text,
+          established_on          date,
+          catchment_area_km2       double precision,
+          shared_catchment         boolean,
+          israel_grid_x            double precision,
+          israel_grid_y            double precision,
+          group_source_station_id  integer,
+          main_drainage_name       text,
+          current_status           text,
+          location                 geography(Point, 4326),
+          source_metadata          jsonb       NOT NULL DEFAULT '{}'::jsonb,
+          synced_at                timestamptz NOT NULL,
+          is_in_current_registry   boolean     NOT NULL DEFAULT true,
+          CONSTRAINT historical_hydrometric_stations_has_name
+            CHECK (name_he IS NOT NULL OR name_en IS NOT NULL),
+          CONSTRAINT historical_hydrometric_stations_area_nonnegative
+            CHECK (catchment_area_km2 IS NULL OR catchment_area_km2 >= 0),
+          CONSTRAINT historical_hydrometric_stations_coordinates_complete
+            CHECK (
+              (israel_grid_x IS NULL AND israel_grid_y IS NULL AND location IS NULL) OR
+              (israel_grid_x IS NOT NULL AND israel_grid_y IS NOT NULL AND location IS NOT NULL)
+            )
+        )
+        """
+    )
+    op.execute(
+        "CREATE INDEX historical_hydrometric_stations_location_idx "
+        "ON historical_hydrometric_stations USING GIST (location)"
+    )
+    op.execute(
+        "CREATE INDEX historical_hydrometric_stations_group_idx "
+        "ON historical_hydrometric_stations (group_source_station_id)"
+    )
+    op.execute(
+        """
+        CREATE TABLE hydrometric_station_history_links (
+          historical_station_id integer PRIMARY KEY
+            REFERENCES historical_hydrometric_stations(source_station_id)
+              ON DELETE CASCADE,
+          hydrometric_station_id bigint NOT NULL
+            REFERENCES hydrometric_stations(id) ON DELETE CASCADE,
+          match_method           text NOT NULL,
+          distance_m             double precision NOT NULL,
+          name_similarity        real NOT NULL,
+          confidence             real NOT NULL,
+          reviewed               boolean NOT NULL DEFAULT false,
+          matched_at             timestamptz NOT NULL,
+          CONSTRAINT hydrometric_station_history_links_method CHECK (
+            match_method IN (
+              'automatic_coordinates',
+              'automatic_coordinates_name',
+              'manual'
+            )
+          ),
+          CONSTRAINT hydrometric_station_history_links_distance_nonnegative
+            CHECK (distance_m >= 0),
+          CONSTRAINT hydrometric_station_history_links_similarity_range
+            CHECK (name_similarity >= 0 AND name_similarity <= 1),
+          CONSTRAINT hydrometric_station_history_links_confidence_range
+            CHECK (confidence >= 0 AND confidence <= 1)
+        )
+        """
+    )
+    op.execute(
+        "CREATE INDEX hydrometric_station_history_links_current_idx "
+        "ON hydrometric_station_history_links (hydrometric_station_id)"
+    )
 
     op.execute(
         """
@@ -52,12 +144,24 @@ def upgrade() -> None:
           elevation_m                real,
           slope_deg                  real,
           built_up_fraction          real,
+          is_urban                   boolean,
+          urban_classification_status text NOT NULL DEFAULT 'unknown',
+          urban_sample_count         smallint NOT NULL DEFAULT 0,
           distance_to_stream_m       real,
           refreshed_at               timestamptz NOT NULL,
           CONSTRAINT flood_cell_context_built_up_range CHECK (
             built_up_fraction IS NULL OR
             (built_up_fraction >= 0 AND built_up_fraction <= 1)
           ),
+          CONSTRAINT flood_cell_context_urban_status CHECK (
+            urban_classification_status IN ('classified', 'unknown')
+          ),
+          CONSTRAINT flood_cell_context_urban_consistent CHECK (
+            (urban_classification_status = 'classified' AND is_urban IS NOT NULL) OR
+            (urban_classification_status = 'unknown' AND is_urban IS NULL)
+          ),
+          CONSTRAINT flood_cell_context_urban_samples_nonnegative
+            CHECK (urban_sample_count >= 0),
           CONSTRAINT flood_cell_context_distance_nonnegative CHECK (
             distance_to_stream_m IS NULL OR distance_to_stream_m >= 0
           )
@@ -189,7 +293,15 @@ def downgrade() -> None:
     op.execute("DROP TABLE IF EXISTS flood_station_baselines")
     op.execute("DROP TABLE IF EXISTS flood_cell_context")
     op.execute("DROP TABLE IF EXISTS detector_cursors")
+    op.execute("DROP TABLE IF EXISTS hydrometric_station_history_links")
+    op.execute("DROP TABLE IF EXISTS historical_hydrometric_stations")
     op.execute("DROP INDEX IF EXISTS rain_stations_cell_id_idx")
+    op.execute("DROP INDEX IF EXISTS rain_stations_basin_id_idx")
+    op.execute("ALTER TABLE rain_stations DROP COLUMN IF EXISTS drainage_basin_id")
     op.execute("ALTER TABLE rain_stations DROP COLUMN IF EXISTS cell_id")
     op.execute("DROP INDEX IF EXISTS hydrometric_stations_cell_id_idx")
+    op.execute("DROP INDEX IF EXISTS hydrometric_stations_basin_id_idx")
+    op.execute(
+        "ALTER TABLE hydrometric_stations DROP COLUMN IF EXISTS drainage_basin_id"
+    )
     op.execute("ALTER TABLE hydrometric_stations DROP COLUMN IF EXISTS cell_id")

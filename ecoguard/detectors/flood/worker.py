@@ -17,6 +17,8 @@ from ecoguard.detectors.flood.detection_agent import FloodDetectionAgent
 from ecoguard.detectors.flood.rules import (
     FLOOD_SOURCES,
     HYDROMETRIC_SOURCE,
+    RADAR_SOURCE,
+    RAIN_GAUGE_SOURCE,
     FloodCandidate,
     FloodResolution,
 )
@@ -37,6 +39,15 @@ class FloodRepository(Protocol):
     ) -> list[dict[str, Any]]: ...
 
     def load_context(self, cell_ids: Sequence[str]) -> dict[str, dict[str, Any]]: ...
+
+    def load_basin_rain_window(
+        self,
+        basin_ids: Sequence[int],
+        sources: Sequence[str],
+        *,
+        observed_since: Any,
+        observed_through: Any,
+    ) -> list[dict[str, Any]]: ...
 
     def load_baselines(
         self, source_station_ids: Sequence[int]
@@ -109,16 +120,36 @@ class FloodDetectorWorker:
         if not pending.observations:
             return FloodRunResult(0, 0, [], [])
 
-        cell_ids = sorted({row["cell_id"] for row in pending.observations})
-        earliest_new = min(row["observed_at"] for row in pending.observations)
-        latest_new = max(row["observed_at"] for row in pending.observations)
+        fresh = [
+            row for row in pending.observations if self.agent.accepts_pending(row)
+        ]
+        if not fresh:
+            self.repository.commit_success([], [], pending.high_watermarks)
+            return FloodRunResult(len(pending.observations), 0, [], [])
+
+        cell_ids = sorted({row["cell_id"] for row in fresh})
+        earliest_new = min(row["observed_at"] for row in fresh)
+        latest_new = max(row["observed_at"] for row in fresh)
+        context = self.repository.load_context(cell_ids)
         window = self.repository.load_window(
             cell_ids,
             FLOOD_SOURCES,
             observed_since=earliest_new - self.agent.lookback,
             observed_through=latest_new,
         )
-        context = self.repository.load_context(cell_ids)
+        basin_ids = sorted(
+            {
+                int(item["drainage_basin_id"])
+                for item in context.values()
+                if item.get("drainage_basin_id") is not None
+            }
+        )
+        basin_window = self.repository.load_basin_rain_window(
+            basin_ids,
+            (RAIN_GAUGE_SOURCE, RADAR_SOURCE),
+            observed_since=earliest_new - self.agent.lookback,
+            observed_through=latest_new,
+        )
         baselines = self.repository.load_baselines(
             _hydrometric_station_ids(window)
         )
@@ -126,6 +157,9 @@ class FloodDetectorWorker:
         by_cell: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for observation in window:
             by_cell[observation["cell_id"]].append(observation)
+        by_basin: dict[int, list[dict[str, Any]]] = defaultdict(list)
+        for observation in basin_window:
+            by_basin[int(observation["drainage_basin_id"])].append(observation)
 
         candidates: list[FloodCandidate] = []
         resolutions: list[FloodResolution] = []
@@ -136,6 +170,9 @@ class FloodDetectorWorker:
                 context=context.get(cell_id),
                 baselines=baselines,
                 active_events=active_events.get(cell_id, []),
+                catchment_observations=by_basin.get(
+                    context.get(cell_id, {}).get("drainage_basin_id"), []
+                ),
             )
             candidates.extend(evaluation.candidates)
             resolutions.extend(evaluation.resolutions)

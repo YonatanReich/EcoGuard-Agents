@@ -15,6 +15,9 @@ from __future__ import annotations
 from ecoguard.collection.flood.hydrology_static import (
     load_static_hydrology_layers,
 )
+from ecoguard.collection.flood.historical_stations import (
+    load_historical_station_registry,
+)
 from ecoguard.collection.flood.hydrometric_stations import (
     load_hydrometric_station_catalog,
 )
@@ -37,6 +40,18 @@ def main() -> None:
             f"{station_result['stations']:,} stations, "
             f"{station_result['rain_links']:,} rain-station links synchronized"
         )
+
+    history_result = load_historical_station_registry()
+    history_state = (
+        f"loaded {history_result['historical_stations']:,} stations"
+        if history_result["historical_stations"]
+        else "unchanged"
+    )
+    print(
+        "historical station registry: "
+        f"{history_state}, "
+        f"{history_result['automatic_links']:,} automatic links"
+    )
 
     context = refresh_flood_static_context()
     print(

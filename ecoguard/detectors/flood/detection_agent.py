@@ -8,7 +8,7 @@ deterministic rules from ``rules.py``.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, Mapping, Sequence
 
 from ecoguard.detectors.flood.rules import (
@@ -39,6 +39,28 @@ class FloodDetectionAgent:
         """Return the history window the worker must load for each new row."""
         return self.policy.lookback
 
+    def accepts_pending(self, observation: Mapping[str, Any]) -> bool:
+        """Reject delayed backfills and implausible future timestamps."""
+        observed_at = observation.get("observed_at")
+        ingested_at = observation.get("ingested_at")
+        if not isinstance(observed_at, datetime) or not isinstance(
+            ingested_at, datetime
+        ):
+            return False
+        if (
+            observed_at.tzinfo is None
+            or observed_at.utcoffset() is None
+            or ingested_at.tzinfo is None
+            or ingested_at.utcoffset() is None
+        ):
+            return False
+        lag = ingested_at - observed_at
+        return (
+            -self.policy.maximum_future_skew
+            <= lag
+            <= self.policy.maximum_ingestion_lag
+        )
+
     def evaluate(
         self,
         *,
@@ -47,6 +69,7 @@ class FloodDetectionAgent:
         context: Mapping[str, Any] | None,
         baselines: Mapping[tuple[int, int], Mapping[str, Any]],
         active_events: Sequence[Mapping[str, Any]] = (),
+        catchment_observations: list[Mapping[str, Any]] | None = None,
     ) -> FloodEvaluation:
         """Return lifecycle transitions for one cell without side effects."""
         active_event_keys = {str(event["event_key"]) for event in active_events}
@@ -56,6 +79,7 @@ class FloodDetectionAgent:
             context,
             baselines,
             self.policy,
+            catchment_observations,
         )
         return FloodEvaluation(
             candidates=[
@@ -68,5 +92,6 @@ class FloodDetectionAgent:
                 context,
                 active_events,
                 self.policy,
+                catchment_observations,
             ),
         )

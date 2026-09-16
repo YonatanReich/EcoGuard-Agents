@@ -10,6 +10,10 @@ from sqlalchemy import text
 from ecoguard.collection.base import cell_for, service_area_cells
 
 
+URBAN_BUILT_UP_FRACTION = 0.35
+MIN_URBAN_SAMPLES = 5
+
+
 UPSERT_CELLS = text(
     """
     INSERT INTO flood_cell_context (cell_id, location, refreshed_at)
@@ -33,6 +37,9 @@ ENRICH_CELLS = text(
         elevation_m = enriched.elevation_m,
         slope_deg = enriched.slope_deg,
         built_up_fraction = enriched.built_up_fraction,
+        is_urban = enriched.is_urban,
+        urban_classification_status = enriched.urban_classification_status,
+        urban_sample_count = enriched.urban_sample_count,
         distance_to_stream_m = enriched.distance_to_stream_m,
         refreshed_at = :refreshed_at
     FROM (
@@ -41,7 +48,18 @@ ENRICH_CELLS = text(
              basin.basin_id AS drainage_basin_source_id,
              surface.elevation_m,
              surface.slope_deg,
-             surface.built_up AS built_up_fraction,
+             urban.built_up_fraction,
+             CASE
+               WHEN urban.sample_count >= :minimum_urban_samples
+                 THEN urban.built_up_fraction >= :urban_built_up_fraction
+               ELSE NULL
+             END AS is_urban,
+             CASE
+               WHEN urban.sample_count >= :minimum_urban_samples
+                 THEN 'classified'
+               ELSE 'unknown'
+             END AS urban_classification_status,
+             urban.sample_count AS urban_sample_count,
              stream.distance_m AS distance_to_stream_m
       FROM flood_cell_context AS cell
       LEFT JOIN LATERAL (
@@ -52,11 +70,42 @@ ENRICH_CELLS = text(
         LIMIT 1
       ) AS basin ON true
       LEFT JOIN LATERAL (
-        SELECT candidate.elevation_m, candidate.slope_deg, candidate.built_up
+        SELECT candidate.elevation_m, candidate.slope_deg
         FROM surface_cells AS candidate
         WHERE ST_Covers(candidate.cell, cell.location::geometry)
         LIMIT 1
       ) AS surface ON true
+      LEFT JOIN LATERAL (
+        SELECT avg(sampled.built_up)::real AS built_up_fraction,
+               count(sampled.built_up)::smallint AS sample_count
+        FROM (
+          SELECT surface_sample.built_up
+          FROM (
+            VALUES
+              (0.0, 0.0),
+              (-2000.0, -2000.0), (-2000.0, 0.0), (-2000.0, 2000.0),
+              (0.0, -2000.0),                    (0.0, 2000.0),
+              (2000.0, -2000.0),  (2000.0, 0.0), (2000.0, 2000.0)
+          ) AS sample_offset(east_m, north_m)
+          CROSS JOIN LATERAL (
+            SELECT ST_Project(
+                     ST_Project(
+                       cell.location,
+                       abs(sample_offset.north_m),
+                       radians(CASE WHEN sample_offset.north_m >= 0 THEN 0 ELSE 180 END)
+                     ),
+                     abs(sample_offset.east_m),
+                     radians(CASE WHEN sample_offset.east_m >= 0 THEN 90 ELSE 270 END)
+                   )::geometry AS location
+          ) AS sample_point
+          LEFT JOIN LATERAL (
+            SELECT candidate.built_up
+            FROM surface_cells AS candidate
+            WHERE ST_Covers(candidate.cell, sample_point.location)
+            LIMIT 1
+          ) AS surface_sample ON true
+        ) AS sampled
+      ) AS urban ON true
       LEFT JOIN LATERAL (
         SELECT ST_Distance(
                  cell.location,
@@ -136,19 +185,31 @@ REBUILD_BASELINES = text(
 )
 
 
-def _station_cell_rows(session: Any, table: str) -> list[dict[str, Any]]:
+def _station_context_rows(session: Any, table: str) -> list[dict[str, Any]]:
     rows = session.execute(
         text(
             f"""
-            SELECT id,
-                   ST_Y(location::geometry) AS latitude,
-                   ST_X(location::geometry) AS longitude
-            FROM {table}
+            SELECT station.id,
+                   ST_Y(station.location::geometry) AS latitude,
+                   ST_X(station.location::geometry) AS longitude,
+                   basin.id AS drainage_basin_id
+            FROM {table} AS station
+            LEFT JOIN LATERAL (
+              SELECT candidate.id
+              FROM drainage_basins AS candidate
+              WHERE ST_Covers(candidate.geometry, station.location::geometry)
+              ORDER BY ST_Area(candidate.geometry), candidate.basin_id
+              LIMIT 1
+            ) AS basin ON true
             """
         )
     ).mappings()
     return [
-        {"id": row["id"], "cell_id": cell_for(row["latitude"], row["longitude"])}
+        {
+            "id": row["id"],
+            "cell_id": cell_for(row["latitude"], row["longitude"]),
+            "drainage_basin_id": row["drainage_basin_id"],
+        }
         for row in rows
     ]
 
@@ -175,18 +236,33 @@ def refresh_flood_static_context() -> dict[str, int]:
 
     with Session() as session:
         session.execute(UPSERT_CELLS, cell_rows)
-        session.execute(ENRICH_CELLS, {"refreshed_at": refreshed_at})
+        session.execute(
+            ENRICH_CELLS,
+            {
+                "refreshed_at": refreshed_at,
+                "minimum_urban_samples": MIN_URBAN_SAMPLES,
+                "urban_built_up_fraction": URBAN_BUILT_UP_FRACTION,
+            },
+        )
 
-        hydrometric_rows = _station_cell_rows(session, "hydrometric_stations")
-        rain_rows = _station_cell_rows(session, "rain_stations")
+        hydrometric_rows = _station_context_rows(session, "hydrometric_stations")
+        rain_rows = _station_context_rows(session, "rain_stations")
         if hydrometric_rows:
             session.execute(
-                text("UPDATE hydrometric_stations SET cell_id = :cell_id WHERE id = :id"),
+                text(
+                    "UPDATE hydrometric_stations "
+                    "SET cell_id = :cell_id, drainage_basin_id = :drainage_basin_id "
+                    "WHERE id = :id"
+                ),
                 hydrometric_rows,
             )
         if rain_rows:
             session.execute(
-                text("UPDATE rain_stations SET cell_id = :cell_id WHERE id = :id"),
+                text(
+                    "UPDATE rain_stations "
+                    "SET cell_id = :cell_id, drainage_basin_id = :drainage_basin_id "
+                    "WHERE id = :id"
+                ),
                 rain_rows,
             )
 

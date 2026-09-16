@@ -34,6 +34,7 @@ def _grouped_records(
             "name_en": station.get("name_en"),
             "latitude": float(station["latitude"]),
             "longitude": float(station["longitude"]),
+            "drainage_basin_id": station.get("drainage_basin_id"),
         }
         for field in value_fields:
             item[field] = row.get(field)

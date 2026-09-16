@@ -17,6 +17,9 @@ FLOOD_SOURCES = (HYDROMETRIC_SOURCE, RAIN_GAUGE_SOURCE, RADAR_SOURCE)
 @dataclass(frozen=True)
 class FloodPolicy:
     lookback: timedelta = timedelta(hours=30)
+    maximum_ingestion_lag: timedelta = timedelta(hours=2)
+    maximum_future_skew: timedelta = timedelta(minutes=15)
+    minimum_radar_valid_fraction: float = 0.5
     minimum_baseline_samples: int = 300
     minimum_baseline_distinct_days: int = 10
     minimum_baseline_history_days: int = 330
@@ -129,20 +132,56 @@ def _maximum_station_total(
 
 
 def _radar_total(
-    observations: Iterable[Mapping[str, Any]], as_of: datetime, period: timedelta
+    observations: Iterable[Mapping[str, Any]],
+    as_of: datetime,
+    period: timedelta,
+    policy: FloodPolicy,
+    *,
+    spatial_average: bool,
 ) -> float:
-    return sum(
-        float((observation.get("payload") or {}).get("rainfall_mm", 0.0))
-        for observation in observations
-        if observation["source"] == RADAR_SOURCE
-        and as_of - period < observation["observed_at"] <= as_of
-    )
+    by_frame: dict[datetime, list[float]] = defaultdict(list)
+    frame_cell_counts: dict[datetime, int] = {}
+    for observation in observations:
+        if (
+            observation["source"] != RADAR_SOURCE
+            or not _usable_radar(observation, policy)
+            or not as_of - period < observation["observed_at"] <= as_of
+        ):
+            continue
+        by_frame[observation["observed_at"]].append(
+            float((observation.get("payload") or {}).get("rainfall_mm", 0.0))
+        )
+        declared_count = int(observation.get("spatial_cell_count") or 0)
+        if declared_count > 0:
+            frame_cell_counts[observation["observed_at"]] = max(
+                frame_cell_counts.get(observation["observed_at"], 0),
+                declared_count,
+            )
+    if spatial_average:
+        return sum(
+            sum(values) / max(frame_cell_counts.get(at, 0), len(values))
+            for at, values in by_frame.items()
+        )
+    return sum(value for values in by_frame.values() for value in values)
+
+
+def _usable_radar(
+    observation: Mapping[str, Any], policy: FloodPolicy
+) -> bool:
+    payload = observation.get("payload") or {}
+    coverage = payload.get("valid_pixel_fraction")
+    return coverage is not None and float(coverage) >= policy.minimum_radar_valid_fraction
 
 
 def rain_metrics(
-    observations: list[Mapping[str, Any]], as_of: datetime
+    observations: list[Mapping[str, Any]],
+    as_of: datetime,
+    policy: FloodPolicy | None = None,
+    *,
+    spatial_average: bool = False,
 ) -> RainMetrics:
     """Combine gauges and radar without adding two estimates of the same rain."""
+    selected_policy = policy or FloodPolicy()
     gauge_series = _station_series(observations, RAIN_GAUGE_SOURCE, "rainfall_mm")
     periods = (
         timedelta(minutes=10),
@@ -153,7 +192,13 @@ def rain_metrics(
     totals = []
     for period in periods:
         gauge = _maximum_station_total(gauge_series, as_of, period)
-        radar = _radar_total(observations, as_of, period)
+        radar = _radar_total(
+            observations,
+            as_of,
+            period,
+            selected_policy,
+            spatial_average=spatial_average,
+        )
         # These sources estimate the same rainfall. Taking the larger estimate
         # is conservative while avoiding the double-counting caused by a sum.
         totals.append(max(gauge, radar))
@@ -162,6 +207,7 @@ def rain_metrics(
         float((item.get("payload") or {}).get("rain_rate_max_mm_h", 0.0))
         for item in observations
         if item["source"] == RADAR_SOURCE
+        and _usable_radar(item, selected_policy)
         and as_of - timedelta(minutes=10) < item["observed_at"] <= as_of
     ]
     gauge_rate = _maximum_station_total(
@@ -177,18 +223,23 @@ def rain_metrics(
             at <= as_of for values in gauge_series.values() for at, _ in values
         ),
         has_radar=any(
-            item["source"] == RADAR_SOURCE and item["observed_at"] <= as_of
+            item["source"] == RADAR_SOURCE
+            and _usable_radar(item, selected_policy)
+            and item["observed_at"] <= as_of
             for item in observations
         ),
     )
 
 
-def _rain_times(observations: Iterable[Mapping[str, Any]]) -> list[datetime]:
+def _rain_times(
+    observations: Iterable[Mapping[str, Any]], policy: FloodPolicy
+) -> list[datetime]:
     return sorted(
         {
             item["observed_at"]
             for item in observations
-            if item["source"] in (RAIN_GAUGE_SOURCE, RADAR_SOURCE)
+            if item["source"] == RAIN_GAUGE_SOURCE
+            or (item["source"] == RADAR_SOURCE and _usable_radar(item, policy))
         }
     )
 
@@ -203,7 +254,12 @@ def _rain_trigger(
     return None
 
 
-def _rain_confidence(metrics: RainMetrics, *, urban: bool) -> float:
+def _rain_confidence(
+    metrics: RainMetrics,
+    *,
+    urban: bool,
+    catchment_support: bool = False,
+) -> float:
     confidence = 0.66 if urban else 0.63
     if metrics.has_gauge:
         confidence += 0.07
@@ -211,7 +267,9 @@ def _rain_confidence(metrics: RainMetrics, *, urban: bool) -> float:
         confidence += 0.05
     if metrics.has_gauge and metrics.has_radar:
         confidence += 0.05
-    return min(confidence, 0.86)
+    if catchment_support:
+        confidence += 0.05
+    return min(confidence, 0.91)
 
 
 def _severity(ratio: float) -> str:
@@ -222,12 +280,24 @@ def _severity(ratio: float) -> str:
     return "moderate"
 
 
-def _gauge_severity(station: Mapping[str, Any], discharge: float, ratio: float) -> str:
-    for period, severity in ((20, "critical"), (10, "high"), (2, "moderate")):
+def _exceeded_return_period(
+    station: Mapping[str, Any], discharge: float
+) -> int | None:
+    for period in (100, 50, 20, 10, 5, 2):
         threshold = station.get(f"flow_threshold_{period}y_m3s")
         if threshold is not None and discharge >= float(threshold):
-            return severity
-    return _severity(ratio)
+            return period
+    return None
+
+
+def _gauge_severity(return_period: int | None, ratio: float) -> str:
+    if return_period is None:
+        return _severity(ratio)
+    if return_period >= 20:
+        return "critical"
+    if return_period >= 10:
+        return "high"
+    return "moderate"
 
 
 def _baseline_value(
@@ -283,7 +353,6 @@ def _gauge_candidates(
 
             discharge = current.get("discharge_m3s")
             previous_discharge = previous.get("discharge_m3s")
-            q2 = current.get("flow_threshold_2y_m3s")
             baseline_discharge = _baseline_value(
                 baseline,
                 value_field="discharge_p95_m3s",
@@ -291,21 +360,27 @@ def _gauge_candidates(
                 distinct_days_field="discharge_distinct_days",
                 policy=policy,
             )
+            official_thresholds = [
+                (period, float(current[f"flow_threshold_{period}y_m3s"]))
+                for period in (2, 5, 10, 20, 50, 100)
+                if current.get(f"flow_threshold_{period}y_m3s") is not None
+                and float(current[f"flow_threshold_{period}y_m3s"]) > 0
+            ]
             discharge_thresholds = [
-                ("rating_curve", float(q2))
-                for _ in [0]
-                if q2 is not None and float(q2) > 0
+                ("rating_curve", threshold, period)
+                for period, threshold in official_thresholds[:1]
             ]
             if baseline_discharge is not None and float(baseline_discharge) > 0:
                 discharge_thresholds.append(
-                    ("seasonal_baseline", float(baseline_discharge))
+                    ("seasonal_baseline", float(baseline_discharge), None)
                 )
 
             trigger: str | None = None
             threshold = 0.0
             ratio = 0.0
+            opening_return_period: int | None = None
             if discharge is not None:
-                for name, candidate_threshold in discharge_thresholds:
+                for name, candidate_threshold, return_period in discharge_thresholds:
                     if float(discharge) >= candidate_threshold and (
                         (previous_discharge is None and len(samples) == 1)
                         or (
@@ -316,6 +391,7 @@ def _gauge_candidates(
                         trigger = f"gauge_discharge_{name}"
                         threshold = candidate_threshold
                         ratio = float(discharge) / candidate_threshold
+                        opening_return_period = return_period
                         break
 
             stage = current.get("water_height_m")
@@ -351,11 +427,12 @@ def _gauge_candidates(
             confidence = 0.88 if "rating_curve" in trigger else 0.76
             if rain and (rain.rainfall_1h_mm >= 5 or rain.rainfall_6h_mm >= 15):
                 confidence += 0.07
-            severity = (
-                _gauge_severity(current, float(discharge), ratio)
+            exceeded_return_period = (
+                _exceeded_return_period(current, float(discharge))
                 if discharge is not None
-                else _severity(ratio)
+                else None
             )
+            severity = _gauge_severity(exceeded_return_period, ratio)
             candidates.append(
                 FloodCandidate(
                     event_key=f"flood:gauge:{cell_id}:{station_id}",
@@ -375,6 +452,8 @@ def _gauge_candidates(
                         "source_station_id": station_id,
                         "value": discharge if discharge is not None else stage,
                         "threshold": threshold,
+                        "opening_return_period_years": opening_return_period,
+                        "exceeded_return_period_years": exceeded_return_period,
                         "rainfall_1h_mm": rain.rainfall_1h_mm if rain else None,
                         "rainfall_6h_mm": rain.rainfall_6h_mm if rain else None,
                     },
@@ -384,14 +463,32 @@ def _gauge_candidates(
     return candidates
 
 
+def _urban_classification(
+    context: Mapping[str, Any], policy: FloodPolicy
+) -> bool | None:
+    """Return a cached urban classification without guessing missing data."""
+    status = context.get("urban_classification_status")
+    if status is not None:
+        if status != "classified" or context.get("is_urban") is None:
+            return None
+        return bool(context["is_urban"])
+    if context.get("is_urban") is not None:
+        return bool(context["is_urban"])
+    built_up = context.get("built_up_fraction")
+    if built_up is None:
+        return None
+    return float(built_up) >= policy.urban_built_up_fraction
+
+
 def _rain_thresholds(
     context: Mapping[str, Any],
     metrics: RainMetrics,
     policy: FloodPolicy,
-) -> tuple[bool, tuple[tuple[str, float], ...]]:
+) -> tuple[bool | None, tuple[tuple[str, float], ...]]:
     """Return the opening thresholds for the cell's urban/natural regime."""
-    built_up = float(context.get("built_up_fraction") or 0.0)
-    urban = built_up >= policy.urban_built_up_fraction
+    urban = _urban_classification(context, policy)
+    if urban is None:
+        return None, ()
     if urban:
         return urban, (
             ("rainfall_10m_mm", policy.urban_rain_10m_mm),
@@ -419,17 +516,30 @@ def _rain_thresholds(
     )
 
 
+def _catchment_support(metrics: RainMetrics | None, policy: FloodPolicy) -> bool:
+    """Use basin-average rain as corroboration, never as a sole trigger."""
+    if metrics is None:
+        return False
+    return (
+        metrics.rainfall_1h_mm >= policy.natural_rain_1h_mm * 0.6
+        or metrics.rainfall_6h_mm >= policy.natural_rain_6h_mm * 0.6
+        or metrics.rainfall_24h_mm >= policy.natural_rain_24h_mm * 0.6
+    )
+
+
 def _rain_candidate(
     cell_id: str,
     observations: list[Mapping[str, Any]],
     context: Mapping[str, Any] | None,
     policy: FloodPolicy,
+    catchment_observations: list[Mapping[str, Any]],
 ) -> FloodCandidate | None:
-    times = _rain_times(observations)
+    times = _rain_times(observations, policy)
     if not times or context is None:
         return None
-    built_up = float(context.get("built_up_fraction") or 0.0)
-    urban = built_up >= policy.urban_built_up_fraction
+    urban = _urban_classification(context, policy)
+    if urban is None:
+        return None
     if not urban and context.get("drainage_basin_id") is None and (
         context.get("distance_to_stream_m") is None
         or float(context["distance_to_stream_m"]) > 5000
@@ -438,12 +548,23 @@ def _rain_candidate(
 
     crossing: tuple[str, float] | None = None
     current: RainMetrics | None = None
+    catchment: RainMetrics | None = None
     as_of = times[-1]
     for index in range(len(times) - 1, -1, -1):
         as_of = times[index]
-        current = rain_metrics(observations, as_of)
+        current = rain_metrics(observations, as_of, policy)
+        catchment = (
+            rain_metrics(
+                catchment_observations,
+                as_of,
+                policy,
+                spatial_average=True,
+            )
+            if catchment_observations
+            else None
+        )
         previous = (
-            rain_metrics(observations, times[index - 1])
+            rain_metrics(observations, times[index - 1], policy)
             if index > 0
             else (
                 RainMetrics(0.0, 0.0, 0.0, 0.0, 0.0, False, False)
@@ -451,7 +572,7 @@ def _rain_candidate(
                 else current
             )
         )
-        urban, thresholds = _rain_thresholds(context, current, policy)
+        _, thresholds = _rain_thresholds(context, current, policy)
         trigger_prefix = "urban_rain" if urban else "natural_rain"
 
         crossing = _rain_trigger(current, thresholds)
@@ -473,7 +594,11 @@ def _rain_candidate(
         observed_at=as_of,
         latitude=latitude,
         longitude=longitude,
-        confidence=_rain_confidence(current, urban=urban),
+        confidence=_rain_confidence(
+            current,
+            urban=urban,
+            catchment_support=(not urban and _catchment_support(catchment, policy)),
+        ),
         severity_hint=_severity(ratio),
         location_uncertainty_m=2500.0,
         trigger=trigger,
@@ -483,7 +608,19 @@ def _rain_candidate(
             "rainfall_6h_mm": current.rainfall_6h_mm,
             "rainfall_24h_mm": current.rainfall_24h_mm,
             "max_rate_mm_h": current.max_rate_mm_h,
-            "built_up_fraction": built_up,
+            "built_up_fraction": context.get("built_up_fraction"),
+            "urban_classification_status": context.get(
+                "urban_classification_status", "legacy_fraction"
+            ),
+            "catchment_rainfall_1h_mm": (
+                catchment.rainfall_1h_mm if catchment else None
+            ),
+            "catchment_rainfall_6h_mm": (
+                catchment.rainfall_6h_mm if catchment else None
+            ),
+            "catchment_rainfall_24h_mm": (
+                catchment.rainfall_24h_mm if catchment else None
+            ),
             "metric": field,
             "threshold": threshold,
         },
@@ -545,12 +682,13 @@ def _rain_resolution(
     observations: list[Mapping[str, Any]],
     context: Mapping[str, Any] | None,
     policy: FloodPolicy,
+    catchment_observations: list[Mapping[str, Any]],
 ) -> FloodResolution | None:
     if context is None:
         return None
     times = [
         observed_at
-        for observed_at in _rain_times(observations)
+        for observed_at in _rain_times(observations, policy)
         if observed_at > event["opened_at"]
     ]
     required = policy.resolution_consecutive_samples
@@ -560,8 +698,19 @@ def _rain_resolution(
     recent = times[-required:]
     recent_metrics: list[RainMetrics] = []
     for observed_at in recent:
-        metrics = rain_metrics(observations, observed_at)
-        _, opening_thresholds = _rain_thresholds(context, metrics, policy)
+        metrics = rain_metrics(observations, observed_at, policy)
+        urban, opening_thresholds = _rain_thresholds(context, metrics, policy)
+        if urban is None:
+            return None
+        if not urban and catchment_observations:
+            catchment = rain_metrics(
+                catchment_observations,
+                observed_at,
+                policy,
+                spatial_average=True,
+            )
+            if _catchment_support(catchment, policy):
+                return None
         exit_thresholds = tuple(
             (field, threshold * policy.resolution_threshold_ratio)
             for field, threshold in opening_thresholds
@@ -591,6 +740,7 @@ def evaluate_resolutions(
     context: Mapping[str, Any] | None,
     active_events: Iterable[Mapping[str, Any]],
     policy: FloodPolicy | None = None,
+    catchment_observations: list[Mapping[str, Any]] | None = None,
 ) -> list[FloodResolution]:
     """Resolve active events only after fresh, consistently low readings."""
     selected_policy = policy or FloodPolicy()
@@ -600,7 +750,11 @@ def evaluate_resolutions(
             resolution = _gauge_resolution(event, observations, selected_policy)
         else:
             resolution = _rain_resolution(
-                event, observations, context, selected_policy
+                event,
+                observations,
+                context,
+                selected_policy,
+                catchment_observations or [],
             )
         if resolution is not None:
             resolutions.append(resolution)
@@ -613,15 +767,26 @@ def evaluate_cell(
     context: Mapping[str, Any] | None,
     baselines: Mapping[tuple[int, int], Mapping[str, Any]],
     policy: FloodPolicy | None = None,
+    catchment_observations: list[Mapping[str, Any]] | None = None,
 ) -> list[FloodCandidate]:
     """Evaluate one cell using threshold crossings; no classifier is involved."""
     selected_policy = policy or FloodPolicy()
-    rain_times = _rain_times(observations)
-    rain = rain_metrics(observations, rain_times[-1]) if rain_times else None
+    rain_times = _rain_times(observations, selected_policy)
+    rain = (
+        rain_metrics(observations, rain_times[-1], selected_policy)
+        if rain_times
+        else None
+    )
     candidates = _gauge_candidates(
         cell_id, observations, baselines, selected_policy, rain
     )
-    rain_candidate = _rain_candidate(cell_id, observations, context, selected_policy)
+    rain_candidate = _rain_candidate(
+        cell_id,
+        observations,
+        context,
+        selected_policy,
+        catchment_observations or [],
+    )
     if rain_candidate is not None:
         candidates.append(rain_candidate)
     return candidates

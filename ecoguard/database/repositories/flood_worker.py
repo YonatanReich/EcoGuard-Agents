@@ -68,6 +68,38 @@ WINDOW_OBSERVATIONS = text(
 ).bindparams(bindparam("sources", expanding=True), bindparam("cell_ids", expanding=True))
 
 
+BASIN_RAIN_OBSERVATIONS = text(
+    """
+    WITH basin_cells AS (
+      SELECT drainage_basin_id, count(*)::integer AS cell_count
+      FROM flood_cell_context
+      WHERE drainage_basin_id IN :basin_ids
+      GROUP BY drainage_basin_id
+    )
+    SELECT observation.id, observation.source, observation.cell_id,
+           observation.observed_at, observation.ingested_at,
+           observation.payload, context.drainage_basin_id,
+           basin_cells.cell_count AS spatial_cell_count,
+           ST_Y(observation.location::geometry) AS latitude,
+           ST_X(observation.location::geometry) AS longitude
+    FROM observations AS observation
+    JOIN flood_cell_context AS context
+      ON context.cell_id = observation.cell_id
+    JOIN basin_cells
+      ON basin_cells.drainage_basin_id = context.drainage_basin_id
+    WHERE observation.source IN :sources
+      AND context.drainage_basin_id IN :basin_ids
+      AND observation.observed_at >= :observed_since
+      AND observation.observed_at <= :observed_through
+    ORDER BY context.drainage_basin_id, observation.observed_at,
+             observation.cell_id, observation.source, observation.id
+    """
+).bindparams(
+    bindparam("sources", expanding=True),
+    bindparam("basin_ids", expanding=True),
+)
+
+
 CELL_CONTEXT = text(
     """
     SELECT cell_id,
@@ -78,6 +110,9 @@ CELL_CONTEXT = text(
            elevation_m,
            slope_deg,
            built_up_fraction,
+           is_urban,
+           urban_classification_status,
+           urban_sample_count,
            distance_to_stream_m
     FROM flood_cell_context
     WHERE cell_id IN :cell_ids
@@ -207,6 +242,31 @@ class FloodWorkerRepository:
                     CELL_CONTEXT, {"cell_ids": list(cell_ids)}
                 ).mappings()
             }
+
+    def load_basin_rain_window(
+        self,
+        basin_ids: Sequence[int],
+        sources: Sequence[str],
+        *,
+        observed_since: datetime,
+        observed_through: datetime,
+    ) -> list[dict[str, Any]]:
+        """Load area-normalized rain inputs for the affected drainage basins."""
+        if not basin_ids:
+            return []
+        with Session() as session:
+            return [
+                dict(row)
+                for row in session.execute(
+                    BASIN_RAIN_OBSERVATIONS,
+                    {
+                        "basin_ids": list(basin_ids),
+                        "sources": list(sources),
+                        "observed_since": observed_since,
+                        "observed_through": observed_through,
+                    },
+                ).mappings()
+            ]
 
     def load_baselines(
         self, source_station_ids: Sequence[int]
