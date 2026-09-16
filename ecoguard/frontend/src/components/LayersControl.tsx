@@ -10,6 +10,7 @@
  *   - Rain Radar — live precipitation radar from RainViewer.
  *   - Fire Danger — Fire Weather Index (FWI) from GWIS/EFFIS.
  *   - Wind — animated near-surface wind visualization from Open-Meteo.
+ *   - Fire Districts — the seven fire & rescue districts of responsibility.
  *
  * Additional layers can be added here later without changing MapView.
  */
@@ -40,6 +41,12 @@ type LayersControlProps = {
 
   /** Toggle the animated wind layer. */
   onToggleWind: () => void
+
+  /** Whether the seven fire & rescue district outlines are visible. */
+  showFireDistricts: boolean
+
+  /** Toggle the fire & rescue district outlines. */
+  onToggleFireDistricts: () => void
 }
 
 function LayersControl({
@@ -51,6 +58,8 @@ function LayersControl({
   onToggleFireRisk,
   showWind,
   onToggleWind,
+  showFireDistricts,
+  onToggleFireDistricts,
 }: LayersControlProps) {
   return (
     <div style={containerStyle}>
@@ -90,6 +99,15 @@ function LayersControl({
           onChange={onToggleWind}
         />
         <span>💨 Wind</span>
+      </label>
+
+      <label style={rowStyle}>
+        <input
+          type="checkbox"
+          checked={showFireDistricts}
+          onChange={onToggleFireDistricts}
+        />
+        <span>🛡 Fire Districts</span>
       </label>
 
     </div>

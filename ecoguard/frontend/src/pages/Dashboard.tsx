@@ -33,6 +33,7 @@ import { clusterHighRiskCells, type FireRiskCluster } from '../components/fireRi
 import { normalizeNationalRiskScanResponse, type NationalRiskScan } from '../components/fireRiskScan'
 import AreaSelect from '../components/AreaSelect'
 import LayersControl from '../components/LayersControl'
+import FireDistrictsLayer from '../components/layers/FireDistrictsLayer'
 import WhatToSeeControl from '../components/WhatToSeeControl'
 import FireStationsLayer from '../components/layers/FireStationsLayer'
 import PoliceStationsLayer from '../components/layers/PoliceStationsLayer'
@@ -245,6 +246,11 @@ function Dashboard() {
   const [
     showWind,
     setShowWind,
+  ] = useState(false)
+
+  const [
+    showFireDistricts,
+    setShowFireDistricts,
   ] = useState(false)
 
   // Fire stations are reference data rather than an environmental overlay, so
@@ -1073,6 +1079,10 @@ function Dashboard() {
               <FireDangerLayer />
             )}
 
+            {showFireDistricts && (
+              <FireDistrictsLayer />
+            )}
+
             <FireStationsLayer
               visible={showFireStations}
               onLoaded={setFireStationCount}
@@ -1143,6 +1153,16 @@ function Dashboard() {
               }
               onToggleWind={() =>
                 setShowWind(
+                  (current) =>
+                    !current
+                )
+              }
+
+              showFireDistricts={
+                showFireDistricts
+              }
+              onToggleFireDistricts={() =>
+                setShowFireDistricts(
                   (current) =>
                     !current
                 )
