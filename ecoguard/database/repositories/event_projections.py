@@ -127,10 +127,14 @@ def projected_events(*, limit: int = 100) -> list[dict[str, Any]]:
     with Session() as session:
         rows = session.execute(
             text(
-                "SELECT * FROM event_projections "
-                "WHERE (event_payload IS NOT NULL "
-                "   OR last_successful_event_payload IS NOT NULL) "
-                "ORDER BY updated_at DESC, incident_id ASC LIMIT :limit"
+                "SELECT event_projections.*, "
+                "       incidents.signals AS incident_signals "
+                "FROM event_projections "
+                "JOIN incidents ON incidents.id = event_projections.incident_id "
+                "WHERE (event_projections.event_payload IS NOT NULL "
+                "   OR event_projections.last_successful_event_payload IS NOT NULL) "
+                "ORDER BY event_projections.updated_at DESC, "
+                "         event_projections.incident_id ASC LIMIT :limit"
             ),
             {"limit": limit},
         ).mappings().all()

@@ -113,6 +113,22 @@ function Dashboard() {
   const [openEvent, setOpenEvent] =
     useState<SharedEvent | null>(null)
 
+  /** The event selected on the map; closing its modal must not clear it. */
+  const [selectedEventKey, setSelectedEventKey] =
+    useState<string | null>(null)
+
+  const selectedEvent = useMemo(
+    () => events.find(
+      (event) => `${event.type}:${event.id}` === selectedEventKey,
+    ) ?? null,
+    [events, selectedEventKey],
+  )
+
+  const selectAndOpenEvent = (event: SharedEvent) => {
+    setSelectedEventKey(`${event.type}:${event.id}`)
+    setOpenEvent(event)
+  }
+
   useEffect(() => {
     if (
       !import.meta.env.DEV ||
@@ -152,11 +168,9 @@ function Dashboard() {
     [events],
   )
 
-  const corridorEvent = openEvent?.type === 'air_pollution'
-    ? openEvent
-    : airPollutionPreview?.type === 'air_pollution'
-      ? airPollutionPreview
-      : null
+  const corridorEvent = selectedEvent?.type === 'air_pollution'
+    ? selectedEvent
+    : null
 
   /**
    * True while the detection scan is running.
@@ -652,8 +666,8 @@ function Dashboard() {
                 <EventCard
                   key={event.id}
                   event={event}
-                  onOpen={setOpenEvent}
-                  isSelected={openEvent?.id === event.id}
+                  onOpen={selectAndOpenEvent}
+                  isSelected={selectedEvent?.type === event.type && selectedEvent.id === event.id}
                 />
               ))
             )}
@@ -704,7 +718,7 @@ function Dashboard() {
 
           <MapView
             events={events}
-            onEventClick={setOpenEvent}
+            onEventClick={selectAndOpenEvent}
             style={{ flex: '1 1 auto', minHeight: 0 }}
           >
 
@@ -716,10 +730,6 @@ function Dashboard() {
                 onViewOnMap={viewHighRiskOnMap}
                 onDismiss={() => setDismissedFireRiskSnapshot(nationalRiskScan.evaluation_time)}
               />
-            )}
-
-            {corridorEvent?.details.transport?.corridor && (
-              <AirPollutionCorridorLayer event={corridorEvent} />
             )}
 
             {/* ================================================= */}
@@ -1058,6 +1068,10 @@ function Dashboard() {
               />
             )}
 
+            {corridorEvent?.details.transport?.corridor && (
+              <AirPollutionCorridorLayer event={corridorEvent} />
+            )}
+
 
             {/* ================================================= */}
             {/* Layer controls                                    */}
@@ -1130,8 +1144,8 @@ function Dashboard() {
                 <EventCard
                   key={event.id}
                   event={event}
-                  onOpen={setOpenEvent}
-                  isSelected={openEvent?.id === event.id}
+                  onOpen={selectAndOpenEvent}
+                  isSelected={selectedEvent?.type === event.type && selectedEvent.id === event.id}
                 />
               ))
             )}

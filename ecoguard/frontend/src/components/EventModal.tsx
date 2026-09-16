@@ -30,6 +30,48 @@ function formatDuration(seconds: number | null) {
   return `${(seconds / 3600).toFixed(1)} hr`
 }
 
+function formatComponentName(component: string) {
+  return component
+    .replaceAll('_', ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function formatUnavailableReason(reason: string) {
+  return reason.replaceAll('_', ' ')
+}
+
+function compactAirPollutionLimitations(limitations: string[]) {
+  const unique = new Map<string, string>()
+  let hasMonitoringLocationLimitation = false
+
+  for (const limitation of limitations) {
+    const normalized = limitation.trim().replace(/\s+/g, ' ')
+    const lower = normalized.toLowerCase()
+
+    // These truths are already stated once beside the corresponding evidence.
+    if (/transport|corridor|plume|downwind screening|sector geometry/.test(lower)) continue
+    if (/population/.test(lower)) continue
+    if (/\bp95\b|historically unusual|historical unusualness/.test(lower)) continue
+    if (/unavailable:/.test(lower)) continue
+
+    if (/monitoring location|emission source/.test(lower)) {
+      hasMonitoringLocationLimitation = true
+      continue
+    }
+
+    unique.set(lower, normalized)
+  }
+
+  if (hasMonitoringLocationLimitation) {
+    unique.set(
+      'monitoring-location-is-not-a-source',
+      'The monitoring location is not a confirmed emission source.',
+    )
+  }
+
+  return [...unique.values()]
+}
+
 function FireEventDetails({ event }: { event: FireEvent }) {
   const details = event.details
   const assessed = event.analysis_status === 'success' && details.risk_score !== null
@@ -108,6 +150,15 @@ function AirPollutionEventDetails({ event }: { event: AirPollutionEvent }) {
   const insideSettlements = details.relevant_settlements.filter(
     (settlement) => settlement.inside_transport_corridor,
   )
+  const unavailableComponents = Array.from(
+    new Map(
+      details.unavailable_components.map((item) => [
+        `${item.component}:${item.reason}`,
+        item,
+      ]),
+    ).values(),
+  )
+  const compactLimitations = compactAirPollutionLimitations(details.limitations)
 
   return (
     <>
@@ -221,9 +272,11 @@ function AirPollutionEventDetails({ event }: { event: AirPollutionEvent }) {
             </p>
           </>
         ) : <p>Geographic population screening is unavailable.</p>}
-        <p className="event-modal__semantic-note">
-          This is not an affected or exposed population count.
-        </p>
+        {population && (
+          <p className="event-modal__semantic-note">
+            This is not an affected or exposed population count.
+          </p>
+        )}
       </section>
 
       {details.recommendations.length > 0 && (
@@ -250,14 +303,17 @@ function AirPollutionEventDetails({ event }: { event: AirPollutionEvent }) {
         </section>
       )}
 
-      {(details.unavailable_components.length > 0 || details.limitations.length > 0) && (
+      {(unavailableComponents.length > 0 || compactLimitations.length > 0) && (
         <section className="event-modal__section event-modal__section--gaps">
           <h3>Evidence limitations and unavailable components</h3>
           <ul>
-            {details.unavailable_components.map((item) => (
-              <li key={`${item.component}-${item.reason}`}><strong>{item.component}:</strong> {item.reason}</li>
+            {unavailableComponents.map((item) => (
+              <li key={`${item.component}-${item.reason}`}>
+                <strong>{formatComponentName(item.component)}:</strong>{' '}
+                {formatUnavailableReason(item.reason)}
+              </li>
             ))}
-            {details.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}
+            {compactLimitations.map((limitation) => <li key={limitation}>{limitation}</li>)}
           </ul>
         </section>
       )}

@@ -50,6 +50,9 @@ def test_successful_result_maps_to_frontend_shared_event_contract():
     assert "severity" not in event.details.model_dump()
     assert "source_location" not in event.model_dump()
     assert event.details.ministry_aqi.station_index == 67.0
+    assert event.details.ministry_aqi.station_id == "42"
+    assert event.details.ministry_aqi.pollutant == "NO2"
+    assert event.details.ministry_aqi.resolved_channel_id == "7001"
     assert event.details.trend == "RISING"
     assert event.details.transport.corridor.type == "Polygon"
     assert event.details.population_within_screening_corridor.total_relevant_population == 50

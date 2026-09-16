@@ -30,6 +30,8 @@ class AirPollutionCellSignalAdapterError(ValueError):
 
 def air_pollution_detection_to_cell_signal(
     detection: AirPollutionDetectionResult,
+    *,
+    candidate: PollutionCorrelationCandidate | None = None,
 ) -> CellSignal:
     """Adapt one detector-qualified result without re-running detection."""
 
@@ -38,7 +40,15 @@ def air_pollution_detection_to_cell_signal(
     if detection.status != "SUSPECTED_ANOMALY" or detection.anomaly is None:
         raise AirPollutionCellSignalAdapterError("detection_not_qualified")
 
-    candidate = correlation_candidate(detection.anomaly)
+    candidate = (
+        correlation_candidate(detection.anomaly)
+        if candidate is None
+        else PollutionCorrelationCandidate.model_validate(
+            candidate.model_dump(round_trip=True)
+        )
+    )
+    if candidate.anomaly != detection.anomaly:
+        raise AirPollutionCellSignalAdapterError("candidate_detection_mismatch")
     return _candidate_to_signal(
         candidate,
         detection_evidence=detection.model_dump(mode="json"),

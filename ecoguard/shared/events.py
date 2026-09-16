@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 
 class EventContract(BaseModel):
@@ -68,6 +69,9 @@ class AirPollutionBaselineContext(EventContract):
 
 
 class MinistryAirQualityIndex(EventContract):
+    station_id: str | None = None
+    pollutant: str | None = None
+    resolved_channel_id: str | None = None
     station_index: float
     station_category: str
     category_color: str | None = None
@@ -195,6 +199,31 @@ class AirPollutionDetails(EventContract):
     unavailable_components: list[ComponentUnavailableReason] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
     trend: Literal["RISING", "STABLE", "FALLING"] | None = None
+
+    @model_validator(mode="after")
+    def _ministry_index_matches_projected_anomaly(self):
+        index = self.ministry_aqi
+        if index is None:
+            return self
+        identity = (
+            index.station_id,
+            index.pollutant,
+            index.resolved_channel_id,
+        )
+        if identity == (None, None, None):
+            # Backward-compatible read of projections written before explicit
+            # Ministry identity was preserved. Such rows cannot qualify Path B.
+            return self
+        if any(value is None for value in identity):
+            raise ValueError("Ministry AQI identity must be complete")
+        if identity != (self.station.id, self.pollutant, self.station.channel_id):
+            raise ValueError("Ministry AQI identity must match the projected anomaly")
+        window_start = index.provider_timestamp - timedelta(
+            minutes=index.averaging_period_minutes
+        )
+        if not window_start < self.observation_timestamp <= index.provider_timestamp:
+            raise ValueError("projected anomaly is outside the Ministry AQI window")
+        return self
 
 
 class CommonSharedEvent(EventContract):

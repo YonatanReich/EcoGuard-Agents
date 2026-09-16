@@ -32,6 +32,7 @@ function AirPollutionCorridorLayer({ event }: { event: AirPollutionEvent }) {
         <Layer
           id={CORRIDOR_FILL_ID}
           type="fill"
+          slot="top"
           paint={{
             'fill-color': '#a855f7',
             'fill-opacity': 0.18,
@@ -40,6 +41,7 @@ function AirPollutionCorridorLayer({ event }: { event: AirPollutionEvent }) {
         <Layer
           id={CORRIDOR_OUTLINE_ID}
           type="line"
+          slot="top"
           paint={{
             'line-color': '#a855f7',
             'line-opacity': 0.9,
@@ -54,6 +56,7 @@ function AirPollutionCorridorLayer({ event }: { event: AirPollutionEvent }) {
           <Layer
             id={CENTERLINE_LAYER_ID}
             type="line"
+            slot="top"
             paint={{
               'line-color': '#f3e8ff',
               'line-opacity': 0.95,

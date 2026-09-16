@@ -22,6 +22,10 @@ from ecoguard.detectors.air_pollution.cell_signal_adapter import (
     AirPollutionCellSignalAdapterError,
     air_pollution_detection_to_cell_signal,
 )
+from ecoguard.detectors.air_pollution.correlation import correlation_candidate
+from ecoguard.detectors.air_pollution.spatial_enrichment import (
+    AirPollutionSpatialEnricher,
+)
 from ecoguard.detectors.air_pollution.schemas import (
     AnomalyContract,
     AirPollutionDetectionResult,
@@ -213,6 +217,8 @@ class AirPollutionObservationProcessor:
 def detect_new(
     *,
     processor: AirPollutionObservationProcessor | None = None,
+    spatial_enricher: AirPollutionSpatialEnricher | None = None,
+    spatial_radius_km: float | None = None,
     at: datetime | None = None,
 ) -> list[CellSignal]:
     """Convert newly ingested persisted observations to qualified signals.
@@ -243,6 +249,26 @@ def detect_new(
         cursor_at = since
         cursor_id = 0 if since is not None else None
         service = processor or AirPollutionObservationProcessor()
+        enrichment = spatial_enricher
+        enrichment_radius = spatial_radius_km
+        if enrichment is None and enrichment_radius is None:
+            try:
+                from ecoguard.analyzers.non_emergency.air_pollution.transport_prediction_service import (
+                    load_air_pollution_transport_configuration,
+                )
+
+                transport = load_air_pollution_transport_configuration()
+                if transport is not None:
+                    enrichment = AirPollutionSpatialEnricher()
+                    enrichment_radius = transport.max_screening_distance_m / 1000.0
+            except Exception:
+                logger.exception(
+                    "Air Pollution spatial enrichment configuration unavailable"
+                )
+        if (enrichment is None) != (enrichment_radius is None):
+            raise ValueError(
+                "spatial_enricher and spatial_radius_km must be supplied together"
+            )
         signals: list[CellSignal] = []
         examined = 0
 
@@ -261,8 +287,22 @@ def detect_new(
                 if result.detector_status != "SUSPECTED_ANOMALY":
                     continue
                 try:
+                    candidate = None
+                    if enrichment is not None and enrichment_radius is not None:
+                        enriched = enrichment.enrich_detection_result(
+                            result.detection,
+                            radius_km=enrichment_radius,
+                        )
+                        if enriched is None:
+                            raise RuntimeError(
+                                "qualified anomaly was not spatially enriched"
+                            )
+                        candidate = correlation_candidate(enriched)
                     signals.append(
-                        air_pollution_detection_to_cell_signal(result.detection)
+                        air_pollution_detection_to_cell_signal(
+                            result.detection,
+                            candidate=candidate,
+                        )
                     )
                 except AirPollutionCellSignalAdapterError as error:
                     logger.warning(

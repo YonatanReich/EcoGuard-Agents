@@ -57,6 +57,17 @@ def _analysis_candidate(result, incident):
     if analysis is not None:
         state = analysis.current_state.result
         if state is not None and state.detections:
+            referenced_ids = set(analysis.analysis_origin.evidence_reference_ids)
+            referenced = [
+                item
+                for item in state.detections
+                if item.anomaly.detection_id in referenced_ids
+            ]
+            if referenced:
+                return max(
+                    referenced,
+                    key=lambda item: item.anomaly.observed_at,
+                )
             return max(state.detections, key=lambda item: item.anomaly.observed_at)
     return max(
         pollution_candidates_from_incident(incident),
@@ -120,6 +131,9 @@ def air_pollution_shared_event(
         if severity is not None:
             index = severity.ministry_index
             ministry = MinistryAirQualityIndex(
+                station_id=index.station_id,
+                pollutant=index.pollutant,
+                resolved_channel_id=index.resolved_channel_id,
                 station_index=index.station_index,
                 station_category=index.station_category,
                 category_color=index.category_color,

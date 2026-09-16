@@ -17,12 +17,24 @@ from ecoguard.detectors.air_pollution.observation_processing import (
     air_quality_observation_from_row,
     detect_new,
 )
+from ecoguard.detectors.air_pollution.spatial_schemas import (
+    NearbyGeographicFeature,
+    PollutionSpatialContext,
+    SpatiallyEnrichedAirPollutionAnomaly,
+)
 from ecoguard.shared.signals import AIR_POLLUTION
 from ecoguard.shared.air_quality_schemas import AirQualityObservation, LIVE_QUALITY_POLICY
 
 OBSERVED = datetime(2026, 9, 13, 17, 15, tzinfo=timezone.utc)
 INGESTED = datetime(2026, 9, 13, 17, 16, tzinfo=timezone.utc)
 DETECTED = datetime(2026, 9, 13, 17, 17, tzinfo=timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+def _disable_real_transport_enrichment(monkeypatch):
+    """Unit tests inject enrichment explicitly and never call Overpass."""
+
+    monkeypatch.setenv("AIR_POLLUTION_TRANSPORT_SCREENING_ENABLED", "false")
 
 
 def payload(value=10.0, **changes):
@@ -284,6 +296,58 @@ def test_detect_new_turns_only_persisted_qualified_anomalies_into_signals(
         "limit": 500,
     }]
     assert finished == [(91, {"status": "ok", "rows_written": 1})]
+
+
+def test_detect_new_spatially_enriches_with_transport_screening_radius(monkeypatch):
+    from ecoguard.detectors.air_pollution import observation_processing
+
+    service, _ = processor(reader=lambda **_: [row(12, 21.0)])
+    _bookmark_recorder(monkeypatch, since=INGESTED.replace(minute=0))
+    calls = []
+
+    class Enricher:
+        def enrich_detection_result(self, result, *, radius_km):
+            calls.append(radius_km)
+            anomaly = result.anomaly
+            return SpatiallyEnrichedAirPollutionAnomaly(
+                anomaly=anomaly,
+                spatial_context=PollutionSpatialContext(
+                    location=anomaly.location,
+                    lookup_radius_km=radius_km,
+                    status="success",
+                    source="OpenStreetMap / Overpass API",
+                    collected_at=DETECTED,
+                    provider_collection_status="success",
+                    nearby_settlements=[NearbyGeographicFeature(
+                        name="Real provider settlement",
+                        osm_id=42,
+                        osm_type="node",
+                        latitude=32.11,
+                        longitude=34.81,
+                    )],
+                ),
+            )
+
+    enricher = Enricher()
+    monkeypatch.setattr(
+        observation_processing,
+        "AirPollutionSpatialEnricher",
+        lambda: enricher,
+    )
+    monkeypatch.setenv("AIR_POLLUTION_TRANSPORT_SCREENING_ENABLED", "true")
+    monkeypatch.setenv("AIR_POLLUTION_TRANSPORT_HALF_ANGLE_DEG", "45")
+    monkeypatch.setenv("AIR_POLLUTION_TRANSPORT_MAX_DISTANCE_M", "10000")
+    monkeypatch.setenv("AIR_POLLUTION_TRANSPORT_ARC_SEGMENT_COUNT", "8")
+    monkeypatch.setenv("AIR_POLLUTION_WIND_MAX_AGE_MINUTES", "30")
+    monkeypatch.setenv("AIR_POLLUTION_TRANSPORT_MIN_WIND_SPEED_MPS", "0.5")
+
+    signals = detect_new(processor=service, at=DETECTED)
+
+    assert calls == [10.0]
+    context = signals[0].evidence["correlation_candidate"]["spatial_context"]
+    assert context["lookup_radius_km"] == 10.0
+    assert context["nearby_settlements"][0]["name"] == "Real provider settlement"
+    assert signals[0].evidence["detection_result"]["status"] == "SUSPECTED_ANOMALY"
 
 
 def test_detect_new_normal_and_not_evaluated_results_emit_nothing(monkeypatch):

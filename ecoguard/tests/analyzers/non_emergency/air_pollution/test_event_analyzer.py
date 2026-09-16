@@ -434,6 +434,56 @@ def test_multiple_candidates_at_origin_make_only_trend_unavailable():
     )
 
 
+def test_origin_evidence_reference_disambiguates_candidates_at_same_location():
+    second_payload = _candidate().model_dump(round_trip=True)
+    second_payload["anomaly"]["detection_id"] = "air-pollution:test-2"
+    second_payload["anomaly"]["observed_at"] = OBSERVED_AT + timedelta(minutes=1)
+    second_payload["anomaly"]["detected_at"] = OBSERVED_AT + timedelta(minutes=1, seconds=10)
+    second_payload["anomaly"]["live_observation"]["observed_at"] = (
+        OBSERVED_AT + timedelta(minutes=1)
+    )
+    second_payload["anomaly"]["live_observation"]["provider_timestamp"] = (
+        "2026-09-13T19:20:00+02:00"
+    )
+    second = type(_candidate()).model_validate(second_payload)
+    trend = Mock()
+    trend.predict.return_value = _trend_component()
+    index_client = Mock()
+    index_client.get_station_index_evidence.return_value = _index_lookup(
+        provider_timestamp=OBSERVED_AT + timedelta(minutes=15)
+    )
+
+    report = AirPollutionNonEmergencyAnalyzer(
+        transport_service=None,
+        ministry_index_client=index_client,
+        trend_inference_service=trend,
+        clock=lambda: GENERATED_AT,
+    ).analyze(_analysis_input(
+        correlated_detections=[_candidate(), second],
+        analysis_origin=AnalysisOrigin(
+            analysis_origin_kind="monitoring_location",
+            analysis_origin_coordinates=POINT,
+            evidence_reference_ids=["air-pollution:test-2"],
+        ),
+        evidence=[
+            *_incident_evidence(),
+            TransportEvidenceReference(
+                evidence_id="air-pollution:test-2",
+                source_name="test",
+            ),
+        ],
+    ))
+
+    trend.predict.assert_called_once_with(second)
+    index_client.get_station_index_evidence.assert_called_once_with(
+        station_id="42",
+        channel_id="7001",
+        pollutant="NO2",
+        observed_at=OBSERVED_AT + timedelta(minutes=1),
+    )
+    assert report.future_prediction.status == "success"
+
+
 def test_analyzer_preserves_native_ministry_index_separately_from_p95_evidence():
     index_client = Mock()
     index_client.get_station_index_evidence.return_value = _index_lookup()

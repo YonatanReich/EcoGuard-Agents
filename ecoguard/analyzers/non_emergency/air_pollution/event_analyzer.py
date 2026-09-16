@@ -265,6 +265,16 @@ class AirPollutionNonEmergencyAnalyzer:
         state = analysis_input.current_state.result
         if state is None:
             return []
+        referenced_ids = set(
+            analysis_input.analysis_origin.evidence_reference_ids
+        )
+        referenced = [
+            item
+            for item in state.detections
+            if item.anomaly.detection_id in referenced_ids
+        ]
+        if referenced:
+            return referenced
         origin = analysis_input.analysis_origin.analysis_origin_coordinates
         return [
             item for item in state.detections if item.anomaly.location == origin

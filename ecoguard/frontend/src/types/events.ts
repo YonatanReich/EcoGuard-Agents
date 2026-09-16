@@ -58,6 +58,9 @@ export type AirPollutionBaselineContext = {
 }
 
 export type MinistryAirQualityIndex = {
+  station_id?: string | null
+  pollutant?: string | null
+  resolved_channel_id?: string | null
   station_index: number
   station_category: string
   category_color: string | null
