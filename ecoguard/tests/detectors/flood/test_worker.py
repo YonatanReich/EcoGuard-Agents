@@ -28,9 +28,10 @@ CELL = "risk-05000m-r0040-c0012"
 
 
 class Repository:
-    def __init__(self, pending, active_events=None):
+    def __init__(self, pending, active_events=None, station_contexts=None):
         self.pending = pending
         self.active_events = active_events or {}
+        self.station_contexts = station_contexts or {}
         self.commits = []
 
     def load_pending(self, sources, *, limit_per_source):
@@ -62,6 +63,13 @@ class Repository:
 
     def load_baselines(self, source_station_ids):
         return {}
+
+    def load_station_contexts(self, source_station_ids):
+        return {
+            station_id: self.station_contexts[station_id]
+            for station_id in source_station_ids
+            if station_id in self.station_contexts
+        }
 
     def load_active_events(self, cell_ids):
         return {
@@ -143,17 +151,14 @@ def test_success_emits_candidate_and_advances_consumed_cursor():
     assert result.candidates[0]["confidence"] > 0
     assert result.candidates[0]["severity_hint"] == "moderate"
     assert result.candidates[0]["location_uncertainty_m"] == 2500.0
-    assert set(result.candidates[0]) == {
-        "candidate_key",
-        "event_type",
-        "cell_id",
-        "observed_at",
-        "latitude",
-        "longitude",
-        "confidence",
-        "severity_hint",
-        "location_uncertainty_m",
-    }
+    candidate = result.candidates[0]
+    assert candidate["event_key"].startswith("flood:rain:")
+    assert candidate["detected"] is True
+    assert candidate["is_urban"] is True
+    assert candidate["location"]["source"] == "rain_gauge"
+    assert candidate["trigger"] == "urban_rain_10m"
+    assert candidate["reasoning"]["primary_signal"] == candidate["trigger"]
+    assert candidate["rainfall_evidence"]["rainfall_10m_mm"] == 9.0
     assert repository.commits[0][2] == _pending().high_watermarks
 
 
@@ -173,6 +178,103 @@ def test_evaluation_failure_does_not_advance_a_cursor():
         worker.FloodDetectorWorker(repository, agent=FailingAgent()).run_once()
 
     assert repository.commits == []
+
+
+def test_gauge_event_keeps_detector_reasoning_location_and_downstream_route():
+    observations = []
+    for observation_id, minutes, discharge in ((30, -10, 9.0), (31, 0, 32.0)):
+        observed_at = NOW + timedelta(minutes=minutes)
+        observations.append(
+            {
+                "id": observation_id,
+                "source": HYDROMETRIC_SOURCE,
+                "cell_id": CELL,
+                "observed_at": observed_at,
+                "ingested_at": observed_at,
+                "payload": {
+                    "stations": [
+                        {
+                            "source_station_id": 50,
+                            "name_he": "תחנת נחל בדיקה",
+                            "name_en": "Test stream gauge",
+                            "discharge_m3s": discharge,
+                            "water_height_m": 1.3,
+                            "flow_start_water_level_m": 1.0,
+                            "flow_threshold_2y_m3s": 10.0,
+                            "flow_threshold_5y_m3s": 20.0,
+                            "flow_threshold_10y_m3s": 30.0,
+                            "flow_threshold_20y_m3s": 40.0,
+                            "flow_threshold_50y_m3s": 50.0,
+                            "flow_threshold_100y_m3s": 60.0,
+                            "latitude": 32.01,
+                            "longitude": 34.81,
+                        }
+                    ]
+                },
+            }
+        )
+    route = {
+        "status": "complete",
+        "confidence": "high",
+        "method": "water_authority_draining_water_id",
+        "origin_water_source_id": 9001,
+        "segment_count": 3,
+        "segments": [
+            {"hop": 0, "water_source_id": 9001},
+            {"hop": 1, "water_source_id": 9002},
+            {"hop": 2, "water_source_id": 9003},
+        ],
+        "termination": "declared_network_end",
+        "limitations": [],
+    }
+    repository = Repository(
+        PendingBatch(
+            observations,
+            [CursorPosition(HYDROMETRIC_SOURCE, NOW, 31)],
+        ),
+        station_contexts={
+            50: {
+                "source_station_id": 50,
+                "hydrometric_station_id": 7,
+                "name_he": "תחנת נחל בדיקה",
+                "name_en": "Test stream gauge",
+                "basin_id": 12,
+                "basin_name_he": "אגן בדיקה",
+                "basin_name_en": "Test basin",
+                "stream_context": {
+                    "matched": True,
+                    "confidence": "high",
+                    "stream": {"water_source_id": 9001},
+                },
+                "downstream_route": route,
+            }
+        },
+    )
+
+    result = worker.FloodDetectorWorker(repository).run_once()
+
+    event = result.candidates[0]
+    assert event["event_key"] == f"flood:gauge:{CELL}:50"
+    assert event["location"] == {
+        "known": True,
+        "latitude": 32.01,
+        "longitude": 34.81,
+        "source": "hydrometric_station",
+        "uncertainty_m": 100.0,
+    }
+    assert event["is_urban"] is True
+    assert event["station"]["hydrometric_station_id"] == 7
+    assert event["drainage_basin"]["basin_id"] == 12
+    assert [
+        segment["water_source_id"]
+        for segment in event["downstream_route"]["segments"]
+    ] == [9001, 9002, 9003]
+    assert event["reasoning"]["primary_signal"] == (
+        "gauge_discharge_rating_curve"
+    )
+    assert event["hydrological_evidence"][
+        "highest_crossed_return_period_years"
+    ] == 10
 
 
 def test_worker_resolves_an_active_gauge_event_and_advances_the_cursor():
@@ -298,6 +400,12 @@ def test_numeric_radar_pipeline_opens_then_resolves_an_urban_event():
             "observed_at": last_dry["observed_at"],
             "status": "resolved",
             "reason": "rain_below_exit_threshold",
+            "evidence": {
+                "rainfall_10m_mm": 0.0,
+                "rainfall_1h_mm": 0.0,
+                "rainfall_6h_mm": 0.0,
+                "rainfall_24h_mm": 0.0,
+            },
         }
     ]
     assert closing_repository.commits[0][2] == [closing_cursor]

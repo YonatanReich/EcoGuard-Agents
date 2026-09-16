@@ -68,6 +68,7 @@ class FloodDetectionAgent:
         observations: list[Mapping[str, Any]],
         context: Mapping[str, Any] | None,
         baselines: Mapping[tuple[int, int], Mapping[str, Any]],
+        station_contexts: Mapping[int, Mapping[str, Any]] | None = None,
         active_events: Sequence[Mapping[str, Any]] = (),
         catchment_observations: list[Mapping[str, Any]] | None = None,
     ) -> FloodEvaluation:
@@ -80,6 +81,7 @@ class FloodDetectionAgent:
             baselines,
             self.policy,
             catchment_observations,
+            station_contexts,
         )
         return FloodEvaluation(
             candidates=[

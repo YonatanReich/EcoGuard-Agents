@@ -22,9 +22,10 @@ def test_main_invokes_collectors_and_materializes_context(monkeypatch, capsys):
         calls.append("context")
         return {
             "cells": 1200,
-            "hydrometric_stations": 126,
-            "rain_stations": 80,
-            "baselines": 420,
+                "hydrometric_stations": 126,
+                "rain_stations": 80,
+                "station_topologies": 126,
+                "baselines": 420,
         }
 
     monkeypatch.setattr(
@@ -57,3 +58,4 @@ def test_main_invokes_collectors_and_materializes_context(monkeypatch, capsys):
     assert "27 owners, 126 stations, 133 rain-station links" in output
     assert "loaded 458 stations, 105 automatic links" in output
     assert "1,200 cells" in output
+    assert "126 station routes" in output

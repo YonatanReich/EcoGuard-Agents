@@ -53,6 +53,10 @@ class FloodRepository(Protocol):
         self, source_station_ids: Sequence[int]
     ) -> dict[tuple[int, int], dict[str, Any]]: ...
 
+    def load_station_contexts(
+        self, source_station_ids: Sequence[int]
+    ) -> dict[int, dict[str, Any]]: ...
+
     def load_active_events(
         self, cell_ids: Sequence[str]
     ) -> dict[str, list[dict[str, Any]]]: ...
@@ -150,9 +154,9 @@ class FloodDetectorWorker:
             observed_since=earliest_new - self.agent.lookback,
             observed_through=latest_new,
         )
-        baselines = self.repository.load_baselines(
-            _hydrometric_station_ids(window)
-        )
+        station_ids = _hydrometric_station_ids(window)
+        baselines = self.repository.load_baselines(station_ids)
+        station_contexts = self.repository.load_station_contexts(station_ids)
         active_events = self.repository.load_active_events(cell_ids)
         by_cell: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for observation in window:
@@ -169,6 +173,7 @@ class FloodDetectorWorker:
                 observations=by_cell.get(cell_id, []),
                 context=context.get(cell_id),
                 baselines=baselines,
+                station_contexts=station_contexts,
                 active_events=active_events.get(cell_id, []),
                 catchment_observations=by_basin.get(
                     context.get(cell_id, {}).get("drainage_basin_id"), []

@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import text
 
 from ecoguard.collection.base import cell_for, service_area_cells
+from ecoguard.detectors.flood.topology import (
+    build_downstream_route,
+    build_stream_context,
+)
 
 
 URBAN_BUILT_UP_FRACTION = 0.35
@@ -220,6 +225,88 @@ REBUILD_BASELINES = text(
 )
 
 
+STATION_TOPOLOGY_INPUT = text(
+    """
+    SELECT station.id AS hydrometric_station_id,
+           station.source_station_id,
+           station.name_he AS station_name_he,
+           station.name_en AS station_name_en,
+           ST_Y(station.location::geometry) AS latitude,
+           ST_X(station.location::geometry) AS longitude,
+           basin.basin_id,
+           COALESCE(stream_match.candidates, '[]'::jsonb) AS stream_candidates
+    FROM hydrometric_stations AS station
+    LEFT JOIN drainage_basins AS basin
+      ON basin.id = station.drainage_basin_id
+    LEFT JOIN LATERAL (
+      SELECT jsonb_agg(
+        jsonb_build_object(
+          'stream_id', candidate.stream_id,
+          'object_id', candidate.object_id,
+          'name_he', candidate.name_he,
+          'water_source_id', candidate.water_source_id,
+          'main_catchment_code', candidate.main_catchment_code,
+          'main_catchment_name', candidate.main_catchment_name,
+          'draining_water_id', candidate.draining_water_id,
+          'draining_water_name', candidate.draining_water_name,
+          'distance_m', candidate.distance_m
+        )
+        ORDER BY candidate.distance_m, candidate.object_id
+      ) AS candidates
+      FROM (
+        SELECT stream.id AS stream_id,
+               stream.object_id,
+               stream.name_he,
+               stream.water_source_id,
+               stream.main_catchment_code,
+               stream.main_catchment_name,
+               stream.draining_water_id,
+               stream.draining_water_name,
+               ST_Distance(
+                 station.location,
+                 stream.geometry::geography
+               ) AS distance_m
+        FROM streams AS stream
+        WHERE basin.id IS NOT NULL
+          AND ST_Intersects(stream.geometry, basin.geometry)
+          AND ST_DWithin(
+            station.location,
+            stream.geometry::geography,
+            2000.0
+          )
+        ORDER BY
+          ST_Distance(station.location, stream.geometry::geography),
+          stream.object_id
+        LIMIT 20
+      ) AS candidate
+    ) AS stream_match ON true
+    ORDER BY station.source_station_id
+    """
+)
+
+
+STREAM_NETWORK_INPUT = text(
+    """
+    SELECT node.water_source_id,
+           node.name_he,
+           node.object_ids,
+           node.feature_count,
+           node.main_catchment_code,
+           node.main_catchment_name,
+           edge.downstream_water_source_id AS draining_water_id,
+           edge.downstream_water_name AS draining_water_name,
+           ST_Y(node.representative_location) AS representative_latitude,
+           ST_X(node.representative_location) AS representative_longitude,
+           node.topology_conflict
+    FROM stream_network_nodes AS node
+    LEFT JOIN stream_network_edges AS edge
+      ON edge.upstream_water_source_id = node.water_source_id
+     AND NOT node.topology_conflict
+    ORDER BY node.water_source_id
+    """
+)
+
+
 def _station_context_rows(session: Any, table: str) -> list[dict[str, Any]]:
     rows = session.execute(
         text(
@@ -263,6 +350,65 @@ def rebuild_flood_station_baselines_in_session(
     return max(baseline_count or 0, 0)
 
 
+def rebuild_flood_station_topology_in_session(
+    session: Any,
+    *,
+    refreshed_at: datetime,
+) -> int:
+    """Materialize stable gauge-to-stream matches and their full routes."""
+    network: dict[int, dict[str, Any]] = {}
+    for result in session.execute(STREAM_NETWORK_INPUT).mappings():
+        row = dict(result)
+        latitude = row.pop("representative_latitude", None)
+        longitude = row.pop("representative_longitude", None)
+        row["representative_location"] = (
+            {"latitude": latitude, "longitude": longitude}
+            if latitude is not None and longitude is not None
+            else None
+        )
+        network[int(row["water_source_id"])] = row
+
+    rows = []
+    for result in session.execute(STATION_TOPOLOGY_INPUT).mappings():
+        station = dict(result)
+        candidates = station.pop("stream_candidates", None) or []
+        stream_context = build_stream_context(station, candidates)
+        rows.append(
+            {
+                "hydrometric_station_id": station["hydrometric_station_id"],
+                "stream_context": json.dumps(
+                    stream_context, ensure_ascii=False, sort_keys=True
+                ),
+                "downstream_route": json.dumps(
+                    build_downstream_route(stream_context, network),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                "refreshed_at": refreshed_at,
+            }
+        )
+
+    session.execute(text("DELETE FROM flood_station_topology"))
+    if rows:
+        session.execute(
+            text(
+                """
+                INSERT INTO flood_station_topology (
+                  hydrometric_station_id, stream_context,
+                  downstream_route, refreshed_at
+                ) VALUES (
+                  :hydrometric_station_id,
+                  CAST(:stream_context AS jsonb),
+                  CAST(:downstream_route AS jsonb),
+                  :refreshed_at
+                )
+                """
+            ),
+            rows,
+        )
+    return len(rows)
+
+
 def refresh_flood_station_baselines() -> int:
     """Rebuild monthly baselines without repeating spatial materialization."""
     from ecoguard.database.engine import Session
@@ -274,6 +420,19 @@ def refresh_flood_station_baselines() -> int:
         )
         session.commit()
     return baseline_count
+
+
+def refresh_flood_station_topology() -> int:
+    """Refresh only the static station-to-stream routes already stored in DB."""
+    from ecoguard.database.engine import Session
+
+    with Session() as session:
+        station_count = rebuild_flood_station_topology_in_session(
+            session,
+            refreshed_at=datetime.now(timezone.utc),
+        )
+        session.commit()
+    return station_count
 
 
 def refresh_flood_static_context() -> dict[str, int]:
@@ -328,6 +487,11 @@ def refresh_flood_static_context() -> dict[str, int]:
                 rain_rows,
             )
 
+        station_topology_count = rebuild_flood_station_topology_in_session(
+            session,
+            refreshed_at=refreshed_at,
+        )
+
         baseline_count = rebuild_flood_station_baselines_in_session(
             session,
             computed_at=refreshed_at,
@@ -338,5 +502,6 @@ def refresh_flood_static_context() -> dict[str, int]:
         "cells": len(cell_rows),
         "hydrometric_stations": len(hydrometric_rows),
         "rain_stations": len(rain_rows),
+        "station_topologies": station_topology_count,
         "baselines": max(baseline_count or 0, 0),
     }

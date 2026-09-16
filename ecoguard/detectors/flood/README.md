@@ -20,7 +20,8 @@ The older station-centric implementation is kept temporarily in
    cannot open or resolve a real-time event.
 3. For affected cells it reloads at least 24 hours of observations and joins
    the precomputed `flood_cell_context`, monthly station baselines and
-   basin-wide rain window.
+   basin-wide rain window. Gauge events also join the materialized
+   station-to-stream match and complete downstream route.
 4. `FloodDetectionAgent.evaluate()` applies transparent threshold-crossing
    rules. It covers gauged rivers, rain-only natural catchments and short
    intense urban rain.
@@ -60,7 +61,9 @@ it cannot open an event without a local threshold crossing.
 After migrations and the existing hydrology/surface loaders have been applied,
 run `python -m ecoguard.scripts.load_hydrology_static_data`. It materializes
 station-to-cell links, basin/terrain/urban/stream context, and per-station
-monthly baselines. Re-run it only after static layers change or after enough new
+monthly baselines. It also matches each hydrometric station to a stream once
+and follows the Water Authority's declared downstream ids to the end of the
+known graph. Re-run it only after static layers change or after enough new
 history has accumulated to refresh baselines.
 
 The same command caches the official historical-station registry from
@@ -113,9 +116,18 @@ no usable official return-period threshold.
 - `run_flood_detector()` performs one timer-safe detector tick and returns
   `no_op`, processed counts, and newly inserted candidates.
 
-Each opening candidate intentionally exposes only identity/location plus
-`confidence`, `severity_hint`, and `location_uncertainty_m`. Detailed opening
-and resolution evidence remains in `flood_candidates` for audit and tuning.
+Each opening candidate exposes the complete detector result. In addition to
+identity, confidence and severity, it includes `is_urban`, the trigger,
+machine-readable reasoning, hydrological and rainfall evidence, station and
+basin metadata, stream matching and the full known downstream route. The
+worker returns this object unchanged after its database transaction commits.
+
+The `location` object always states its source. Gauge events use the station
+coordinate. Rain events use the strongest contributing rain-gauge location or
+the maximum-rate radar pixel when available, otherwise the 5 km cell center.
+For rain-only events this is the best observed rain coordinate, not proof of
+standing water; `location_uncertainty_m` preserves that distinction for later
+resource allocation.
 
 ## Radar authentication
 

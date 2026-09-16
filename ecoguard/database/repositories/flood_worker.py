@@ -105,22 +105,50 @@ BASIN_RAIN_OBSERVATIONS = text(
 
 CELL_CONTEXT = text(
     """
-    SELECT cell_id,
-           ST_Y(location::geometry) AS latitude,
-           ST_X(location::geometry) AS longitude,
-           drainage_basin_id,
-           drainage_basin_source_id,
-           elevation_m,
-           slope_deg,
-           built_up_fraction,
-           is_urban,
-           urban_classification_status,
-           urban_sample_count,
-           distance_to_stream_m
-    FROM flood_cell_context
-    WHERE cell_id IN :cell_ids
+    SELECT context.cell_id,
+           ST_Y(context.location::geometry) AS latitude,
+           ST_X(context.location::geometry) AS longitude,
+           context.drainage_basin_id,
+           context.drainage_basin_source_id,
+           basin.name_he AS drainage_basin_name_he,
+           basin.name_en AS drainage_basin_name_en,
+           context.elevation_m,
+           context.slope_deg,
+           context.built_up_fraction,
+           context.is_urban,
+           context.urban_classification_status,
+           context.urban_sample_count,
+           context.distance_to_stream_m
+    FROM flood_cell_context AS context
+    LEFT JOIN drainage_basins AS basin
+      ON basin.id = context.drainage_basin_id
+    WHERE context.cell_id IN :cell_ids
     """
 ).bindparams(bindparam("cell_ids", expanding=True))
+
+
+STATION_CONTEXTS = text(
+    """
+    SELECT station.source_station_id,
+           station.id AS hydrometric_station_id,
+           station.name_he,
+           station.name_en,
+           ST_Y(station.location::geometry) AS latitude,
+           ST_X(station.location::geometry) AS longitude,
+           basin.basin_id,
+           basin.name_he AS basin_name_he,
+           basin.name_en AS basin_name_en,
+           topology.stream_context,
+           topology.downstream_route,
+           topology.refreshed_at AS topology_refreshed_at
+    FROM hydrometric_stations AS station
+    LEFT JOIN drainage_basins AS basin
+      ON basin.id = station.drainage_basin_id
+    LEFT JOIN flood_station_topology AS topology
+      ON topology.hydrometric_station_id = station.id
+    WHERE station.source_station_id IN :station_ids
+    """
+).bindparams(bindparam("station_ids", expanding=True))
 
 
 BASELINES = text(
@@ -285,6 +313,22 @@ class FloodWorkerRepository:
                 for row in rows
             }
 
+    def load_station_contexts(
+        self, source_station_ids: Sequence[int]
+    ) -> dict[int, dict[str, Any]]:
+        """Load materialized station, basin and downstream-route context."""
+        if not source_station_ids:
+            return {}
+        with Session() as session:
+            rows = session.execute(
+                STATION_CONTEXTS,
+                {"station_ids": list(source_station_ids)},
+            ).mappings()
+            return {
+                int(row["source_station_id"]): dict(row)
+                for row in rows
+            }
+
     def load_active_events(
         self, cell_ids: Sequence[str]
     ) -> dict[str, list[dict[str, Any]]]:
@@ -321,7 +365,7 @@ class FloodWorkerRepository:
                 "location_uncertainty_m": candidate.location_uncertainty_m,
                 "trigger": candidate.trigger,
                 "evidence": json.dumps(
-                    candidate.evidence,
+                    candidate.database_evidence(),
                     ensure_ascii=False,
                     sort_keys=True,
                     separators=(",", ":"),

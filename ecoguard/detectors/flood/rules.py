@@ -5,7 +5,12 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping, Sequence
+
+from ecoguard.detectors.flood.topology import (
+    unavailable_downstream_route,
+    unavailable_stream_context,
+)
 
 
 HYDROMETRIC_SOURCE = "water_authority_hydrometric_observations"
@@ -52,19 +57,46 @@ class FloodCandidate:
     location_uncertainty_m: float
     trigger: str
     evidence: dict[str, Any]
+    is_urban: bool | None
+    location_source: str
+    event_details: dict[str, Any]
 
     def public(self) -> dict[str, Any]:
-        """Return the intentionally small downstream detector contract."""
+        """Return the complete event contract produced by the detector."""
         return {
+            "event_key": self.event_key,
             "candidate_key": self.candidate_key,
             "event_type": "flood",
+            "detected": True,
             "cell_id": self.cell_id,
             "observed_at": self.observed_at,
             "latitude": self.latitude,
             "longitude": self.longitude,
+            "location": {
+                "known": True,
+                "latitude": self.latitude,
+                "longitude": self.longitude,
+                "source": self.location_source,
+                "uncertainty_m": self.location_uncertainty_m,
+            },
             "confidence": self.confidence,
+            "confidence_level": _confidence_level(self.confidence),
             "severity_hint": self.severity_hint,
+            "flow_intensity": self.severity_hint,
             "location_uncertainty_m": self.location_uncertainty_m,
+            "is_urban": self.is_urban,
+            "trigger": self.trigger,
+            "evidence": self.evidence,
+            **self.event_details,
+        }
+
+    def database_evidence(self) -> dict[str, Any]:
+        """Keep lifecycle fields at the root and cache the rich event details."""
+        return {
+            **self.evidence,
+            "is_urban": self.is_urban,
+            "location_source": self.location_source,
+            "event_details": self.event_details,
         }
 
 
@@ -88,6 +120,7 @@ class FloodResolution:
             "observed_at": self.observed_at,
             "status": "resolved",
             "reason": self.reason,
+            "evidence": self.evidence,
         }
 
 
@@ -283,6 +316,184 @@ def _severity(ratio: float) -> str:
     return "moderate"
 
 
+def _confidence_level(confidence: float) -> str:
+    if confidence >= 0.85:
+        return "high"
+    if confidence >= 0.70:
+        return "medium"
+    return "low"
+
+
+def _urban_context(
+    context: Mapping[str, Any] | None,
+    urban: bool | None,
+    policy: FloodPolicy,
+) -> dict[str, Any]:
+    context = context or {}
+    return {
+        "is_urban": urban,
+        "classification_status": context.get(
+            "urban_classification_status", "unknown"
+        ),
+        "built_up_fraction": context.get("built_up_fraction"),
+        "sample_count": context.get("urban_sample_count"),
+        "classification_threshold": policy.urban_built_up_fraction,
+    }
+
+
+def _drainage_basin(
+    context: Mapping[str, Any] | None,
+    station_context: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    station_context = station_context or {}
+    context = context or {}
+    return {
+        "basin_id": station_context.get(
+            "basin_id", context.get("drainage_basin_source_id")
+        ),
+        "name_he": station_context.get(
+            "basin_name_he", context.get("drainage_basin_name_he")
+        ),
+        "name_en": station_context.get(
+            "basin_name_en", context.get("drainage_basin_name_en")
+        ),
+    }
+
+
+def _rainfall_evidence(metrics: RainMetrics | None) -> dict[str, Any]:
+    if metrics is None:
+        return {
+            "available": False,
+            "sources": [],
+            "rainfall_10m_mm": None,
+            "rainfall_1h_mm": None,
+            "rainfall_6h_mm": None,
+            "rainfall_24h_mm": None,
+            "max_rate_mm_h": None,
+        }
+    sources = []
+    if metrics.has_gauge:
+        sources.append(RAIN_GAUGE_SOURCE)
+    if metrics.has_radar:
+        sources.append(RADAR_SOURCE)
+    return {
+        "available": bool(sources),
+        "sources": sources,
+        "rainfall_10m_mm": metrics.rainfall_10m_mm,
+        "rainfall_1h_mm": metrics.rainfall_1h_mm,
+        "rainfall_6h_mm": metrics.rainfall_6h_mm,
+        "rainfall_24h_mm": metrics.rainfall_24h_mm,
+        "max_rate_mm_h": metrics.max_rate_mm_h,
+    }
+
+
+def _rainfall_context(
+    catchment: RainMetrics | None,
+    basin: Mapping[str, Any],
+) -> dict[str, Any]:
+    evidence = _rainfall_evidence(catchment)
+    return {
+        "association": "same_drainage_basin" if basin.get("basin_id") else "unavailable",
+        "basin_id": basin.get("basin_id"),
+        **evidence,
+        "limitations": [
+            "basin_average_does_not_prove_rainfall_upstream_of_the_event"
+        ],
+    }
+
+
+def _gauge_trend(
+    samples: Sequence[tuple[datetime, Mapping[str, Any]]],
+    index: int,
+) -> dict[str, Any]:
+    if index <= 0:
+        return {
+            "sample_count": index + 1,
+            "elapsed_minutes": None,
+            "discharge_change_m3s": None,
+            "water_height_change_m": None,
+        }
+    previous_at, previous = samples[index - 1]
+    current_at, current = samples[index]
+    elapsed_minutes = (current_at - previous_at).total_seconds() / 60.0
+
+    def change(field: str) -> float | None:
+        before = previous.get(field)
+        after = current.get(field)
+        if before is None or after is None:
+            return None
+        return float(after) - float(before)
+
+    return {
+        "sample_count": index + 1,
+        "elapsed_minutes": elapsed_minutes,
+        "discharge_change_m3s": change("discharge_m3s"),
+        "water_height_change_m": change("water_height_m"),
+    }
+
+
+def _rain_event_location(
+    observations: Sequence[Mapping[str, Any]],
+    *,
+    as_of: datetime,
+    metric: str,
+    context: Mapping[str, Any],
+    policy: FloodPolicy,
+) -> tuple[float, float, str]:
+    """Return the best observed rain coordinate without claiming inundation."""
+    periods = {
+        "rainfall_10m_mm": timedelta(minutes=10),
+        "rainfall_1h_mm": timedelta(hours=1),
+        "rainfall_6h_mm": timedelta(hours=6),
+        "rainfall_24h_mm": timedelta(hours=24),
+    }
+    period = periods[metric]
+    gauge_totals: dict[int, float] = defaultdict(float)
+    gauge_locations: dict[int, tuple[float, float]] = {}
+    radar_total = 0.0
+    radar_peaks: list[tuple[float, float, float]] = []
+    for observation in observations:
+        if not as_of - period < observation["observed_at"] <= as_of:
+            continue
+        payload = observation.get("payload") or {}
+        if observation["source"] == RAIN_GAUGE_SOURCE:
+            for station in payload.get("stations", []):
+                value = station.get("rainfall_mm")
+                if value is None:
+                    continue
+                station_id = int(station["source_station_id"])
+                gauge_totals[station_id] += float(value)
+                if station.get("latitude") is not None and station.get("longitude") is not None:
+                    gauge_locations[station_id] = (
+                        float(station["latitude"]),
+                        float(station["longitude"]),
+                    )
+        elif observation["source"] == RADAR_SOURCE and _usable_radar(
+            observation, policy
+        ):
+            radar_total += float(payload.get("rainfall_mm") or 0.0)
+            if payload.get("peak_latitude") is not None and payload.get(
+                "peak_longitude"
+            ) is not None:
+                radar_peaks.append(
+                    (
+                        float(payload.get("rain_rate_max_mm_h") or 0.0),
+                        float(payload["peak_latitude"]),
+                        float(payload["peak_longitude"]),
+                    )
+                )
+
+    gauge_station = max(gauge_totals, key=gauge_totals.get, default=None)
+    gauge_total = gauge_totals.get(gauge_station, 0.0)
+    if radar_total >= gauge_total and radar_peaks:
+        _, latitude, longitude = max(radar_peaks)
+        return latitude, longitude, "radar_peak"
+    if gauge_station is not None and gauge_station in gauge_locations:
+        latitude, longitude = gauge_locations[gauge_station]
+        return latitude, longitude, "rain_gauge"
+    return float(context["latitude"]), float(context["longitude"]), "cell_center"
+
+
 def _exceeded_return_period(
     station: Mapping[str, Any], discharge: float
 ) -> int | None:
@@ -332,6 +543,9 @@ def _gauge_candidates(
     baselines: Mapping[tuple[int, int], Mapping[str, Any]],
     policy: FloodPolicy,
     rain: RainMetrics | None,
+    context: Mapping[str, Any] | None,
+    station_contexts: Mapping[int, Mapping[str, Any]],
+    catchment_observations: list[Mapping[str, Any]],
 ) -> list[FloodCandidate]:
     by_station: dict[int, list[tuple[datetime, Mapping[str, Any]]]] = defaultdict(list)
     for observation in observations:
@@ -440,6 +654,86 @@ def _gauge_candidates(
                 else None
             )
             severity = _gauge_severity(exceeded_return_period, ratio)
+            station_context = station_contexts.get(station_id, {})
+            urban = (
+                _urban_classification(context, policy)
+                if context is not None
+                else None
+            )
+            basin = _drainage_basin(context, station_context)
+            stream_context = station_context.get("stream_context")
+            if not isinstance(stream_context, dict):
+                stream_context = unavailable_stream_context(
+                    "station_topology_not_materialized"
+                )
+            downstream_route = station_context.get("downstream_route")
+            if not isinstance(downstream_route, dict):
+                downstream_route = unavailable_downstream_route(
+                    "station_topology_not_materialized"
+                )
+            catchment = (
+                rain_metrics(
+                    catchment_observations,
+                    observed_at,
+                    policy,
+                    spatial_average=True,
+                )
+                if catchment_observations
+                else None
+            )
+            available_periods = [period for period, _ in official_thresholds]
+            crossed_thresholds = [
+                {
+                    "return_period_years": period,
+                    "threshold_m3s": candidate_threshold,
+                }
+                for period, candidate_threshold in official_thresholds
+                if discharge is not None and float(discharge) >= candidate_threshold
+            ]
+            flow_start = current.get("flow_start_water_level_m")
+            flow_started = (
+                float(stage) >= float(flow_start)
+                if stage is not None and flow_start is not None
+                else None
+            )
+            if trigger == "gauge_discharge_rating_curve":
+                reason_codes = ["station_specific_discharge_threshold_crossed"]
+                summary = (
+                    "Hydrometric discharge crossed the station-specific "
+                    f"Q{opening_return_period} threshold."
+                )
+            elif trigger == "gauge_discharge_seasonal_baseline":
+                reason_codes = ["seasonal_discharge_baseline_crossed"]
+                summary = "Hydrometric discharge crossed its mature seasonal baseline."
+            else:
+                reason_codes = ["seasonal_water_height_baseline_crossed"]
+                summary = "Water height crossed its mature seasonal baseline."
+            if rain and (rain.rainfall_1h_mm >= 5 or rain.rainfall_6h_mm >= 15):
+                reason_codes.append("recent_rainfall_supports_hydrological_signal")
+
+            hydrological_evidence = {
+                "discharge_m3s": discharge,
+                "water_height_m": stage,
+                "flow_start_water_level_m": flow_start,
+                "flow_started": flow_started,
+                "threshold_status": (
+                    "valid"
+                    if len(official_thresholds) == 6
+                    else ("partial" if official_thresholds else "unavailable")
+                ),
+                "available_return_periods": available_periods,
+                "missing_return_periods": [
+                    period
+                    for period in (2, 5, 10, 20, 50, 100)
+                    if period not in available_periods
+                ],
+                "crossed_thresholds": crossed_thresholds,
+                "highest_crossed_return_period_years": exceeded_return_period,
+                "opening_threshold": threshold,
+                "opening_return_period_years": opening_return_period,
+                "trend": _gauge_trend(samples, index),
+            }
+            rainfall_evidence = _rainfall_evidence(rain)
             candidates.append(
                 FloodCandidate(
                     event_key=f"flood:gauge:{cell_id}:{station_id}",
@@ -463,6 +757,48 @@ def _gauge_candidates(
                         "exceeded_return_period_years": exceeded_return_period,
                         "rainfall_1h_mm": rain.rainfall_1h_mm if rain else None,
                         "rainfall_6h_mm": rain.rainfall_6h_mm if rain else None,
+                    },
+                    is_urban=urban,
+                    location_source="hydrometric_station",
+                    event_details={
+                        "metadata": {
+                            "timestamp": observed_at.isoformat(),
+                            "collection_status": "cached_observations",
+                        },
+                        "detection_state": (
+                            "observed_high_flow"
+                            if "discharge" in trigger
+                            else "observed_high_water_level"
+                        ),
+                        "reasons": reason_codes,
+                        "reasoning": {
+                            "summary": summary,
+                            "primary_signal": trigger,
+                            "reason_codes": reason_codes,
+                            "threshold": threshold,
+                            "observed_value": (
+                                discharge if discharge is not None else stage
+                            ),
+                        },
+                        "station": {
+                            "source_station_id": station_id,
+                            "hydrometric_station_id": station_context.get(
+                                "hydrometric_station_id"
+                            ),
+                            "name_he": station_context.get(
+                                "name_he", current.get("name_he")
+                            ),
+                            "name_en": station_context.get(
+                                "name_en", current.get("name_en")
+                            ),
+                        },
+                        "drainage_basin": basin,
+                        "stream_context": stream_context,
+                        "downstream_route": downstream_route,
+                        "hydrological_evidence": hydrological_evidence,
+                        "rainfall_context": _rainfall_context(catchment, basin),
+                        "rainfall_evidence": rainfall_evidence,
+                        "urban_context": _urban_context(context, urban, policy),
                     },
                 )
             )
@@ -591,9 +927,27 @@ def _rain_candidate(
         return None
     field, ratio = crossing
     threshold = float(getattr(current, field)) / ratio
-    latitude = float(context["latitude"])
-    longitude = float(context["longitude"])
+    latitude, longitude, location_source = _rain_event_location(
+        observations,
+        as_of=as_of,
+        metric=field,
+        context=context,
+        policy=policy,
+    )
     trigger = f"{trigger_prefix}_{field.removeprefix('rainfall_').removesuffix('_mm')}"
+    reason_codes = [
+        "urban_rainfall_accumulation_threshold_crossed"
+        if urban
+        else "natural_rainfall_accumulation_threshold_crossed"
+    ]
+    if current.has_radar:
+        reason_codes.append("radar_rainfall_supports_detection")
+    if current.has_gauge:
+        reason_codes.append("rain_gauge_supports_detection")
+    catchment_support = not urban and _catchment_support(catchment, policy)
+    if catchment_support:
+        reason_codes.append("same_basin_rainfall_supports_detection")
+    basin = _drainage_basin(context)
     return FloodCandidate(
         event_key=f"flood:rain:{cell_id}",
         candidate_key=f"flood:{trigger}:{cell_id}:{as_of.isoformat()}",
@@ -604,7 +958,7 @@ def _rain_candidate(
         confidence=_rain_confidence(
             current,
             urban=urban,
-            catchment_support=(not urban and _catchment_support(catchment, policy)),
+            catchment_support=catchment_support,
         ),
         severity_hint=_severity(ratio),
         location_uncertainty_m=2500.0,
@@ -630,6 +984,48 @@ def _rain_candidate(
             ),
             "metric": field,
             "threshold": threshold,
+        },
+        is_urban=urban,
+        location_source=location_source,
+        event_details={
+            "metadata": {
+                "timestamp": as_of.isoformat(),
+                "collection_status": "cached_observations",
+            },
+            "detection_state": (
+                "urban_surface_flood_likely"
+                if urban
+                else "natural_flash_flood_likely"
+            ),
+            "reasons": reason_codes,
+            "reasoning": {
+                "summary": (
+                    "Rainfall accumulation crossed the urban flood threshold."
+                    if urban
+                    else "Rainfall accumulation crossed the natural flood threshold."
+                ),
+                "primary_signal": trigger,
+                "reason_codes": reason_codes,
+                "metric": field,
+                "threshold": threshold,
+                "observed_value": float(getattr(current, field)),
+                "note": (
+                    "The coordinate identifies the strongest observed rain signal, "
+                    "not confirmed standing water."
+                ),
+            },
+            "station": None,
+            "drainage_basin": basin,
+            "stream_context": unavailable_stream_context(
+                "rainfall_event_not_linked_to_single_stream"
+            ),
+            "downstream_route": unavailable_downstream_route(
+                "rainfall_event_not_linked_to_single_stream"
+            ),
+            "hydrological_evidence": None,
+            "rainfall_context": _rainfall_context(catchment, basin),
+            "rainfall_evidence": _rainfall_evidence(current),
+            "urban_context": _urban_context(context, urban, policy),
         },
     )
 
@@ -798,6 +1194,7 @@ def evaluate_cell(
     baselines: Mapping[tuple[int, int], Mapping[str, Any]],
     policy: FloodPolicy | None = None,
     catchment_observations: list[Mapping[str, Any]] | None = None,
+    station_contexts: Mapping[int, Mapping[str, Any]] | None = None,
 ) -> list[FloodCandidate]:
     """Evaluate one cell using threshold crossings; no classifier is involved."""
     selected_policy = policy or FloodPolicy()
@@ -808,7 +1205,14 @@ def evaluate_cell(
         else None
     )
     candidates = _gauge_candidates(
-        cell_id, observations, baselines, selected_policy, rain
+        cell_id,
+        observations,
+        baselines,
+        selected_policy,
+        rain,
+        context,
+        station_contexts or {},
+        catchment_observations or [],
     )
     rain_candidate = _rain_candidate(
         cell_id,

@@ -65,6 +65,8 @@ def test_aggregates_a_cell_as_numeric_rain_not_image_colour():
     assert record["payload"]["rain_rate_max_mm_h"] == 2.0
     assert record["payload"]["rain_rate_mean_mm_h"] == 1.0
     assert record["payload"]["rainfall_mm"] == 0.08333
+    assert isinstance(record["payload"]["peak_latitude"], float)
+    assert isinstance(record["payload"]["peak_longitude"], float)
 
 
 def test_keeps_a_dry_heartbeat_only_for_an_active_rain_event():

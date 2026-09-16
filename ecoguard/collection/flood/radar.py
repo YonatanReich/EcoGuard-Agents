@@ -226,6 +226,18 @@ def records_from_frame(
             and mapping.cell_id not in dry_heartbeat_cells
         ):
             continue
+        peak_index = int(np.nanargmax(window))
+        peak_row, peak_column = np.unravel_index(peak_index, window.shape)
+        global_row = mapping.row_start + int(peak_row)
+        global_column = mapping.column_start + int(peak_column)
+        peak_x = (global_column + 0.5 - frame.width / 2) * frame.xscale_m
+        peak_y = (frame.height / 2 - global_row - 0.5) * frame.yscale_m
+        peak_longitudes, peak_latitudes = transform(
+            frame.projection,
+            "EPSG:4326",
+            [peak_x],
+            [peak_y],
+        )
         records.append(
             {
                 "cell_id": mapping.cell_id,
@@ -235,6 +247,10 @@ def records_from_frame(
                 "payload": {
                     "rain_rate_mean_mm_h": round(mean_rate, 4),
                     "rain_rate_max_mm_h": round(max_rate, 4),
+                    # This is the strongest rain pixel, not a confirmed flood
+                    # location. The detector preserves that distinction.
+                    "peak_latitude": round(float(peak_latitudes[0]), 6),
+                    "peak_longitude": round(float(peak_longitudes[0]), 6),
                     "rainfall_mm": round(
                         mean_rate * FRAME_PERIOD_MINUTES / 60.0, 5
                     ),
