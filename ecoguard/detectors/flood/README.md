@@ -115,3 +115,26 @@ no usable official return-period threshold.
 Each opening candidate intentionally exposes only identity/location plus
 `confidence`, `severity_hint`, and `location_uncertainty_m`. Detailed opening
 and resolution evidence remains in `flood_candidates` for audit and tuning.
+
+## Radar authentication
+
+The IMS radar directory uses NTLM challenge-response authentication. Configure
+`IMS_RADAR_USERNAME` and `IMS_RADAR_PASSWORD` in the runtime environment; use
+the same username/domain format accepted by the IMS browser login. Do not store
+these values in source code or in the database. `IMS_RADAR_COOKIE` is supported
+for provider compatibility but is optional: the collector has been verified
+against IMS using NTLM alone.
+
+An authentication failure is recorded as a failed collector run and never
+advances a detector cursor. Repeated frames are safe: observation identity and
+upsert logic make an immediate second collector run write zero duplicate rows.
+
+The current implementation uses cached elevation, slope, basin, stream distance
+and urban classification. It intentionally does not yet model DEM flow
+direction or GovMap floodplain polygons. Radar decisions use accumulated mean
+rainfall over each 5 km cell; an isolated high-intensity pixel is retained as
+evidence but cannot open an event by itself.
+
+For a deployment with several collector processes, use a direct PostgreSQL
+endpoint. Transaction-pooler connections cannot guarantee the session-level
+single-flight advisory lock used by collectors.

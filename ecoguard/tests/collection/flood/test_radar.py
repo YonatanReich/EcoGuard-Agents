@@ -5,9 +5,14 @@ from io import BytesIO
 
 import h5py
 import numpy as np
+import pytest
+import requests
+from requests_ntlm import HttpNtlmAuth
 
 from ecoguard.collection.flood.radar import (
+    RadarAuthenticationError,
     RadarCellMapping,
+    RadarPPICollector,
     ppi_links,
     read_radar_frame,
     records_from_frame,
@@ -86,3 +91,48 @@ def test_index_parser_returns_only_latest_unique_ppi_files():
     """
 
     assert ppi_links(page, limit=1) == ["iltlv.20260916080503.PPI.2.h5"]
+
+
+def test_collector_reads_cookie_from_environment(monkeypatch):
+    monkeypatch.setenv("IMS_RADAR_COOKIE", "session=secret-value")
+
+    collector = RadarPPICollector()
+
+    assert collector.http.headers["Cookie"] == "session=secret-value"
+
+
+def test_collector_accepts_a_complete_cookie_header(monkeypatch):
+    monkeypatch.delenv("IMS_RADAR_COOKIE", raising=False)
+
+    collector = RadarPPICollector(cookie="Cookie: session=secret-value")
+
+    assert collector.http.headers["Cookie"] == "session=secret-value"
+
+
+def test_authentication_error_does_not_include_cookie_value(monkeypatch):
+    monkeypatch.setenv("IMS_RADAR_COOKIE", "session=do-not-log-this")
+    collector = RadarPPICollector()
+    response = requests.Response()
+    response.status_code = 401
+
+    with pytest.raises(RadarAuthenticationError) as error:
+        collector._require_success(response)
+
+    assert "do-not-log-this" not in str(error.value)
+
+
+def test_collector_configures_ntlm_credentials_from_environment(monkeypatch):
+    monkeypatch.setenv("IMS_RADAR_USERNAME", "DOMAIN\\radar-user")
+    monkeypatch.setenv("IMS_RADAR_PASSWORD", "secret-password")
+
+    collector = RadarPPICollector()
+
+    assert isinstance(collector.http.auth, HttpNtlmAuth)
+
+
+def test_collector_rejects_partial_ntlm_configuration(monkeypatch):
+    monkeypatch.setenv("IMS_RADAR_USERNAME", "radar-user")
+    monkeypatch.delenv("IMS_RADAR_PASSWORD", raising=False)
+
+    with pytest.raises(ValueError, match="must be set together"):
+        RadarPPICollector()

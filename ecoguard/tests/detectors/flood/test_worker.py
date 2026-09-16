@@ -2,15 +2,25 @@
 
 from datetime import datetime, timedelta, timezone
 
+import numpy as np
 import pytest
 
+from ecoguard.collection.flood.radar import (
+    RadarCellMapping,
+    RadarFrame,
+    records_from_frame,
+)
 from ecoguard.database.repositories.flood_worker import (
     CommitResult,
     CursorPosition,
     PendingBatch,
 )
 from ecoguard.detectors.flood import worker
-from ecoguard.detectors.flood.rules import HYDROMETRIC_SOURCE, RAIN_GAUGE_SOURCE
+from ecoguard.detectors.flood.rules import (
+    HYDROMETRIC_SOURCE,
+    RADAR_SOURCE,
+    RAIN_GAUGE_SOURCE,
+)
 
 
 NOW = datetime(2026, 9, 16, 8, 0, tzinfo=timezone.utc)
@@ -88,6 +98,30 @@ def _pending():
     }
     cursor = CursorPosition(RAIN_GAUGE_SOURCE, NOW, 9)
     return PendingBatch([observation], [cursor])
+
+
+def _radar_observation(observation_id, observed_at, rate_mm_h):
+    """Build the normalized row produced by the numeric radar collector."""
+    frame = RadarFrame(
+        observed_at=observed_at,
+        projection="EPSG:4326",
+        xscale_m=600.0,
+        yscale_m=600.0,
+        data_mm_h=np.array([[rate_mm_h]], dtype=np.float32),
+        source_name=f"controlled-{observation_id}.PPI.h5",
+    )
+    mapping = RadarCellMapping(CELL, 32.0, 34.8, 0, 1, 0, 1)
+    record = records_from_frame(
+        frame,
+        [mapping],
+        include_dry_cells={CELL},
+    )[0]
+    return {
+        "id": observation_id,
+        "source": RADAR_SOURCE,
+        "ingested_at": observed_at,
+        **record,
+    }
 
 
 def test_no_new_observations_is_a_no_op():
@@ -211,3 +245,52 @@ def test_stale_backfill_advances_the_cursor_without_opening_an_event():
     assert result.cells_evaluated == 0
     assert result.candidates == []
     assert repository.commits[0][2] == pending.high_watermarks
+
+
+def test_numeric_radar_pipeline_opens_then_resolves_an_urban_event():
+    """Exercise collector output, cursor commits and the complete lifecycle."""
+    wet = _radar_observation(20, NOW, 108.0)  # 9 mm in one five-minute frame.
+    opening_cursor = CursorPosition(RADAR_SOURCE, NOW, 20)
+    opening_repository = Repository(PendingBatch([wet], [opening_cursor]))
+
+    opening = worker.FloodDetectorWorker(opening_repository).run_once()
+
+    assert opening.candidates[0]["severity_hint"] == "moderate"
+    assert opening_repository.commits[0][2] == [opening_cursor]
+    stored_candidate = opening_repository.commits[0][0][0]
+    active_event = {
+        "event_key": stored_candidate.event_key,
+        "candidate_key": stored_candidate.candidate_key,
+        "cell_id": stored_candidate.cell_id,
+        "opened_at": stored_candidate.observed_at,
+        "trigger": stored_candidate.trigger,
+        "evidence": stored_candidate.evidence,
+    }
+
+    dry_at_15 = _radar_observation(21, NOW + timedelta(minutes=15), 0.0)
+    dry_at_20 = _radar_observation(22, NOW + timedelta(minutes=20), 0.0)
+    closing_cursor = CursorPosition(
+        RADAR_SOURCE,
+        dry_at_20["ingested_at"],
+        dry_at_20["id"],
+    )
+    closing_repository = Repository(
+        PendingBatch([dry_at_15, dry_at_20], [closing_cursor]),
+        {CELL: [active_event]},
+    )
+
+    closing = worker.FloodDetectorWorker(closing_repository).run_once()
+
+    assert closing.candidates == []
+    assert closing.resolutions == [
+        {
+            "event_key": stored_candidate.event_key,
+            "candidate_key": stored_candidate.candidate_key,
+            "event_type": "flood",
+            "cell_id": CELL,
+            "observed_at": dry_at_20["observed_at"],
+            "status": "resolved",
+            "reason": "rain_below_exit_threshold",
+        }
+    ]
+    assert closing_repository.commits[0][2] == [closing_cursor]

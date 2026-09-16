@@ -6,6 +6,7 @@ import hashlib
 import html
 import json
 import math
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -16,6 +17,7 @@ from urllib.parse import urljoin
 import h5py
 import numpy as np
 import requests
+from requests_ntlm import HttpNtlmAuth
 from rasterio.warp import transform
 from sqlalchemy import text
 
@@ -25,6 +27,9 @@ from ecoguard.shared.grid import GridCell
 
 SOURCE = "ims_radar_ppi"
 INDEX_URL = "https://data.israel-meteo-service.org/ims/IMS_RADAR_RAW/"
+COOKIE_ENVIRONMENT_VARIABLE = "IMS_RADAR_COOKIE"
+USERNAME_ENVIRONMENT_VARIABLE = "IMS_RADAR_USERNAME"
+PASSWORD_ENVIRONMENT_VARIABLE = "IMS_RADAR_PASSWORD"
 REQUEST_TIMEOUT_SECONDS = 60
 FRAME_PERIOD_MINUTES = 5.0
 MIN_STORED_RATE_MM_H = 0.05
@@ -35,6 +40,10 @@ PPI_LINK = re.compile(
 
 class RadarFormatError(ValueError):
     """The radar file is not the supported numeric ODIM PPI rain product."""
+
+
+class RadarAuthenticationError(RuntimeError):
+    """The configured IMS radar session is missing, invalid or expired."""
 
 
 @dataclass(frozen=True)
@@ -336,14 +345,61 @@ class RadarPPICollector(BaseCollector):
         *,
         index_url: str = INDEX_URL,
         overlap_frames: int = 6,
+        cookie: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
     ) -> None:
         self.http = http_session or requests.Session()
         self.index_url = index_url
         self.overlap_frames = overlap_frames
+        # IMS radar files are behind a web login. Keep the resulting session
+        # cookie outside the source code and database, and never log its value.
+        configured_cookie = (
+            os.getenv(COOKIE_ENVIRONMENT_VARIABLE) if cookie is None else cookie
+        )
+        if configured_cookie:
+            cookie_header = configured_cookie.strip()
+            # Accept either the raw header value copied by the operator or a
+            # complete "Cookie: ..." line to avoid a fragile setup step.
+            if cookie_header.lower().startswith("cookie:"):
+                cookie_header = cookie_header.split(":", 1)[1].strip()
+            if cookie_header:
+                self.http.headers["Cookie"] = cookie_header
+
+        configured_username = (
+            os.getenv(USERNAME_ENVIRONMENT_VARIABLE)
+            if username is None
+            else username
+        )
+        configured_password = (
+            os.getenv(PASSWORD_ENVIRONMENT_VARIABLE)
+            if password is None
+            else password
+        )
+        if bool(configured_username) != bool(configured_password):
+            raise ValueError(
+                "IMS_RADAR_USERNAME and IMS_RADAR_PASSWORD must be set together"
+            )
+        if configured_username and configured_password:
+            # HttpNtlmAuth performs the challenge-response exchange. The raw
+            # password is never added to request headers or persisted in DB.
+            self.http.auth = HttpNtlmAuth(
+                configured_username.strip(), configured_password
+            )
+
+    @staticmethod
+    def _require_success(response: requests.Response) -> None:
+        """Raise a useful error without including authentication secrets."""
+        if response.status_code in (401, 403):
+            raise RadarAuthenticationError(
+                "IMS radar NTLM authentication failed; check IMS_RADAR_USERNAME, "
+                "IMS_RADAR_PASSWORD and the username domain"
+            )
+        response.raise_for_status()
 
     def fetch(self) -> list[dict[str, Any]]:
         index = self.http.get(self.index_url, timeout=REQUEST_TIMEOUT_SECONDS)
-        index.raise_for_status()
+        self._require_success(index)
         records: list[dict[str, Any]] = []
         active_rain_cells = _load_active_rain_cells()
         mapping_cache: dict[str, list[RadarCellMapping]] = {}
@@ -351,7 +407,7 @@ class RadarPPICollector(BaseCollector):
             response = self.http.get(
                 urljoin(self.index_url, name), timeout=REQUEST_TIMEOUT_SECONDS
             )
-            response.raise_for_status()
+            self._require_success(response)
             frame = read_radar_frame(response.content, source_name=name)
             signature = radar_geometry_signature(frame)
             mappings = mapping_cache.get(signature)
