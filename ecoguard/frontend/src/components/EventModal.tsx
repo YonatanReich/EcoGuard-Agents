@@ -318,11 +318,25 @@ function EventModal({ event, onClose }: {
 
         <h2 className="event-modal__title">{event.title}</h2>
         <dl className="event-modal__facts">
-          <div><dt>Location</dt><dd>{event.latitude.toFixed(4)}, {event.longitude.toFixed(4)}</dd></div>
+          <div>
+            <dt>{event.type === 'air_pollution' ? 'Monitoring location' : 'Location'}</dt>
+            <dd>{event.latitude.toFixed(4)}, {event.longitude.toFixed(4)}</dd>
+          </div>
           {event.observed_at && <div><dt>Observed</dt><dd>{formatTimestamp(event.observed_at)}</dd></div>}
         </dl>
 
         {event.description && <p className="event-modal__description">{event.description}</p>}
+        {event.processing?.failure_reason && (
+          <section className="event-modal__section event-modal__section--gaps">
+            <h3>Latest processing status</h3>
+            <p>
+              {event.processing.failure_stage ?? 'processing'}: {event.processing.failure_reason}
+            </p>
+            {event.processing.using_last_successful_payload && (
+              <p>Showing the last projectable event state; recommendations from an older plan are not shown.</p>
+            )}
+          </section>
+        )}
         {event.type === 'fire' && <FireEventDetails event={event} />}
         {event.type === 'air_pollution' && <AirPollutionEventDetails event={event} />}
       </div>

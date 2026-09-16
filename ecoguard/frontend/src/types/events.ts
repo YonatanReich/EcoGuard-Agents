@@ -181,6 +181,17 @@ type CommonEvent = {
   classification: EventClassification
   analysis_status: StepStatus
   planning_status: StepStatus
+  processing?: {
+    route: string
+    status: string
+    failure_stage: string | null
+    failure_reason: string | null
+    retryable: boolean
+    attempt_count: number
+    last_attempt_at: string
+    processed_at: string
+    using_last_successful_payload: boolean
+  } | null
 }
 
 export type FireEvent = CommonEvent & {
@@ -200,6 +211,10 @@ export type OtherEvent = CommonEvent & {
 }
 
 export type SharedEvent = FireEvent | AirPollutionEvent | OtherEvent
+
+export type SharedEventFeed = {
+  events: SharedEvent[]
+}
 
 /** The unchanged flat fire event currently returned by GET /api/detected-events. */
 export type DetectedFireEventPayload = {

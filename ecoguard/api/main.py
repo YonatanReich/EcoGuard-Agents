@@ -9,6 +9,7 @@ agents package.
 
 Endpoints:
     GET /                       Health check.
+    GET /api/events             Durable shared event projections.
     GET /api/detected-events    Live fire detection, risk analysis and response
                                 planning for one coordinate.
     GET /api/environmental-data Stored weather + live geospatial context for
@@ -48,6 +49,7 @@ from ecoguard.analyzers.emergency.fire.refresh_orchestrator import CurrentRiskRe
 from ecoguard.analyzers.emergency.fire.national_scan import NationalCurrentRiskScanService
 from ecoguard.api.fire_danger_surface import build_surface as build_fire_danger_surface
 from ecoguard.shared.protocols import ProtocolRetriever
+from ecoguard.api.events import router as events_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -79,6 +81,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.include_router(events_router)
 
 # Allow the Vite dev server to call the API directly during development.
 # Both localhost and 127.0.0.1 are listed because browsers treat them as

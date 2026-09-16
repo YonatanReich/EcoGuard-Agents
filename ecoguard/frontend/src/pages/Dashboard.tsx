@@ -42,6 +42,7 @@ import {
   detectedFireToSharedEvent,
   type DetectedEventsResponse,
   type SharedEvent,
+  type SharedEventFeed,
 } from '../types/events'
 
 import './visuals/dashboard.css'
@@ -84,10 +85,22 @@ function formatIsraelTime(
 
 
 function Dashboard() {
-  const [liveEvents, setLiveEvents] =
+  const [fireEvents, setFireEvents] =
+    useState<SharedEvent[]>([])
+  const [projectedEvents, setProjectedEvents] =
     useState<SharedEvent[]>([])
   const [airPollutionPreview, setAirPollutionPreview] =
     useState<SharedEvent | null>(null)
+
+  const liveEvents = useMemo(() => {
+    const merged = new Map<string, SharedEvent>()
+    for (const event of projectedEvents) merged.set(`${event.type}:${event.id}`, event)
+    for (const event of fireEvents) {
+      const key = `${event.type}:${event.id}`
+      if (!merged.has(key)) merged.set(key, event)
+    }
+    return [...merged.values()]
+  }, [fireEvents, projectedEvents])
 
   const events = useMemo(
     () => airPollutionPreview
@@ -302,27 +315,36 @@ function Dashboard() {
     // No setIsLoadingEvents(true) here: the state already initializes to true
     // and this effect runs once on mount, so setting it again would only
     // trigger a cascading render.
-    fetch('/api/detected-events')
-      .then((response) =>
-        response.json() as Promise<DetectedEventsResponse>
-      )
+    const fireRequest = fetch('/api/detected-events')
+      .then((response) => {
+        if (!response.ok) throw new Error('Fire event feed is unavailable')
+        return response.json() as Promise<DetectedEventsResponse>
+      })
       .then((data) => {
         // An empty list is a valid answer — it means the scan ran and found
         // nothing — so this assigns unconditionally rather than only on a
         // truthy list. Guarding on `if (data.events)` would leave stale events
         // on the map after a clean scan.
         const nextEvents = (data.events ?? []).map(detectedFireToSharedEvent)
-        setLiveEvents(nextEvents)
+        setFireEvents(nextEvents)
       })
       .catch((error) =>
         console.error(
-          'Error fetching events:',
+          'Error fetching Fire events:',
           error
         )
       )
-      .finally(() =>
-        setIsLoadingEvents(false)
-      )
+
+    const projectedRequest = fetch('/api/events')
+      .then((response) => {
+        if (!response.ok) throw new Error('Projected event feed is unavailable')
+        return response.json() as Promise<SharedEventFeed>
+      })
+      .then((data) => setProjectedEvents(data.events ?? []))
+      .catch((error) => console.error('Error fetching projected events:', error))
+
+    void Promise.allSettled([fireRequest, projectedRequest])
+      .then(() => setIsLoadingEvents(false))
   }, [])
 
   useEffect(() => {
@@ -621,7 +643,7 @@ function Dashboard() {
           </div>
 
           <div className="panel__list">
-            {isLoadingEvents ? (
+            {isLoadingEvents && advisoryEvents.length === 0 ? (
               <p className="panel__empty">Scanning…</p>
             ) : advisoryEvents.length === 0 ? (
               <p className="panel__empty">Nothing requiring advice.</p>
@@ -1099,7 +1121,7 @@ function Dashboard() {
           </div>
 
           <div className="panel__list">
-            {isLoadingEvents ? (
+            {isLoadingEvents && emergencyEvents.length === 0 ? (
               <p className="panel__empty">Scanning…</p>
             ) : emergencyEvents.length === 0 ? (
               <p className="panel__empty">No active emergencies.</p>

@@ -118,12 +118,20 @@ def event_projection_by_incident(incident_id: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
-def projected_events() -> list[dict[str, Any]]:
-    """Future feed source: newest durable projectable events first."""
+def projected_events(*, limit: int = 100) -> list[dict[str, Any]]:
+    """Newest projectable incidents, with a deterministic identity tie-break."""
+
+    if not 1 <= limit <= 200:
+        raise ValueError("event projection limit must be between 1 and 200")
 
     with Session() as session:
-        rows = session.execute(text(
-            "SELECT * FROM event_projections "
-            "WHERE event_payload IS NOT NULL ORDER BY updated_at DESC"
-        )).mappings().all()
+        rows = session.execute(
+            text(
+                "SELECT * FROM event_projections "
+                "WHERE (event_payload IS NOT NULL "
+                "   OR last_successful_event_payload IS NOT NULL) "
+                "ORDER BY updated_at DESC, incident_id ASC LIMIT :limit"
+            ),
+            {"limit": limit},
+        ).mappings().all()
     return [dict(row) for row in rows]

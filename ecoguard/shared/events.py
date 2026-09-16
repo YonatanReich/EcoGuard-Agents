@@ -11,6 +11,18 @@ class EventContract(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
 
+class EventProcessingMetadata(EventContract):
+    route: str
+    status: str
+    failure_stage: str | None = None
+    failure_reason: str | None = None
+    retryable: bool = False
+    attempt_count: int = Field(ge=1)
+    last_attempt_at: AwareDatetime
+    processed_at: AwareDatetime
+    using_last_successful_payload: bool = False
+
+
 class ProtocolCitation(EventContract):
     chunk_id: str
     document_id: str
@@ -199,6 +211,7 @@ class CommonSharedEvent(EventContract):
     planning_status: Literal[
         "success", "partial", "unavailable", "failed", "skipped"
     ]
+    processing: EventProcessingMetadata | None = None
 
 
 class AirPollutionSharedEvent(CommonSharedEvent):
@@ -221,3 +234,7 @@ SharedEvent = Annotated[
     Union[AirPollutionSharedEvent, FireSharedEvent, GenericSharedEvent],
     Field(discriminator="type"),
 ]
+
+
+class SharedEventFeed(EventContract):
+    events: list[SharedEvent] = Field(default_factory=list)
