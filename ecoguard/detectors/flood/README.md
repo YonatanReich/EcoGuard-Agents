@@ -6,9 +6,6 @@ The current implementation is split into three small parts:
 - `detection_agent.py` exposes the flood-specific `evaluate()` interface.
 - `rules.py` contains deterministic, side-effect-free threshold rules.
 
-The older station-centric implementation is kept temporarily in
-`legacy_detection_agent.py`; neither the new worker nor the collectors call it.
-
 ## Data flow
 
 1. Flood collectors cache source data in PostgreSQL. Water Authority readings
@@ -114,7 +111,9 @@ no usable official return-period threshold.
 - `load_hydrometric_observations()` caches hydrometric readings.
 - `load_rainfall_observations()` caches rain-gauge readings.
 - `run_flood_detector()` performs one timer-safe detector tick and returns
-  `no_op`, processed counts, and newly inserted candidates.
+  `no_op`, processed counts, newly inserted candidates and newly committed
+  event resolutions. The full field-by-field response is defined in
+  [`../../docs/api_contract.md`](../../docs/api_contract.md), section 6.
 
 Each opening candidate exposes the complete detector result. In addition to
 identity, confidence and severity, it includes `is_urban`, the trigger,

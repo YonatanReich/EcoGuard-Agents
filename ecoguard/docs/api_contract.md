@@ -634,350 +634,333 @@ is not implemented.
 
 ---
 
-## 6. Flood Detection Agent Contract
+## 6. Flood Detector Worker Contract
 
-This section defines the current return value of
-`FloodDetectionAgent.detect_floods()`.
+This section is the authoritative contract for the current flood detector.
+The public Python entry point is:
 
-The detector reads cached Water Authority observations from PostgreSQL. It does
-not call the provider or schedule collection itself. One invocation evaluates
-all hydrometric stations, so its result is a national scan containing zero or
-more detected events, watches and coverage gaps.
+```python
+from ecoguard.detectors.flood.worker import run_flood_detector
 
-The evaluation timestamp is also the query's `as_of` boundary. Hydrometric and
-rainfall observations later than that timestamp are excluded from both the
-latest reading and the history windows, so a replay cannot accidentally use
-data that arrived afterward.
+result = run_flood_detector()
+```
 
-`flow_intensity` is hydrological flow intensity. It is not inundation depth,
-damage severity, population exposure or final operational risk. Those belong
-to downstream emergency analysis.
+This is a timer-safe worker entry point, not an HTTP endpoint and not a
+scheduler. Scheduling remains outside the flood package. The worker reads
+normalized observations and static context from PostgreSQL, evaluates only
+cells affected by new observations, atomically persists lifecycle transitions
+and cursor progress, and returns the transitions that were newly committed.
 
-### 6.1 Root FloodDetectionResult
+### 6.1 System Flow
 
-| Field | Type | Meaning |
-|---|---|---|
-| `metadata.timestamp` | ISO 8601 String | UTC time at which the cached observations were assessed. |
-| `metadata.collection_status` | String | `success` when station histories were read; `failed` when the primary database read failed. A degraded collector does not change this field to `failed` when usable cache remains. |
-| `metadata.history_window_minutes` | Integer | Observation-history window used for trends. Currently `90`. Present only after a successful primary database read. |
-| `event_type` | String | Always `flood`. |
-| `detected` | Boolean or null | Overall result; see the rules below. |
-| `detected_events` | Array of FloodEvent | Confirmed or likely hydrological signals. Every member has `detected: true`. |
-| `watch_events` | Array of FloodEvent | Signals awaiting persistence. Every member has `detected: false` and `detection_state: flood_watch`. |
-| `input_station_count` | Integer | Number of station records returned by the repository: all active catalogued hydrometric stations, plus uncatalogued or inactive stations with a recent observation. Active stations without observations are included and reported as unassessed. |
-| `assessed_station_count` | Integer | Number classified as detected, watch or clear. Clear stations are counted but are not returned as event objects. |
-| `unassessed_stations` | Array of Objects | Stations that could not be classified safely; see 6.9. |
-| `source_status` | Object | Database, collector/cache and stream-network health; see 6.2. |
-| `source_errors` | Object, optional | Technical failures of optional enrichments, currently `collector_runs` and/or `stream_network`. Detection may still succeed. |
-| `error` | String, optional | Primary database failure. Present only when `metadata.collection_status` is `failed`. |
+The runtime flow is:
 
-The root `detected` value follows these rules:
+1. Flood collectors cache Water Authority hydrometric readings, Water
+   Authority rain-gauge readings and numeric IMS radar cells in PostgreSQL.
+   The detector never calls an upstream provider.
+2. The worker reads one cursor per source from `detector_cursors`. A cursor is
+   the pair `(last_ingested_at, last_observation_id)`, so equal ingestion
+   timestamps are ordered safely by database id.
+3. If no new rows exist, the worker returns a no-op and performs no writes.
+4. New rows with an ingestion lag over two hours, or an observed timestamp
+   more than 15 minutes in the future, are not allowed to open or close a
+   real-time event. They are still consumed after a successful transaction so
+   the worker does not retry an old backfill forever.
+5. For every affected 5 km cell, the worker reloads a 30-hour observation
+   window and joins precomputed cell context, station baselines, station and
+   basin metadata, urban classification, stream topology, active events and
+   basin-wide rainfall context.
+6. `FloodDetectionAgent.evaluate()` applies deterministic threshold-crossing
+   rules. It has no database, collection or scheduling responsibility.
+7. New candidates, event resolutions and all source cursor advances are
+   committed in one transaction. If evaluation or persistence fails, no cursor
+   advances and the same rows can be retried.
 
-* `true` — at least one member exists in `detected_events`. Coverage gaps may
-  still exist and remain visible in `unassessed_stations`.
-* `false` — no detected event exists and every input station was assessable.
-  `watch_events` may still be non-empty.
-* `null` — no event was detected, but there were no input histories or at least
-  one station could not be assessed. It is never converted to `false`.
+The consumed sources are:
 
-### 6.2 Source and Cache Status
-
-`source_status.hydrology_database` is `success` or `failed`.
-`source_status.stream_network` is `success`, `failed` or `not_required`.
-The stream network is required only when at least one returned event has a
-reliably matched stream.
-
-`source_status.hydrometric_observations` and
-`source_status.rainfall_observations` have the following shape:
-
-| Field | Type | Meaning |
-|---|---|---|
-| `status` | String | Effective source/cache status described below. |
-| `collector_source` | String | Source key recorded in `collector_runs`. |
-| `latest_collection_status` | String or null | Raw latest run status, normally `ok`, `failed` or `running`; null when no run exists or run history is unavailable. |
-| `latest_started_at` | ISO 8601 String or null | Start of the latest recorded run. |
-| `latest_finished_at` | ISO 8601 String or null | End of the latest recorded run. |
-| `latest_rows_written` | Integer or null | Rows reported written by that invocation. Zero can be a successful idempotent refresh. |
-| `latest_run_has_error` | Boolean | Whether the latest run stored an error. The provider error text is not copied into this object. |
-| `cached_data_available` | Boolean | At least one valid cached observation timestamp is available. |
-| `cached_data_fresh` | Boolean | At least one cached station has a reading within its freshness limit. |
-| `cache_coverage` | String | `fresh`, `partial`, `stale` or `unavailable`. |
-| `cached_station_count` | Integer | Unique cached stations visible to this scan. |
-| `fresh_station_count` | Integer | Cached stations within the freshness limit. |
-| `latest_observed_at` | ISO 8601 String or null | Newest visible cached observation. |
-
-Effective `status` values:
-
-| Value | Meaning |
+| Source key | Meaning |
 |---|---|
-| `success` | Latest collection is healthy and all visible cached stations are fresh, or a collection is currently running while the existing cache is fully fresh. |
-| `degraded` | Fresh cache can still be used, but the latest run failed, the cache has only partial fresh coverage, or the raw run state is unexpected. |
-| `failed` | The latest collection failed and no fresh cache remains. |
-| `stale` | The latest collection reported `ok`, but all visible cache is older than the freshness limit. |
-| `collecting` | A collection is running and there is no fresh cache yet. |
-| `never_run` | No matching row exists in `collector_runs`. |
-| `unavailable` | The latest run reported `ok`, but no usable cached observation is visible. |
-| `unknown` | Collector-run history could not be read, or an unknown run state exists without fresh cache. |
+| `water_authority_hydrometric_observations` | River and wadi discharge and water-height measurements, including station-specific Q thresholds when available. |
+| `water_authority_rainfall_observations` | Incremental rain-gauge measurements assigned to grid cells. |
+| `ims_radar_ppi` | Numeric radar-derived rain rate and accumulation per grid cell. |
 
-Hydrometric and rainfall cache freshness are currently 30 minutes. Rain cache
-health is derived from unique rain stations visible through the hydrometric
-stations' drainage basins; it is not a count of every rain station in Israel.
+### 6.2 Worker Response
 
-### 6.3 FloodEvent Core Fields
+`run_flood_detector()` returns a JSON-serializable object with this exact root
+shape:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `event_key` | String | Stable station-based identity: `flood:water_authority:<source_station_id>`. Multiple affected stations currently produce separate event objects. |
-| `metadata.timestamp` | ISO 8601 String | Time of detector evaluation. |
-| `metadata.collection_status` | String | `success` for a returned event. |
-| `event_type` | String | Always `flood`. |
-| `detected` | Boolean | `true` in `detected_events`; `false` in `watch_events`. |
-| `detection_state` | String | `observed_high_flow`, `flood_wave_likely`, `rapid_flow_detected` or `flood_watch`. |
-| `flow_intensity` | String | `negligible`, `low`, `medium`, `high`, `very_high`, `extreme` or `unranked`. This is not operational severity. |
-| `confidence` | String | Detection confidence: `low`, `medium` or `high`. This is separate from stream-match and route confidence. |
-| `reasons` | Array of Strings | Machine-readable evidence supporting the state. |
-| `observed_at` | ISO 8601 String | Timestamp of the station's newest observation used for the event. |
-| `location` | Object | `known`, `latitude` and `longitude`. Coordinates are the hydrometric station, not a flood boundary. |
-| `station` | Object | `source_station_id`, internal `hydrometric_station_id`, `name_he` and `name_en`. |
-| `drainage_basin` | Object | `basin_id`, `name_he` and `name_en`; values may be null when the station cannot be spatially assigned. |
-| `hydrological_evidence` | Object | Current measurement, threshold and trend evidence; see 6.5. |
-| `rainfall_context` | Object | Basin-level rain summary; see 6.6. |
-| `rainfall_evidence` | Array of Objects | Per-gauge values supporting the rain summary. |
-| `stream_context` | Object | Conservative station-to-stream match; see 6.7. |
-| `downstream_route` | Object | Approximate declared stream sequence; see 6.8. |
+| `no_op` | Boolean | `true` only when `observations_processed` is zero. |
+| `observations_processed` | Integer | Number of newly ingested database observation rows read across the three sources, before delayed/future rows are filtered. This is not a count of stations, radar pixels or measurements nested inside payloads. |
+| `cells_evaluated` | Integer | Number of distinct cells containing at least one accepted real-time row. It can be zero while `observations_processed` is positive when every pending row is a delayed backfill or has an implausible future timestamp. |
+| `candidates` | Array of FloodCandidate | Newly inserted opening transitions only. A candidate rejected by the database uniqueness key because it was already emitted is not returned again. |
+| `resolutions` | Array of FloodResolution | Newly committed closing transitions only. |
 
-Detection states have the following semantics:
-
-| State | Meaning |
-|---|---|
-| `observed_high_flow` | Discharge is at or above Q5, or a persistent Q2 crossing is accompanied by a rapid persistent rise. |
-| `flood_wave_likely` | A Q2 crossing persisted, or active rapidly rising flow exists at a station without a usable Q2 threshold. |
-| `rapid_flow_detected` | Active flow is rising rapidly and persistently below Q2 at a station with a usable Q2 threshold. The surrounding threshold set may be complete or partial. |
-| `flood_watch` | One Q2 crossing exists but has not yet met the persistence requirement. |
-
-`flow_intensity` is derived from usable return-period discharge thresholds:
-
-| Intensity | Current mapping |
-|---|---|
-| `extreme` | An available Q50 threshold is crossed. A Q100 crossing remains visible in `crossed_thresholds` but has no separate intensity label. |
-| `very_high` | An available Q20 threshold is crossed and no available higher intensity threshold is crossed. |
-| `high` | An available Q10 threshold is crossed and no available higher intensity threshold is crossed. |
-| `medium` | An available Q5 threshold is crossed and no available higher intensity threshold is crossed. |
-| `low` | An available Q2 threshold is crossed and no available higher intensity threshold is crossed, or active flow exists without a crossed available threshold. |
-| `negligible` | Water level is below the station's flow-start level. Equality means flow has started and is not negligible. |
-| `unranked` | Current discharge or usable discharge thresholds are unavailable, so intensity cannot be ranked honestly. |
-
-When `threshold_status` is `partial`, the intensity is the highest band that can
-be confirmed from the available thresholds. It is a conservative lower bound:
-a missing threshold above or between supplied thresholds may prevent the
-detector from proving a higher band.
-
-### 6.4 Detection Confidence
-
-Detection confidence does not estimate flood probability. It describes how
-strongly the available evidence supports the reported state.
-
-* A `flood_watch` always has `low` confidence.
-* Usable complete or partial thresholds, a persistent crossing and a known
-  location produce `high` confidence.
-* A rapid rise corroborated by recent rain in the same basin and a known
-  location produces `high` confidence.
-* A rapid rise with a known location but without fresh rain support produces
-  `medium` confidence.
-* Other classified events with usable complete or partial thresholds produce
-  `medium`; otherwise confidence is `low`.
-
-Rainfall can support confidence but does not independently turn a clear
-hydrometric station into a detected flood event.
-
-### 6.5 Hydrological Evidence
-
-`hydrological_evidence` contains:
-
-* `discharge_m3s` and `water_height_m` — newest measured values, nullable
-  independently.
-* `flow_start_water_level_m` — station-specific flow-start level, or null.
-* `flow_started` — Boolean when both water height and flow-start level are
-  available; otherwise null.
-* `threshold_status` — `valid`, `partial`, `unavailable`, `non_positive` or
-  `non_monotonic`. `valid` means all six Q2, Q5, Q10, Q20, Q50 and Q100 values
-  are positive and non-decreasing. `partial` means any subset is missing while
-  the supplied values remain positive and non-decreasing in return-period
-  order. Missing Q2 or a gap in the middle does not invalidate the other
-  supplied thresholds. `unavailable` means all are missing. Non-positive and
-  non-monotonic series are not used.
-* `available_return_periods` and `missing_return_periods` — ordered lists that
-  describe which of Q2, Q5, Q10, Q20, Q50 and Q100 were supplied. Supplied
-  periods are usable only when `threshold_status` is `valid` or `partial`.
-* `crossed_thresholds` — array of `{return_period_years, threshold_m3s}` for
-  every usable supplied threshold crossed by current discharge.
-* `highest_crossed_return_period_years` — greatest crossed return period, or
-  null.
-* `q2_persistence_observations` — number of consecutive newest observations at
-  or above Q2.
-* `rapid_stage_rise` and `rapid_discharge_rise` — Boolean policy triggers.
-* `trend` — observation count, consecutive-rise counts, latest rise rates and
-  `changes` for `10m`, `30m` and `60m`. Each window is null when no suitable
-  earlier observation exists; otherwise it contains `elapsed_minutes`,
-  `start_observed_at`, `water_height_change_m` and
-  `discharge_change_m3s`.
-
-Current provisional rapid-rise policy values are two consecutive rises,
-`0.25 m/hour` for stage, or `0.25 × Q2/hour` for discharge. They are operational
-heuristics, not Water Authority flood thresholds.
-
-### 6.6 Rainfall Context and Evidence
-
-`rainfall_context` describes rain gauges assigned to the same drainage basin as
-the hydrometric station:
-
-* `association` — `same_drainage_basin` or `unavailable`.
-* `basin_id`, `station_count`, `stations_with_observations`,
-  `fresh_station_count`, `latest_observation_at`, `is_fresh` and
-  `recent_rain_detected`.
-* `maximum_10m_mm`, `mean_10m_mm`, `maximum_1h_mm`, `mean_1h_mm`,
-  `maximum_6h_mm`, `mean_6h_mm`, `maximum_24h_mm` and `mean_24h_mm`.
-  Only fresh gauges contribute; values are null when none are fresh.
-* `limitations` currently contains
-  `same_basin_does_not_prove_upstream_subcatchment` and
-  `rainfall_has_not_yet_been_compared_with_local_idf`.
-
-Values from different gauges are never summed, because that would count the
-same storm multiple times. The summary reports maxima and arithmetic means.
-
-Every `rainfall_evidence` member contains `source_station_id`, `name_he`,
-`name_en`, `latitude`, `longitude`, `latest_observed_at`, `rainfall_10m_mm`,
-`rainfall_1h_mm`, `rainfall_6h_mm` and `rainfall_24h_mm`. Missing measurements
-remain null and are never fabricated as zero.
-
-### 6.7 Stream Context
-
-The stream match is an enrichment and never changes the hydrological detection
-state or detection confidence. Candidate streams are first restricted to the
-station's drainage basin and a 2 km search radius.
-
-`stream_context` contains:
-
-* `association` — `same_drainage_basin` or `unavailable`.
-* `matched` — whether a stream is reliable enough to use for routing.
-* `confidence` — `high`, `medium`, `low` or `unavailable`.
-* `method` — `same_basin_name_and_distance`,
-  `same_basin_distance_only` or null.
-* `candidate_count` and `distinct_candidate_count`.
-* `stream` — selected stream when `matched` is true; otherwise null.
-* `nearest_candidate` — diagnostic candidate for an unresolved match;
-  otherwise null.
-* `warnings` — machine-readable limitations or ambiguity reasons.
-
-A stream object contains `stream_id`, `object_id`, `name_he`,
-`water_source_id`, `main_catchment_code`, `main_catchment_name`,
-`draining_water_id`, `draining_water_name`, `distance_m` and
-`name_matches_station`.
-
-The default policy treats a name match within 100 m as high confidence. A name
-match within 1 km, or a unique stream within 100 m without a matching name, is
-medium confidence. Distance-only matches beyond 100 m, candidates beyond 1 km
-and similarly close distinct streams remain unresolved.
-
-### 6.8 Downstream Route
-
-`downstream_route` follows Water Authority `draining_water_id` relationships
-from a reliably matched origin stream. Coordinate order in a line geometry is
-never interpreted as flow direction.
-
-| Field | Type | Meaning |
-|---|---|---|
-| `status` | String | `complete`, `partial` or `unavailable`. Complete means only that a declared network end was reached; it does not prove a physical outlet. |
-| `confidence` | String | Initially inherits stream-match confidence and becomes `low` for a cycle or conflicting downstream connections. |
-| `method` | String | Always `water_authority_draining_water_id`. |
-| `origin_water_source_id` | Integer or null | Provider water-source id of the selected origin stream. |
-| `segment_count` | Integer | Number of returned stream-network nodes. |
-| `segments` | Array of Objects | Ordered nodes from the origin downstream. |
-| `termination` | String | Why traversal stopped. |
-| `limitations` | Array of Strings | Fixed statements preventing hydraulic over-interpretation. |
-
-Each segment contains `hop`, `name_he`, `water_source_id`, `object_ids`,
-`feature_count`, `main_catchment_code`, `main_catchment_name`,
-`draining_water_id`, `draining_water_name`, `representative_location` and
-`topology_conflict`. Hop zero additionally contains `matched_object_id`.
-Representative locations are map reference points, not flood boundaries.
-
-Current termination values are:
-
-* `declared_network_end`
-* `maximum_hops_reached`
-* `origin_stream_unmatched`
-* `origin_water_source_id_unavailable`
-* `stream_network_unavailable`
-* `stream_network_empty`
-* `origin_stream_missing_from_network`
-* `downstream_stream_missing_from_network`
-* `cycle_detected`
-* `conflicting_downstream_connections`
-
-The traversal limit is currently 20 downstream hops.
-
-### 6.9 Unassessed Stations
-
-Each `unassessed_stations` member contains `source_station_id`,
-`hydrometric_station_id`, `observed_at`, `discharge_m3s`, `water_height_m`,
-`location_known`, `reason` and optional diagnostic details. The detector's
-internal `unassessed` classification is not emitted as a separate `status`
-field in the public result.
-
-Current reason values are `hydrometric_observation_unavailable`,
-`invalid_observation_timestamp`, `stale_observation`,
-`hydrological_measurements_unavailable` and
-`active_flow_without_usable_q2_threshold_or_trend`. The final reason
-also includes `threshold_status`, `available_return_periods`,
-`missing_return_periods` and `observation_count`.
-
-### 6.10 Example Successful Scan
-
-The example is a detector-level result, not the response of an HTTP endpoint:
+A true no-op is:
 
 ```json
 {
-  "metadata": {
-    "timestamp": "2026-09-14T10:00:00+00:00",
-    "collection_status": "success",
-    "history_window_minutes": 90
-  },
+  "no_op": true,
+  "observations_processed": 0,
+  "cells_evaluated": 0,
+  "candidates": [],
+  "resolutions": []
+}
+```
+
+The worker does not convert unexpected failures into a successful response.
+An evaluation or transaction error is raised to the caller; cursor progress is
+not committed.
+
+### 6.3 FloodCandidate
+
+Every object in `candidates` contains the complete detector result. The worker
+does not return a reduced candidate summary.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `event_key` | String | Stable identity of the active event. Gauge: `flood:gauge:<cell_id>:<station_id>`. Rain: `flood:rain:<cell_id>`. Used to prevent reopening an active event. |
+| `candidate_key` | String | Immutable identity of this opening transition, including trigger and crossing timestamp. Used for idempotent persistence. |
+| `event_type` | String | Always `flood`. |
+| `detected` | Boolean | Always `true` for an opening candidate. |
+| `cell_id` | String | 5 km risk cell evaluated by the worker. |
+| `observed_at` | ISO 8601 String | Timestamp at which the opening threshold crossing was observed. |
+| `latitude`, `longitude` | Float | Best event reference coordinate; identical to the coordinate in `location`. |
+| `location` | Object | `known`, coordinates, `source` and `uncertainty_m`. See 7.7. |
+| `confidence` | Float | Evidence confidence in `[0, 1]`; it is not a calibrated flood probability. |
+| `confidence_level` | String | `low` below 0.70, `medium` from 0.70 to below 0.85, or `high` from 0.85. |
+| `severity_hint` | String | `moderate`, `high` or `critical`. This is a detector hint, not final operational severity. |
+| `flow_intensity` | String | Compatibility alias of `severity_hint`. |
+| `location_uncertainty_m` | Float | Same uncertainty value exposed inside `location`. |
+| `is_urban` | Boolean or null | Cached urban classification. `null` means unknown, not rural. |
+| `trigger` | String | Rule that opened the event; see 7.5. |
+| `evidence` | Object | Compact lifecycle evidence used for deduplication and resolution. |
+| `metadata` | Object | Detection timestamp and `collection_status: cached_observations`. |
+| `detection_state` | String | `observed_high_flow`, `observed_high_water_level`, `urban_surface_flood_likely` or `natural_flash_flood_likely`. |
+| `reasons` | Array of String | Machine-readable reason codes. |
+| `reasoning` | Object | Human-readable summary, primary signal, threshold and observed value. |
+| `station` | Object or null | Hydrometric station identity for gauge events; null for rain-only events. |
+| `drainage_basin` | Object | Basin source id and Hebrew/English names where known. |
+| `stream_context` | Object | Conservative precomputed station-to-stream association, or an explicit unavailable object. |
+| `downstream_route` | Object | Complete known declared drainage chain, or an explicit unavailable/partial route. It is not a hydraulic simulation. |
+| `hydrological_evidence` | Object or null | Gauge values, thresholds and trend; null for rain-only events. |
+| `rainfall_context` | Object | Basin-level rainfall corroboration and limitations. |
+| `rainfall_evidence` | Object | Local accumulated rainfall, rate and contributing source keys. |
+| `urban_context` | Object | Classification status, built fraction, sample count and the 0.35 classification threshold. |
+
+### 6.4 Gauge Rules and Baselines
+
+Gauge occurrence is threshold logic, not a classifier. The first available
+positive official return-period threshold, ordered Q2, Q5, Q10, Q20, Q50 and
+Q100, is the opening threshold. Higher crossed thresholds remain visible in
+`hydrological_evidence.crossed_thresholds` and determine severity:
+
+| Highest crossed official threshold | `severity_hint` |
+|---|---|
+| Q2 or Q5 | `moderate` |
+| Q10 | `high` |
+| Q20, Q50 or Q100 | `critical` |
+
+When no official Q threshold exists, discharge p95 or water-height p95 may be
+used only when the monthly baseline is mature. A baseline must have all of:
+
+- 12 covered calendar months;
+- at least 330 days of history;
+- at least 300 samples for the selected metric; and
+- at least 10 distinct measurement days for that metric.
+
+An official Q series always takes precedence over a statistical baseline.
+Baselines are station- and month-specific; one wadi's normal level is never
+used for another station.
+
+`hydrological_evidence` contains `discharge_m3s`, `water_height_m`, the
+flow-start level, whether flow has started, available and missing return
+periods, every crossed threshold, the opening threshold, the highest crossed
+return period and the change from the previous station sample.
+
+### 6.5 Rain Rules, Urban and Natural Areas
+
+Rainfall uses accumulation windows rather than an instantaneous radar colour.
+Gauge and radar values estimate the same rain and therefore are not added
+together; the larger estimate is used for each window. Radar rows participate
+only when at least 50% of the mapped pixels are valid.
+
+Urban classification is precomputed in static cell context from built-up land
+cover. A classified cell is urban when built-up fraction is at least 0.35. The
+detector does not recompute land cover per event. When classification is
+unknown, a rain-only event is not opened.
+
+Opening thresholds are:
+
+| Regime | Trigger | Base threshold |
+|---|---|---:|
+| Urban | `urban_rain_10m` | 8 mm / 10 min |
+| Urban | `urban_rain_1h` | 20 mm / 1 h |
+| Urban | `urban_rain_6h` | 45 mm / 6 h |
+| Natural | `natural_rain_1h` | 15 mm / 1 h |
+| Natural | `natural_rain_6h` | 35 mm / 6 h |
+| Natural | `natural_rain_24h` | 55 mm / 24 h |
+
+For natural cells, slope lowers the 1-hour and 6-hour thresholds by 5% from
+3 degrees and by 15% from 8 degrees. At least 25 mm of antecedent 24-hour rain
+outside the latest hour applies another 15% reduction to those two thresholds.
+The natural 24-hour threshold receives only the slope adjustment. A natural
+rain-only candidate also requires a drainage basin or a known stream within
+5 km. Basin-average rain can increase confidence and prevent premature
+resolution, but cannot open an event by itself.
+
+Available opening triggers are:
+
+- `gauge_discharge_rating_curve`
+- `gauge_discharge_seasonal_baseline`
+- `gauge_stage_seasonal_baseline`
+- `urban_rain_10m`, `urban_rain_1h`, `urban_rain_6h`
+- `natural_rain_1h`, `natural_rain_6h`, `natural_rain_24h`
+
+### 6.6 Reasoning and Evidence
+
+`reasoning.primary_signal` always equals `trigger`. `reasoning.summary`
+explains the deciding crossing in plain English. Gauge candidates expose the
+threshold and observed discharge or water height. Rain candidates additionally
+identify the accumulation metric and state that their coordinate marks the
+strongest observed rain signal, not confirmed standing water.
+
+Typical reason codes are:
+
+- `station_specific_discharge_threshold_crossed`
+- `seasonal_discharge_baseline_crossed`
+- `seasonal_water_height_baseline_crossed`
+- `recent_rainfall_supports_hydrological_signal`
+- `urban_rainfall_accumulation_threshold_crossed`
+- `natural_rainfall_accumulation_threshold_crossed`
+- `radar_rainfall_supports_detection`
+- `rain_gauge_supports_detection`
+- `same_basin_rainfall_supports_detection`
+
+### 6.7 Location, Topology and Limitations
+
+Gauge candidates use the hydrometric station coordinate with 100 m uncertainty.
+Rain candidates use, in order, the maximum-rate radar pixel, the strongest
+contributing rain-gauge location, or the cell center, with 2,500 m uncertainty.
+For rain-only events the coordinate is evidence location, not an inundation
+boundary.
+
+`stream_context` includes match status, confidence, method, candidate counts,
+the selected stream or nearest rejected candidate, and warnings.
+`downstream_route.segments` follows the Water Authority's declared
+`draining_water_id` links from the matched stream until the declared end, a
+missing node, a conflict, a cycle or the hop limit. It represents the whole
+known drainage chain, not separate detected events on every downstream stream.
+It does not estimate travel time, water depth or inundation extent.
+
+The current detector uses cached elevation, slope, basin, stream distance,
+urban classification and declared stream topology. DEM-derived flow direction
+and GovMap floodplain polygons are not yet part of occurrence detection.
+
+### 6.8 Event Resolution
+
+An active event is not repeated in `candidates`. It remains active until a
+fresh low-signal transition is committed.
+
+- Gauge events resolve after two new consecutive values for the same station
+  and metric are below 80% of the opening threshold.
+- Natural rain events require two new consecutive frames below 80% of every
+  applicable opening threshold. Same-basin rain support keeps the event open.
+- Urban rain events remain active for at least one hour and require a
+  continuous 30-minute low-rain period. Gaps between qualifying observations
+  may not exceed 15 minutes. This rule avoids treating "rain stopped" as proof
+  that street water vanished immediately.
+- Missing or stale observations never close an event.
+
+Every returned resolution has this shape:
+
+```json
+{
+  "event_key": "flood:gauge:risk-05000m-r0040-c0012:50",
+  "candidate_key": "flood:gauge_discharge_rating_curve:risk-05000m-r0040-c0012:50:2026-09-16T08:00:00+00:00",
   "event_type": "flood",
-  "detected": true,
-  "detected_events": [
+  "cell_id": "risk-05000m-r0040-c0012",
+  "observed_at": "2026-09-16T08:20:00+00:00",
+  "status": "resolved",
+  "reason": "gauge_below_exit_threshold",
+  "evidence": {
+    "metric": "discharge_m3s",
+    "exit_threshold": 8.0,
+    "recent_values": [7.5, 7.0]
+  }
+}
+```
+
+Rain resolutions use `reason: rain_below_exit_threshold` and expose the latest
+10-minute, 1-hour, 6-hour and 24-hour accumulations in `evidence`.
+
+### 6.9 Complete Worker Example
+
+The following is a shortened topology example but a complete worker and
+candidate field shape:
+
+```json
+{
+  "no_op": false,
+  "observations_processed": 2,
+  "cells_evaluated": 1,
+  "candidates": [
     {
-      "event_key": "flood:water_authority:49",
-      "metadata": {
-        "timestamp": "2026-09-14T10:00:00+00:00",
-        "collection_status": "success"
-      },
+      "event_key": "flood:gauge:risk-05000m-r0040-c0012:50",
+      "candidate_key": "flood:gauge_discharge_rating_curve:risk-05000m-r0040-c0012:50:2026-09-16T08:00:00+00:00",
       "event_type": "flood",
       "detected": true,
-      "detection_state": "observed_high_flow",
-      "flow_intensity": "high",
-      "confidence": "high",
-      "reasons": [
-        "discharge_at_or_above_5_year_threshold",
-        "discharge_threshold_crossing_persisted",
-        "rapid_persistent_hydrological_rise"
-      ],
-      "observed_at": "2026-09-14T09:50:00+00:00",
+      "cell_id": "risk-05000m-r0040-c0012",
+      "observed_at": "2026-09-16T08:00:00+00:00",
+      "latitude": 32.01,
+      "longitude": 34.81,
       "location": {
         "known": true,
-        "latitude": 31.5,
-        "longitude": 34.8
+        "latitude": 32.01,
+        "longitude": 34.81,
+        "source": "hydrometric_station",
+        "uncertainty_m": 100.0
+      },
+      "confidence": 0.88,
+      "confidence_level": "high",
+      "severity_hint": "high",
+      "flow_intensity": "high",
+      "location_uncertainty_m": 100.0,
+      "is_urban": true,
+      "trigger": "gauge_discharge_rating_curve",
+      "evidence": {
+        "source_station_id": 50,
+        "value": 32.0,
+        "threshold": 10.0,
+        "opening_return_period_years": 2,
+        "exceeded_return_period_years": 10,
+        "rainfall_1h_mm": null,
+        "rainfall_6h_mm": null
+      },
+      "metadata": {
+        "timestamp": "2026-09-16T08:00:00+00:00",
+        "collection_status": "cached_observations"
+      },
+      "detection_state": "observed_high_flow",
+      "reasons": ["station_specific_discharge_threshold_crossed"],
+      "reasoning": {
+        "summary": "Hydrometric discharge crossed the station-specific Q2 threshold.",
+        "primary_signal": "gauge_discharge_rating_curve",
+        "reason_codes": ["station_specific_discharge_threshold_crossed"],
+        "threshold": 10.0,
+        "observed_value": 32.0
       },
       "station": {
-        "source_station_id": 49,
+        "source_station_id": 50,
         "hydrometric_station_id": 7,
-        "name_he": null,
-        "name_en": "Example station"
+        "name_he": "תחנת נחל בדיקה",
+        "name_en": "Test stream gauge"
       },
       "drainage_basin": {
         "basin_id": 12,
-        "name_he": null,
-        "name_en": "Example basin"
+        "name_he": "אגן בדיקה",
+        "name_en": "Test basin"
       },
       "stream_context": {
         "association": "same_drainage_basin",
@@ -986,109 +969,20 @@ The example is a detector-level result, not the response of an HTTP endpoint:
         "method": "same_basin_name_and_distance",
         "candidate_count": 1,
         "distinct_candidate_count": 1,
-        "stream": {
-          "stream_id": 21,
-          "object_id": 301,
-          "name_he": "Example Stream",
-          "water_source_id": 9001,
-          "main_catchment_code": "12",
-          "main_catchment_name": "Example basin",
-          "draining_water_id": null,
-          "draining_water_name": null,
-          "distance_m": 18.4,
-          "name_matches_station": true
-        },
+        "stream": {"water_source_id": 9001, "distance_m": 40.0},
         "nearest_candidate": null,
         "warnings": []
       },
-      "hydrological_evidence": {
-        "discharge_m3s": 50.0,
-        "water_height_m": 1.58,
-        "flow_start_water_level_m": 1.2,
-        "flow_started": true,
-        "threshold_status": "valid",
-        "available_return_periods": [2, 5, 10, 20, 50, 100],
-        "missing_return_periods": [],
-        "crossed_thresholds": [
-          {"return_period_years": 2, "threshold_m3s": 17.0},
-          {"return_period_years": 5, "threshold_m3s": 37.0},
-          {"return_period_years": 10, "threshold_m3s": 48.0}
-        ],
-        "highest_crossed_return_period_years": 10,
-        "q2_persistence_observations": 3,
-        "rapid_stage_rise": true,
-        "rapid_discharge_rise": true,
-        "trend": {
-          "observation_count": 3,
-          "consecutive_stage_rises": 2,
-          "consecutive_discharge_rises": 2,
-          "recent_stage_rise_m_per_hour": 0.84,
-          "recent_discharge_rise_m3s_per_hour": 60.0,
-          "recent_discharge_rise_q2_per_hour": 3.53,
-          "changes": {
-            "10m": {
-              "elapsed_minutes": 10.0,
-              "start_observed_at": "2026-09-14T09:40:00+00:00",
-              "water_height_change_m": 0.16,
-              "discharge_change_m3s": 12.0
-            },
-            "30m": {
-              "elapsed_minutes": 20.0,
-              "start_observed_at": "2026-09-14T09:30:00+00:00",
-              "water_height_change_m": 0.28,
-              "discharge_change_m3s": 20.0
-            },
-            "60m": null
-          }
-        }
-      },
-      "rainfall_context": {
-        "association": "same_drainage_basin",
-        "basin_id": 12,
-        "station_count": 0,
-        "stations_with_observations": 0,
-        "fresh_station_count": 0,
-        "latest_observation_at": null,
-        "is_fresh": false,
-        "recent_rain_detected": false,
-        "limitations": [
-          "same_basin_does_not_prove_upstream_subcatchment",
-          "rainfall_has_not_yet_been_compared_with_local_idf"
-        ],
-        "maximum_10m_mm": null,
-        "mean_10m_mm": null,
-        "maximum_1h_mm": null,
-        "mean_1h_mm": null,
-        "maximum_6h_mm": null,
-        "mean_6h_mm": null,
-        "maximum_24h_mm": null,
-        "mean_24h_mm": null
-      },
-      "rainfall_evidence": [],
       "downstream_route": {
         "status": "complete",
         "confidence": "high",
         "method": "water_authority_draining_water_id",
         "origin_water_source_id": 9001,
-        "segment_count": 1,
+        "segment_count": 3,
         "segments": [
-          {
-            "hop": 0,
-            "name_he": "Example Stream",
-            "water_source_id": 9001,
-            "object_ids": [301],
-            "feature_count": 1,
-            "main_catchment_code": "12",
-            "main_catchment_name": "Example basin",
-            "draining_water_id": null,
-            "draining_water_name": null,
-            "representative_location": {
-              "latitude": 31.49,
-              "longitude": 34.81
-            },
-            "topology_conflict": false,
-            "matched_object_id": 301
-          }
+          {"hop": 0, "water_source_id": 9001},
+          {"hop": 1, "water_source_id": 9002},
+          {"hop": 2, "water_source_id": 9003}
         ],
         "termination": "declared_network_end",
         "limitations": [
@@ -1097,71 +991,74 @@ The example is a detector-level result, not the response of an HTTP endpoint:
           "route_does_not_predict_inundation_extent_or_travel_time",
           "representative_points_are_not_flood_boundaries"
         ]
+      },
+      "hydrological_evidence": {
+        "discharge_m3s": 32.0,
+        "water_height_m": 1.3,
+        "flow_start_water_level_m": 1.0,
+        "flow_started": true,
+        "threshold_status": "valid",
+        "available_return_periods": [2, 5, 10, 20, 50, 100],
+        "missing_return_periods": [],
+        "crossed_thresholds": [
+          {"return_period_years": 2, "threshold_m3s": 10.0},
+          {"return_period_years": 5, "threshold_m3s": 20.0},
+          {"return_period_years": 10, "threshold_m3s": 30.0}
+        ],
+        "highest_crossed_return_period_years": 10,
+        "opening_threshold": 10.0,
+        "opening_return_period_years": 2,
+        "trend": {
+          "sample_count": 2,
+          "elapsed_minutes": 10.0,
+          "discharge_change_m3s": 23.0,
+          "water_height_change_m": 0.0
+        }
+      },
+      "rainfall_context": {
+        "association": "same_drainage_basin",
+        "basin_id": 12,
+        "available": false,
+        "sources": [],
+        "rainfall_10m_mm": null,
+        "rainfall_1h_mm": null,
+        "rainfall_6h_mm": null,
+        "rainfall_24h_mm": null,
+        "max_rate_mm_h": null,
+        "limitations": [
+          "basin_average_does_not_prove_rainfall_upstream_of_the_event"
+        ]
+      },
+      "rainfall_evidence": {
+        "available": false,
+        "sources": [],
+        "rainfall_10m_mm": null,
+        "rainfall_1h_mm": null,
+        "rainfall_6h_mm": null,
+        "rainfall_24h_mm": null,
+        "max_rate_mm_h": null
+      },
+      "urban_context": {
+        "is_urban": true,
+        "classification_status": "classified",
+        "built_up_fraction": 0.8,
+        "sample_count": 9,
+        "classification_threshold": 0.35
       }
     }
   ],
-  "watch_events": [],
-  "input_station_count": 1,
-  "assessed_station_count": 1,
-  "unassessed_stations": [],
-  "source_status": {
-    "hydrology_database": "success",
-    "hydrometric_observations": {
-      "status": "success",
-      "collector_source": "water_authority_hydrometric_observations",
-      "latest_collection_status": "ok",
-      "latest_started_at": "2026-09-14T09:54:00+00:00",
-      "latest_finished_at": "2026-09-14T09:55:00+00:00",
-      "latest_rows_written": 12,
-      "latest_run_has_error": false,
-      "cached_data_available": true,
-      "cached_data_fresh": true,
-      "cache_coverage": "fresh",
-      "cached_station_count": 1,
-      "fresh_station_count": 1,
-      "latest_observed_at": "2026-09-14T09:50:00+00:00"
-    },
-    "rainfall_observations": {
-      "status": "unavailable",
-      "collector_source": "water_authority_rainfall_observations",
-      "latest_collection_status": "ok",
-      "latest_started_at": "2026-09-14T09:54:00+00:00",
-      "latest_finished_at": "2026-09-14T09:55:00+00:00",
-      "latest_rows_written": 0,
-      "latest_run_has_error": false,
-      "cached_data_available": false,
-      "cached_data_fresh": false,
-      "cache_coverage": "unavailable",
-      "cached_station_count": 0,
-      "fresh_station_count": 0,
-      "latest_observed_at": null
-    },
-    "stream_network": "success"
-  }
+  "resolutions": []
 }
 ```
 
-### 6.11 Primary Database Failure
+### 6.10 Persistence Boundary
 
-When station histories cannot be read, the detector returns an inconclusive
-result rather than claiming that no flood exists:
+`flood_candidates` stores one lifecycle row per candidate key. Rich event data
+is kept under the persisted evidence object, while lifecycle fields remain
+queryable at the row root. The worker returns only candidates and resolutions
+confirmed by the commit result. The cursor and event changes are therefore
+consistent even when a retry repeats the same source rows.
 
-```json
-{
-  "metadata": {
-    "timestamp": "2026-09-14T10:00:00+00:00",
-    "collection_status": "failed"
-  },
-  "event_type": "flood",
-  "detected": null,
-  "detected_events": [],
-  "watch_events": [],
-  "input_station_count": 0,
-  "assessed_station_count": 0,
-  "unassessed_stations": [],
-  "source_status": {
-    "hydrology_database": "failed"
-  },
-  "error": "RuntimeError: database unavailable"
-}
-```
+The detector contract intentionally does not include nearby roads, rescue
+forces, exposure, damage estimates or response recommendations. Those are
+inputs and outputs of downstream analysis and resource-allocation stages.

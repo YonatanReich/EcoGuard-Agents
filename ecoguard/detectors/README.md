@@ -6,4 +6,3 @@ and deliberately computes no risk score: deciding how bad it is belongs to
 `analyzers/`, and mixing the two makes it impossible to tell a detection
 failure from an assessment failure.
 
-One subfolder per hazard. `flood/` and `air_pollution/` are empty and waiting.
