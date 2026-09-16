@@ -29,7 +29,9 @@ from ecoguard.collection.flood.hydrometric_stations import (
 )
 from ecoguard.collection.base import cell_for
 from ecoguard.collection.flood.signal_rows import rainfall_signal_records
-from ecoguard.database.repositories.observations import upsert_observations_in_session
+from ecoguard.database.repositories.flood_observations import (
+    upsert_flood_observations_in_session,
+)
 
 
 SOURCE = "water_authority_rainfall_observations"
@@ -516,12 +518,11 @@ def persist_rainfall_observations(
             )
             observations_written += len(session.execute(statement).scalars().all())
 
-        detector_observations_written = upsert_observations_in_session(
+        detector_observations_written = upsert_flood_observations_in_session(
             session,
             SOURCE,
             rainfall_signal_records(batch.rows, station_metadata),
             ingested_at=collected_at,
-            update_existing=True,
         )
 
         for start in range(0, len(accumulations), CHUNK_SIZE):

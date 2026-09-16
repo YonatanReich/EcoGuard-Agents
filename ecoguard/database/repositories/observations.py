@@ -125,55 +125,6 @@ def _row(source: str, record: dict[str, Any], ingested_at: datetime) -> dict[str
     }
 
 
-def upsert_observations_in_session(
-    session: Any,
-    source: str,
-    records: Iterable[dict[str, Any]],
-    *,
-    ingested_at: datetime | None = None,
-    update_existing: bool = False,
-) -> int:
-    """Write observations using an existing transaction.
-
-    Flood collectors use this helper so their source-specific cache and the
-    normalized detector stream commit together. ``update_existing`` is useful
-    for providers that can correct an earlier measured value: a real payload
-    change receives a new ingestion time and is therefore visible to a cursor.
-    """
-    rows = list(records)
-    if not rows:
-        return 0
-    if not isinstance(source, str) or not source.strip():
-        raise ValueError("source must be non-empty")
-
-    stamped_at = _aware(ingested_at, name="ingested_at") or datetime.now(timezone.utc)
-    written = 0
-    for start in range(0, len(rows), CHUNK_SIZE):
-        values = [
-            _row(source, record, stamped_at)
-            for record in rows[start:start + CHUNK_SIZE]
-        ]
-        statement = insert(Observation).values(values)
-        if update_existing:
-            statement = statement.on_conflict_do_update(
-                constraint="observations_identity",
-                set_={
-                    "payload": statement.excluded.payload,
-                    "location": statement.excluded.location,
-                    "ingested_at": statement.excluded.ingested_at,
-                },
-                where=Observation.payload.is_distinct_from(statement.excluded.payload),
-            )
-        else:
-            statement = statement.on_conflict_do_nothing(
-                constraint="observations_identity"
-            )
-        written += len(
-            session.execute(statement.returning(Observation.id)).scalars().all()
-        )
-    return written
-
-
 def upsert_observations(source: str, records: Iterable[dict[str, Any]]) -> int:
     """Insert records, ignoring any that are already stored.
 
@@ -187,8 +138,18 @@ def upsert_observations(source: str, records: Iterable[dict[str, Any]]) -> int:
     if not rows:
         return 0
 
+    ingested_at = datetime.now(timezone.utc)
+    written = 0
     with Session() as session:
-        written = upsert_observations_in_session(session, source, rows)
+        for start in range(0, len(rows), CHUNK_SIZE):
+            values = [_row(source, record, ingested_at) for record in rows[start:start + CHUNK_SIZE]]
+            statement = (
+                insert(Observation)
+                .values(values)
+                .on_conflict_do_nothing(constraint="observations_identity")
+                .returning(Observation.id)
+            )
+            written += len(session.execute(statement).scalars().all())
         session.commit()
     return written
 

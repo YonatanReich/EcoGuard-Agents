@@ -28,7 +28,9 @@ from ecoguard.collection.flood.hydrometric_stations import (
     USER_AGENT,
 )
 from ecoguard.collection.flood.signal_rows import hydrometric_signal_records
-from ecoguard.database.repositories.observations import upsert_observations_in_session
+from ecoguard.database.repositories.flood_observations import (
+    upsert_flood_observations_in_session,
+)
 
 
 SOURCE = "water_authority_hydrometric_observations"
@@ -317,12 +319,11 @@ def persist_hydrometric_observations(
             ).returning(HYDROMETRIC_OBSERVATIONS.c.id)
             written += len(session.execute(statement).scalars().all())
 
-        detector_observations_written = upsert_observations_in_session(
+        detector_observations_written = upsert_flood_observations_in_session(
             session,
             SOURCE,
             hydrometric_signal_records(batch.rows, station_metadata),
             ingested_at=collected_at,
-            update_existing=True,
         )
         session.commit()
 
