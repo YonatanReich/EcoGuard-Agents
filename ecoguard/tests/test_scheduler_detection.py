@@ -85,3 +85,28 @@ def test_shared_detection_job_is_registered_exactly_once():
     assert jobs[0].trigger.interval.total_seconds() == 30 * 60
     assert jobs[0].max_instances == 1
     assert jobs[0].coalesce is True
+
+
+def test_scheduler_dispatches_only_coordinator_touched_incidents(monkeypatch):
+    from ecoguard import scheduler as shared_runtime
+    from ecoguard.coordinator import agent, dispatcher
+    from ecoguard.detectors.air_pollution import observation_processing
+    from ecoguard.detectors.fire import satellite, weather
+
+    coordination = agent.CoordinationResult(
+        created=["INC-1"],
+        updated=["INC-2", "INC-1"],
+    )
+    dispatched = []
+    monkeypatch.setattr(satellite, "detect_new", lambda: [])
+    monkeypatch.setattr(weather, "detect_new", lambda: [])
+    monkeypatch.setattr(observation_processing, "detect_new", lambda: [])
+    monkeypatch.setattr(agent, "run", lambda signals: coordination)
+    monkeypatch.setattr(
+        dispatcher,
+        "dispatch_touched",
+        lambda identifiers: dispatched.extend(identifiers) or ["processed"],
+    )
+
+    assert shared_runtime.detect_and_coordinate() == ["processed"]
+    assert dispatched == ["INC-1", "INC-2"]

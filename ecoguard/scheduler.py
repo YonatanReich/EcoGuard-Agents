@@ -157,7 +157,7 @@ scheduler.add_job(
 )
 
 
-def detect_and_coordinate() -> None:
+def detect_and_coordinate():
     """Sweep stored observations for shared hazard signals and coordinate once.
 
     The two detectors intentionally emit separate hazard streams. Satellite
@@ -199,7 +199,20 @@ def detect_and_coordinate() -> None:
             logger.exception("detector %s failed; continuing without it",
                              detector.__name__)
 
-    coordinate(signals)
+    coordination = coordinate(signals)
+    if coordination is None:
+        return []
+
+    try:
+        from ecoguard.coordinator.dispatcher import dispatch_touched
+
+        return dispatch_touched(coordination.touched_ids)
+    except Exception:
+        # Incidents are already safely persisted. Analysis/planning is a
+        # downstream attempt and must never turn successful coordination into
+        # a failed detection tick.
+        logger.exception("incident dispatch failed after coordination")
+        return []
 
 
 # Every thirty minutes, set by the satellite rather than the weather.
