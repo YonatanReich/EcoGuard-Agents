@@ -57,3 +57,20 @@ def generate_grid(
             column += 1
         row += 1
     return cells
+
+
+def travel_bearing(wind_direction_deg: float) -> float:
+    """Where the air is going, from where the wind is coming.
+
+    `wind_direction_10m` is meteorological convention — the bearing the wind
+    blows *from*. A northerly at 019 degrees carries smoke toward 199. Getting
+    this backwards searches, or burns, the exact half of the map the thing is
+    not in.
+
+    It lives here rather than beside either of its callers because both the
+    coordinator (which way did the smoke go) and the fire spread model (which
+    way does the fire run) need it, they are different stages, and a second
+    copy of a conversion whose whole hazard is its sign is how the sign gets
+    flipped in one of them.
+    """
+    return (wind_direction_deg + 180.0) % 360.0
