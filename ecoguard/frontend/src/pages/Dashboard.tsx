@@ -117,6 +117,8 @@ function Dashboard() {
   /** The event whose modal is open, from either a card or a map marker. */
   const [openEvent, setOpenEvent] =
     useState<SharedEvent | null>(null)
+  const [directionsStationKey, setDirectionsStationKey] =
+    useState<string | null>(null)
 
   /** The event selected on the map; closing its modal must not clear it. */
   const [selectedEventKey, setSelectedEventKey] =
@@ -131,6 +133,13 @@ function Dashboard() {
 
   const selectAndOpenEvent = (event: SharedEvent) => {
     setSelectedEventKey(`${event.type}:${event.id}`)
+    setDirectionsStationKey(null)
+    setOpenEvent(event)
+  }
+
+  const showStationDirections = (event: SharedEvent, stationKey: string) => {
+    setSelectedEventKey(`${event.type}:${event.id}`)
+    setDirectionsStationKey(stationKey)
     setOpenEvent(event)
   }
 
@@ -1087,7 +1096,13 @@ function Dashboard() {
             )}
 
             {allocationEvent && (
-              <ResourceAllocationLayer event={allocationEvent} />
+              <ResourceAllocationLayer
+                key={allocationEvent.id}
+                event={allocationEvent}
+                onShowDirections={(stationKey) => (
+                  showStationDirections(allocationEvent, stationKey)
+                )}
+              />
             )}
 
 
@@ -1177,7 +1192,11 @@ function Dashboard() {
       {openEvent && (
         <EventModal
           event={openEvent}
-          onClose={() => setOpenEvent(null)}
+          directionsStationKey={directionsStationKey}
+          onClose={() => {
+            setOpenEvent(null)
+            setDirectionsStationKey(null)
+          }}
         />
       )}
 

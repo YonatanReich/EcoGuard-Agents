@@ -143,6 +143,29 @@ function FireEventDetails({ event }: { event: FireEvent }) {
                 {station.route?.requires_field_access_confirmation && (
                   <span className="event-modal__allocation-warning">Field access requires confirmation</span>
                 )}
+                {station.route?.steps_he && station.route.steps_he.length > 0 && (
+                  <details
+                    id={`allocation-directions-${station.recommended_unit}-${station.database_id}`}
+                    className="event-modal__directions"
+                    dir="rtl"
+                  >
+                    <summary>הוראות נסיעה</summary>
+                    <ol>
+                      {station.route.steps_he.map((step, index) => (
+                        <li key={`${station.database_id}-step-${index}`}>
+                          <span className="event-modal__direction-instruction">
+                            {step.instruction ?? 'המשך במסלול'}
+                          </span>
+                          <span className="event-modal__direction-meta">
+                            {step.distance_m != null && formatDistance(step.distance_m)}
+                            {step.distance_m != null && step.duration_s != null && ' · '}
+                            {step.duration_s != null && formatDuration(step.duration_s)}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  </details>
+                )}
               </li>
             ))}
           </ul>
@@ -375,9 +398,10 @@ function AirPollutionEventDetails({ event }: { event: AirPollutionEvent }) {
   )
 }
 
-function EventModal({ event, onClose }: {
+function EventModal({ event, onClose, directionsStationKey = null }: {
   event: SharedEvent
   onClose: () => void
+  directionsStationKey?: string | null
 }) {
   const hazard = hazardOf(event)
   const urgency = classify(event)
@@ -389,6 +413,22 @@ function EventModal({ event, onClose }: {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
+
+  useEffect(() => {
+    if (!directionsStationKey) return
+    const frame = window.requestAnimationFrame(() => {
+      const targetId = `allocation-directions-${directionsStationKey}`
+      document.querySelectorAll<HTMLDetailsElement>('.event-modal__directions')
+        .forEach((element) => {
+          element.open = element.id === targetId
+        })
+      document.getElementById(targetId)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [directionsStationKey, event.id])
 
   return (
     <div className="event-modal__backdrop" onClick={onClose} role="presentation">
@@ -431,7 +471,9 @@ function EventModal({ event, onClose }: {
             )}
           </section>
         )}
-        {event.type === 'fire' && <FireEventDetails event={event} />}
+        {event.type === 'fire' && (
+          <FireEventDetails event={event} />
+        )}
         {event.type === 'air_pollution' && <AirPollutionEventDetails event={event} />}
       </div>
     </div>
