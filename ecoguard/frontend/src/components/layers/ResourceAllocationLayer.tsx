@@ -1,4 +1,4 @@
-import { Fragment, useState, type CSSProperties } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { Layer, Marker, Popup, Source } from 'react-map-gl/mapbox'
 import type { AllocatedStation, FireEvent } from '../../types/events'
 
@@ -52,61 +52,93 @@ function ResourceAllocationLayer({
   const selectedStation = stations.find(
     (station) => stationKey(station) === selectedStationKey,
   ) ?? null
+  const routeFeatures = stations.flatMap((station) => {
+    const geometry = station.route?.geometry
+    if (!geometry) return []
+    return [{
+      type: 'Feature' as const,
+      properties: {
+        routeKey: stationKey(station),
+        color: stationStyle(station).color,
+      },
+      geometry,
+    }]
+  })
 
   return (
     <>
+      {routeFeatures.length > 0 && (
+        <Source
+          id="resource-allocation-routes"
+          type="geojson"
+          data={{ type: 'FeatureCollection', features: routeFeatures }}
+        >
+          <Layer
+            id="resource-allocation-background-routes"
+            type="line"
+            slot="top"
+            filter={selectedStationKey
+              ? ['!=', ['get', 'routeKey'], selectedStationKey]
+              : ['has', 'routeKey']}
+            layout={{
+              'line-cap': 'round',
+              'line-join': 'round',
+            }}
+            paint={{
+              'line-color': ['get', 'color'],
+              'line-width': selectedStationKey ? 3 : 4,
+              'line-opacity': selectedStationKey ? 0.4 : 0.85,
+            }}
+          />
+
+          {selectedStationKey && (
+            // This layer is declared after the background layer so Mapbox
+            // always paints the selected route above every other route.
+            <Layer
+              id="resource-allocation-selected-route"
+              type="line"
+              slot="top"
+              filter={['==', ['get', 'routeKey'], selectedStationKey]}
+              layout={{
+                'line-cap': 'round',
+                'line-join': 'round',
+              }}
+              paint={{
+                'line-color': ['get', 'color'],
+                'line-width': 7,
+                'line-opacity': 1,
+              }}
+            />
+          )}
+        </Source>
+      )}
+
       {stations.map((station) => {
-        const geometry = station.route?.geometry
         const style = stationStyle(station)
         const key = stationKey(station)
         const isSelected = selectedStationKey === key
-        const isDimmed = selectedStationKey !== null && !isSelected
 
         return (
-          <Fragment key={key}>
-            {geometry && (
-              <Source
-                id={`allocation-route-source-${key}`}
-                type="geojson"
-                data={{
-                  type: 'Feature',
-                  properties: {},
-                  geometry,
-                }}
-              >
-                <Layer
-                  id={`allocation-route-${key}`}
-                  type="line"
-                  slot="top"
-                  paint={{
-                    'line-color': style.color,
-                    'line-width': isSelected ? 7 : 4,
-                    'line-opacity': isDimmed ? 0.12 : isSelected ? 1 : 0.85,
-                  }}
-                />
-              </Source>
-            )}
-
-            <Marker
-              longitude={station.longitude}
-              latitude={station.latitude}
-              anchor="center"
+          <Marker
+            key={key}
+            longitude={station.longitude}
+            latitude={station.latitude}
+            anchor="center"
+          >
+            <button
+              type="button"
+              className={`allocation-station-marker${isSelected ? ' allocation-station-marker--selected' : ''}`}
+              style={{ '--allocation-color': style.color } as CSSProperties}
+              title={`${station.name} · ${station.distance_km?.toFixed(1) ?? '—'} km`}
+              aria-label={`Assigned station: ${station.name}`}
+              onClick={(clickEvent) => {
+                clickEvent.stopPropagation()
+                setSelectedStationKey(key)
+              }}
             >
-              <button
-                type="button"
-                className={`allocation-station-marker${isSelected ? ' allocation-station-marker--selected' : ''}`}
-                style={{ '--allocation-color': style.color } as CSSProperties}
-                title={`${station.name} · ${station.distance_km?.toFixed(1) ?? '—'} km`}
-                aria-label={`Assigned station: ${station.name}`}
-                onClick={(clickEvent) => {
-                  clickEvent.stopPropagation()
-                  setSelectedStationKey(key)
-                }}
-              >
-                {style.label}
-              </button>
-            </Marker>
-          </Fragment>
+              {style.label}
+            </button>
+          </Marker>
         )
       })}
 
