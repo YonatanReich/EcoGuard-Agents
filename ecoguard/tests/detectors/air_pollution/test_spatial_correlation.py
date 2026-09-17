@@ -19,6 +19,11 @@ from ecoguard.detectors.air_pollution.spatial_enrichment import (
     AirPollutionSpatialEnricher,
 )
 from ecoguard.detectors.air_pollution.spatial_schemas import SpatiallyEnrichedAirPollutionAnomaly
+from ecoguard.database.repositories.localities import (
+    LocalityCandidate,
+    LocalityLookupResult,
+    LocalityLookupStatus,
+)
 from ecoguard.detectors.air_pollution.baseline_schemas import (
     BaselineBucketStatistics,
     BaselineIdentity,
@@ -166,16 +171,79 @@ def _context(*, feature_name: str = "Test town") -> dict:
     }
 
 
+def _locality_lookup(*, name: str = "Test town", longitude: float = 34.8):
+    def lookup(**_):
+        return LocalityLookupResult(
+            status=LocalityLookupStatus.SUCCESS_WITH_RESULTS,
+            candidates=[LocalityCandidate(
+                locality_code="5000",
+                name_he=name,
+                locality_type="town",
+                latitude=32.1,
+                longitude=longitude,
+                distance_m=0.0,
+                source="official-localities",
+            )],
+        )
+    return lookup
+
+
 def test_suspected_anomaly_enters_spatial_enrichment():
     provider = Mock()
     provider.fetch_nearby_context.return_value = _context()
 
-    result = AirPollutionSpatialEnricher(provider).enrich_detection_result(
+    result = AirPollutionSpatialEnricher(
+        provider, locality_lookup=_locality_lookup()
+    ).enrich_detection_result(
         _detection("SUSPECTED_ANOMALY")
     )
 
     provider.fetch_nearby_context.assert_called_once_with(32.1, 34.8, radius_km=2.0)
     assert isinstance(result, SpatiallyEnrichedAirPollutionAnomaly)
+
+
+def test_default_air_pollution_enrichment_uses_db_localities_without_overpass():
+    lookup = Mock(return_value=LocalityLookupResult(
+        status=LocalityLookupStatus.SUCCESS_EMPTY,
+    ))
+
+    result = AirPollutionSpatialEnricher(locality_lookup=lookup).enrich(
+        _anomaly(), radius_km=10.0
+    )
+
+    lookup.assert_called_once_with(latitude=32.1, longitude=34.8, radius_m=10_000.0)
+    assert result.spatial_context.settlement_context.outcome == "SUCCESS_EMPTY"
+    assert result.spatial_context.status == "success"
+    assert result.spatial_context.nearby_settlements == []
+
+
+def test_unloaded_locality_layer_remains_explicitly_unavailable():
+    lookup = Mock(return_value=LocalityLookupResult(
+        status=LocalityLookupStatus.REFERENCE_DATA_NOT_LOADED,
+        reason="reference_data_not_loaded",
+    ))
+
+    result = AirPollutionSpatialEnricher(locality_lookup=lookup).enrich(_anomaly())
+
+    settlement_context = result.spatial_context.settlement_context
+    assert settlement_context.status == "unavailable"
+    assert settlement_context.reason == "reference_data_not_loaded"
+    assert result.spatial_context.status == "unavailable"
+    assert "nearby_settlements" in result.spatial_context.missing_layers
+
+
+def test_overpass_settlements_are_ignored_but_other_layers_are_preserved():
+    supplied = _context(feature_name="Overpass town")
+    supplied["geospatial_context"]["nearby_roads"] = [{"name": "Road 1"}]
+
+    result = AirPollutionSpatialEnricher(
+        locality_lookup=_locality_lookup(name="Database town")
+    ).enrich(_anomaly(), geospatial_context=supplied)
+
+    assert [item.name for item in result.spatial_context.nearby_settlements] == [
+        "Database town"
+    ]
+    assert [item.name for item in result.spatial_context.nearby_roads] == ["Road 1"]
 
 
 @pytest.mark.parametrize("status", ["NORMAL", "NOT_EVALUATED"])
@@ -192,7 +260,9 @@ def test_identity_location_and_supplied_geographic_context_are_preserved():
     anomaly = _anomaly()
     provider = Mock()
 
-    result = AirPollutionSpatialEnricher(provider).enrich(
+    result = AirPollutionSpatialEnricher(
+        provider, locality_lookup=_locality_lookup()
+    ).enrich(
         anomaly, geospatial_context=_context()
     )
 
@@ -202,13 +272,15 @@ def test_identity_location_and_supplied_geographic_context_are_preserved():
     assert result.anomaly.station_name == "Central Station"
     assert result.spatial_context.location == anomaly.location
     settlement = result.spatial_context.nearby_settlements[0]
-    assert (settlement.name, settlement.osm_id, settlement.population) == (
-        "Test town", 42, "1200"
+    assert (settlement.name, settlement.ref, settlement.osm_id) == (
+        "Test town", "5000", None
     )
 
 
 def test_enriched_anomaly_enters_correlation_with_all_detector_evidence():
-    enriched = AirPollutionSpatialEnricher(Mock()).enrich(
+    enriched = AirPollutionSpatialEnricher(
+        Mock(), locality_lookup=_locality_lookup()
+    ).enrich(
         _anomaly(), geospatial_context=_context()
     )
 
@@ -227,7 +299,9 @@ def test_enriched_anomaly_enters_correlation_with_all_detector_evidence():
 
 def test_correlation_uses_time_location_pollutant_and_geographic_evidence():
     left = correlation_candidate(
-        AirPollutionSpatialEnricher(Mock()).enrich(
+        AirPollutionSpatialEnricher(
+            Mock(), locality_lookup=_locality_lookup()
+        ).enrich(
             _anomaly(), geospatial_context=_context()
         )
     )
@@ -235,7 +309,9 @@ def test_correlation_uses_time_location_pollutant_and_geographic_evidence():
     right_context["location"]["longitude"] = 34.81
     right_context["geospatial_context"]["nearby_settlements"][0]["longitude"] = 34.8
     right = correlation_candidate(
-        AirPollutionSpatialEnricher(Mock()).enrich(
+        AirPollutionSpatialEnricher(
+            Mock(), locality_lookup=_locality_lookup()
+        ).enrich(
             _anomaly("air-pollution:test-b", minutes=2, longitude=34.81),
             geospatial_context=right_context,
         )

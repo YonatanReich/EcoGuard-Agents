@@ -232,12 +232,14 @@ def test_historical_projection_without_ea371_fields_still_loads():
     details.pop("official_pollutant_classification", None)
     details.pop("publication_policy", None)
     details.pop("additional_verification", None)
+    details.pop("settlement_context", None)
 
     event = event_api.shared_event_feed([row]).events[0]
 
     assert event.details.official_pollutant_classification is None
     assert event.details.publication_policy is None
     assert event.details.additional_verification is None
+    assert event.details.settlement_context is None
 
 
 def test_station_wide_category_does_not_override_matching_pollutant_sub_index():

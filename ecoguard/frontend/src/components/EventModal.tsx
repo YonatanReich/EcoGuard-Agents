@@ -303,7 +303,13 @@ function AirPollutionEventDetails({ event }: { event: AirPollutionEvent }) {
               </li>
             ))}
           </ul>
-        ) : <p>No settlements are identified inside the available screening corridor.</p>}
+        ) : details.settlement_context?.status === 'success' ? (
+          <p>No settlements are identified inside the available screening corridor.</p>
+        ) : details.settlement_context?.outcome === 'REFERENCE_DATA_NOT_LOADED' ? (
+          <p>Settlement screening is unavailable because locality reference data has not been loaded.</p>
+        ) : (
+          <p>Settlement screening is unavailable.</p>
+        )}
       </section>
 
       <section className="event-modal__section">

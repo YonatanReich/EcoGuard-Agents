@@ -337,6 +337,11 @@ class AirPollutionTransportPredictionService:
             validated.anomaly.location,
             corridor_with_time,
             arc_segment_count=self.configuration.arc_segment_count,
+            settlement_context=(
+                validated.spatial_context.settlement_context
+                if validated.spatial_context is not None
+                else None
+            ),
         )
         return AirPollutionTransportPredictionExecution(
             analysis_origin=origin,

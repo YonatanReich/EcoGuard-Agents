@@ -22,6 +22,7 @@ from ecoguard.shared.events import (
     AirPollutionDetails,
     AirPollutionRecommendation,
     AirPollutionSettlement,
+    AirPollutionSettlementContext,
     AirPollutionSharedEvent,
     AirPollutionPublicationPolicy,
     AirPollutionStation,
@@ -125,6 +126,14 @@ def air_pollution_shared_event(
     wind = None
     transport = None
     settlements = []
+    settlement_context = (
+        AirPollutionSettlementContext.model_validate(
+            candidate.spatial_context.settlement_context.model_dump(mode="json")
+        )
+        if candidate.spatial_context is not None
+        and candidate.spatial_context.settlement_context is not None
+        else None
+    )
     population = None
     trend = None
     official_classification = None
@@ -183,6 +192,10 @@ def air_pollution_shared_event(
                 evidence_id=wind_evidence.evidence_id,
             )
             spatial = execution.spatial_output
+            if spatial.settlement_context is not None:
+                settlement_context = AirPollutionSettlementContext.model_validate(
+                    spatial.settlement_context.model_dump(mode="json")
+                )
             population_result = analysis.population_impact.result
             geometry_reference = (
                 population_result.geometry_reference
@@ -338,6 +351,7 @@ def air_pollution_shared_event(
             wind=wind,
             transport=transport,
             relevant_settlements=settlements,
+            settlement_context=settlement_context,
             population_within_screening_corridor=population,
             recommendations=recommendations,
             verified_references=references,

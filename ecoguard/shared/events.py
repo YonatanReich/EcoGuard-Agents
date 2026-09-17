@@ -172,6 +172,19 @@ class AirPollutionSettlement(EventContract):
     transport_time: TransportTimeEvidence | None = None
 
 
+class AirPollutionSettlementContext(EventContract):
+    status: Literal["success", "unavailable"]
+    outcome: Literal[
+        "SUCCESS_WITH_RESULTS",
+        "SUCCESS_EMPTY",
+        "REFERENCE_DATA_NOT_LOADED",
+        "UNAVAILABLE",
+    ]
+    source: Literal["shared_postgis_localities"] = "shared_postgis_localities"
+    candidate_count: int = Field(default=0, ge=0)
+    reason: str | None = None
+
+
 class AirPollutionTransportScreening(EventContract):
     corridor: GeoJsonPolygon | None = None
     centerline: GeoJsonLineString | None = None
@@ -238,6 +251,7 @@ class AirPollutionDetails(EventContract):
     wind: AirPollutionWindEvidence | None = None
     transport: AirPollutionTransportScreening | None = None
     relevant_settlements: list[AirPollutionSettlement] = Field(default_factory=list)
+    settlement_context: AirPollutionSettlementContext | None = None
     population_within_screening_corridor: CorridorPopulationContext | None = None
     recommendations: list[AirPollutionRecommendation] = Field(default_factory=list)
     verified_references: list[VerifiedReference] = Field(default_factory=list)

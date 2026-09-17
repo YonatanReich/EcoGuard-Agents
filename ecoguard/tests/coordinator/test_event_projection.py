@@ -5,10 +5,15 @@ import pytest
 from sqlalchemy import text
 
 from ecoguard.coordinator.dispatcher import IncidentProcessingResult, dispatch_incidents
+from ecoguard.coordinator.incidents import signal_as_json
 from ecoguard.coordinator.event_projection import (
     air_pollution_shared_event,
     project_processing_results,
 )
+from ecoguard.detectors.air_pollution.cell_signal_adapter import (
+    air_pollution_candidate_to_cell_signal,
+)
+from ecoguard.detectors.air_pollution.correlation import PollutionCorrelationCandidate
 from ecoguard.database.repositories import event_projections as repository
 from ecoguard.database.repositories.event_projections import EventProjectionWrite
 from ecoguard.response_planner.air_pollution.schemas import (
@@ -59,6 +64,7 @@ def test_successful_result_maps_to_frontend_shared_event_contract():
     assert event.details.additional_verification is None
     assert event.details.trend == "RISING"
     assert event.details.transport.corridor.type == "Polygon"
+    assert event.details.settlement_context.outcome == "SUCCESS_WITH_RESULTS"
     assert event.details.population_within_screening_corridor.total_relevant_population == 50
     assert len(event.details.recommendations) == 1
     assert len(event.details.verified_references) == 1
@@ -128,6 +134,43 @@ def test_analysis_failure_projects_preserved_incident_evidence_honestly():
     assert writes[0].analysis_status == "failed"
     assert writes[0].planner_status == "skipped"
     assert writes[0].retryable is True
+
+
+def test_unloaded_locality_state_projects_even_when_transport_did_not_run():
+    incident, candidate = _incident()
+    payload = candidate.model_dump(round_trip=True)
+    payload["spatial_context"].update({
+        "status": "unavailable",
+        "provider_collection_status": "REFERENCE_DATA_NOT_LOADED",
+        "settlement_context": {
+            "status": "unavailable",
+            "outcome": "REFERENCE_DATA_NOT_LOADED",
+            "candidate_count": 0,
+            "reason": "reference_data_not_loaded",
+        },
+        "nearby_settlements": [],
+    })
+    unavailable_candidate = PollutionCorrelationCandidate.model_validate(payload)
+    incident["signals"] = [
+        signal_as_json(air_pollution_candidate_to_cell_signal(unavailable_candidate))
+    ]
+    result = IncidentProcessingResult(
+        incident_id=incident["id"],
+        hazard="air_pollution",
+        route="non_emergency",
+        status="failed",
+        requested_at=REQUESTED_AT,
+        completed_at=REQUESTED_AT,
+        failure_stage="analysis",
+        failure_reason="RuntimeError",
+    )
+
+    event = air_pollution_shared_event(result, incident)
+
+    assert event.details.transport is None
+    assert event.details.relevant_settlements == []
+    assert event.details.settlement_context.status == "unavailable"
+    assert event.details.settlement_context.reason == "reference_data_not_loaded"
 
 
 def test_same_incident_is_upserted_as_one_projection_and_latest_wins():

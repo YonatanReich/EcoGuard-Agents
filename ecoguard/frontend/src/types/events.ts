@@ -142,6 +142,14 @@ export type AirPollutionSettlement = {
   transport_time: TransportTimeEvidence | null
 }
 
+export type AirPollutionSettlementContext = {
+  status: 'success' | 'unavailable'
+  outcome: 'SUCCESS_WITH_RESULTS' | 'SUCCESS_EMPTY' | 'REFERENCE_DATA_NOT_LOADED' | 'UNAVAILABLE'
+  source: 'shared_postgis_localities'
+  candidate_count: number
+  reason: string | null
+}
+
 export type AirPollutionTransportScreening = {
   corridor: GeoJsonPolygon | null
   centerline: GeoJsonLineString | null
@@ -204,6 +212,7 @@ export type AirPollutionDetails = {
   wind: AirPollutionWindEvidence | null
   transport: AirPollutionTransportScreening | null
   relevant_settlements: AirPollutionSettlement[]
+  settlement_context?: AirPollutionSettlementContext | null
   population_within_screening_corridor: CorridorPopulationContext | null
   recommendations: AirPollutionRecommendation[]
   verified_references: VerifiedReference[]

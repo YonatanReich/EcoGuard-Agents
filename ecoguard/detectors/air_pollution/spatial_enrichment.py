@@ -1,11 +1,16 @@
-"""Add shared geospatial context to a suspected Air Pollution anomaly."""
+"""Add DB-backed geographic context to a suspected Air Pollution anomaly."""
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import timezone
 from typing import Protocol
 
 from pydantic import AwareDatetime, TypeAdapter, ValidationError
 
+from ecoguard.database.repositories.localities import (
+    LocalityLookupResult,
+    LocalityLookupStatus,
+    nearby_localities,
+)
 from ecoguard.detectors.air_pollution.schemas import (
     AirPollutionAnomaly,
     AirPollutionDetectionResult,
@@ -13,22 +18,21 @@ from ecoguard.detectors.air_pollution.schemas import (
 from ecoguard.detectors.air_pollution.spatial_schemas import (
     NearbyGeographicFeature,
     PollutionSpatialContext,
+    SettlementContextStatus,
     SpatiallyEnrichedAirPollutionAnomaly,
 )
-from ecoguard.shared.geospatial_context import GeospatialContextAgent
 from ecoguard.shared.air_quality_schemas import GeographicCoordinate
 
-LAYERS = (
-    "nearby_settlements",
+OTHER_LAYERS = (
     "nearby_roads",
     "nearby_hospitals",
     "nearby_police_stations",
     "nearby_fire_stations",
 )
+LAYERS = ("nearby_settlements", *OTHER_LAYERS)
 LIMITATIONS = [
     "Nearby features do not establish exposure, pollution source, or operational availability.",
-    "Coordinates may be representative OpenStreetMap centers; road geometry is not provided.",
-    "Population tags are source attributes, not affected-person counts.",
+    "Locality representative points support transport screening; boundaries are not used by the current ranking semantics.",
     "No affected area, transport, plume, severity, risk, or response conclusion is produced.",
 ]
 
@@ -39,11 +43,22 @@ class GeospatialProvider(Protocol):
     ) -> dict: ...
 
 
-class AirPollutionSpatialEnricher:
-    """Use Yonatan's shared geospatial provider or normalize supplied context."""
+LocalityLookup = Callable[..., LocalityLookupResult]
 
-    def __init__(self, geospatial_provider: GeospatialProvider | None = None):
-        self.provider = geospatial_provider or GeospatialContextAgent()
+
+class AirPollutionSpatialEnricher:
+    """Read settlements from PostGIS; optional providers supply other layers only."""
+
+    def __init__(
+        self,
+        geospatial_provider: GeospatialProvider | None = None,
+        *,
+        locality_lookup: LocalityLookup = nearby_localities,
+    ):
+        # Deliberately no default Overpass provider. Fire and the shared
+        # geospatial service retain their existing behavior.
+        self.provider = geospatial_provider
+        self.locality_lookup = locality_lookup
 
     def enrich_detection_result(
         self,
@@ -75,33 +90,124 @@ class AirPollutionSpatialEnricher:
             location=validated.location,
             lookup_radius_km=radius_km,
             status="unavailable",
+            source="shared_postgis_localities",
             limitations=list(LIMITATIONS),
         )
         enriched = SpatiallyEnrichedAirPollutionAnomaly(
             anomaly=validated, spatial_context=context
         )
-        if geospatial_context is None:
+        self._add_localities(context, validated.location, radius_km)
+
+        # An explicitly supplied provider/context may still contribute roads
+        # and facilities. Its settlement layer is always ignored.
+        provider_context = geospatial_context
+        if provider_context is None and self.provider is not None:
             try:
-                geospatial_context = self.provider.fetch_nearby_context(
+                provider_context = self.provider.fetch_nearby_context(
                     validated.location.latitude,
                     validated.location.longitude,
                     radius_km=radius_km,
                 )
             except Exception:
-                context.errors.append("geospatial_lookup_failed")
-                return enriched
-        if not isinstance(geospatial_context, Mapping):
-            context.errors.append("malformed_geospatial_response")
-            return enriched
+                context.errors.append("geospatial_other_layers_lookup_failed")
+        if provider_context is not None:
+            self._add_other_layers(
+                context, provider_context, validated.location, radius_km
+            )
 
-        metadata = geospatial_context.get("metadata")
-        metadata = metadata if isinstance(metadata, Mapping) else {}
-        source = metadata.get("data_source")
-        context.source = source if isinstance(source, str) and source.strip() else None
-        provider_status = metadata.get("collection_status")
-        context.provider_collection_status = (
-            provider_status if isinstance(provider_status, str) else None
+        locality_available = (
+            context.settlement_context is not None
+            and context.settlement_context.status == "success"
         )
+        other_layers_failed = any(
+            error.startswith("geospatial_other_layers")
+            or error.startswith("missing_or_malformed_layer")
+            or error == "malformed_missing_layers"
+            or error
+            in {
+                "malformed_geospatial_response",
+                "invalid_or_mismatched_lookup_location",
+                "missing_geospatial_layers",
+            }
+            for error in context.errors
+        )
+        context.status = (
+            "success"
+            if locality_available and not other_layers_failed
+            else "partial"
+            if locality_available or provider_context is not None
+            else "unavailable"
+        )
+        return enriched
+
+    def _add_localities(
+        self,
+        context: PollutionSpatialContext,
+        location: GeographicCoordinate,
+        radius_km: float,
+    ) -> None:
+        try:
+            result = self.locality_lookup(
+                latitude=location.latitude,
+                longitude=location.longitude,
+                radius_m=radius_km * 1000.0,
+            )
+        except Exception:
+            result = LocalityLookupResult(
+                status=LocalityLookupStatus.UNAVAILABLE,
+                reason="locality_repository_unavailable",
+            )
+        succeeded = result.status in {
+            LocalityLookupStatus.SUCCESS_WITH_RESULTS,
+            LocalityLookupStatus.SUCCESS_EMPTY,
+        }
+        context.settlement_context = SettlementContextStatus(
+            status="success" if succeeded else "unavailable",
+            outcome=result.status.value,
+            candidate_count=len(result.candidates),
+            reason=result.reason,
+        )
+        context.provider_collection_status = result.status.value
+        context.nearby_settlements = [
+            NearbyGeographicFeature(
+                name=item.name_he or item.name_en,
+                type=item.locality_type,
+                ref=item.locality_code,
+                latitude=item.latitude,
+                longitude=item.longitude,
+                distance_km=item.distance_m / 1000.0,
+            )
+            for item in result.candidates
+        ]
+        if not succeeded:
+            context.missing_layers.append("nearby_settlements")
+            context.errors.append(result.reason or "locality_repository_unavailable")
+
+    def _add_other_layers(
+        self,
+        context: PollutionSpatialContext,
+        response: object,
+        anomaly_location: GeographicCoordinate,
+        radius_km: float,
+    ) -> None:
+        if not isinstance(response, Mapping):
+            context.errors.append("malformed_geospatial_response")
+            return
+        if not self._lookup_matches(response.get("location"), anomaly_location, radius_km):
+            context.errors.append("invalid_or_mismatched_lookup_location")
+            return
+        metadata = response.get("metadata")
+        metadata = metadata if isinstance(metadata, Mapping) else {}
+        if metadata.get("collection_status") == "failed":
+            context.errors.append("geospatial_other_layers_lookup_failed")
+            return
+        missing = response.get("missing_layers", [])
+        if isinstance(missing, list) and all(isinstance(item, str) for item in missing):
+            context.missing_layers.extend(
+                item for item in missing if item in OTHER_LAYERS
+            )
+        else:
+            context.errors.append("malformed_missing_layers")
         try:
             if metadata.get("timestamp") is not None:
                 context.collected_at = TypeAdapter(AwareDatetime).validate_python(
@@ -109,27 +215,11 @@ class AirPollutionSpatialEnricher:
                 ).astimezone(timezone.utc)
         except (ValidationError, ValueError):
             context.errors.append("invalid_collection_timestamp")
-
-        missing = geospatial_context.get("missing_layers", [])
-        if isinstance(missing, list) and all(isinstance(item, str) for item in missing):
-            context.missing_layers = list(missing)
-        else:
-            context.errors.append("malformed_missing_layers")
-
-        if not self._lookup_matches(
-            geospatial_context.get("location"), validated.location, radius_km
-        ):
-            context.errors.append("invalid_or_mismatched_lookup_location")
-            return enriched
-        if provider_status == "failed":
-            context.errors.append("geospatial_lookup_failed")
-            return enriched
-
-        layers = geospatial_context.get("geospatial_context")
+        layers = response.get("geospatial_context")
         if not isinstance(layers, Mapping):
             context.errors.append("missing_geospatial_layers")
-            return enriched
-        for layer in LAYERS:
+            return
+        for layer in OTHER_LAYERS:
             items = layers.get(layer)
             if not isinstance(items, list):
                 context.errors.append(f"missing_or_malformed_layer:{layer}")
@@ -152,18 +242,6 @@ class AirPollutionSpatialEnricher:
                         context.excluded_feature_counts.get(layer, 0) + 1
                     )
             setattr(context, layer, accepted)
-
-        if context.source is None or context.collected_at is None:
-            context.errors.append("incomplete_geographic_provenance")
-        context.status = (
-            "success"
-            if provider_status == "success"
-            and not context.errors
-            and not context.excluded_feature_counts
-            and not context.missing_layers
-            else "partial"
-        )
-        return enriched
 
     @staticmethod
     def _lookup_matches(
