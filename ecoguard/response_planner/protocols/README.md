@@ -11,36 +11,40 @@ The corpus is indexed by hazard, one directory per hazard, each with its own
 `manifest.json`:
 
 ```
-data/protocols/
+ecoguard/response_planner/protocols/
   README.md          ← this file, covers the whole filebase
   fire/
     manifest.json
     *.md
-  flood/             ← when there are documents to put in it
+  flood/
+    manifest.json
+    *.md
   earthquake/        ← likewise
 ```
 
-`ProtocolRetriever(hazard="fire")` reads `data/protocols/fire`. One retriever instance
+`ProtocolRetriever(hazard="fire")` reads `ecoguard/response_planner/protocols/fire`. One retriever instance
 per hazard, constructed where the hazard is already known — the hazards deliberately do
 **not** share one index, because a shared index would score fire queries against flood
 chunks and degrade BM25's term weighting on a corpus this small.
 
-A hazard directory that does not exist yet is not an error. The retriever reports
+A hazard directory that does not exist is not an error. The retriever reports
 `available is False` and returns nothing, and the agents translate that into
-`"protocol corpus unavailable"`. So `ProtocolRetriever(hazard="flood")` can be
-constructed today and will simply have nothing to say until the corpus is added — it
-will never fall back to fire doctrine, which would be worse than answering nothing.
+`"protocol corpus unavailable"`. It never falls back to another hazard's doctrine.
 
 Do not create empty hazard directories in advance.
+
+The shared `EmergencyResponsePlanner` enforces the same boundary at runtime. It
+rejects a retriever bound to a different hazard, and it stops before calling
+Claude when the selected corpus is unavailable. Fire and Flood both have reviewed
+protocol corpora; Flood Analyzer and coordinator integration remain separate work.
 
 ## Manifests
 
 `manifest.json` is the machine-readable index for one hazard: the hazard name, corpus
 version, and per document the id, title, source URL, licence, retrieval date and
-SHA-256 hash. The hashes let you confirm a document has not drifted from what was
-reviewed.
+SHA-256 field. The retriever does not currently validate hashes.
 
-## Why these three
+## Fire corpus
 
 Each document covers a different part of the reasoning, and together they span both
 halves of the sprint requirement — classifying risk and planning a response.
@@ -59,6 +63,19 @@ defensible-space guidance that does not apply to it.
 The EFFIS document is deliberately the same authority that `agents/fire_danger_agent.py`
 reads its `danger_level` from, so a citation about a danger class refers to the exact
 classification scheme that produced the number in the detected event.
+
+## Flood corpus
+
+Flood corpus version `1.0.0` contains 13 approved documents covering Israeli
+national and regional scenarios, transport and road operations, education field
+safety, and Fire and Rescue flood, diving, and water-rescue procedures. It also
+contains supplementary operational guidance from Australia/NSW and Oman.
+
+Foreign material remains in the same Flood index so relevant operational guidance
+can be retrieved. Its manifest metadata retains `jurisdiction`, `applicability`, and
+`local_adaptation_required=true`. These fields are rendered with retrieved excerpts
+so Claude is explicitly warned not to present foreign thresholds, legal authorities,
+agency responsibilities, or road rules as binding Israeli policy.
 
 ## Licences and attribution
 
@@ -121,22 +138,21 @@ chunker can split it on meaningful boundaries. Two rules govern that editing:
 4. Append the attribution block at the bottom of the file.
 5. Add an entry to that hazard's `manifest.json`, including the SHA-256:
    ```
-   python -c "import hashlib,pathlib; p=pathlib.Path('data/protocols/fire/<file>.md'); print(hashlib.sha256(p.read_bytes()).hexdigest())"
+   python -c "import hashlib,pathlib; p=pathlib.Path('ecoguard/response_planner/protocols/fire/<file>.md'); print(hashlib.sha256(p.read_bytes()).hexdigest())"
    ```
 6. Run `pytest tests/test_protocol_retrieval_service.py` — one test asserts every
    `document_id` on disk has a manifest entry and that chunk ids stay unique.
 
 ## Adding a hazard
 
-1. Create `data/protocols/<hazard>/` with at least one document and a `manifest.json`
+1. Create `ecoguard/response_planner/protocols/<hazard>/` with at least one document and a `manifest.json`
    carrying `"hazard": "<hazard>"`.
 2. Nothing else is required to retrieve from it — `ProtocolRetriever(hazard=...)` and
    `ResponsePlanJudgeAgent(hazard=...)` work immediately.
-3. Be aware of the limit: the **judge** is hazard-agnostic, but the **risk and planning
-   agents are not**. `analyze_event` returns `skipped/unsupported_event` for any
-   `event_type` other than `"fire"`, and both system prompts are fire-specific. Adding a
-   flood corpus makes the judge ready for flood; it does not make the pipeline produce
-   flood plans.
+3. Be aware of the limit: the shared Emergency Planner contract is hazard-aware, but
+   adding a corpus alone does not create an operational analyzer or runtime integration.
+   Analyzer-specific integration must supply the explicit hazard and a trusted textual
+   `event_description`; the shared planner does not interpret detector or analyzer schemas.
 
 The corpus is English-only. The retriever's tokenizer matches `[a-z0-9]+`, so a Hebrew
 document would tokenise to nothing and be silently unretrievable. Adding one requires

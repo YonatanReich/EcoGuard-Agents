@@ -16,7 +16,7 @@ import json
 import pytest
 
 from ecoguard.response_planner.fire.planning_agent import ResponsePlanningAgent
-from ecoguard.shared.schemas import ResponsePlan
+from ecoguard.response_planner.emergency.schemas import EmergencyPlanProposal
 from ecoguard.shared.llm import ClaudeProviderError
 
 from ecoguard.tests.analyzers.test_risk_analysis_agent import (  # reuse the shared fakes
@@ -27,20 +27,22 @@ from ecoguard.tests.analyzers.test_risk_analysis_agent import (  # reuse the sha
 )
 
 
-def build_valid_plan(**overrides) -> ResponsePlan:
+def build_valid_plan(**overrides) -> EmergencyPlanProposal:
     """A schema-valid plan whose citation quotes the fake chunk verbatim."""
     payload = {
         "recommended_units": ["fire_department", "police"],
         "actions": [
             {
-                "action": "Establish incident command and confirm escape routes.",
+                "action": "Establish a minimum 30-foot defensible-space radius.",
                 "responsible_unit": "fire_department",
                 "timeframe": "immediate",
+                "supporting_protocol_chunk_ids": [CHUNK["chunk_id"]],
             },
             {
-                "action": "Close Route 4 at the eastern junction and stage traffic control.",
-                "responsible_unit": "police",
+                "action": "Expand defensible space where the terrain has steeper slopes.",
+                "responsible_unit": "fire_department",
                 "timeframe": "within_1_hour",
+                "supporting_protocol_chunk_ids": [CHUNK["chunk_id"]],
             },
         ],
         "plan_summary": "Protect Givat Shmuel and contain the eastern flank.",
@@ -55,7 +57,7 @@ def build_valid_plan(**overrides) -> ResponsePlan:
         ],
     }
     payload.update(overrides)
-    return ResponsePlan(**payload)
+    return EmergencyPlanProposal(**payload)
 
 
 def successful_assessment(**overrides) -> dict:
@@ -264,6 +266,20 @@ def test_ungrounded_plan_is_discarded():
     assert result["recommended_units"] == []
 
 
+def test_action_grounding_is_required_not_synthesized_from_plan_citations():
+    payload = build_valid_plan().model_dump(mode="json")
+    for action in payload["actions"]:
+        action.pop("supporting_protocol_chunk_ids")
+    agent = build_agent(llm=FakeLLM(payload))
+
+    result = agent.plan_response(detected_event(), successful_assessment())
+
+    assert result["metadata"]["planning_status"] == "failed"
+    assert result["error"] == "malformed response"
+    assert result["recommended_units"] == []
+    assert result["response_actions"] == []
+
+
 # --------------------------------------------------------------------------
 # Schema coherence
 # --------------------------------------------------------------------------
@@ -286,6 +302,7 @@ def test_action_assigned_to_an_unrecommended_unit_is_rejected_by_the_schema():
                     "action": "Request aerial water drops on the fire head.",
                     "responsible_unit": "aerial_firefighting",
                     "timeframe": "immediate",
+                    "supporting_protocol_chunk_ids": [CHUNK["chunk_id"]],
                 }
             ],
         )
