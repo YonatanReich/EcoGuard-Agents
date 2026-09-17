@@ -8,6 +8,12 @@ const RESOURCE_STYLE: Record<string, { color: string; label: string }> = {
   medical_services: { color: '#22c55e', label: 'M' },
 }
 
+const RESOURCE_TYPE_LABEL: Record<string, string> = {
+  fire_department: 'תחנת כיבוי',
+  police: 'תחנת משטרה',
+  medical_services: 'תחנת מד״א',
+}
+
 function stationStyle(station: AllocatedStation) {
   return RESOURCE_STYLE[station.recommended_unit] ?? {
     color: '#f59e0b',
@@ -28,6 +34,10 @@ function formatEta(timestamp: string | null | undefined) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(value)
+}
+
+function formatStationDistance(distanceKm: number | null) {
+  return distanceKm == null ? 'מרחק לא זמין' : `${distanceKm.toFixed(1)} ק״מ`
 }
 
 function ResourceAllocationLayer({
@@ -111,9 +121,13 @@ function ResourceAllocationLayer({
           onClose={() => setSelectedStationKey(null)}
         >
           <div className="allocation-station-popup__content" dir="rtl">
-            <strong>{selectedStation.name}</strong>
+            <strong>
+              {RESOURCE_TYPE_LABEL[selectedStation.recommended_unit] ?? 'תחנה'}:{' '}
+              {selectedStation.name}
+            </strong>
             <span>
-              זמן הגעה משוער: {formatEta(selectedStation.route?.estimated_arrival_at)}
+              זמן הגעה משוער: {formatEta(selectedStation.route?.estimated_arrival_at)},{' '}
+              {formatStationDistance(selectedStation.distance_km)}
             </span>
             <button
               type="button"
