@@ -549,6 +549,8 @@
 .event-modal__direction-meta {
   margin-top: 0.12rem;
   color: #94a3b8 !important;
+  direction: ltr;
+  text-align: right;
   font-size: 0.76rem !important;
 }
 

@@ -24,6 +24,12 @@ function formatDistance(distance: number | null | undefined) {
     : `${Math.round(distance)} m`
 }
 
+function formatRouteStepDistance(distance: number) {
+  return distance >= 1000
+    ? `${(distance / 1000).toFixed(1)} km`
+    : `${Math.round(distance)} m`
+}
+
 function formatDuration(seconds: number | null) {
   if (seconds == null) return null
   if (seconds < 3600) return `${Math.round(seconds / 60)} min`
@@ -157,9 +163,8 @@ function FireEventDetails({ event }: { event: FireEvent }) {
                             {step.instruction ?? 'המשך במסלול'}
                           </span>
                           <span className="event-modal__direction-meta">
-                            {step.distance_m != null && formatDistance(step.distance_m)}
-                            {step.distance_m != null && step.duration_s != null && ' · '}
-                            {step.duration_s != null && formatDuration(step.duration_s)}
+                            {step.distance_m != null
+                              && formatRouteStepDistance(step.distance_m)}
                           </span>
                         </li>
                       ))}
