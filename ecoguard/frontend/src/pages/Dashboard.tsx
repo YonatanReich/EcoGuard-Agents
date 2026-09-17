@@ -34,6 +34,7 @@ import { normalizeNationalRiskScanResponse, type NationalRiskScan } from '../com
 import AreaSelect from '../components/AreaSelect'
 import LayersControl from '../components/LayersControl'
 import FireDistrictsLayer from '../components/layers/FireDistrictsLayer'
+import TownSearch from '../components/TownSearch'
 import WhatToSeeControl from '../components/WhatToSeeControl'
 import FireStationsLayer from '../components/layers/FireStationsLayer'
 import PoliceStationsLayer from '../components/layers/PoliceStationsLayer'
@@ -1169,6 +1170,13 @@ function Dashboard() {
               }
 
             />
+
+
+            {/* ================================================= */}
+            {/* Find a town by name                               */}
+            {/* ================================================= */}
+
+            <TownSearch />
 
 
             {/* ================================================= */}

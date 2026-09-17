@@ -107,3 +107,6 @@ ecoguard/data/generated/evaluation/
 # by scripts/load_population_grid.py. Republished yearly by WorldPop; there is
 # no reason to carry a copy in the history.
 ecoguard/data/generated/isr_ppp_*.tif
+
+# Raw Overpass responses cached by scripts/build_localities.py (~33 MB)
+ecoguard/data/reference/.osm_cache/

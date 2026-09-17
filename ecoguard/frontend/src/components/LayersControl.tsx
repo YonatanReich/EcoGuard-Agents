@@ -47,6 +47,7 @@ type LayersControlProps = {
 
   /** Toggle the fire & rescue district outlines. */
   onToggleFireDistricts: () => void
+
 }
 
 function LayersControl({
