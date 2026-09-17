@@ -32,6 +32,7 @@ Run from the repo root:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import re
@@ -330,7 +331,11 @@ def main() -> None:
         carried = legacy.get(name_he, {})
         population = tags.get("population") or carried.get("population")
 
-        base = carried.get("locality_id") or slugify(name_en, f"osm-{id(tags)}")
+        # Hash the Hebrew name, not id(tags): that is a memory address, so it
+        # changed on every run and rewrote 127 locality_ids each rebuild for no
+        # reason. Python's own hash() is salted per process and no better.
+        fallback = "osm-" + hashlib.sha1(name_he.encode("utf-8")).hexdigest()[:10]
+        base = carried.get("locality_id") or slugify(name_en, fallback)
         for index, part in enumerate(parts):
             if part.is_empty or part.area <= 0:
                 continue
