@@ -2,14 +2,16 @@
 
 import math
 import threading
-from datetime import datetime, timezone
+from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 
 from ecoguard.database.repositories.fire_stations import fire_stations_geojson
 from ecoguard.database.repositories.mda_stations import mda_stations_geojson
 from ecoguard.database.repositories.police_stations import police_stations_geojson
+from ecoguard.resource_allocator.mapbox_client import MapboxClient, RoutingError
 
 # Temporary station counts until an operational source can provide real
-# vehicle quantities. These numbers represent stations, not vehicles. TODO: handle
+# vehicle quantities. These numbers represent stations, not vehicles.
 STATIONS_REQUIRED_BY_RISK = {
     "low": {
         "fire_department": 1,
@@ -59,8 +61,9 @@ def _default_station_readers():
 
 class ResourceAllocationAgent:
 
-    def __init__(self, station_readers=None):
+    def __init__(self, station_readers=None, routing_client=None):
         self.station_readers = (_default_station_readers() if station_readers is None else station_readers )
+        self.routing_client = routing_client or MapboxClient()
         self._allocation_lock = threading.Lock()
         self._station_catalogs = {}
         self._stations_by_key = {}
@@ -131,14 +134,85 @@ class ResourceAllocationAgent:
                 event_lat, event_lon, station_lat, station_lon
             )
             station = source.copy()
-            station["distance_km"] = distance
+            station["straight_line_distance_km"] = distance
 
             resource_key = station["resource_key"]
             existing = unique.get(resource_key)
-            if existing is None or distance < existing["distance_km"]:
+            if (
+                existing is None
+                or distance < existing["straight_line_distance_km"]
+            ):
                 unique[resource_key] = station
 
-        return sorted(unique.values(), key=lambda item: item["distance_km"])
+        return sorted(
+            unique.values(),
+            key=lambda item: item["straight_line_distance_km"],
+        )
+
+    def _available_candidates(self, candidates):
+        """Return a snapshot of stations that EcoGuard has not assigned."""
+        with self._allocation_lock:
+            return [
+                candidate
+                for candidate in candidates
+                if self._stations_by_key[candidate["resource_key"]][
+                    "assigned_incident_id"
+                ]
+                is None
+            ]
+
+    def _rank_stations_by_road(
+        self,
+        stations,
+        event_location,
+        required_count,
+    ):
+        """Search nearby batches until enough road-reachable stations exist."""
+        batch_size = getattr(self.routing_client, "matrix_max_sources", 9)
+        if not isinstance(batch_size, int) or batch_size < 1:
+            batch_size = 9
+        ranked = []
+        road_access = None
+
+        # Haversine order is only used to avoid paid requests for very distant
+        # stations after a nearby batch can already fulfil the requirement.
+        for start in range(0, len(stations), batch_size):
+            batch = stations[start : start + batch_size]
+            routing_result = self.routing_client.travel_metrics(
+                batch,
+                event_location,
+            )
+            metrics = routing_result["metrics"]
+            if len(metrics) != len(batch):
+                raise RoutingError("routing table does not match station batch")
+            if road_access is None:
+                road_access = routing_result.get("road_access")
+
+            for station, metric in zip(batch, metrics):
+                if metric is None:
+                    continue
+                candidate = station.copy()
+                candidate["_routing_metric"] = metric
+                candidate["selection_reason"] = "shortest_road_travel_time"
+                ranked.append(candidate)
+
+            if len(ranked) >= required_count:
+                break
+
+        if stations and not ranked:
+            raise RoutingError("Mapbox found no road route from any station")
+
+        return (
+            sorted(
+                ranked,
+                key=lambda station: (
+                    station["_routing_metric"]["duration_s"],
+                    station["_routing_metric"]["distance_m"],
+                    station["straight_line_distance_km"],
+                ),
+            ),
+            road_access,
+        )
 
     @staticmethod
     def _resource_key(recommended_unit, properties):
@@ -259,6 +333,7 @@ class ResourceAllocationAgent:
             "risk_score": float(risk_score),
             "risk_level": risk_level,
             "queued_at": queued_at,
+            "allocation_time": now,
             "urgency": self._urgency(response_plan),
             # Aging adds one point every five minutes so old requests progress.
             "effective_priority": float(risk_score) + aging_bonus,
@@ -308,7 +383,10 @@ class ResourceAllocationAgent:
                 "recommended_unit": recommended_unit,
                 "resource_key": resource_key,
                 "assigned_incident_id": None,
-                "_assigned_distance_km": None,
+                "_assigned_straight_line_distance_km": None,
+                "_assigned_routing_metric": None,
+                "_assigned_route": None,
+                "_assigned_selection_reason": None,
             }
             try:
                 ResourceAllocationAgent._coordinates(station)
@@ -336,14 +414,38 @@ class ResourceAllocationAgent:
         result = {
             key: value
             for key, value in station.items()
-            if key != "_assigned_distance_km"
+            if not key.startswith("_assigned_")
         }
-        result["distance_km"] = station.get("_assigned_distance_km")
+        straight_line_distance = station.get(
+            "_assigned_straight_line_distance_km"
+        )
+        routing_metric = station.get("_assigned_routing_metric") or {}
+        route = deepcopy(station.get("_assigned_route"))
+
+        result["straight_line_distance_km"] = straight_line_distance
+        result["distance_km"] = (
+            routing_metric["distance_m"] / 1000
+            if routing_metric.get("distance_m") is not None
+            else straight_line_distance
+        )
+        result["route"] = route
         result["allocation_status"] = "assigned"
         result["available_for_ecoguard"] = False
         result["real_world_availability"] = "unknown"
-        result["selection_reason"] = "nearest_available_station"
+        result["selection_reason"] = station.get(
+            "_assigned_selection_reason"
+        )
         return result
+
+    @staticmethod
+    def _allocation_sort_key(station):
+        route = station.get("route") or {}
+        duration = route.get("duration_s")
+        distance = station.get("distance_km")
+        return (
+            duration if isinstance(duration, (int, float)) else math.inf,
+            distance if isinstance(distance, (int, float)) else math.inf,
+        )
 
     def _existing_allocations(self, incident_id, recommended_unit):
         with self._allocation_lock:
@@ -356,7 +458,7 @@ class ResourceAllocationAgent:
             ]
             return sorted(
                 (self._allocation_view(station) for station in stations),
-                key=lambda station: station["distance_km"],
+                key=self._allocation_sort_key,
             )
 
     def _claim_stations(
@@ -392,21 +494,113 @@ class ResourceAllocationAgent:
                     continue
 
                 station["assigned_incident_id"] = incident_id
-                station["_assigned_distance_km"] = candidate["distance_km"]
+                station["_assigned_straight_line_distance_km"] = candidate[
+                    "straight_line_distance_km"
+                ]
+                station["_assigned_routing_metric"] = deepcopy(
+                    candidate.get("_routing_metric")
+                )
+                station["_assigned_route"] = None
+                station["_assigned_selection_reason"] = candidate[
+                    "selection_reason"
+                ]
                 station_keys.add(station_key)
                 selected.append(station)
 
             if not station_keys:
                 self._incident_station_keys.pop(incident_id, None)
 
-            return sorted(
-                (self._allocation_view(station) for station in selected),
-                key=lambda station: station["distance_km"],
-            )
+            return [station["resource_key"] for station in selected]
+
+    def _unavailable_route(self, metric, message):
+        metric = metric or {}
+        return {
+            "status": "unavailable",
+            "provider": getattr(self.routing_client, "provider", "mapbox"),
+            "profile": getattr(
+                self.routing_client,
+                "profile",
+                "mapbox/driving-traffic",
+            ),
+            "distance_m": metric.get("distance_m"),
+            "duration_s": metric.get("duration_s"),
+            "estimated_arrival_at": None,
+            "geometry": None,
+            "road_access_verified": False,
+            "requires_field_access_confirmation": True,
+            "offroad_segment": None,
+            "steps_he": [],
+            "error": message,
+        }
+
+    def _enrich_routes(
+        self,
+        incident_id,
+        recommended_unit,
+        station_keys,
+        event_location,
+        allocation_time,
+        routing_failure,
+    ):
+        """Fetch full routes only for stations that won the atomic claim."""
+        errors = []
+
+        for station_key in station_keys:
+            with self._allocation_lock:
+                station = self._stations_by_key[station_key]
+                if station["assigned_incident_id"] != incident_id:
+                    continue
+                if station["_assigned_route"] is not None:
+                    continue
+                station_snapshot = station.copy()
+                metric = deepcopy(station["_assigned_routing_metric"])
+
+            if metric is None:
+                route = self._unavailable_route(
+                    metric,
+                    routing_failure or "road route is unavailable",
+                )
+            else:
+                try:
+                    route = self.routing_client.route(
+                        station_snapshot,
+                        event_location,
+                    )
+                    route["estimated_arrival_at"] = (
+                        allocation_time
+                        + timedelta(seconds=route["duration_s"])
+                    ).isoformat()
+                except RoutingError as error:
+                    route = self._unavailable_route(metric, str(error))
+                    errors.append(
+                        {
+                            "station_key": station_key,
+                            "reason": "route_details_unavailable",
+                            "message": str(error),
+                        }
+                    )
+
+            with self._allocation_lock:
+                station = self._stations_by_key[station_key]
+                if station["assigned_incident_id"] != incident_id:
+                    continue
+                station["_assigned_route"] = route
+                if route.get("distance_m") is not None:
+                    station["_assigned_routing_metric"] = {
+                        **(station["_assigned_routing_metric"] or {}),
+                        "distance_m": route["distance_m"],
+                        "duration_s": route.get("duration_s"),
+                    }
+
+        return self._existing_allocations(incident_id, recommended_unit), errors
 
     def _allocate_batch_request(self, request):
         response_plan = request["response_plan"]
         event_lat, event_lon = self._coordinates(response_plan.get("location"))
+        event_location = {
+            "latitude": event_lat,
+            "longitude": event_lon,
+        }
         recommended_units = list(
             dict.fromkeys(response_plan.get("recommended_units") or [])
         )
@@ -431,6 +625,8 @@ class ResourceAllocationAgent:
             result["reason"] = "no_resources_required"
             return result
 
+        result["road_access"] = None
+
         for recommended_unit in recommended_units:
             required_count = self._required_station_count(
                 request["risk_level"], recommended_unit
@@ -450,6 +646,7 @@ class ResourceAllocationAgent:
                 request["incident_id"], recommended_unit
             )
             candidates = []
+            unit_routing_failure = None
             catalog_error = self._station_catalog_errors.get(recommended_unit)
             if len(existing) < required_count:
                 stations = self._station_catalogs.get(recommended_unit, [])
@@ -459,14 +656,58 @@ class ResourceAllocationAgent:
                     event_lat,
                     event_lon,
                 )
+                candidates = self._available_candidates(candidates)
+                missing_count = required_count - len(existing)
+                try:
+                    candidates, road_access = self._rank_stations_by_road(
+                        candidates,
+                        event_location,
+                        missing_count,
+                    )
+                    if result["road_access"] is None and road_access is not None:
+                        result["road_access"] = road_access
+                except RoutingError as error:
+                    unit_routing_failure = str(error)
+                    result["errors"].append(
+                        {
+                            "station_type": station_type,
+                            "reason": "road_ranking_unavailable",
+                            "message": unit_routing_failure,
+                        }
+                    )
 
-            assigned = self._claim_stations(
+                if unit_routing_failure is not None:
+                    candidates = [
+                        {
+                            **candidate,
+                            "_routing_metric": None,
+                            "selection_reason": "straight_line_fallback",
+                        }
+                        for candidate in candidates
+                    ]
+
+            station_keys = self._claim_stations(
                 request["incident_id"],
                 recommended_unit,
                 candidates,
                 required_count,
             )
+            assigned, route_errors = self._enrich_routes(
+                request["incident_id"],
+                recommended_unit,
+                station_keys,
+                event_location,
+                request["allocation_time"],
+                unit_routing_failure,
+            )
+            result["errors"].extend(route_errors)
             result["allocated_units"][output_key] = assigned
+            if result["road_access"] is None:
+                for station in assigned:
+                    route = station.get("route") or {}
+                    if route.get("destination"):
+                        result["road_access"] = route["destination"]
+                        break
 
             shortfall = max(0, required_count - len(assigned))
             result["requirements"][recommended_unit] = {
@@ -484,6 +725,25 @@ class ResourceAllocationAgent:
                         "message": catalog_error,
                     }
                 )
+
+        route_statuses = [
+            station["route"]["status"]
+            for stations in result["allocated_units"].values()
+            for station in stations
+            if station.get("route")
+        ]
+        if route_statuses and all(
+            status == "unavailable" for status in route_statuses
+        ):
+            result["routing_status"] = "unavailable"
+        elif "unavailable" in route_statuses:
+            result["routing_status"] = "partial"
+        elif "partial_offroad" in route_statuses:
+            result["routing_status"] = "partial_offroad"
+        elif not route_statuses:
+            result["routing_status"] = "not_available"
+        else:
+            result["routing_status"] = "complete"
 
         if result["shortages"] or result["unsupported_units"] or result["errors"]:
             result["status"] = "partial"
@@ -553,9 +813,12 @@ class ResourceAllocationAgent:
                 released_station["available_for_ecoguard"] = True
                 released.append(released_station)
                 station["assigned_incident_id"] = None
-                station["_assigned_distance_km"] = None
+                station["_assigned_straight_line_distance_km"] = None
+                station["_assigned_routing_metric"] = None
+                station["_assigned_route"] = None
+                station["_assigned_selection_reason"] = None
 
-        return sorted(released, key=lambda station: station["distance_km"])
+        return sorted(released, key=self._allocation_sort_key)
 
     def active_allocations(self):
         """Return a read-only snapshot useful to callers and tests."""
@@ -566,7 +829,7 @@ class ResourceAllocationAgent:
                         self._allocation_view(self._stations_by_key[station_key])
                         for station_key in station_keys
                     ),
-                    key=lambda station: station["distance_km"],
+                    key=self._allocation_sort_key,
                 )
                 for incident_id, station_keys in self._incident_station_keys.items()
             }
