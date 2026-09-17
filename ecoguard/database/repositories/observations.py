@@ -1,12 +1,12 @@
-"""Writing raw observations. Nothing reads them yet — that is detection."""
+"""Shared raw-observation writes and bounded, source-scoped reads."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
-from geoalchemy2 import WKTElement
-from sqlalchemy import text
+from geoalchemy2 import Geometry, WKTElement
+from sqlalchemy import and_, cast, func, or_, select, text
 from sqlalchemy.dialects.postgresql import insert
 
 from ecoguard.database.engine import Session
@@ -15,6 +15,90 @@ from ecoguard.database.models import Observation
 # One statement per chunk. A national weather sweep is ~1,200 rows, which is
 # comfortable in a single INSERT, but FIRMS after a bad fire day is not.
 CHUNK_SIZE = 500
+DEFAULT_READ_BATCH_SIZE = 500
+MAX_READ_BATCH_SIZE = 5000
+
+
+def _aware(value: datetime | None, *, name: str) -> datetime | None:
+    if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+        raise ValueError(f"{name} must carry a UTC offset")
+    return value.astimezone(timezone.utc) if value is not None else None
+
+
+def observation_batch_statement(
+    source: str,
+    *,
+    ingested_after: datetime | None = None,
+    after_id: int | None = None,
+    ingested_through: datetime | None = None,
+    limit: int = DEFAULT_READ_BATCH_SIZE,
+):
+    """Build a bounded, stable read of one source's ingestion stream.
+
+    ``after_id`` disambiguates pagination when several rows share one
+    ``ingested_at`` batch timestamp. It is meaningful only together with
+    ``ingested_after``; no cursor state is stored by this repository.
+    """
+
+    if not isinstance(source, str) or not source.strip():
+        raise ValueError("source must be non-empty")
+    if type(limit) is not int or not 1 <= limit <= MAX_READ_BATCH_SIZE:
+        raise ValueError(f"limit must be between 1 and {MAX_READ_BATCH_SIZE}")
+    if after_id is not None and (
+        ingested_after is None or type(after_id) is not int or after_id < 0
+    ):
+        raise ValueError("after_id requires ingested_after and must be non-negative")
+    lower = _aware(ingested_after, name="ingested_after")
+    upper = _aware(ingested_through, name="ingested_through")
+    if lower is not None and upper is not None and lower > upper:
+        raise ValueError("ingested_after cannot exceed ingested_through")
+
+    point = cast(Observation.location, Geometry(geometry_type="POINT", srid=4326))
+    statement = select(
+        Observation.id,
+        Observation.source,
+        Observation.cell_id,
+        Observation.observed_at,
+        Observation.ingested_at,
+        Observation.payload,
+        func.ST_Y(point).label("latitude"),
+        func.ST_X(point).label("longitude"),
+    ).where(Observation.source == source)
+    if lower is not None:
+        if after_id is None:
+            statement = statement.where(Observation.ingested_at > lower)
+        else:
+            statement = statement.where(or_(
+                Observation.ingested_at > lower,
+                and_(
+                    Observation.ingested_at == lower,
+                    Observation.id > after_id,
+                ),
+            ))
+    if upper is not None:
+        statement = statement.where(Observation.ingested_at <= upper)
+    return statement.order_by(Observation.ingested_at, Observation.id).limit(limit)
+
+
+def read_observations_batch(
+    source: str,
+    *,
+    ingested_after: datetime | None = None,
+    after_id: int | None = None,
+    ingested_through: datetime | None = None,
+    limit: int = DEFAULT_READ_BATCH_SIZE,
+) -> list[dict[str, Any]]:
+    """Read one bounded ordered batch; performs exactly one SELECT and no writes."""
+
+    statement = observation_batch_statement(
+        source,
+        ingested_after=ingested_after,
+        after_id=after_id,
+        ingested_through=ingested_through,
+        limit=limit,
+    )
+    with Session() as session:
+        return [dict(row) for row in session.execute(statement).mappings().all()]
 
 
 def _point(record: dict[str, Any]) -> WKTElement | None:
