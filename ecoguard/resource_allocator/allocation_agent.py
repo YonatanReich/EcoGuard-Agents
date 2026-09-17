@@ -1,13 +1,15 @@
 """Select and reserve nearby stations requested by fire response plans."""
 
 import math
-import threading
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 
 from ecoguard.database.repositories.fire_stations import fire_stations_geojson
 from ecoguard.database.repositories.mda_stations import mda_stations_geojson
 from ecoguard.database.repositories.police_stations import police_stations_geojson
+from ecoguard.database.repositories.resource_allocations import (
+    ResourceAllocationRepository,
+)
 from ecoguard.resource_allocator.mapbox_client import MapboxClient, RoutingError
 
 # Temporary station counts until an operational source can provide real
@@ -61,17 +63,27 @@ def _default_station_readers():
 
 class ResourceAllocationAgent:
 
-    def __init__(self, station_readers=None, routing_client=None):
-        self.station_readers = (_default_station_readers() if station_readers is None else station_readers )
+    def __init__(
+        self,
+        station_readers=None,
+        routing_client=None,
+        allocation_repository=None,
+    ):
+        self.station_readers = (
+            _default_station_readers()
+            if station_readers is None
+            else station_readers
+        )
         self.routing_client = routing_client or MapboxClient()
-        self._allocation_lock = threading.Lock()
+        self.allocation_repository = (
+            allocation_repository or ResourceAllocationRepository()
+        )
         self._station_catalogs = {}
         self._stations_by_key = {}
         self._station_catalog_errors = {}
-        self._incident_station_keys = {}
 
-        # Station rosters are static reference data. Load them once and keep
-        # EcoGuard's assignment state on the in-memory station records.
+        # Station rosters are static reference data. Assignment state remains
+        # in PostgreSQL so it is shared by every allocator process.
         for recommended_unit, (station_type, _) in STATION_TYPES.items():
             stations, error = self._load_station_catalog(
                 recommended_unit, station_type
@@ -149,17 +161,24 @@ class ResourceAllocationAgent:
             key=lambda item: item["straight_line_distance_km"],
         )
 
-    def _available_candidates(self, candidates):
-        """Return a snapshot of stations that EcoGuard has not assigned."""
-        with self._allocation_lock:
-            return [
-                candidate
-                for candidate in candidates
-                if self._stations_by_key[candidate["resource_key"]][
-                    "assigned_incident_id"
-                ]
-                is None
-            ]
+    def _available_candidates(
+        self,
+        candidates,
+        incident_id,
+        recommended_unit,
+    ):
+        """Exclude stations currently claimed by another incident in the DB."""
+        occupied = {
+            allocation["station_id"]
+            for allocation in self.allocation_repository.active_allocations()
+            if allocation["recommended_unit"] == recommended_unit
+            and allocation["incident_id"] != incident_id
+        }
+        return [
+            candidate
+            for candidate in candidates
+            if candidate["database_id"] not in occupied
+        ]
 
     def _rank_stations_by_road(
         self,
@@ -216,18 +235,18 @@ class ResourceAllocationAgent:
 
     @staticmethod
     def _resource_key(recommended_unit, properties):
-        """Use identities already protected by unique constraints in the DB."""
-        if recommended_unit == "fire_department":
-            district = str(properties.get("district") or "").strip()
-            name = str(properties.get("name") or "").strip()
-            if not district or not name:
-                raise ValueError("fire station identity is incomplete")
-            return recommended_unit, district, name
+        """Identify every station by its stable primary key in the DB."""
+        if recommended_unit not in STATION_TYPES:
+            raise ValueError(f"unsupported resource type: {recommended_unit}")
 
-        station_id = properties.get("station_id")
-        if station_id is None:
-            raise ValueError(f"{recommended_unit} station_id is missing")
-        return recommended_unit, str(station_id)
+        database_id = properties.get("database_id")
+        if (
+            not isinstance(database_id, int)
+            or isinstance(database_id, bool)
+            or database_id <= 0
+        ):
+            raise ValueError(f"{recommended_unit} database_id is missing")
+        return recommended_unit, database_id
 
     @staticmethod
     def _utc(value=None):
@@ -382,11 +401,6 @@ class ResourceAllocationAgent:
                 "unit_type": station_type,
                 "recommended_unit": recommended_unit,
                 "resource_key": resource_key,
-                "assigned_incident_id": None,
-                "_assigned_straight_line_distance_km": None,
-                "_assigned_routing_metric": None,
-                "_assigned_route": None,
-                "_assigned_selection_reason": None,
             }
             try:
                 ResourceAllocationAgent._coordinates(station)
@@ -408,58 +422,36 @@ class ResourceAllocationAgent:
         except Exception as error:
             return [], str(error)
 
-    @staticmethod
-    def _allocation_view(station):
-        """Return station data without exposing mutable catalog internals."""
+    def _allocation_view(self, allocation, status="assigned"):
+        """Combine a durable allocation with its cached station details."""
+        station_key = (
+            allocation["recommended_unit"],
+            allocation["station_id"],
+        )
+        station = self._stations_by_key.get(station_key, {})
         result = {
-            key: value
-            for key, value in station.items()
-            if not key.startswith("_assigned_")
+            **station,
+            "database_id": allocation["station_id"],
+            "recommended_unit": allocation["recommended_unit"],
+            "resource_key": station_key,
+            "allocation_id": allocation.get("id"),
+            "assigned_incident_id": allocation["incident_id"],
+            "distance_km": allocation["distance_km"],
+            "risk_score": allocation.get("risk_score"),
+            "risk_level": allocation.get("risk_level"),
+            "allocation_status": status,
+            "available_for_ecoguard": status == "released",
+            "real_world_availability": "unknown",
+            "selection_reason": "nearest_available_station",
         }
-        straight_line_distance = station.get(
-            "_assigned_straight_line_distance_km"
-        )
-        routing_metric = station.get("_assigned_routing_metric") or {}
-        route = deepcopy(station.get("_assigned_route"))
-
-        result["straight_line_distance_km"] = straight_line_distance
-        result["distance_km"] = (
-            routing_metric["distance_m"] / 1000
-            if routing_metric.get("distance_m") is not None
-            else straight_line_distance
-        )
-        result["route"] = route
-        result["allocation_status"] = "assigned"
-        result["available_for_ecoguard"] = False
-        result["real_world_availability"] = "unknown"
-        result["selection_reason"] = station.get(
-            "_assigned_selection_reason"
-        )
-        return result
-
-    @staticmethod
-    def _allocation_sort_key(station):
-        route = station.get("route") or {}
-        duration = route.get("duration_s")
-        distance = station.get("distance_km")
-        return (
-            duration if isinstance(duration, (int, float)) else math.inf,
-            distance if isinstance(distance, (int, float)) else math.inf,
-        )
-
-    def _existing_allocations(self, incident_id, recommended_unit):
-        with self._allocation_lock:
-            station_keys = self._incident_station_keys.get(incident_id, set())
-            stations = [
-                self._stations_by_key[station_key]
-                for station_key in station_keys
-                if self._stations_by_key[station_key]["recommended_unit"]
-                == recommended_unit
-            ]
-            return sorted(
-                (self._allocation_view(station) for station in stations),
-                key=self._allocation_sort_key,
+        for field in ("allocated_at", "released_at"):
+            value = allocation.get(field)
+            result[field] = (
+                value.isoformat() if isinstance(value, datetime) else value
             )
+        if allocation.get("release_reason") is not None:
+            result["release_reason"] = allocation["release_reason"]
+        return result
 
     def _claim_stations(
         self,
@@ -467,50 +459,21 @@ class ResourceAllocationAgent:
         recommended_unit,
         candidates,
         required_count,
+        risk_score,
+        risk_level,
+        allocated_at,
     ):
-        """Atomically claim free stations and preserve existing incident claims."""
-        with self._allocation_lock:
-            station_keys = self._incident_station_keys.setdefault(
-                incident_id, set()
-            )
-            selected = [
-                self._stations_by_key[station_key]
-                for station_key in station_keys
-                if self._stations_by_key[station_key]["recommended_unit"]
-                == recommended_unit
-            ]
-
-            for candidate in candidates:
-                if len(selected) >= required_count:
-                    break
-
-                station_key = candidate["resource_key"]
-                station = self._stations_by_key[station_key]
-                owner = station["assigned_incident_id"]
-                if owner not in (None, incident_id):
-                    continue
-
-                if station_key in station_keys:
-                    continue
-
-                station["assigned_incident_id"] = incident_id
-                station["_assigned_straight_line_distance_km"] = candidate[
-                    "straight_line_distance_km"
-                ]
-                station["_assigned_routing_metric"] = deepcopy(
-                    candidate.get("_routing_metric")
-                )
-                station["_assigned_route"] = None
-                station["_assigned_selection_reason"] = candidate[
-                    "selection_reason"
-                ]
-                station_keys.add(station_key)
-                selected.append(station)
-
-            if not station_keys:
-                self._incident_station_keys.pop(incident_id, None)
-
-            return [station["resource_key"] for station in selected]
+        """Atomically claim stations through the shared DB repository."""
+        allocations = self.allocation_repository.claim_stations(
+            incident_id=incident_id,
+            recommended_unit=recommended_unit,
+            candidates=candidates,
+            required_count=required_count,
+            risk_score=risk_score,
+            risk_level=risk_level,
+            allocated_at=allocated_at,
+        )
+        return [self._allocation_view(allocation) for allocation in allocations]
 
     def _unavailable_route(self, metric, message):
         metric = metric or {}
@@ -535,25 +498,23 @@ class ResourceAllocationAgent:
 
     def _enrich_routes(
         self,
-        incident_id,
-        recommended_unit,
-        station_keys,
+        assigned,
+        candidates,
         event_location,
         allocation_time,
         routing_failure,
     ):
-        """Fetch full routes only for stations that won the atomic claim."""
+        """Fetch full routes only after the DB has accepted the station claim."""
         errors = []
+        candidates_by_id = {
+            candidate["database_id"]: candidate for candidate in candidates
+        }
+        enriched = []
 
-        for station_key in station_keys:
-            with self._allocation_lock:
-                station = self._stations_by_key[station_key]
-                if station["assigned_incident_id"] != incident_id:
-                    continue
-                if station["_assigned_route"] is not None:
-                    continue
-                station_snapshot = station.copy()
-                metric = deepcopy(station["_assigned_routing_metric"])
+        for allocation in assigned:
+            station = deepcopy(allocation)
+            candidate = candidates_by_id.get(station["database_id"], station)
+            metric = deepcopy(candidate.get("_routing_metric"))
 
             if metric is None:
                 route = self._unavailable_route(
@@ -563,7 +524,7 @@ class ResourceAllocationAgent:
             else:
                 try:
                     route = self.routing_client.route(
-                        station_snapshot,
+                        candidate,
                         event_location,
                     )
                     route["estimated_arrival_at"] = (
@@ -574,25 +535,37 @@ class ResourceAllocationAgent:
                     route = self._unavailable_route(metric, str(error))
                     errors.append(
                         {
-                            "station_key": station_key,
+                            "station_key": station["resource_key"],
                             "reason": "route_details_unavailable",
                             "message": str(error),
                         }
                     )
+            station["straight_line_distance_km"] = candidate.get(
+                "straight_line_distance_km"
+            )
+            station["distance_km"] = (
+                route["distance_m"] / 1000
+                if route.get("distance_m") is not None
+                else station["distance_km"]
+            )
+            station["route"] = route
+            station["selection_reason"] = candidate.get(
+                "selection_reason",
+                "shortest_road_travel_time",
+            )
+            enriched.append(station)
 
-            with self._allocation_lock:
-                station = self._stations_by_key[station_key]
-                if station["assigned_incident_id"] != incident_id:
-                    continue
-                station["_assigned_route"] = route
-                if route.get("distance_m") is not None:
-                    station["_assigned_routing_metric"] = {
-                        **(station["_assigned_routing_metric"] or {}),
-                        "distance_m": route["distance_m"],
-                        "duration_s": route.get("duration_s"),
-                    }
+        return sorted(enriched, key=self._allocation_sort_key), errors
 
-        return self._existing_allocations(incident_id, recommended_unit), errors
+    @staticmethod
+    def _allocation_sort_key(station):
+        route = station.get("route") or {}
+        duration = route.get("duration_s")
+        distance = station.get("distance_km")
+        return (
+            duration if isinstance(duration, (int, float)) else math.inf,
+            distance if isinstance(distance, (int, float)) else math.inf,
+        )
 
     def _allocate_batch_request(self, request):
         response_plan = request["response_plan"]
@@ -642,65 +615,83 @@ class ResourceAllocationAgent:
                 continue
 
             station_type, output_key = mapping
-            existing = self._existing_allocations(
-                request["incident_id"], recommended_unit
-            )
-            candidates = []
             unit_routing_failure = None
             catalog_error = self._station_catalog_errors.get(recommended_unit)
-            if len(existing) < required_count:
-                stations = self._station_catalogs.get(recommended_unit, [])
-                # Every located station is eligible, including coarse points.
-                candidates = self._rank_stations(
-                    stations,
-                    event_lat,
-                    event_lon,
+            stations = self._station_catalogs.get(recommended_unit, [])
+            # Every located station is eligible, including coarse points.
+            candidates = self._rank_stations(
+                stations,
+                event_lat,
+                event_lon,
+            )
+            try:
+                candidates = self._available_candidates(
+                    candidates,
+                    request["incident_id"],
+                    recommended_unit,
                 )
-                candidates = self._available_candidates(candidates)
-                missing_count = required_count - len(existing)
-                try:
-                    candidates, road_access = self._rank_stations_by_road(
-                        candidates,
-                        event_location,
-                        missing_count,
-                    )
-                    if result["road_access"] is None and road_access is not None:
-                        result["road_access"] = road_access
-                except RoutingError as error:
-                    unit_routing_failure = str(error)
-                    result["errors"].append(
-                        {
-                            "station_type": station_type,
-                            "reason": "road_ranking_unavailable",
-                            "message": unit_routing_failure,
-                        }
-                    )
+                candidates, road_access = self._rank_stations_by_road(
+                    candidates,
+                    event_location,
+                    required_count,
+                )
+                if result["road_access"] is None and road_access is not None:
+                    result["road_access"] = road_access
+            except RoutingError as error:
+                unit_routing_failure = str(error)
+                result["errors"].append(
+                    {
+                        "station_type": station_type,
+                        "reason": "road_ranking_unavailable",
+                        "message": unit_routing_failure,
+                    }
+                )
+                candidates = [
+                    {
+                        **candidate,
+                        "distance_km": candidate["straight_line_distance_km"],
+                        "_routing_metric": None,
+                        "selection_reason": "straight_line_fallback",
+                    }
+                    for candidate in candidates
+                ]
 
-                if unit_routing_failure is not None:
-                    candidates = [
-                        {
-                            **candidate,
-                            "_routing_metric": None,
-                            "selection_reason": "straight_line_fallback",
-                        }
-                        for candidate in candidates
-                    ]
+            for candidate in candidates:
+                metric = candidate.get("_routing_metric") or {}
+                candidate["distance_km"] = (
+                    metric["distance_m"] / 1000
+                    if metric.get("distance_m") is not None
+                    else candidate["straight_line_distance_km"]
+                )
 
-            station_keys = self._claim_stations(
-                request["incident_id"],
-                recommended_unit,
-                candidates,
-                required_count,
-            )
-            assigned, route_errors = self._enrich_routes(
-                request["incident_id"],
-                recommended_unit,
-                station_keys,
-                event_location,
-                request["allocation_time"],
-                unit_routing_failure,
-            )
-            result["errors"].extend(route_errors)
+            try:
+                assigned = self._claim_stations(
+                    request["incident_id"],
+                    recommended_unit,
+                    candidates,
+                    required_count,
+                    request["risk_score"],
+                    request["risk_level"],
+                    request["allocation_time"],
+                )
+            except Exception as error:
+                assigned = []
+                result["errors"].append(
+                    {
+                        "station_type": station_type,
+                        "reason": "allocation_persistence_failed",
+                        "message": str(error),
+                    }
+                )
+            else:
+                assigned, route_errors = self._enrich_routes(
+                    assigned,
+                    candidates,
+                    event_location,
+                    request["allocation_time"],
+                    unit_routing_failure,
+                )
+                result["errors"].extend(route_errors)
             result["allocated_units"][output_key] = assigned
             if result["road_access"] is None:
                 for station in assigned:
@@ -798,38 +789,36 @@ class ResourceAllocationAgent:
         allocated = [self._allocate_batch_request(item) for item in prepared]
         return [*allocated, *terminal_results]
 
-    def release_incident(self, incident_id):
+    def release_incident(
+        self,
+        incident_id,
+        *,
+        released_at=None,
+        reason="incident_closed",
+    ):
         """Release every station assigned to one incident; safe to call twice."""
-        released = []
-        with self._allocation_lock:
-            station_keys = self._incident_station_keys.pop(incident_id, set())
-            for station_key in station_keys:
-                station = self._stations_by_key[station_key]
-                if station["assigned_incident_id"] != incident_id:
-                    continue
-
-                released_station = self._allocation_view(station)
-                released_station["allocation_status"] = "released"
-                released_station["available_for_ecoguard"] = True
-                released.append(released_station)
-                station["assigned_incident_id"] = None
-                station["_assigned_straight_line_distance_km"] = None
-                station["_assigned_routing_metric"] = None
-                station["_assigned_route"] = None
-                station["_assigned_selection_reason"] = None
-
-        return sorted(released, key=self._allocation_sort_key)
+        allocations = self.allocation_repository.release_incident(
+            str(incident_id),
+            released_at=self._utc(released_at),
+            reason=reason,
+        )
+        released = [
+            self._allocation_view(allocation, status="released")
+            for allocation in allocations
+        ]
+        return sorted(released, key=lambda station: station["distance_km"])
 
     def active_allocations(self):
-        """Return a read-only snapshot useful to callers and tests."""
-        with self._allocation_lock:
-            return {
-                incident_id: sorted(
-                    (
-                        self._allocation_view(self._stations_by_key[station_key])
-                        for station_key in station_keys
-                    ),
-                    key=self._allocation_sort_key,
-                )
-                for incident_id, station_keys in self._incident_station_keys.items()
-            }
+        """Return a read-only snapshot of durable active allocations."""
+        grouped = {}
+        for allocation in self.allocation_repository.active_allocations():
+            grouped.setdefault(allocation["incident_id"], []).append(
+                self._allocation_view(allocation)
+            )
+        return {
+            incident_id: sorted(
+                allocations,
+                key=lambda station: station["distance_km"],
+            )
+            for incident_id, allocations in grouped.items()
+        }

@@ -24,7 +24,8 @@ def fire_stations_geojson() -> dict[str, Any]:
     """
     with Session() as session:
         rows = session.execute(text("""
-            SELECT district,
+            SELECT id,
+                   district,
                    name,
                    regional,
                    address,
@@ -48,6 +49,7 @@ def fire_stations_geojson() -> dict[str, Any]:
                 "coordinates": [row["longitude"], row["latitude"]],
             },
             "properties": {
+                "database_id": row["id"],
                 "name": row["name"],
                 "district": row["district"],
                 "regional": row["regional"],

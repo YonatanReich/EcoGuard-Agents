@@ -17,6 +17,9 @@ segment from the snapped road point to the incident.
 Distinct from `response_planner/`, which says *what kind* of unit is needed.
 This says *which one*, and how it gets there.
 
-The allocator keeps assignment state in memory. Nothing in the live pipeline
-calls it yet, and flood `LineString` routing is intentionally out of scope for
+Station details are cached in each allocator process because they are static
+reference data. Active claims are always read from and written to PostgreSQL,
+whose partial unique indexes prevent two allocator processes from assigning
+the same station at the same time. Nothing in the live pipeline calls the
+allocator yet, and flood `LineString` routing is intentionally out of scope for
 this version.
