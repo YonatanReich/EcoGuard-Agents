@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from datetime import datetime
-from itertools import combinations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import AwareDatetime, TypeAdapter, ValidationError
+from pydantic import TypeAdapter, ValidationError
 
-from ecoguard.shared.signals import AIR_POLLUTION, corroborates
+from ecoguard.analyzers.non_emergency.air_pollution.event_qualification import (
+    MatchingOfficialPollutantIndex,
+    ProjectedAirPollutionIdentity,
+    qualify_air_pollution_event,
+)
+from ecoguard.analyzers.non_emergency.air_pollution.official_classification import (
+    classify_official_pollutant_sub_index,
+)
 from ecoguard.shared.events import (
     AirPollutionSharedEvent,
     ComponentUnavailableReason,
@@ -24,19 +28,6 @@ from ecoguard.shared.events import (
 logger = logging.getLogger(__name__)
 router = APIRouter()
 _event_adapter = TypeAdapter(SharedEvent)
-_aware_datetime_adapter = TypeAdapter(AwareDatetime)
-
-
-@dataclass(frozen=True)
-class _StoredCorroborationSignal:
-    detection_id: str
-    cell_id: str
-    observed_at: datetime
-    hazard: str
-    source: str
-    station_id: str
-    channel_id: str
-    pollutant: str
 
 
 def read_projected_events(*, limit: int) -> list[dict[str, Any]]:
@@ -72,141 +63,52 @@ def _fallback_air_pollution_event(
     })
 
 
-def _stored_air_pollution_signals(
-    row: Mapping[str, Any],
-) -> list[_StoredCorroborationSignal]:
-    signals = row.get("incident_signals")
-    if not isinstance(signals, list):
-        return []
-
-    stored = []
-    for signal in signals:
-        if not isinstance(signal, Mapping) or signal.get("hazard") != AIR_POLLUTION:
-            continue
-        evidence = signal.get("evidence")
-        candidate = (
-            evidence.get("correlation_candidate")
-            if isinstance(evidence, Mapping)
-            else None
-        )
-        anomaly = candidate.get("anomaly") if isinstance(candidate, Mapping) else None
-        detection_id = anomaly.get("detection_id") if isinstance(anomaly, Mapping) else None
-        try:
-            if not isinstance(detection_id, str) or not detection_id:
-                continue
-            cell_id = signal["cell_id"]
-            if not isinstance(cell_id, str) or not cell_id:
-                continue
-            source = signal["source"]
-            station_id = anomaly["station_id"]
-            channel_id = anomaly["channel_id"]
-            pollutant = anomaly["pollutant"]
-            if not all(
-                isinstance(value, str) and value
-                for value in (source, station_id, channel_id, pollutant)
-            ):
-                continue
-            observed_at = _aware_datetime_adapter.validate_python(signal["observed_at"])
-        except (KeyError, TypeError, ValueError, ValidationError):
-            continue
-        stored.append(_StoredCorroborationSignal(
-            detection_id=detection_id,
-            cell_id=cell_id,
-            observed_at=observed_at,
-            hazard=AIR_POLLUTION,
-            source=source,
-            station_id=station_id,
-            channel_id=channel_id,
-            pollutant=pollutant,
-        ))
-    return stored
-
-
-def _corroborating_pairs(row: Mapping[str, Any]):
-    """Yield distinct persisted signal pairs accepted by shared corroboration."""
-
-    signals = _stored_air_pollution_signals(row)
-    for first, second in combinations(signals, 2):
-        if first.detection_id == second.detection_id:
-            continue
-        try:
-            if corroborates(first, second):  # type: ignore[arg-type]
-                yield first, second
-        except (TypeError, ValueError):
-            continue
-
-
-def _matches_projected_anomaly(
-    signal: _StoredCorroborationSignal,
-    event: AirPollutionSharedEvent,
-) -> bool:
-    station = event.details.station
-    return bool(
-        signal.station_id == station.id
-        and signal.channel_id == station.channel_id
-        and signal.pollutant == event.details.pollutant
-        and signal.observed_at == event.details.observation_timestamp
-        and (station.provider is None or signal.source == station.provider)
-    )
-
-
-def _path_a_spatial_corroboration(
-    row: Mapping[str, Any],
-    event: AirPollutionSharedEvent,
-) -> bool:
-    return any(
-        first.pollutant == second.pollutant == event.details.pollutant
-        and (first.source, first.station_id) != (second.source, second.station_id)
-        and any(
-            _matches_projected_anomaly(signal, event)
-            for signal in (first, second)
-        )
-        for first, second in _corroborating_pairs(row)
-    )
-
-
-def _path_b_persistence_with_official_aqi(
-    row: Mapping[str, Any],
-    event: AirPollutionSharedEvent,
-) -> bool:
-    index = event.details.ministry_aqi
-    if (
-        index is None
-        or index.pollutant_sub_index >= 0
-        or index.station_id is None
-        or index.pollutant is None
-        or index.resolved_channel_id is None
-        or index.station_id != event.details.station.id
-        or index.pollutant != event.details.pollutant
-        or index.resolved_channel_id != event.details.station.channel_id
-    ):
-        return False
-
-    for first, second in _corroborating_pairs(row):
-        if (
-            (first.source, first.station_id) == (second.source, second.station_id)
-            and first.station_id == index.station_id
-            and first.pollutant == second.pollutant == index.pollutant
-            and first.observed_at != second.observed_at
-            and index.resolved_channel_id in {first.channel_id, second.channel_id}
-            and any(
-                _matches_projected_anomaly(signal, event)
-                for signal in (first, second)
-            )
-        ):
-            return True
-    return False
-
-
 def air_pollution_event_is_qualified(
     row: Mapping[str, Any],
     event: AirPollutionSharedEvent,
 ) -> bool:
     """Apply the two authoritative Air Pollution publication paths."""
 
-    return _path_a_spatial_corroboration(
-        row, event
-    ) or _path_b_persistence_with_official_aqi(row, event)
+    index = event.details.ministry_aqi
+    decision = qualify_air_pollution_event(
+        row,
+        projected=ProjectedAirPollutionIdentity(
+            station_id=event.details.station.id,
+            channel_id=event.details.station.channel_id or "",
+            pollutant=event.details.pollutant,
+            observed_at=event.details.observation_timestamp,
+            provider=event.details.station.provider,
+        ),
+        official_index=(
+            MatchingOfficialPollutantIndex(
+                station_id=index.station_id,
+                channel_id=index.resolved_channel_id,
+                pollutant=index.pollutant,
+                pollutant_sub_index=index.pollutant_sub_index,
+            )
+            if index is not None
+            else None
+        ),
+    )
+    return decision.qualified
+
+
+def air_pollution_event_is_publishable(event: AirPollutionSharedEvent) -> bool:
+    """Apply EA-371 official pollutant display policy after qualification."""
+
+    index = event.details.ministry_aqi
+    classification = classify_official_pollutant_sub_index(
+        pollutant=event.details.pollutant,
+        pollutant_sub_index=(
+            index.pollutant_sub_index
+            if index is not None
+            and index.station_id == event.details.station.id
+            and index.resolved_channel_id == event.details.station.channel_id
+            and index.pollutant == event.details.pollutant
+            else None
+        ),
+    )
+    return classification.classification in {"MODERATE", "LOW", "VERY_LOW"}
 
 
 def shared_event_feed(rows: Sequence[Mapping[str, Any]]) -> SharedEventFeed:
@@ -229,7 +131,10 @@ def shared_event_feed(rows: Sequence[Mapping[str, Any]]) -> SharedEventFeed:
                 event = _fallback_air_pollution_event(event)
             if (
                 isinstance(event, AirPollutionSharedEvent)
-                and not air_pollution_event_is_qualified(row, event)
+                and (
+                    not air_pollution_event_is_qualified(row, event)
+                    or not air_pollution_event_is_publishable(event)
+                )
             ):
                 continue
             processing = EventProcessingMetadata(

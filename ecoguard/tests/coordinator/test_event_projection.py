@@ -53,6 +53,10 @@ def test_successful_result_maps_to_frontend_shared_event_contract():
     assert event.details.ministry_aqi.station_id == "42"
     assert event.details.ministry_aqi.pollutant == "NO2"
     assert event.details.ministry_aqi.resolved_channel_id == "7001"
+    assert event.details.official_pollutant_classification.classification == "GOOD"
+    assert event.details.official_pollutant_classification.pollutant_sub_index == 71.0
+    assert event.details.publication_policy.publish_to_operational_dashboard is False
+    assert event.details.additional_verification is None
     assert event.details.trend == "RISING"
     assert event.details.transport.corridor.type == "Polygon"
     assert event.details.population_within_screening_corridor.total_relevant_population == 50

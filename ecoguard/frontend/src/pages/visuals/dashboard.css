@@ -274,6 +274,18 @@
     border-color: var(--hazard, #94a3b8);
 }
 
+.event-card--official-strong {
+  border-color: color-mix(in srgb, var(--hazard) 75%, #7f1d1d);
+  box-shadow: inset 4px 0 0 #b91c1c;
+}
+
+.event-card__official-classification {
+  color: var(--color-text-secondary);
+  font-size: 0.76rem;
+  font-weight: 650;
+  text-transform: capitalize;
+}
+
 .event-card__type {
     font-size: 0.66rem;
     text-transform: uppercase;

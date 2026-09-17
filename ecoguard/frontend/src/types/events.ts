@@ -73,6 +73,41 @@ export type MinistryAirQualityIndex = {
   source?: string
 }
 
+export type OfficialPollutantClassification = {
+  classification: 'GOOD' | 'MODERATE' | 'LOW' | 'VERY_LOW' | 'UNKNOWN'
+  pollutant: string
+  pollutant_sub_index: number | null
+  source: string
+  reason: string
+}
+
+export type AirPollutionPublicationPolicy = {
+  publish_to_operational_dashboard: boolean
+  emphasis: 'none' | 'standard' | 'strong'
+  reason: string
+}
+
+export type PossibleSourceCorrelation = {
+  kind: 'possible_source_correlation'
+  source_hazard: 'fire'
+  source_incident_id: string
+  distance_km: number | null
+  bearing_deg: number | null
+  lag_hours: number | null
+  evidence: Record<string, unknown>
+  statement: string
+}
+
+export type AirPollutionAdditionalVerification = {
+  status: 'CORROBORATED' | 'NO_EXTERNAL_EVIDENCE' | 'VERIFICATION_UNAVAILABLE' | 'CONTEXT_ONLY'
+  checked_at: string
+  providers_checked: string[]
+  evidence_references: string[]
+  reason: string
+  limitations: string[]
+  possible_source_correlations: PossibleSourceCorrelation[]
+}
+
 export type AirPollutionWindEvidence = {
   provider: string
   source_type: 'station_observation' | 'model_forecast' | 'model_reanalysis'
@@ -163,6 +198,9 @@ export type AirPollutionDetails = {
   observation_timestamp: string
   historical_baseline: AirPollutionBaselineContext | null
   ministry_aqi: MinistryAirQualityIndex | null
+  official_pollutant_classification?: OfficialPollutantClassification | null
+  publication_policy?: AirPollutionPublicationPolicy | null
+  additional_verification?: AirPollutionAdditionalVerification | null
   wind: AirPollutionWindEvidence | null
   transport: AirPollutionTransportScreening | null
   relevant_settlements: AirPollutionSettlement[]

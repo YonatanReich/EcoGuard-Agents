@@ -11,8 +11,23 @@ from typing import Any
 from ecoguard.analyzers.non_emergency.air_pollution.analysis_adapter import (
     adapt_non_emergency_air_pollution_analysis_input,
 )
+from ecoguard.analyzers.non_emergency.air_pollution.additional_verification import (
+    AirPollutionAdditionalVerificationService,
+)
+from ecoguard.analyzers.non_emergency.air_pollution.event_qualification import (
+    MatchingOfficialPollutantIndex,
+    ProjectedAirPollutionIdentity,
+    qualify_air_pollution_event,
+)
 from ecoguard.analyzers.non_emergency.air_pollution.event_analyzer import (
     AirPollutionNonEmergencyAnalyzer,
+)
+from ecoguard.analyzers.non_emergency.air_pollution.event_analysis_schemas import (
+    AirPollutionEventAnalysis,
+)
+from ecoguard.analyzers.non_emergency.air_pollution.official_classification import (
+    classify_official_pollutant_sub_index,
+    publication_policy,
 )
 from ecoguard.analyzers.non_emergency.air_pollution.population_analysis import (
     AirPollutionPopulationAnalysisService,
@@ -52,10 +67,14 @@ class AirPollutionIncidentHandler:
         *,
         analyzer: AirPollutionNonEmergencyAnalyzer,
         planner: AirPollutionResponsePlanner,
+        verification_service: AirPollutionAdditionalVerificationService | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
         self._analyzer = analyzer
         self._planner = planner
+        self._verification_service = (
+            verification_service or AirPollutionAdditionalVerificationService()
+        )
         self._clock = clock
 
     def process(
@@ -94,6 +113,13 @@ class AirPollutionIncidentHandler:
         except Exception as error:
             return self._failure(context, "analysis", error)
 
+        if isinstance(analysis, AirPollutionEventAnalysis):
+            analysis = self._apply_ea371_policy(
+                incident=incident,
+                latest=latest,
+                analysis=analysis,
+            )
+
         try:
             planning = self._planner.plan_response(analysis)
         except Exception as error:
@@ -124,6 +150,69 @@ class AirPollutionIncidentHandler:
             planner_status=planning.plan.status,
             analysis_result=analysis,
             planner_result=planning,
+        )
+
+    def _apply_ea371_policy(
+        self,
+        *,
+        incident: Mapping[str, Any],
+        latest: PollutionCorrelationCandidate,
+        analysis: AirPollutionEventAnalysis,
+    ) -> AirPollutionEventAnalysis:
+        ministry = (
+            analysis.severity_assessment.result.ministry_index
+            if analysis.severity_assessment.result is not None
+            else None
+        )
+        official_index = (
+            MatchingOfficialPollutantIndex(
+                station_id=ministry.station_id,
+                channel_id=ministry.resolved_channel_id,
+                pollutant=ministry.pollutant,
+                pollutant_sub_index=ministry.pollutant_sub_index,
+            )
+            if ministry is not None
+            else None
+        )
+        projected = ProjectedAirPollutionIdentity(
+            station_id=latest.anomaly.station_id,
+            channel_id=latest.anomaly.channel_id,
+            pollutant=latest.anomaly.pollutant,
+            observed_at=latest.anomaly.observed_at,
+            provider=latest.anomaly.provider,
+        )
+        qualification = qualify_air_pollution_event(
+            incident,
+            projected=projected,
+            official_index=official_index,
+        )
+        classification = classify_official_pollutant_sub_index(
+            pollutant=latest.anomaly.pollutant,
+            pollutant_sub_index=(
+                ministry.pollutant_sub_index
+                if ministry is not None
+                and ministry.station_id == latest.anomaly.station_id
+                and ministry.resolved_channel_id == latest.anomaly.channel_id
+                and ministry.pollutant == latest.anomaly.pollutant
+                else None
+            ),
+        )
+        policy = publication_policy(qualification, classification)
+        verification = self._verification_service.verify(
+            incident=incident,
+            analysis=analysis,
+            qualification=qualification,
+            classification=classification,
+            checked_at=self._now(),
+        )
+        analysis = analysis.model_copy(update={
+            "event_qualification": qualification,
+            "official_pollutant_classification": classification,
+            "publication_policy": policy,
+            "additional_verification": verification,
+        })
+        return AirPollutionEventAnalysis.model_validate(
+            analysis.model_dump(round_trip=True)
         )
 
     def _failure(
@@ -243,4 +332,5 @@ def configured_air_pollution_incident_handler() -> AirPollutionIncidentHandler:
     return AirPollutionIncidentHandler(
         analyzer=analyzer,
         planner=AirPollutionResponsePlanner(),
+        verification_service=AirPollutionAdditionalVerificationService(),
     )

@@ -6,6 +6,9 @@ from ecoguard.analyzers.non_emergency.air_pollution.event_analysis_schemas impor
     AirPollutionTrendPrediction,
     AnalysisComponent,
 )
+from ecoguard.analyzers.non_emergency.air_pollution.additional_verification import (
+    AirPollutionAdditionalVerificationService,
+)
 from ecoguard.analyzers.non_emergency.air_pollution.event_analyzer import (
     AirPollutionNonEmergencyAnalyzer,
 )
@@ -24,6 +27,7 @@ from ecoguard.coordinator.incidents import signal_as_json
 from ecoguard.detectors.air_pollution.cell_signal_adapter import (
     air_pollution_candidate_to_cell_signal,
 )
+from ecoguard.detectors.air_pollution.correlation import PollutionCorrelationCandidate
 from ecoguard.response_planner.air_pollution.schemas import AirPollutionPlanningResult
 from ecoguard.shared.signals import FIRE, HIGH, CellSignal
 from ecoguard.tests.analyzers.non_emergency.air_pollution.test_event_analyzer import (
@@ -77,7 +81,29 @@ def _incident(*, identifier="INC-AP-1", hybrid=False):
     }, candidate
 
 
-def _working_handler(*, trend_component=None):
+def _path_a_incident(*, identifier="INC-AP-PATH-A"):
+    incident, first = _incident(identifier=identifier)
+    payload = first.model_dump(round_trip=True)
+    anomaly = payload["anomaly"]
+    anomaly["detection_id"] = "air-pollution:path-a-second-station"
+    anomaly["station_id"] = "43"
+    anomaly["station_name"] = "Second station"
+    anomaly["live_observation"]["station_id"] = "43"
+    anomaly["baseline_evidence"]["identity"]["station_id"] = "43"
+    second = PollutionCorrelationCandidate.model_validate(payload)
+    incident["signals"].append(
+        signal_as_json(air_pollution_candidate_to_cell_signal(second))
+    )
+    incident["signal_count"] = 2
+    return incident
+
+
+def _working_handler(
+    *,
+    trend_component=None,
+    pollutant_sub_index=71.0,
+    verification_service=None,
+):
     candidate = _candidate()
     trend_component = trend_component or AnalysisComponent[AirPollutionTrendPrediction](
         status="success",
@@ -105,7 +131,9 @@ def _working_handler(*, trend_component=None):
     trend = Mock()
     trend.predict.return_value = trend_component
     index = Mock()
-    index.get_station_index_evidence.return_value = _index_lookup()
+    index.get_station_index_evidence.return_value = _index_lookup(
+        pollutant_sub_index=pollutant_sub_index
+    )
     population = AirPollutionPopulationAnalysisService(Mock(return_value={
         "grid_available": True,
         "intersected_cell_count": 2,
@@ -132,6 +160,7 @@ def _working_handler(*, trend_component=None):
     return AirPollutionIncidentHandler(
         analyzer=analyzer,
         planner=planner,
+        verification_service=verification_service,
         clock=lambda: GENERATED_AT,
     ), trend
 
@@ -195,6 +224,60 @@ def test_unavailable_trend_is_graceful():
     )
     assert result.planner_status == "success"
     trend.predict.assert_called_once()
+
+
+def test_qualified_moderate_event_gets_context_only_without_firms_check():
+    incident = _path_a_incident()
+    firms_reads = []
+    verification = AirPollutionAdditionalVerificationService(
+        firms_run_reader=lambda: firms_reads.append(True)
+    )
+    handler, _ = _working_handler(
+        pollutant_sub_index=25.0,
+        verification_service=verification,
+    )
+
+    result = dispatch_incidents(
+        [incident],
+        registry={("air_pollution", "non_emergency"): handler},
+        at=REQUESTED_AT,
+    )[0]
+
+    analysis = result.analysis_result
+    assert result.route == "non_emergency"
+    assert analysis.event_qualification.path == "PATH_A"
+    assert analysis.official_pollutant_classification.classification == "MODERATE"
+    assert analysis.publication_policy.publish_to_operational_dashboard is True
+    assert analysis.publication_policy.emphasis == "standard"
+    assert analysis.additional_verification.status == "CONTEXT_ONLY"
+    assert firms_reads == []
+
+
+def test_qualified_low_event_triggers_verification_and_preserves_advisory_route():
+    incident = _path_a_incident()
+    incident["links"] = [{
+        "cause_hazard": "fire",
+        "effect_hazard": "air_pollution",
+        "cause_incident": "INC-FIRE-SUPPORT",
+        "distance_km": 3.0,
+        "bearing_deg": 120.0,
+        "lag_hours": 1.0,
+    }]
+    handler, _ = _working_handler(pollutant_sub_index=-25.0)
+
+    result = dispatch_incidents(
+        [incident],
+        registry={("air_pollution", "non_emergency"): handler},
+        at=REQUESTED_AT,
+    )[0]
+
+    analysis = result.analysis_result
+    assert result.route == "non_emergency"
+    assert analysis.official_pollutant_classification.classification == "LOW"
+    assert analysis.publication_policy.emphasis == "strong"
+    assert analysis.additional_verification.status == "CORROBORATED"
+    statement = analysis.additional_verification.possible_source_correlations[0].statement
+    assert "does not confirm causation" in statement
 
 
 def test_hybrid_invokes_only_air_pollution_advisory_facet():

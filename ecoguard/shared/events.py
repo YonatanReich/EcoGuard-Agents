@@ -84,6 +84,48 @@ class MinistryAirQualityIndex(EventContract):
     source: str | None = None
 
 
+class OfficialPollutantClassification(EventContract):
+    classification: Literal["GOOD", "MODERATE", "LOW", "VERY_LOW", "UNKNOWN"]
+    pollutant: str
+    pollutant_sub_index: float | None = None
+    source: str
+    reason: str
+
+
+class AirPollutionPublicationPolicy(EventContract):
+    publish_to_operational_dashboard: bool
+    emphasis: Literal["none", "standard", "strong"]
+    reason: str
+
+
+class PossibleSourceCorrelation(EventContract):
+    kind: Literal["possible_source_correlation"]
+    source_hazard: Literal["fire"]
+    source_incident_id: str
+    distance_km: float | None = None
+    bearing_deg: float | None = None
+    lag_hours: float | None = None
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    statement: str
+
+
+class AirPollutionAdditionalVerification(EventContract):
+    status: Literal[
+        "CORROBORATED",
+        "NO_EXTERNAL_EVIDENCE",
+        "VERIFICATION_UNAVAILABLE",
+        "CONTEXT_ONLY",
+    ]
+    checked_at: AwareDatetime
+    providers_checked: list[str] = Field(default_factory=list)
+    evidence_references: list[str] = Field(default_factory=list)
+    reason: str
+    limitations: list[str] = Field(default_factory=list)
+    possible_source_correlations: list[PossibleSourceCorrelation] = Field(
+        default_factory=list
+    )
+
+
 class AirPollutionWindEvidence(EventContract):
     provider: str
     source_type: Literal[
@@ -190,6 +232,9 @@ class AirPollutionDetails(EventContract):
     observation_timestamp: AwareDatetime
     historical_baseline: AirPollutionBaselineContext | None = None
     ministry_aqi: MinistryAirQualityIndex | None = None
+    official_pollutant_classification: OfficialPollutantClassification | None = None
+    publication_policy: AirPollutionPublicationPolicy | None = None
+    additional_verification: AirPollutionAdditionalVerification | None = None
     wind: AirPollutionWindEvidence | None = None
     transport: AirPollutionTransportScreening | None = None
     relevant_settlements: list[AirPollutionSettlement] = Field(default_factory=list)

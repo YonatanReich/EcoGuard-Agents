@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import timezone
 import math
-from typing import Annotated, Generic, Literal, TypeVar
+from typing import Annotated, Any, Generic, Literal, TypeVar
 
 from pydantic import AwareDatetime, Field, StringConstraints, field_validator, model_validator
 
@@ -85,6 +85,87 @@ class EventSeverityAssessment(AnomalyContract):
     ecoguard_severity_level: None = None
     ministry_index: MinistryAirQualityIndexEvidence
     five_minute_anomaly_evidence_is_separate: Literal[True] = True
+
+
+class AirPollutionEventQualification(AnomalyContract):
+    """Existing Path A/Path B decision, separate from p95 detection."""
+
+    qualified: bool
+    path: Literal["PATH_A", "PATH_B"] | None = None
+    reason: Text
+
+    @model_validator(mode="after")
+    def _coherent_decision(self):
+        if self.qualified != (self.path is not None):
+            raise ValueError("qualified events require exactly one qualification path")
+        return self
+
+
+class OfficialPollutantClassification(AnomalyContract):
+    """Typed official Ministry pollutant sub-index band, never a p95 severity."""
+
+    classification: Literal["GOOD", "MODERATE", "LOW", "VERY_LOW", "UNKNOWN"]
+    pollutant: Text
+    pollutant_sub_index: float | None = None
+    source: Literal["Israeli Ministry of Environmental Protection"] = (
+        "Israeli Ministry of Environmental Protection"
+    )
+    reason: Text
+
+
+class AirPollutionPublicationPolicy(AnomalyContract):
+    """Backend-owned operational display decision for a qualified event."""
+
+    publish_to_operational_dashboard: bool
+    emphasis: Literal["none", "standard", "strong"]
+    reason: Text
+
+
+class PossibleSourceCorrelation(AnomalyContract):
+    """Existing project correlation evidence without a causation claim."""
+
+    kind: Literal["possible_source_correlation"] = "possible_source_correlation"
+    source_hazard: Literal["fire"] = "fire"
+    source_incident_id: Text
+    distance_km: float | None = Field(default=None, ge=0)
+    bearing_deg: float | None = Field(default=None, ge=0, le=360)
+    lag_hours: float | None = Field(default=None, ge=0)
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    statement: Literal[
+        "Possible source correlation only; this does not confirm causation, a source, or a plume."
+    ] = "Possible source correlation only; this does not confirm causation, a source, or a plume."
+
+
+class AirPollutionAdditionalVerification(AnomalyContract):
+    """Optional verification of an already-qualified significant event."""
+
+    status: Literal[
+        "CORROBORATED",
+        "NO_EXTERNAL_EVIDENCE",
+        "VERIFICATION_UNAVAILABLE",
+        "CONTEXT_ONLY",
+    ]
+    checked_at: AwareDatetime
+    providers_checked: list[Text] = Field(default_factory=list)
+    evidence_references: list[Text] = Field(default_factory=list)
+    reason: Text
+    limitations: list[Text] = Field(default_factory=list)
+    possible_source_correlations: list[PossibleSourceCorrelation] = Field(
+        default_factory=list
+    )
+
+    @field_validator("checked_at")
+    @classmethod
+    def _verification_time_to_utc(cls, value: AwareDatetime) -> AwareDatetime:
+        return value.astimezone(timezone.utc)
+
+    @model_validator(mode="after")
+    def _coherent_verification(self):
+        if self.status == "CORROBORATED" and not self.possible_source_correlations:
+            raise ValueError("corroborated verification requires supporting evidence")
+        if self.status != "CORROBORATED" and self.possible_source_correlations:
+            raise ValueError("only corroborated verification may carry correlations")
+        return self
 
 
 class AirPollutionTrendPrediction(AnomalyContract):
@@ -240,6 +321,10 @@ class AirPollutionEventAnalysis(AirPollutionAnalysisInput):
     future_prediction: AnalysisComponent[AirPollutionTrendPrediction]
     transport_analysis: AnalysisComponent[AirPollutionTransportPredictionExecution]
     population_impact: AnalysisComponent[PopulationImpactContext]
+    event_qualification: AirPollutionEventQualification | None = None
+    official_pollutant_classification: OfficialPollutantClassification | None = None
+    publication_policy: AirPollutionPublicationPolicy | None = None
+    additional_verification: AirPollutionAdditionalVerification | None = None
     limitations: list[Text] = Field(min_length=1)
     exposure_not_confirmed: Literal[True] = True
 

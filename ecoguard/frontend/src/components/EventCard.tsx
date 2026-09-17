@@ -20,11 +20,16 @@ function EventCard({ event, onOpen, isSelected }: {
   const hazard = hazardOf(event)
   const fire = event.type === 'fire' ? event.details : null
   const assessed = event.analysis_status === 'success' && fire?.risk_score !== null
+  const officialClassification = event.type === 'air_pollution'
+    ? event.details.official_pollutant_classification?.classification
+    : null
+  const strongOfficialEmphasis = event.type === 'air_pollution'
+    && event.details.publication_policy?.emphasis === 'strong'
 
   return (
     <button
       type="button"
-      className={`event-card${isSelected ? ' event-card--selected' : ''}`}
+      className={`event-card${isSelected ? ' event-card--selected' : ''}${strongOfficialEmphasis ? ' event-card--official-strong' : ''}`}
       style={{ '--hazard': hazard.color } as React.CSSProperties}
       onClick={() => onOpen(event)}
       aria-label={`${hazard.label}: ${event.title}`}
@@ -40,6 +45,11 @@ function EventCard({ event, onOpen, isSelected }: {
           <span className="event-card__station">
             {event.details.station.name ?? `Station ${event.details.station.id}`}
           </span>
+          {officialClassification && (
+            <span className="event-card__official-classification">
+              Official pollutant index: {officialClassification.replaceAll('_', ' ')}
+            </span>
+          )}
           <span className="event-card__meta">
             <span>Advisory</span>
             <time dateTime={event.details.observation_timestamp}>

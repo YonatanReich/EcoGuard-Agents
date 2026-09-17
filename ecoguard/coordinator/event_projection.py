@@ -17,11 +17,13 @@ from ecoguard.database.repositories.event_projections import (
     upsert_event_projection,
 )
 from ecoguard.shared.events import (
+    AirPollutionAdditionalVerification,
     AirPollutionBaselineContext,
     AirPollutionDetails,
     AirPollutionRecommendation,
     AirPollutionSettlement,
     AirPollutionSharedEvent,
+    AirPollutionPublicationPolicy,
     AirPollutionStation,
     AirPollutionTransportScreening,
     AirPollutionWindEvidence,
@@ -30,6 +32,7 @@ from ecoguard.shared.events import (
     GeoJsonLineString,
     GeoJsonPolygon,
     MinistryAirQualityIndex,
+    OfficialPollutantClassification,
     TransportTimeEvidence,
     VerifiedReference,
 )
@@ -124,9 +127,24 @@ def air_pollution_shared_event(
     settlements = []
     population = None
     trend = None
+    official_classification = None
+    publication = None
+    verification = None
     limitations = []
     if analysis is not None:
         limitations.extend(analysis.limitations)
+        if analysis.official_pollutant_classification is not None:
+            official_classification = OfficialPollutantClassification.model_validate(
+                analysis.official_pollutant_classification.model_dump(mode="json")
+            )
+        if analysis.publication_policy is not None:
+            publication = AirPollutionPublicationPolicy.model_validate(
+                analysis.publication_policy.model_dump(mode="json")
+            )
+        if analysis.additional_verification is not None:
+            verification = AirPollutionAdditionalVerification.model_validate(
+                analysis.additional_verification.model_dump(mode="json")
+            )
         severity = analysis.severity_assessment.result
         if severity is not None:
             index = severity.ministry_index
@@ -314,6 +332,9 @@ def air_pollution_shared_event(
                 baseline_content_sha256=baseline.version.content_sha256,
             ),
             ministry_aqi=ministry,
+            official_pollutant_classification=official_classification,
+            publication_policy=publication,
+            additional_verification=verification,
             wind=wind,
             transport=transport,
             relevant_settlements=settlements,
