@@ -256,8 +256,25 @@ def shared_event_feed(rows: Sequence[Mapping[str, Any]]) -> SharedEventFeed:
 @router.get("/api/events", response_model=SharedEventFeed)
 def get_shared_events(
     limit: int = Query(default=100, ge=1, le=200),
+    include_resource_allocation_demo: bool = Query(default=False),
 ) -> SharedEventFeed:
-    """Return newest durable projections; no detection or analysis runs here."""
+    """Return durable projections and, when requested, one isolated demo event."""
+
+    if include_resource_allocation_demo:
+        try:
+            from ecoguard.api.resource_allocation_demo import (
+                resource_allocation_demo_event,
+            )
+
+            # The preview must remain usable even when the projection tables
+            # are unavailable or have not been migrated in a local database.
+            return SharedEventFeed(events=[resource_allocation_demo_event()])
+        except Exception as error:
+            logger.exception("Unable to build resource allocation demo")
+            raise HTTPException(
+                status_code=503,
+                detail="Resource allocation demo is unavailable",
+            ) from error
 
     try:
         return shared_event_feed(read_projected_events(limit=limit))

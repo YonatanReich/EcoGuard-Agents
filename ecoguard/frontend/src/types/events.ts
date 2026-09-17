@@ -20,6 +20,51 @@ export type FireResponseAction = {
   timeframe: 'immediate' | 'within_1_hour' | 'within_6_hours' | 'ongoing'
 }
 
+export type AllocationRoute = {
+  status: string
+  provider: string
+  profile: string
+  distance_m: number | null
+  duration_s: number | null
+  geometry: GeoJsonLineString | null
+  estimated_arrival_at: string | null
+  road_access_verified: boolean
+  requires_field_access_confirmation: boolean
+  steps_he: Array<{
+    instruction?: string
+    distance_m?: number
+    duration_s?: number
+  }>
+  error?: string | null
+}
+
+export type AllocatedStation = {
+  database_id: number
+  name: string
+  address: string | null
+  unit_type: string
+  recommended_unit: string
+  latitude: number
+  longitude: number
+  distance_km: number | null
+  allocation_status: string
+  selection_reason: string
+  route: AllocationRoute | null
+}
+
+export type ResourceAllocationSummary = {
+  status: string
+  routing_status: string
+  requirements: Record<string, {
+    requested: number
+    assigned: number
+    shortfall: number
+  }>
+  shortages: Record<string, number>
+  stations: AllocatedStation[]
+  errors: Array<Record<string, unknown>>
+}
+
 export type FireDetails = {
   detection_confidence: string | null
   fire_weather_severity: string | null
@@ -33,6 +78,7 @@ export type FireDetails = {
   response_plan: string[]
   response_actions: FireResponseAction[]
   protocol_citations: ProtocolCitation[]
+  resource_allocation: ResourceAllocationSummary | null
 }
 
 export type GeoJsonPolygon = {
@@ -288,6 +334,7 @@ export function detectedFireToSharedEvent(event: DetectedFireEventPayload): Fire
       response_plan: event.response_plan,
       response_actions: event.response_actions,
       protocol_citations: event.protocol_citations,
+      resource_allocation: null,
     },
   }
 }

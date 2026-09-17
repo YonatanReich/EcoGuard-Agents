@@ -41,6 +41,57 @@ class FireResponseAction(EventContract):
     timeframe: Literal["immediate", "within_1_hour", "within_6_hours", "ongoing"]
 
 
+class AllocationRequirement(EventContract):
+    requested: int = Field(ge=0)
+    assigned: int = Field(ge=0)
+    shortfall: int = Field(ge=0)
+
+
+class AllocationRouteGeometry(EventContract):
+    type: Literal["LineString"] = "LineString"
+    coordinates: list[list[float]]
+
+
+class AllocationRoute(EventContract):
+    status: str
+    provider: str
+    profile: str
+    distance_m: float | None = Field(default=None, ge=0)
+    duration_s: float | None = Field(default=None, ge=0)
+    geometry: AllocationRouteGeometry | None = None
+    origin: dict[str, Any] | None = None
+    destination: dict[str, Any] | None = None
+    estimated_arrival_at: AwareDatetime | None = None
+    road_access_verified: bool
+    requires_field_access_confirmation: bool
+    offroad_segment: dict[str, Any] | None = None
+    steps_he: list[dict[str, Any]] = Field(default_factory=list)
+    error: str | None = None
+
+
+class AllocatedStation(EventContract):
+    database_id: int = Field(gt=0)
+    name: str
+    address: str | None = None
+    unit_type: str
+    recommended_unit: str
+    latitude: float
+    longitude: float
+    distance_km: float | None = Field(default=None, ge=0)
+    allocation_status: str
+    selection_reason: str
+    route: AllocationRoute | None = None
+
+
+class ResourceAllocationSummary(EventContract):
+    status: str
+    routing_status: str
+    requirements: dict[str, AllocationRequirement] = Field(default_factory=dict)
+    shortages: dict[str, int] = Field(default_factory=dict)
+    stations: list[AllocatedStation] = Field(default_factory=list)
+    errors: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class FireDetails(EventContract):
     detection_confidence: str | None = None
     fire_weather_severity: str | None = None
@@ -54,6 +105,7 @@ class FireDetails(EventContract):
     response_plan: list[str] = Field(default_factory=list)
     response_actions: list[FireResponseAction] = Field(default_factory=list)
     protocol_citations: list[ProtocolCitation] = Field(default_factory=list)
+    resource_allocation: ResourceAllocationSummary | None = None
 
 
 class AirPollutionBaselineContext(EventContract):

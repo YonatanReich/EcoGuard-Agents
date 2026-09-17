@@ -119,6 +119,44 @@ function FireEventDetails({ event }: { event: FireEvent }) {
         </section>
       )}
 
+      {details.resource_allocation && (
+        <section className="event-modal__section">
+          <h3>Resource allocation</h3>
+          <dl className="event-modal__facts event-modal__facts--compact">
+            <div><dt>Allocation</dt><dd>{details.resource_allocation.status}</dd></div>
+            <div><dt>Routing</dt><dd>{details.resource_allocation.routing_status.replaceAll('_', ' ')}</dd></div>
+          </dl>
+
+          <ul className="event-modal__allocations">
+            {details.resource_allocation.stations.map((station) => (
+              <li key={`${station.recommended_unit}-${station.database_id}`}>
+                <strong>{station.name}</strong>
+                <span>{formatComponentName(station.recommended_unit)}</span>
+                <span>
+                  {station.distance_km == null ? 'Distance unavailable' : `${station.distance_km.toFixed(1)} km`}
+                  {station.route?.duration_s != null && ` · ${formatDuration(station.route.duration_s)}`}
+                </span>
+                {station.address && <span>{station.address}</span>}
+                {station.route?.estimated_arrival_at && (
+                  <span>ETA {formatTimestamp(station.route.estimated_arrival_at)}</span>
+                )}
+                {station.route?.requires_field_access_confirmation && (
+                  <span className="event-modal__allocation-warning">Field access requires confirmation</span>
+                )}
+              </li>
+            ))}
+          </ul>
+
+          {Object.values(details.resource_allocation.requirements).some(
+            (requirement) => requirement.shortfall > 0,
+          ) && (
+            <p className="event-modal__allocation-warning">
+              The allocation is partial; at least one requested resource is missing.
+            </p>
+          )}
+        </section>
+      )}
+
       {details.evidence_gaps.length > 0 && (
         <section className="event-modal__section event-modal__section--gaps">
           <h3>Evidence gaps</h3>
