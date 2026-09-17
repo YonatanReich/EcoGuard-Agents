@@ -29,12 +29,35 @@ DAY_RANGE = 2
 # products catch. It is kept because a coarse detection at an hour nothing else
 # flies over still beats no detection, and the pixel footprint travels in the
 # payload so a consumer can weigh it.
+# FIRMS calls the geostationary feed GOES_NRT, which is a misnomer for this
+# region: over Israel it returns Meteosat (Met9, Met10, Met12 — the last being
+# MTG-I1). GOES itself sits over the Americas and cannot see us.
+#
+# It is the most valuable product in this list and the reason is timing. The
+# polar satellites cross a few times a day, so a fire that starts just after an
+# overpass waits hours to be seen. Meteosat is parked over 0° longitude with
+# Israel permanently in view and reports every ten minutes. On the Galilee fire
+# of 14 September it detected at 07:08 against VIIRS's 09:58 — nearly three
+# hours earlier — and produced 114 detections to VIIRS's 13.
+#
+# It does not replace the polar products, it complements them: ~1.4 km grid
+# against VIIRS's 375 m, so it finds fires early and VIIRS says where they
+# actually are. Two independent sources agreeing in one cell is what the
+# coordinator is built to reward.
+GEOSTATIONARY_SOURCES = ("GOES_NRT",)
+
 SOURCES = (
     "VIIRS_NOAA20_NRT",
     "VIIRS_NOAA21_NRT",
     "VIIRS_SNPP_NRT",
     "MODIS_NRT",
-)
+) + GEOSTATIONARY_SOURCES
+
+# The area endpoint caps day_range per product, and not at the same number:
+# five for the polar products, two for the geostationary one. Exceeding it is
+# an HTTP 400 with "Invalid day range", not a truncated answer.
+MAX_DAY_RANGE = {source: 5 for source in SOURCES}
+MAX_DAY_RANGE.update({source: 2 for source in GEOSTATIONARY_SOURCES})
 
 
 def _observed_at(hotspot: dict[str, Any]) -> datetime:

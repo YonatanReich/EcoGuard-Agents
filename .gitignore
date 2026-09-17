@@ -107,3 +107,17 @@ ecoguard/data/generated/evaluation/
 # by scripts/load_population_grid.py. Republished yearly by WorldPop; there is
 # no reason to carry a copy in the history.
 ecoguard/data/generated/isr_ppp_*.tif
+
+# Raw Overpass responses cached by scripts/build_localities.py (~33 MB)
+ecoguard/data/reference/.osm_cache/
+
+# Scratch logs from fire-weather replay runs
+/fire_weather_*.txt
+
+# GIS source formats nothing in the codebase reads. The shapefile itself is
+# kept — scripts/build_muni_geojson.py regenerates muni_il.geojson from it —
+# but the AutoCAD copy and the zipped duplicate are 32 MB of the same data,
+# and .sr.lock files are leftover ArcGIS session locks.
+*.dwg
+*.sr.lock
+ecoguard/data/reference/**/muni_il.zip

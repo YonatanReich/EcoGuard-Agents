@@ -1,0 +1,116 @@
+{
+  "type": "FeatureCollection",
+  "name": "ecoguard_localities",
+  "note": "Approximate municipal outlines for the Gush Dan seed set. Each ring is a coarse convex outline of the built-up area, good to roughly 200 m, NOT the surveyed municipal boundary. It is enough to answer which settlement a fire is in or heading for, and it is not enough for anything that turns on an exact border. Replace wholesale with the data.gov.il municipal boundary layer when that is loaded; nothing reads these rings except exposure.py, and the schema is what that file documents.",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "locality_id": "petah-tikva",
+        "name": "Petah Tikva",
+        "name_he": "פתח תקווה",
+        "district": "Central",
+        "population": 256000
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [34.8550, 32.0680], [34.8700, 32.0650], [34.8950, 32.0660],
+          [34.9180, 32.0720], [34.9250, 32.0850], [34.9200, 32.1010],
+          [34.9020, 32.1120], [34.8800, 32.1130], [34.8620, 32.1050],
+          [34.8540, 32.0880], [34.8550, 32.0680]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "locality_id": "givat-shmuel",
+        "name": "Givat Shmuel",
+        "name_he": "גבעת שמואל",
+        "district": "Central",
+        "population": 28500
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [34.8400, 32.0700], [34.8500, 32.0695], [34.8570, 32.0740],
+          [34.8575, 32.0840], [34.8490, 32.0880], [34.8405, 32.0850],
+          [34.8385, 32.0770], [34.8400, 32.0700]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "locality_id": "bnei-brak",
+        "name": "Bnei Brak",
+        "name_he": "בני ברק",
+        "district": "Tel Aviv",
+        "population": 218000
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [34.8200, 32.0690], [34.8340, 32.0680], [34.8460, 32.0720],
+          [34.8480, 32.0860], [34.8380, 32.0940], [34.8250, 32.0920],
+          [34.8180, 32.0800], [34.8200, 32.0690]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "locality_id": "kiryat-ono",
+        "name": "Kiryat Ono",
+        "name_he": "קרית אונו",
+        "district": "Tel Aviv",
+        "population": 42000
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [34.8420, 32.0520], [34.8560, 32.0510], [34.8680, 32.0570],
+          [34.8690, 32.0690], [34.8570, 32.0750], [34.8440, 32.0720],
+          [34.8400, 32.0620], [34.8420, 32.0520]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "locality_id": "ramat-gan",
+        "name": "Ramat Gan",
+        "name_he": "רמת גן",
+        "district": "Tel Aviv",
+        "population": 172000
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [34.8050, 32.0500], [34.8250, 32.0480], [34.8420, 32.0560],
+          [34.8450, 32.0720], [34.8300, 32.0880], [34.8120, 32.0900],
+          [34.8020, 32.0740], [34.8050, 32.0500]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "locality_id": "or-yehuda",
+        "name": "Or Yehuda",
+        "name_he": "אור יהודה",
+        "district": "Tel Aviv",
+        "population": 40000
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [34.8380, 32.0200], [34.8560, 32.0190], [34.8680, 32.0260],
+          [34.8670, 32.0390], [34.8520, 32.0440], [34.8390, 32.0390],
+          [34.8350, 32.0290], [34.8380, 32.0200]
+        ]]
+      }
+    }
+  ]
+}

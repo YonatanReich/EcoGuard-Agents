@@ -185,7 +185,8 @@ class FirmsDataAgent:
         longitude: float,
         delta: float = 0.05,
         source: str = "VIIRS_NOAA20_NRT",
-        day_range: int = 1
+        day_range: int = 1,
+        start_date: str | None = None,
     ) -> dict:
         """
         Fetch near-real-time satellite hotspot data from NASA FIRMS.
@@ -201,6 +202,13 @@ class FirmsDataAgent:
             source (str): NASA FIRMS satellite dataset identifier.
                 The default is VIIRS NOAA-20 Near Real-Time.
             day_range (int): Number of recent days to request from FIRMS.
+                FIRMS caps this at 10 per request.
+            start_date (str | None): First day to return, as YYYY-MM-DD.
+                Omitted means "the most recent day_range days", which is what
+                the live collector wants. Supplying it is how history is read:
+                a year is walked ten days at a time. Note the near-real-time
+                products only reach back about two months — older windows need
+                a standard-processing source such as VIIRS_SNPP_SP.
 
         Returns:
             dict: Unified FIRMS fire-satellite response.
@@ -232,6 +240,8 @@ class FirmsDataAgent:
             f"{bounding_box}/"
             f"{day_range}"
         )
+        if start_date is not None:
+            url = f"{url}/{start_date}"
 
         try:
             response = requests.get(

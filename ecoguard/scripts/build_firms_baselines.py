@@ -1,0 +1,321 @@
+"""Build the hotspot-rate baseline: how often does each cell light up anyway?
+
+    python -m ecoguard.scripts.build_firms_baselines
+    python -m ecoguard.scripts.build_firms_baselines --days 180 --rebuild
+
+The satellite is the only thing in this system that has ever actually seen a
+fire. It is also the only thing that sees the same steel mill every night, and
+without a way to tell those apart, wiring it to the coordinator would produce a
+nightly incident nobody should be dispatched to.
+
+`rarity_from_rate` in shared/signals.py was written for exactly this and has had
+nothing to read. It needs one number per cell: the share of days on which that
+cell produced a detection. This builds it.
+
+What it does: walks the last year five days at a time (FIRMS caps a request at
+five), asks for the whole service-area bounding box, and counts for each cell
+the days on which at least one hotspot landed in it.
+
+Three choices worth knowing:
+
+  * **Days, not detections.** A fire burning through four satellite passes in
+    an afternoon is one day of fire, not four events. Counting detections would
+    make a single bad day look like persistence.
+  * **Standard-processing sources for the older windows.** The near-real-time
+    products only reach back about two months; the SP products are the archive
+    and are also the better data, having been reprocessed.
+  * **Every cell gets a row, including the quiet ones.** The request is one
+    bounding box over the whole country, so a cell with no fires is a measured
+    zero rather than a gap. That is the opposite of weather_baselines, where a
+    cell outside the subgrid genuinely has no answer - and it matters, because
+    "this cell has never lit in a year" is the strongest evidence this table
+    holds and the thing that makes a new detection worth acting on.
+
+A full run is a few dozen requests and a minute or two.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+import time
+from collections import defaultdict
+from datetime import date, datetime, timedelta, timezone
+
+from sqlalchemy import text
+
+from ecoguard.collection.fire.firms.client import FirmsDataAgent, FirmsProviderError
+from ecoguard.collection.fire.firms.collector import _service_area_box
+from ecoguard.database.engine import Session
+from ecoguard.shared.cells import cell_for, service_area_cells
+
+# FIRMS refuses anything larger: the area endpoint answers "Invalid day range.
+# Expects [1..5]" and returns HTTP 400. It is five, not the ten the wider FIRMS
+# documentation quotes for other endpoints, and getting this wrong is silent in
+# the worst way - every window is rejected, the run still "succeeds", and the
+# baseline it writes is a few days of data wearing a year's denominator. Which
+# is precisely what happened on the first two attempts.
+MAX_DAY_RANGE = 5
+
+DEFAULT_DAYS = 365
+
+# Near-real-time products cover roughly the last two months; beyond that the
+# standard-processing archive is both the only option and the better data.
+NRT_HORIZON_DAYS = 55
+
+NRT_SOURCES = ("VIIRS_SNPP_NRT", "VIIRS_NOAA20_NRT", "VIIRS_NOAA21_NRT", "MODIS_NRT")
+ARCHIVE_SOURCES = ("VIIRS_SNPP_SP", "VIIRS_NOAA20_SP", "MODIS_SP")
+
+# The geostationary feed is its own case in two ways: it serves the full year
+# from one data_id rather than splitting into NRT and reprocessed archive, and
+# the endpoint caps its day_range at two rather than five. It must be in the
+# baseline because it is in the live collector - a cell weighed against a rate
+# built from fewer products than now watch it looks quieter than it is, and
+# that is the direction that lets an industrial site through.
+GEOSTATIONARY_SOURCES = ("GOES_NRT",)
+GEOSTATIONARY_DAY_RANGE = 2
+
+# FIRMS publishes a transaction limit per key rather than a documented rate, so
+# this is politeness rather than a measured requirement.
+REQUEST_SPACING_SECONDS = 1.0
+
+# A transient failure that is quietly skipped lowers a cell's detection count
+# and so raises its rarity, turning a furnace into a fire. Worth retrying for.
+MAX_ATTEMPTS = 4
+
+# How much of the window may go unfetched before the result is not worth
+# storing. Low on purpose: this table's whole job is suppression, and a gappy
+# build fails in the direction that suppresses nothing.
+MAX_GAP_SHARE = 0.05
+
+
+def sources_for(window_start: date, today: date) -> tuple[str, ...]:
+    """Which polar products can answer for a window starting then."""
+    if (today - window_start).days <= NRT_HORIZON_DAYS:
+        return NRT_SOURCES
+    return ARCHIVE_SOURCES
+
+
+def windows(days: int, today: date, day_range: int = MAX_DAY_RANGE) -> list[tuple[date, int]]:
+    """(start, length) pairs walking backwards, none longer than FIRMS allows."""
+    spans = []
+    remaining = days
+    start = today - timedelta(days=days - 1)
+    while remaining > 0:
+        length = min(day_range, remaining)
+        spans.append((start, length))
+        start += timedelta(days=length)
+        remaining -= length
+    return spans
+
+
+def fetch_window(
+    agent: FirmsDataAgent, box, start: date, length: int, today: date,
+    sleep=time.sleep, sources: tuple[str, ...] | None = None,
+) -> tuple[list[dict], int]:
+    """Every hotspot any product saw in one window, and how many gave up.
+
+    Retries before conceding, because a skipped window is not a neutral loss
+    here: it lowers a cell's detection count, which *raises* its rarity, which
+    makes a furnace look like a fire. The first run of this script silently
+    dropped two months to transient errors and produced a baseline that would
+    have failed to suppress the one industrial site we know about. A gap has to
+    be loud.
+    """
+    latitude, longitude, delta = box
+    hotspots: list[dict] = []
+    failures = 0
+
+    for source in (sources if sources is not None else sources_for(start, today)):
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            try:
+                response = agent.fetch_hotspots(
+                    latitude=latitude, longitude=longitude, delta=delta,
+                    source=source, day_range=length, start_date=start.isoformat(),
+                )
+            except FirmsProviderError as error:
+                if attempt == MAX_ATTEMPTS:
+                    print(f"    GAP: {source} {start} +{length}d ({error})",
+                          file=sys.stderr)
+                    failures += 1
+                    break
+                delay = REQUEST_SPACING_SECONDS * 2 ** attempt
+                sleep(delay)
+                continue
+            hotspots.extend(response["fire_satellite_data"]["hotspots"])
+            sleep(REQUEST_SPACING_SECONDS)
+            break
+
+    return hotspots, failures
+
+
+def stored_detections() -> dict[str, set]:
+    """Which days each cell lit, according to observations we already hold.
+
+    The live collector has been writing FIRMS rows all along, and for the days
+    it covers that record is better than anything refetching can produce: it
+    was captured from the near-real-time feed at the time, which is exactly the
+    window the archive products have not caught up with yet.
+
+    Free, offline, and authoritative for its span - so it is merged in rather
+    than competed with.
+    """
+    with Session() as session:
+        rows = session.execute(
+            text(
+                "SELECT DISTINCT cell_id, observed_at::date "
+                "FROM observations WHERE source = 'firms'"
+            )
+        ).all()
+
+    days: dict[str, set] = defaultdict(set)
+    for cell_id, day in rows:
+        days[cell_id].add(day.isoformat())
+    return days
+
+
+def tally(hotspots) -> tuple[dict[str, set], dict[str, int], dict[str, float]]:
+    """Per cell: which days it lit, how many detections, and its hottest pixel."""
+    days: dict[str, set] = defaultdict(set)
+    counts: dict[str, int] = defaultdict(int)
+    peak: dict[str, float] = {}
+
+    for hotspot in hotspots:
+        cell_id = cell_for(hotspot["latitude"], hotspot["longitude"])
+        if cell_id is None:
+            continue  # the bounding box overshoots the service area
+        days[cell_id].add(hotspot["acquisition_date"])
+        counts[cell_id] += 1
+        frp = hotspot.get("frp")
+        if frp is not None:
+            peak[cell_id] = max(peak.get(cell_id, 0.0), float(frp))
+
+    return days, counts, peak
+
+
+def store(days, counts, peak, days_observed: int, window_start: date, window_end: date) -> int:
+    """One row per service-area cell, zeros included."""
+    rows = [
+        {
+            "cell_id": cell.cell_id,
+            "days_observed": days_observed,
+            "detection_days": len(days.get(cell.cell_id, ())),
+            "detections": counts.get(cell.cell_id, 0),
+            "peak_frp_mw": peak.get(cell.cell_id),
+            "window_start": window_start,
+            "window_end": window_end,
+        }
+        for cell in service_area_cells()
+    ]
+
+    with Session() as session:
+        session.execute(text("DELETE FROM firms_baselines"))
+        session.execute(
+            text(
+                """
+                INSERT INTO firms_baselines
+                  (cell_id, days_observed, detection_days, detections,
+                   peak_frp_mw, window_start, window_end)
+                VALUES
+                  (:cell_id, :days_observed, :detection_days, :detections,
+                   :peak_frp_mw, :window_start, :window_end)
+                """
+            ),
+            rows,
+        )
+        session.commit()
+    return len(rows)
+
+
+def build(days: int = DEFAULT_DAYS, agent: FirmsDataAgent | None = None) -> dict:
+    agent = agent or FirmsDataAgent()
+    box = _service_area_box()
+    today = datetime.now(timezone.utc).date()
+
+    all_hotspots: list[dict] = []
+    gaps = 0
+    spans = windows(days, today)
+    for index, (start, length) in enumerate(spans, 1):
+        print(f"  [{index}/{len(spans)}] polar {start} +{length}d", file=sys.stderr)
+        fetched, failures = fetch_window(agent, box, start, length, today)
+        all_hotspots.extend(fetched)
+        gaps += failures
+
+    # The geostationary feed walks the same year in its own stride.
+    geo_spans = windows(days, today, day_range=GEOSTATIONARY_DAY_RANGE)
+    for index, (start, length) in enumerate(geo_spans, 1):
+        if index % 20 == 1:
+            print(f"  [{index}/{len(geo_spans)}] geostationary {start}", file=sys.stderr)
+        fetched, failures = fetch_window(
+            agent, box, start, length, today, sources=GEOSTATIONARY_SOURCES
+        )
+        all_hotspots.extend(fetched)
+        gaps += failures
+
+    # Refuse to write a baseline built from a fraction of the window.
+    #
+    # This is the one failure that must never be quiet. Every missing window
+    # lowers some cell's detection count, which raises its rarity, which lets
+    # an industrial site through as a fire - and the resulting table looks
+    # perfectly well-formed. Two earlier runs of this script did exactly that:
+    # they reported success, wrote 1,174 tidy rows, and the furnace we already
+    # knew about scored 0.986 and would have opened an incident every night.
+    #
+    # An old baseline is better than a wrong one, so a bad run leaves the
+    # existing table alone.
+    attempted = (
+        sum(len(sources_for(start, today)) for start, _ in spans)
+        + len(geo_spans) * len(GEOSTATIONARY_SOURCES)
+    )
+    if attempted and gaps / attempted > MAX_GAP_SHARE:
+        raise SystemExit(
+            f"refusing to store: {gaps} of {attempted} source-windows failed "
+            f"({gaps / attempted:.0%}, limit {MAX_GAP_SHARE:.0%}). "
+            "A partial fetch makes cells look quieter than they are, which is "
+            "the direction that lets an industrial site through. "
+            "The existing baseline has been left untouched."
+        )
+
+    days_lit, counts, peak = tally(all_hotspots)
+
+    # Merge what the collector already stored. A day either source saw is a day
+    # the cell lit, so the union is the honest answer.
+    merged_from_store = 0
+    for cell_id, stored_days in stored_detections().items():
+        before = len(days_lit.get(cell_id, ()))
+        days_lit[cell_id] = days_lit.get(cell_id, set()) | stored_days
+        merged_from_store += len(days_lit[cell_id]) - before
+
+    written = store(
+        days_lit, counts, peak, days,
+        today - timedelta(days=days - 1), today,
+    )
+
+    lit = sum(1 for cell in days_lit if days_lit[cell])
+    return {
+        "hotspots": len(all_hotspots),
+        "cells_written": written,
+        "cells_ever_lit": lit,
+        "days_observed": days,
+        "gaps": gaps,
+        "days_added_from_store": merged_from_store,
+    }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--days", type=int, default=DEFAULT_DAYS)
+    arguments = parser.parse_args()
+    if arguments.days < 1:
+        raise SystemExit("--days must be at least 1")
+
+    summary = build(arguments.days)
+    print(
+        f"\n{summary['hotspots']:,} hotspots over {summary['days_observed']} days; "
+        f"{summary['cells_written']:,} cells written, "
+        f"{summary['cells_ever_lit']:,} of them have ever lit"
+    )
+
+
+if __name__ == "__main__":
+    main()
