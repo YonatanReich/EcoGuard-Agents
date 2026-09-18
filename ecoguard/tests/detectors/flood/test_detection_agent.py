@@ -35,17 +35,23 @@ def _observation(at: datetime, discharge: float) -> dict:
     }
 
 
-def test_agent_opens_only_after_two_consecutive_q5_readings():
+def test_agent_opens_only_after_two_consecutive_q10_readings():
     agent = FloodDetectionAgent()
     observations = [
-        _observation(NOW - timedelta(minutes=10), 21.0),
-        _observation(NOW, 22.0),
+        _observation(NOW - timedelta(minutes=10), 31.0),
+        _observation(NOW, 32.0),
     ]
 
-    evaluation = agent.evaluate(cell_id=CELL, observations=observations)
+    evaluation = agent.evaluate(
+        cell_id=CELL,
+        observations=observations,
+        stream_ids={50: 701},
+    )
 
     assert len(evaluation.candidates) == 1
-    assert evaluation.candidates[0].evidence["severity_level"] == 2
+    assert evaluation.candidates[0].evidence["severity_level"] == 3
+    assert evaluation.candidates[0].evidence["alert_level"] == "active"
+    assert evaluation.candidates[0].evidence["stream_id"] == 701
     assert evaluation.resolutions == []
 
 
@@ -61,8 +67,8 @@ def test_agent_rejects_a_delayed_backfill_as_a_realtime_signal():
 def test_agent_does_not_reopen_an_event_that_is_already_active():
     agent = FloodDetectionAgent()
     observations = [
-        _observation(NOW - timedelta(minutes=10), 21.0),
-        _observation(NOW, 22.0),
+        _observation(NOW - timedelta(minutes=10), 31.0),
+        _observation(NOW, 32.0),
     ]
     opened = agent.evaluate(
         cell_id=CELL,

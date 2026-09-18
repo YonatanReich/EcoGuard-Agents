@@ -38,19 +38,28 @@ Current discharge is compared with all six official thresholds:
 | 5 | Q50 to below Q100 |
 | 6 | Q100 or higher |
 
-Level 1 is an elevated-flow monitoring state and does not open a flood alert.
-An alert begins at level 2 (Q5).
+The operational interpretation is:
+
+| Level | State |
+|---:|---|
+| 0-1 | `none` — ordinary flow, including Q2 |
+| 2 | `monitoring` — Q5 preliminary monitoring |
+| 3 | `active` — Q10 flood alert |
+| 4 | `severe` — Q20 severe alert |
+| 5-6 | `emergency` — Q50/Q100 emergency alert |
+
+Q5 is a monitoring state only. A flood event begins at level 3 (Q10).
 
 ## Persistence and lifecycle
 
 An alert opens only when the two latest valid readings are both at or above
-Q5. Severity is the level of the current reading; the previous reading confirms
+Q10. Severity is the level of the current reading; the previous reading confirms
 that the station was already above the alert threshold. Consecutive readings
 may be at most 30 minutes apart. Missing discharge, an ineligible threshold
 status or an invalid vector breaks the sequence.
 
 An active alert resolves only after two consecutive valid readings are both
-strictly below 80% of Q5. The same 30-minute maximum gap applies. Missing or
+strictly below 80% of Q10. The same 30-minute maximum gap applies. Missing or
 stale readings never resolve an event.
 
 Each station has one stable active event key. Candidate inserts, resolutions
@@ -63,10 +72,16 @@ Every newly opened alert includes these primary fields:
 
 ```text
 station_id
+stream_id
 timestamp
 current_discharge
 severity_level
+alert_level
 ```
+
+`stream_id` is the internal `streams.id` value when the materialized topology
+contains a confirmed station-to-stream match; otherwise it is `null`. It is
+output enrichment only and does not affect threshold evaluation.
 
 Lifecycle identity, location, the complete threshold vector, the two confirming
 discharges, the current threshold and its return period remain available as

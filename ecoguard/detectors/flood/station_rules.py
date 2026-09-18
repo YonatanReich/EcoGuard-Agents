@@ -19,7 +19,7 @@ class FloodPolicy:
     lookback: timedelta = timedelta(hours=6)
     maximum_ingestion_lag: timedelta = timedelta(hours=2)
     maximum_future_skew: timedelta = timedelta(minutes=15)
-    minimum_alert_level: int = 2
+    minimum_alert_level: int = 3
     consecutive_samples: int = 2
     maximum_sample_gap: timedelta = timedelta(minutes=30)
     resolution_threshold_ratio: float = 0.8
@@ -48,9 +48,11 @@ class FloodCandidate:
             "detected": True,
             "cell_id": self.cell_id,
             "station_id": self.evidence["station_id"],
+            "stream_id": self.evidence.get("stream_id"),
             "timestamp": self.observed_at,
             "current_discharge": self.evidence["current_discharge"],
             "severity_level": self.evidence["severity_level"],
+            "alert_level": self.evidence["alert_level"],
             "observed_at": self.observed_at,
             "latitude": self.latitude,
             "longitude": self.longitude,
@@ -119,13 +121,26 @@ def severity_level(discharge: float, thresholds: Sequence[float]) -> int:
 
 
 def _severity_hint(level: int) -> str:
-    if level >= 4:
+    if level >= 5:
         return "critical"
-    if level == 3:
+    if level == 4:
         return "high"
-    if level == 2:
+    if level == 3:
         return "moderate"
     return "low"
+
+
+def alert_level(level: int) -> str:
+    """Translate Q-threshold severity into the operational alert state."""
+    if level >= 5:
+        return "emergency"
+    if level == 4:
+        return "severe"
+    if level == 3:
+        return "active"
+    if level == 2:
+        return "monitoring"
+    return "none"
 
 
 def _station_samples(
@@ -165,8 +180,10 @@ def evaluate_cell(
     cell_id: str,
     observations: list[Mapping[str, Any]],
     policy: FloodPolicy | None = None,
+    *,
+    stream_ids: Mapping[int, int] | None = None,
 ) -> list[FloodCandidate]:
-    """Open an alert after two consecutive readings at or above Q5."""
+    """Open a flood alert after two consecutive readings at or above Q10."""
     selected_policy = policy or FloodPolicy()
     candidates: list[FloodCandidate] = []
     for station_id, raw_samples in _station_samples(observations).items():
@@ -202,9 +219,11 @@ def evaluate_cell(
         evidence = {
             "station_id": station_id,
             "source_station_id": station_id,
+            "stream_id": (stream_ids or {}).get(station_id),
             "timestamp": observed_at.isoformat(),
             "current_discharge": current_discharge,
             "severity_level": current_level,
+            "alert_level": alert_level(current_level),
             "previous_severity_level": levels[-2],
             "current_threshold_m3s": current_threshold,
             "return_period_years": return_period,
@@ -276,6 +295,7 @@ def _resolution_for_event(
         reason="discharge_below_hysteresis_threshold",
         evidence={
             "station_id": int(station_id),
+            "stream_id": evidence.get("stream_id"),
             "alert_threshold_m3s": alert_threshold,
             "exit_threshold_m3s": exit_threshold,
             "recent_discharges_m3s": [sample[2] for sample in recent],
@@ -288,7 +308,7 @@ def evaluate_resolutions(
     active_events: Iterable[Mapping[str, Any]],
     policy: FloodPolicy | None = None,
 ) -> list[FloodResolution]:
-    """Close active station alerts after two readings below 80% of Q5."""
+    """Close active station alerts after two readings below 80% of Q10."""
     selected_policy = policy or FloodPolicy()
     resolutions: list[FloodResolution] = []
     for event in active_events:

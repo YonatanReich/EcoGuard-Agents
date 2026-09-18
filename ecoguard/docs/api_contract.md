@@ -667,8 +667,9 @@ The runtime flow is:
    real-time event. They are still consumed after a successful transaction so
    the worker does not retry an old backfill forever.
 5. For every affected 5 km cell, the worker reloads a six-hour hydrometric
-   window and the active event state. It does not load rainfall, radar,
-   baselines, basin context or stream topology for the decision.
+   window, the active event state and any confirmed station-to-stream id. It
+   does not load rainfall, radar, baselines or basin context. The stream id is
+   output enrichment only and does not participate in the decision.
 6. `FloodDetectionAgent.evaluate()` applies deterministic threshold,
    persistence and hysteresis rules. It has no database, collection or
    scheduling responsibility.
@@ -724,14 +725,16 @@ does not return a reduced candidate summary.
 | `detected` | Boolean | Always `true` for an opening candidate. |
 | `cell_id` | String | 5 km risk cell evaluated by the worker. |
 | `station_id` | Integer | Water Authority source-station identifier. |
+| `stream_id` | Integer or null | Internal `streams.id` for a confirmed materialized station-to-stream match; `null` when no confirmed match exists. This field does not affect detection. |
 | `timestamp` | ISO 8601 String | Timestamp of the second confirming reading. |
 | `current_discharge` | Float | Discharge at `timestamp`, in m³/s. |
-| `severity_level` | Integer | Confirmed threshold level from 2 through 6. |
+| `severity_level` | Integer | Confirmed threshold level from 3 through 6. |
+| `alert_level` | String | Operational state: `active` at Q10, `severe` at Q20, and `emergency` at Q50/Q100. |
 | `observed_at` | ISO 8601 String | Timestamp at which the opening threshold crossing was observed. |
 | `latitude`, `longitude` | Float | Best event reference coordinate; identical to the coordinate in `location`. |
 | `location` | Object | `known`, coordinates, `source` and `uncertainty_m`. See 7.7. |
 | `confidence` | Float | Evidence confidence in `[0, 1]`; it is not a calibrated flood probability. |
-| `severity_hint` | String | Compatibility mapping of `severity_level`: moderate, high or critical. |
+| `severity_hint` | String | Compatibility mapping: `moderate` at Q10, `high` at Q20 and `critical` at Q50/Q100. |
 | `location_uncertainty_m` | Float | Same uncertainty value exposed inside `location`. |
 | `trigger` | String | Always `gauge_discharge_threshold`. |
 | `evidence` | Object | Compact lifecycle evidence used for deduplication and resolution. |
@@ -739,13 +742,15 @@ does not return a reduced candidate summary.
 ### 6.4 Active Hydrometric Rules
 
 Current discharge maps to levels 0-6 by the complete Q2, Q5, Q10, Q20, Q50
-and Q100 vector. Q2 is monitoring level 1 and does not open an alert. An alert
-opens only when the two latest valid readings, no more than 30 minutes apart,
-are both at or above Q5. Severity is calculated from the current reading; the
-previous reading supplies persistence confirmation.
+and Q100 vector. Q2 is ordinary flow with no alert; Q5 is a preliminary
+`monitoring` state that does not open a flood event. A flood alert opens only
+when the two latest valid readings, no more than 30 minutes apart, are both at
+or above Q10. Q10 is `active`, Q20 is `severe`, and Q50/Q100 are `emergency`.
+Severity is calculated from the current reading; the previous reading supplies
+persistence confirmation.
 
 An active event resolves only after two consecutive valid readings are both
-strictly below 80% of Q5. Missing or ineligible readings break persistence and
+strictly below 80% of Q10. Missing or ineligible readings break persistence and
 cannot resolve an event. Rain, radar, water height and statistical baselines do
 not participate in the active decision.
 
@@ -762,8 +767,8 @@ cannot participate in event opening or resolution.
 
 Candidate evidence contains the complete threshold vector, the two confirming
 discharges, current and previous severity levels, the current threshold, its
-return period and the Q5 alert threshold. No inferred trend, rainfall or
-baseline evidence participates in this version.
+return period, the Q10 alert threshold and the optional matched stream id. No
+inferred trend, rainfall or baseline evidence participates in this version.
 
 ### 6.7 Location and Limitations
 
@@ -777,7 +782,7 @@ An active event is not repeated in `candidates`. It remains active until a
 fresh low-signal transition is committed.
 
 - Station events resolve after two new consecutive discharge readings are both
-  strictly below 80% of Q5. The readings may be at most 30 minutes apart.
+  strictly below 80% of Q10. The readings may be at most 30 minutes apart.
 - Missing, ineligible or stale observations never close an event.
 
 Every returned resolution has this shape:
@@ -793,9 +798,9 @@ Every returned resolution has this shape:
   "reason": "discharge_below_hysteresis_threshold",
   "evidence": {
     "station_id": 50,
-    "alert_threshold_m3s": 20.0,
-    "exit_threshold_m3s": 16.0,
-    "recent_discharges_m3s": [15.9, 15.0]
+    "alert_threshold_m3s": 30.0,
+    "exit_threshold_m3s": 24.0,
+    "recent_discharges_m3s": [23.9, 23.0]
   }
 }
 ```
@@ -815,9 +820,11 @@ Every returned resolution has this shape:
       "detected": true,
       "cell_id": "risk-05000m-r0040-c0012",
       "station_id": 50,
+      "stream_id": 701,
       "timestamp": "2026-09-16T08:00:00+00:00",
       "current_discharge": 32.0,
       "severity_level": 3,
+      "alert_level": "active",
       "observed_at": "2026-09-16T08:00:00+00:00",
       "latitude": 32.01,
       "longitude": 34.81,
@@ -829,21 +836,23 @@ Every returned resolution has this shape:
         "uncertainty_m": 100.0
       },
       "confidence": 0.9,
-      "severity_hint": "high",
+      "severity_hint": "moderate",
       "location_uncertainty_m": 100.0,
       "trigger": "gauge_discharge_threshold",
       "evidence": {
         "station_id": 50,
         "source_station_id": 50,
+        "stream_id": 701,
         "timestamp": "2026-09-16T08:00:00+00:00",
         "current_discharge": 32.0,
         "severity_level": 3,
-        "previous_severity_level": 2,
+        "alert_level": "active",
+        "previous_severity_level": 3,
         "current_threshold_m3s": 30.0,
         "return_period_years": 10,
-        "alert_threshold_m3s": 20.0,
+        "alert_threshold_m3s": 30.0,
         "thresholds_m3s": [10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
-        "recent_discharges_m3s": [21.0, 32.0]
+        "recent_discharges_m3s": [31.0, 32.0]
       }
     }
   ],

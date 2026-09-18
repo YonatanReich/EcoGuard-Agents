@@ -66,11 +66,17 @@ class FloodDetectionAgent:
         *,
         cell_id: str,
         observations: list[Mapping[str, Any]],
+        stream_ids: Mapping[int, int] | None = None,
         active_events: Sequence[Mapping[str, Any]] = (),
     ) -> FloodEvaluation:
         """Return lifecycle transitions for one cell without side effects."""
         active_event_keys = {str(event["event_key"]) for event in active_events}
-        candidates = evaluate_cell(cell_id, observations, self.policy)
+        candidates = evaluate_cell(
+            cell_id,
+            observations,
+            self.policy,
+            stream_ids=stream_ids,
+        )
         return FloodEvaluation(
             candidates=[
                 candidate

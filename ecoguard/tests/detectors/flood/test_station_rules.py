@@ -6,6 +6,7 @@ import pytest
 
 from ecoguard.detectors.flood.station_rules import (
     HYDROMETRIC_SOURCE,
+    alert_level,
     evaluate_cell,
     evaluate_resolutions,
     severity_level,
@@ -64,32 +65,88 @@ def test_severity_level_uses_all_six_thresholds(discharge, expected):
     assert severity_level(discharge, THRESHOLDS) == expected
 
 
-def test_q2_is_monitoring_only_and_does_not_open_an_alert():
+def test_q2_is_regular_flow_and_does_not_open_an_alert():
     observations = [
         _observation(NOW - timedelta(minutes=10), 11.0),
         _observation(NOW, 12.0),
     ]
 
+    assert alert_level(1) == "none"
     assert evaluate_cell(CELL, observations) == []
 
 
-def test_two_q5_readings_open_with_the_current_readings_severity():
+@pytest.mark.parametrize(
+    ("severity", "expected"),
+    [
+        (0, "none"),
+        (1, "none"),
+        (2, "monitoring"),
+        (3, "active"),
+        (4, "severe"),
+        (5, "emergency"),
+        (6, "emergency"),
+    ],
+)
+def test_operational_alert_level_mapping(severity, expected):
+    assert alert_level(severity) == expected
+
+
+def test_q5_is_monitoring_only_and_does_not_open_a_flood_alert():
     observations = [
         _observation(NOW - timedelta(minutes=10), 21.0),
-        _observation(NOW, 35.0),
+        _observation(NOW, 22.0),
+    ]
+
+    assert alert_level(2) == "monitoring"
+    assert evaluate_cell(CELL, observations) == []
+
+
+def test_two_q10_readings_open_with_the_current_readings_severity():
+    observations = [
+        _observation(NOW - timedelta(minutes=10), 31.0),
+        _observation(NOW, 45.0),
     ]
 
     candidate = evaluate_cell(CELL, observations)[0]
 
-    assert candidate.evidence["severity_level"] == 3
-    assert candidate.evidence["previous_severity_level"] == 2
-    assert candidate.evidence["current_discharge"] == 35.0
+    assert candidate.evidence["severity_level"] == 4
+    assert candidate.evidence["alert_level"] == "severe"
+    assert candidate.evidence["previous_severity_level"] == 3
+    assert candidate.evidence["current_discharge"] == 45.0
+    assert candidate.severity_hint == "high"
 
 
-def test_one_reading_above_q5_is_not_enough():
+def test_matched_stream_id_is_included_without_affecting_detection():
     observations = [
-        _observation(NOW - timedelta(minutes=10), 19.0),
-        _observation(NOW, 21.0),
+        _observation(NOW - timedelta(minutes=10), 31.0),
+        _observation(NOW, 32.0),
+    ]
+
+    candidate = evaluate_cell(
+        CELL,
+        observations,
+        stream_ids={50: 701},
+    )[0]
+
+    assert candidate.public()["stream_id"] == 701
+    assert candidate.evidence["stream_id"] == 701
+
+
+def test_unmatched_station_returns_null_stream_id():
+    observations = [
+        _observation(NOW - timedelta(minutes=10), 31.0),
+        _observation(NOW, 32.0),
+    ]
+
+    candidate = evaluate_cell(CELL, observations)[0]
+
+    assert candidate.public()["stream_id"] is None
+
+
+def test_one_reading_above_q10_is_not_enough():
+    observations = [
+        _observation(NOW - timedelta(minutes=10), 29.0),
+        _observation(NOW, 31.0),
     ]
 
     assert evaluate_cell(CELL, observations) == []
@@ -97,8 +154,8 @@ def test_one_reading_above_q5_is_not_enough():
 
 def test_large_sample_gap_breaks_persistence():
     observations = [
-        _observation(NOW - timedelta(hours=1), 21.0),
-        _observation(NOW, 22.0),
+        _observation(NOW - timedelta(hours=1), 31.0),
+        _observation(NOW, 32.0),
     ]
 
     assert evaluate_cell(CELL, observations) == []
@@ -128,28 +185,29 @@ def _active_event() -> dict:
     }
 
 
-def test_two_readings_below_80_percent_of_q5_resolve():
+def test_two_readings_below_80_percent_of_q10_resolve():
     observations = [
-        _observation(NOW - timedelta(minutes=10), 15.9),
-        _observation(NOW, 15.0),
+        _observation(NOW - timedelta(minutes=10), 23.9),
+        _observation(NOW, 23.0),
     ]
 
     resolution = evaluate_resolutions(observations, [_active_event()])[0]
 
     assert resolution.reason == "discharge_below_hysteresis_threshold"
-    assert resolution.evidence["exit_threshold_m3s"] == 16.0
+    assert resolution.evidence["exit_threshold_m3s"] == 24.0
+    assert resolution.evidence["stream_id"] is None
 
 
 def test_reading_on_hysteresis_boundary_does_not_resolve():
     observations = [
-        _observation(NOW - timedelta(minutes=10), 15.0),
-        _observation(NOW, 16.0),
+        _observation(NOW - timedelta(minutes=10), 23.0),
+        _observation(NOW, 24.0),
     ]
 
     assert evaluate_resolutions(observations, [_active_event()]) == []
 
 
 def test_one_low_reading_does_not_resolve():
-    observations = [_observation(NOW, 15.0)]
+    observations = [_observation(NOW, 23.0)]
 
     assert evaluate_resolutions(observations, [_active_event()]) == []

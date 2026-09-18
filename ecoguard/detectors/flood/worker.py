@@ -39,6 +39,10 @@ class FloodRepository(Protocol):
         self, cell_ids: Sequence[str]
     ) -> dict[str, list[dict[str, Any]]]: ...
 
+    def load_stream_ids(
+        self, source_station_ids: Sequence[int]
+    ) -> dict[int, int]: ...
+
     def commit_success(
         self,
         candidates: Sequence[FloodCandidate],
@@ -105,6 +109,17 @@ class FloodDetectorWorker:
             observed_since=earliest_new - self.agent.lookback,
             observed_through=latest_new,
         )
+        source_station_ids = sorted(
+            {
+                int(station["source_station_id"])
+                for observation in window
+                for station in (observation.get("payload") or {}).get(
+                    "stations", []
+                )
+                if station.get("source_station_id") is not None
+            }
+        )
+        stream_ids = self.repository.load_stream_ids(source_station_ids)
         active_events = self.repository.load_active_events(cell_ids)
         by_cell: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for observation in window:
@@ -115,6 +130,7 @@ class FloodDetectorWorker:
             evaluation = self.agent.evaluate(
                 cell_id=cell_id,
                 observations=by_cell.get(cell_id, []),
+                stream_ids=stream_ids,
                 active_events=active_events.get(cell_id, []),
             )
             candidates.extend(evaluation.candidates)

@@ -45,9 +45,10 @@ def _observation(observation_id: int, at: datetime, discharge: float) -> dict:
 
 
 class Repository:
-    def __init__(self, pending: PendingBatch, active_events=None):
+    def __init__(self, pending: PendingBatch, active_events=None, stream_ids=None):
         self.pending = pending
         self.active_events = active_events or {}
+        self.stream_ids = stream_ids or {}
         self.commits = []
 
     def load_pending(self, sources, *, limit_per_source):
@@ -60,6 +61,14 @@ class Repository:
     def load_active_events(self, cell_ids):
         return {
             cell_id: self.active_events.get(cell_id, []) for cell_id in cell_ids
+        }
+
+    def load_stream_ids(self, source_station_ids):
+        assert source_station_ids == [50]
+        return {
+            station_id: self.stream_ids[station_id]
+            for station_id in source_station_ids
+            if station_id in self.stream_ids
         }
 
     def commit_success(self, candidates, resolutions, high_watermarks):
@@ -97,20 +106,22 @@ def test_no_new_observations_is_a_no_op():
 
 
 def test_worker_emits_compact_station_result_after_persistence():
-    repository = Repository(_pending(21.0, 32.0))
+    repository = Repository(_pending(31.0, 42.0), stream_ids={50: 701})
 
     result = worker.FloodDetectorWorker(repository).run_once()
 
     assert result.candidates[0]["station_id"] == 50
+    assert result.candidates[0]["stream_id"] == 701
     assert result.candidates[0]["timestamp"] == NOW
-    assert result.candidates[0]["current_discharge"] == 32.0
-    assert result.candidates[0]["severity_level"] == 3
+    assert result.candidates[0]["current_discharge"] == 42.0
+    assert result.candidates[0]["severity_level"] == 4
+    assert result.candidates[0]["alert_level"] == "severe"
     assert result.candidates[0]["trigger"] == "gauge_discharge_threshold"
     assert repository.commits[0][2] == repository.pending.high_watermarks
 
 
 def test_one_high_reading_does_not_open_an_alert_but_advances_cursor():
-    repository = Repository(_pending(19.0, 21.0))
+    repository = Repository(_pending(29.0, 31.0))
 
     result = worker.FloodDetectorWorker(repository).run_once()
 
@@ -118,8 +129,16 @@ def test_one_high_reading_does_not_open_an_alert_but_advances_cursor():
     assert repository.commits[0][2] == repository.pending.high_watermarks
 
 
-def test_worker_resolves_after_two_readings_below_q5_hysteresis():
-    pending = _pending(15.9, 15.0)
+def test_worker_returns_null_stream_id_without_a_confirmed_match():
+    repository = Repository(_pending(31.0, 32.0))
+
+    result = worker.FloodDetectorWorker(repository).run_once()
+
+    assert result.candidates[0]["stream_id"] is None
+
+
+def test_worker_resolves_after_two_readings_below_q10_hysteresis():
+    pending = _pending(23.9, 23.0)
     event_key = f"flood:gauge:{CELL}:50"
     repository = Repository(
         pending,
@@ -141,11 +160,11 @@ def test_worker_resolves_after_two_readings_below_q5_hysteresis():
 
     assert result.candidates == []
     assert result.resolutions[0]["event_key"] == event_key
-    assert result.resolutions[0]["evidence"]["exit_threshold_m3s"] == 16.0
+    assert result.resolutions[0]["evidence"]["exit_threshold_m3s"] == 24.0
 
 
 def test_evaluation_failure_does_not_advance_a_cursor():
-    repository = Repository(_pending(21.0, 22.0))
+    repository = Repository(_pending(31.0, 32.0))
 
     class FailingAgent:
         lookback = timedelta(hours=6)
@@ -163,7 +182,7 @@ def test_evaluation_failure_does_not_advance_a_cursor():
 
 
 def test_stale_backfill_advances_cursor_without_opening_an_alert():
-    pending = _pending(21.0, 22.0)
+    pending = _pending(31.0, 32.0)
     stale = [
         {**observation, "observed_at": NOW - timedelta(days=2), "ingested_at": NOW}
         for observation in pending.observations

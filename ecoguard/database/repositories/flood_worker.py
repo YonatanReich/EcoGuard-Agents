@@ -127,27 +127,18 @@ CELL_CONTEXT = text(
 ).bindparams(bindparam("cell_ids", expanding=True))
 
 
-STATION_CONTEXTS = text(
+STATION_STREAM_IDS = text(
     """
     SELECT station.source_station_id,
-           station.id AS hydrometric_station_id,
-           station.name_he,
-           station.name_en,
-           ST_Y(station.location::geometry) AS latitude,
-           ST_X(station.location::geometry) AS longitude,
-           basin.basin_id,
-           basin.name_he AS basin_name_he,
-           basin.name_en AS basin_name_en,
-           topology.stream_context,
-           topology.downstream_route,
-           topology.refreshed_at AS topology_refreshed_at
+           (topology.stream_context -> 'stream' ->> 'stream_id')::bigint
+             AS stream_id
     FROM hydrometric_stations AS station
-    LEFT JOIN drainage_basins AS basin
-      ON basin.id = station.drainage_basin_id
-    LEFT JOIN flood_station_topology AS topology
+    JOIN flood_station_topology AS topology
       ON topology.hydrometric_station_id = station.id
     WHERE station.source_station_id IN :station_ids
       AND station.flow_threshold_status = 'complete_thresholds'
+      AND topology.stream_context @> '{"matched": true}'::jsonb
+      AND topology.stream_context -> 'stream' ->> 'stream_id' IS NOT NULL
     """
 ).bindparams(bindparam("station_ids", expanding=True))
 
@@ -278,19 +269,19 @@ class FloodWorkerRepository:
                 ).mappings()
             ]
 
-    def load_station_contexts(
+    def load_stream_ids(
         self, source_station_ids: Sequence[int]
-    ) -> dict[int, dict[str, Any]]:
-        """Load materialized station, basin and downstream-route context."""
+    ) -> dict[int, int]:
+        """Load only confidently matched station-to-stream identifiers."""
         if not source_station_ids:
             return {}
         with Session() as session:
             rows = session.execute(
-                STATION_CONTEXTS,
+                STATION_STREAM_IDS,
                 {"station_ids": list(source_station_ids)},
             ).mappings()
             return {
-                int(row["source_station_id"]): dict(row)
+                int(row["source_station_id"]): int(row["stream_id"])
                 for row in rows
             }
 
