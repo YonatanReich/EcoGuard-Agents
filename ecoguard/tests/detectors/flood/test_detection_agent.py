@@ -1,61 +1,52 @@
-"""Contract tests for the current flood detection agent."""
+"""Contract tests for the minimal hydrometric flood detection agent."""
 
 from datetime import datetime, timedelta, timezone
 
 from ecoguard.detectors.flood.detection_agent import FloodDetectionAgent
-from ecoguard.detectors.flood.rules import RAIN_GAUGE_SOURCE
+from ecoguard.detectors.flood.station_rules import HYDROMETRIC_SOURCE
 
 
 NOW = datetime(2026, 9, 16, 8, 0, tzinfo=timezone.utc)
 CELL = "risk-05000m-r0040-c0012"
 
 
-def test_agent_evaluates_an_urban_rain_threshold_crossing():
-    agent = FloodDetectionAgent()
-    observations = [
-        {
-            "id": 9,
-            "source": RAIN_GAUGE_SOURCE,
-            "cell_id": CELL,
-            "observed_at": NOW,
-            "payload": {
-                "stations": [
-                    {
-                        "source_station_id": 205,
-                        "rainfall_mm": 9.0,
-                        "latitude": 32.0,
-                        "longitude": 34.8,
-                    }
-                ]
-            },
-        }
-    ]
-    context = {
+def _observation(at: datetime, discharge: float) -> dict:
+    return {
+        "source": HYDROMETRIC_SOURCE,
         "cell_id": CELL,
-        "latitude": 32.0,
-        "longitude": 34.8,
-        "built_up_fraction": 0.8,
-        "is_urban": True,
-        "urban_classification_status": "classified",
-        "slope_deg": 0.0,
-        "distance_to_stream_m": 1000.0,
+        "observed_at": at,
+        "payload": {
+            "stations": [
+                {
+                    "source_station_id": 50,
+                    "discharge_m3s": discharge,
+                    "latitude": 32.0,
+                    "longitude": 34.8,
+                    "flow_threshold_status": "complete_thresholds",
+                    "flow_threshold_2y_m3s": 10.0,
+                    "flow_threshold_5y_m3s": 20.0,
+                    "flow_threshold_10y_m3s": 30.0,
+                    "flow_threshold_20y_m3s": 40.0,
+                    "flow_threshold_50y_m3s": 50.0,
+                    "flow_threshold_100y_m3s": 60.0,
+                }
+            ]
+        },
     }
 
-    evaluation = agent.evaluate(
-        cell_id=CELL,
-        observations=observations,
-        context=context,
-        baselines={},
-    )
+
+def test_agent_opens_only_after_two_consecutive_q5_readings():
+    agent = FloodDetectionAgent()
+    observations = [
+        _observation(NOW - timedelta(minutes=10), 21.0),
+        _observation(NOW, 22.0),
+    ]
+
+    evaluation = agent.evaluate(cell_id=CELL, observations=observations)
 
     assert len(evaluation.candidates) == 1
-    assert evaluation.candidates[0].trigger == "urban_rain_10m"
-    assert evaluation.candidates[0].severity_hint == "moderate"
+    assert evaluation.candidates[0].evidence["severity_level"] == 2
     assert evaluation.resolutions == []
-
-
-def test_agent_exposes_the_required_observation_lookback():
-    assert FloodDetectionAgent().lookback.total_seconds() >= 24 * 60 * 60
 
 
 def test_agent_rejects_a_delayed_backfill_as_a_realtime_signal():
@@ -70,43 +61,17 @@ def test_agent_rejects_a_delayed_backfill_as_a_realtime_signal():
 def test_agent_does_not_reopen_an_event_that_is_already_active():
     agent = FloodDetectionAgent()
     observations = [
-        {
-            "source": RAIN_GAUGE_SOURCE,
-            "cell_id": CELL,
-            "observed_at": NOW,
-            "payload": {
-                "stations": [
-                    {
-                        "source_station_id": 205,
-                        "rainfall_mm": 9.0,
-                        "latitude": 32.0,
-                        "longitude": 34.8,
-                    }
-                ]
-            },
-        }
+        _observation(NOW - timedelta(minutes=10), 21.0),
+        _observation(NOW, 22.0),
     ]
-    context = {
-        "cell_id": CELL,
-        "latitude": 32.0,
-        "longitude": 34.8,
-        "built_up_fraction": 0.8,
-        "is_urban": True,
-        "urban_classification_status": "classified",
-        "distance_to_stream_m": 1000.0,
-    }
     opened = agent.evaluate(
         cell_id=CELL,
         observations=observations,
-        context=context,
-        baselines={},
     ).candidates[0]
 
     evaluation = agent.evaluate(
         cell_id=CELL,
         observations=observations,
-        context=context,
-        baselines={},
         active_events=[
             {
                 "event_key": opened.event_key,

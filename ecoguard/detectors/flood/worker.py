@@ -14,11 +14,8 @@ from ecoguard.database.repositories.flood_worker import (
     PendingBatch,
 )
 from ecoguard.detectors.flood.detection_agent import FloodDetectionAgent
-from ecoguard.detectors.flood.rules import (
+from ecoguard.detectors.flood.station_rules import (
     FLOOD_SOURCES,
-    HYDROMETRIC_SOURCE,
-    RADAR_SOURCE,
-    RAIN_GAUGE_SOURCE,
     FloodCandidate,
     FloodResolution,
 )
@@ -37,25 +34,6 @@ class FloodRepository(Protocol):
         observed_since: Any,
         observed_through: Any,
     ) -> list[dict[str, Any]]: ...
-
-    def load_context(self, cell_ids: Sequence[str]) -> dict[str, dict[str, Any]]: ...
-
-    def load_basin_rain_window(
-        self,
-        basin_ids: Sequence[int],
-        sources: Sequence[str],
-        *,
-        observed_since: Any,
-        observed_through: Any,
-    ) -> list[dict[str, Any]]: ...
-
-    def load_baselines(
-        self, source_station_ids: Sequence[int]
-    ) -> dict[tuple[int, int], dict[str, Any]]: ...
-
-    def load_station_contexts(
-        self, source_station_ids: Sequence[int]
-    ) -> dict[int, dict[str, Any]]: ...
 
     def load_active_events(
         self, cell_ids: Sequence[str]
@@ -90,19 +68,6 @@ class FloodRunResult:
         }
 
 
-def _hydrometric_station_ids(
-    observations: Sequence[dict[str, Any]],
-) -> list[int]:
-    return sorted(
-        {
-            int(station["source_station_id"])
-            for observation in observations
-            if observation["source"] == HYDROMETRIC_SOURCE
-            for station in (observation.get("payload") or {}).get("stations", [])
-        }
-    )
-
-
 class FloodDetectorWorker:
     """Read new cells, evaluate a full window, then commit cursors on success."""
 
@@ -134,50 +99,23 @@ class FloodDetectorWorker:
         cell_ids = sorted({row["cell_id"] for row in fresh})
         earliest_new = min(row["observed_at"] for row in fresh)
         latest_new = max(row["observed_at"] for row in fresh)
-        context = self.repository.load_context(cell_ids)
         window = self.repository.load_window(
             cell_ids,
             FLOOD_SOURCES,
             observed_since=earliest_new - self.agent.lookback,
             observed_through=latest_new,
         )
-        basin_ids = sorted(
-            {
-                int(item["drainage_basin_id"])
-                for item in context.values()
-                if item.get("drainage_basin_id") is not None
-            }
-        )
-        basin_window = self.repository.load_basin_rain_window(
-            basin_ids,
-            (RAIN_GAUGE_SOURCE, RADAR_SOURCE),
-            observed_since=earliest_new - self.agent.lookback,
-            observed_through=latest_new,
-        )
-        station_ids = _hydrometric_station_ids(window)
-        baselines = self.repository.load_baselines(station_ids)
-        station_contexts = self.repository.load_station_contexts(station_ids)
         active_events = self.repository.load_active_events(cell_ids)
         by_cell: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for observation in window:
             by_cell[observation["cell_id"]].append(observation)
-        by_basin: dict[int, list[dict[str, Any]]] = defaultdict(list)
-        for observation in basin_window:
-            by_basin[int(observation["drainage_basin_id"])].append(observation)
-
         candidates: list[FloodCandidate] = []
         resolutions: list[FloodResolution] = []
         for cell_id in cell_ids:
             evaluation = self.agent.evaluate(
                 cell_id=cell_id,
                 observations=by_cell.get(cell_id, []),
-                context=context.get(cell_id),
-                baselines=baselines,
-                station_contexts=station_contexts,
                 active_events=active_events.get(cell_id, []),
-                catchment_observations=by_basin.get(
-                    context.get(cell_id, {}).get("drainage_basin_id"), []
-                ),
             )
             candidates.extend(evaluation.candidates)
             resolutions.extend(evaluation.resolutions)

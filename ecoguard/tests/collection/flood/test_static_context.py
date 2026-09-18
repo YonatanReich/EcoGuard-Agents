@@ -12,6 +12,7 @@ def test_baselines_exclude_the_current_event_and_track_coverage_per_metric():
     sql = " ".join(str(REBUILD_BASELINES).split())
 
     assert "observed_at < :computed_at - interval '7 days'" in sql
+    assert sql.count("station.flow_threshold_status = 'complete_thresholds'") == 2
     assert "historical_hydrometric_observations" in sql
     assert "hydrometric_station_history_links" in sql
     assert "WHERE NOT observation.is_sewage" in sql
@@ -43,6 +44,7 @@ def test_station_routes_are_built_from_cached_stream_topology():
 
     assert "station.drainage_basin_id" in station_sql
     assert "ST_DWithin" in station_sql
+    assert "station.flow_threshold_status = 'complete_thresholds'" in station_sql
     assert "stream.draining_water_id" in station_sql
     assert "FROM stream_network_nodes AS node" in network_sql
     assert "LEFT JOIN stream_network_edges AS edge" in network_sql

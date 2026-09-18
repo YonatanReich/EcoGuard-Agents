@@ -28,8 +28,6 @@ CONTEXT = {
 
 
 def _gauge(at, discharge, *, q2=10.0, has_rating_curve=True):
-    # Most stations supply the complete curve. The q2 override also lets one
-    # test prove that a partially populated official curve remains usable.
     q5, q10, q20, q50, q100 = (
         (20.0, 30.0, 40.0, 50.0, 60.0)
         if has_rating_curve
@@ -37,6 +35,16 @@ def _gauge(at, discharge, *, q2=10.0, has_rating_curve=True):
     )
     if not has_rating_curve:
         q2 = None
+    thresholds = (q2, q5, q10, q20, q50, q100)
+    threshold_status = (
+        "complete_thresholds"
+        if all(value is not None for value in thresholds)
+        else (
+            "missing_thresholds"
+            if all(value is None for value in thresholds)
+            else "partial_thresholds"
+        )
+    )
     return {
         "source": HYDROMETRIC_SOURCE,
         "cell_id": CELL,
@@ -55,6 +63,7 @@ def _gauge(at, discharge, *, q2=10.0, has_rating_curve=True):
                     "flow_threshold_20y_m3s": q20,
                     "flow_threshold_50y_m3s": q50,
                     "flow_threshold_100y_m3s": q100,
+                    "flow_threshold_status": threshold_status,
                 }
             ]
         },
@@ -102,16 +111,13 @@ def test_all_official_return_periods_contribute_to_severity(
     assert candidate.severity_hint == severity
 
 
-def test_first_available_official_threshold_can_open_an_event():
+def test_partially_populated_threshold_curve_is_not_detector_eligible():
     observations = [
         _gauge(NOW - timedelta(minutes=10), 19.0, q2=None),
         _gauge(NOW, 21.0, q2=None),
     ]
 
-    candidate = evaluate_cell(CELL, observations, CONTEXT, {})[0]
-
-    assert candidate.evidence["opening_return_period_years"] == 5
-    assert candidate.evidence["threshold"] == 20.0
+    assert evaluate_cell(CELL, observations, CONTEXT, {}) == []
 
 
 def test_gauge_does_not_repeat_while_it_remains_above_threshold():
@@ -135,7 +141,7 @@ def test_gauge_finds_a_crossing_when_several_new_samples_arrive_together():
     assert candidate.observed_at == NOW - timedelta(minutes=10)
 
 
-def test_station_month_baseline_is_used_when_rating_curve_is_missing():
+def test_station_without_thresholds_cannot_use_a_mature_discharge_baseline():
     observations = [
         _gauge(NOW - timedelta(minutes=10), 4.0, has_rating_curve=False),
         _gauge(NOW, 6.0, has_rating_curve=False),
@@ -153,10 +159,30 @@ def test_station_month_baseline_is_used_when_rating_curve_is_missing():
         }
     }
 
-    candidate = evaluate_cell(CELL, observations, CONTEXT, baselines)[0]
+    assert evaluate_cell(CELL, observations, CONTEXT, baselines) == []
 
-    assert candidate.trigger == "gauge_discharge_seasonal_baseline"
-    assert candidate.confidence == 0.76
+
+def test_legacy_observation_without_status_cannot_open_from_missing_thresholds():
+    observations = [
+        _gauge(NOW - timedelta(minutes=10), 4.0, has_rating_curve=False),
+        _gauge(NOW, 6.0, has_rating_curve=False),
+    ]
+    for observation in observations:
+        observation["payload"]["stations"][0].pop("flow_threshold_status")
+    baselines = {
+        (50, 9): {
+            "discharge_sample_count": 400,
+            "discharge_distinct_days": 20,
+            "stage_sample_count": 400,
+            "stage_distinct_days": 20,
+            "covered_months": 12,
+            "history_span_days": 365,
+            "discharge_p95_m3s": 5.0,
+            "stage_p95_m": 0.5,
+        }
+    }
+
+    assert evaluate_cell(CELL, observations, CONTEXT, baselines) == []
 
 
 def test_discharge_baseline_does_not_override_an_official_rating_curve():
@@ -180,7 +206,7 @@ def test_discharge_baseline_does_not_override_an_official_rating_curve():
     assert evaluate_cell(CELL, observations, CONTEXT, baselines) == []
 
 
-def test_short_history_is_not_treated_as_a_seasonal_baseline():
+def test_station_without_thresholds_cannot_use_a_mature_stage_baseline():
     observations = [
         _gauge(NOW - timedelta(minutes=10), 4.0, has_rating_curve=False),
         _gauge(NOW, 6.0, has_rating_curve=False),
@@ -191,10 +217,10 @@ def test_short_history_is_not_treated_as_a_seasonal_baseline():
             "discharge_distinct_days": 25,
             "stage_sample_count": 4000,
             "stage_distinct_days": 25,
-            "covered_months": 1,
-            "history_span_days": 30,
+            "covered_months": 12,
+            "history_span_days": 365,
             "discharge_p95_m3s": 5.0,
-            "stage_p95_m": 2.0,
+            "stage_p95_m": 0.5,
         }
     }
 

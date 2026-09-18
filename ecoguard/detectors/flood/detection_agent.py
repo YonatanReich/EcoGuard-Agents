@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Mapping, Sequence
 
-from ecoguard.detectors.flood.rules import (
+from ecoguard.detectors.flood.station_rules import (
     FloodCandidate,
     FloodPolicy,
     FloodResolution,
@@ -66,23 +66,15 @@ class FloodDetectionAgent:
         *,
         cell_id: str,
         observations: list[Mapping[str, Any]],
-        context: Mapping[str, Any] | None,
-        baselines: Mapping[tuple[int, int], Mapping[str, Any]],
+        context: Mapping[str, Any] | None = None,
+        baselines: Mapping[tuple[int, int], Mapping[str, Any]] | None = None,
         station_contexts: Mapping[int, Mapping[str, Any]] | None = None,
         active_events: Sequence[Mapping[str, Any]] = (),
         catchment_observations: list[Mapping[str, Any]] | None = None,
     ) -> FloodEvaluation:
         """Return lifecycle transitions for one cell without side effects."""
         active_event_keys = {str(event["event_key"]) for event in active_events}
-        candidates = evaluate_cell(
-            cell_id,
-            observations,
-            context,
-            baselines,
-            self.policy,
-            catchment_observations,
-            station_contexts,
-        )
+        candidates = evaluate_cell(cell_id, observations, self.policy)
         return FloodEvaluation(
             candidates=[
                 candidate
@@ -91,9 +83,7 @@ class FloodDetectionAgent:
             ],
             resolutions=evaluate_resolutions(
                 observations,
-                context,
                 active_events,
                 self.policy,
-                catchment_observations,
             ),
         )

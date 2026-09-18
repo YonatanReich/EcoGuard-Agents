@@ -1,4 +1,9 @@
-"""Small, deterministic flood rules for gauges, natural cells and cities."""
+"""Legacy multi-signal flood rules retained for reference and comparison.
+
+The production detector imports ``station_rules.py`` instead. This module is
+kept temporarily so the former rain, radar and baseline behaviour remains
+reviewable while the minimal station-only detector is validated.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +22,8 @@ HYDROMETRIC_SOURCE = "water_authority_hydrometric_observations"
 RAIN_GAUGE_SOURCE = "water_authority_rainfall_observations"
 RADAR_SOURCE = "ims_radar_ppi"
 FLOOD_SOURCES = (HYDROMETRIC_SOURCE, RAIN_GAUGE_SOURCE, RADAR_SOURCE)
+FLOW_RETURN_PERIODS = (2, 5, 10, 20, 50, 100)
+FLOW_THRESHOLD_STATUS_COMPLETE = "complete_thresholds"
 
 
 @dataclass(frozen=True)
@@ -504,6 +511,17 @@ def _exceeded_return_period(
     return None
 
 
+def _has_complete_flow_thresholds(station: Mapping[str, Any]) -> bool:
+    """Reject ineligible stations, including legacy payloads without a status."""
+    status = station.get("flow_threshold_status")
+    if status is not None:
+        return status == FLOW_THRESHOLD_STATUS_COMPLETE
+    return all(
+        station.get(f"flow_threshold_{period}y_m3s") is not None
+        for period in FLOW_RETURN_PERIODS
+    )
+
+
 def _gauge_severity(return_period: int | None, ratio: float) -> str:
     if return_period is None:
         return _severity(ratio)
@@ -559,6 +577,21 @@ def _gauge_candidates(
     candidates: list[FloodCandidate] = []
     for station_id, samples in by_station.items():
         samples.sort(key=lambda item: item[0])
+        # An ineligible sample is a hard boundary. Old observations may predate
+        # the explicit catalog status, so the threshold fields provide a safe
+        # compatibility check. This prevents a former [999, ..., 999] station
+        # from contributing to a later crossing after its catalog entry changes.
+        last_ineligible = max(
+            (
+                index
+                for index, (_, station) in enumerate(samples)
+                if not _has_complete_flow_thresholds(station)
+            ),
+            default=-1,
+        )
+        samples = samples[last_ineligible + 1 :]
+        if not samples:
+            continue
         # Search backward for the latest crossing. This still emits when the
         # worker receives several readings at once and the newest two are both
         # above threshold. The deterministic key makes an older crossing a
@@ -579,7 +612,7 @@ def _gauge_candidates(
             )
             official_thresholds = [
                 (period, float(current[f"flow_threshold_{period}y_m3s"]))
-                for period in (2, 5, 10, 20, 50, 100)
+                for period in FLOW_RETURN_PERIODS
                 if current.get(f"flow_threshold_{period}y_m3s") is not None
                 and float(current[f"flow_threshold_{period}y_m3s"]) > 0
             ]
@@ -724,7 +757,7 @@ def _gauge_candidates(
                 "available_return_periods": available_periods,
                 "missing_return_periods": [
                     period
-                    for period in (2, 5, 10, 20, 50, 100)
+                    for period in FLOW_RETURN_PERIODS
                     if period not in available_periods
                 ],
                 "crossed_thresholds": crossed_thresholds,

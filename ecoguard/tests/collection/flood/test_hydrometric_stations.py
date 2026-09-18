@@ -25,7 +25,7 @@ def _response():
                 "lat": 32.8948097229004,
                 "lon": 35.1782989501953,
                 "zoom": 2,
-                "threshold": [17, 37, 48, 60, 999, 999],
+                "threshold": [17, 37, 48, 60, 72, 85],
                 "envista_id": [205, None, 311, None],
                 "owner_id": 2,
                 "level_flow_start": -0.16,
@@ -45,12 +45,26 @@ def test_parses_owners_stations_thresholds_and_rain_links():
     assert station["source_station_id"] == 49
     assert station["flow_start_water_level_m"] == -0.16
     assert station["flow_threshold_2y_m3s"] == 17
-    assert station["flow_threshold_50y_m3s"] is None
-    assert station["flow_threshold_100y_m3s"] is None
+    assert station["flow_threshold_50y_m3s"] == 72
+    assert station["flow_threshold_100y_m3s"] == 85
+    assert station["flow_threshold_status"] == "complete_thresholds"
     assert [(link["rain_station_source_id"], link["link_order"]) for link in catalog.rain_links] == [
         (205, 1),
         (311, 3),
     ]
+
+
+def test_marks_a_station_with_six_provider_sentinels_as_missing_thresholds():
+    response = _response()
+    response[0]["49"]["threshold"] = [999, 999, 999, 999, 999, 999]
+
+    station = parse_hydrometric_station_catalog(response, synced_at=NOW).stations[0]
+
+    assert station["flow_threshold_status"] == "missing_thresholds"
+    assert all(
+        station[f"flow_threshold_{period}y_m3s"] is None
+        for period in (2, 5, 10, 20, 50, 100)
+    )
 
 
 def test_rejects_an_unknown_owner():

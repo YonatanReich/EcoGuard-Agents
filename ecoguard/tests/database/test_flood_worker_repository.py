@@ -19,4 +19,5 @@ def test_station_context_query_reads_materialized_routes_without_spatial_work():
     assert "LEFT JOIN flood_station_topology AS topology" in statement
     assert "topology.stream_context" in statement
     assert "topology.downstream_route" in statement
+    assert "station.flow_threshold_status = 'complete_thresholds'" in statement
     assert "ST_DWithin" not in statement
