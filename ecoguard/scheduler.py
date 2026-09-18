@@ -26,8 +26,57 @@ from ecoguard.collection.fire.gibs.collector import VegetationCollector
 from ecoguard.collection.fire.telegram.collector import TelegramCollector
 from ecoguard.collection.shared.open_meteo.forecast import WeatherForecastCollector
 from ecoguard.collection.shared.open_meteo.observations import WeatherCollector
+from ecoguard.resource_allocator.allocation_agent import ResourceAllocationAgent
 
 logger = logging.getLogger(__name__)
+
+# The allocator exists for the lifetime of the scheduler process, so its static
+# station catalog is loaded once. Availability is not cached here: atomic DB
+# claims keep concurrent scheduler processes in sync.
+resource_allocator = ResourceAllocationAgent()
+
+
+def allocate_resources(processing_results):
+    """Allocate one contended station pool across all eligible fire plans."""
+    requests = []
+    eligible_results = []
+
+    for result in processing_results:
+        response_plan = getattr(result, "planner_result", None)
+        if (
+            getattr(result, "hazard", None) != "fire"
+            or getattr(result, "route", None) != "emergency"
+            or not isinstance(response_plan, dict)
+        ):
+            continue
+
+        eligible_results.append(result)
+        requests.append(
+            {
+                "incident_id": result.incident_id,
+                "queued_at": result.requested_at,
+                "response_plan": response_plan,
+            }
+        )
+
+    if not requests:
+        return {}
+
+    # One batch call is essential: the allocator must compare incidents that
+    # compete for the same stations before making any assignment.
+    allocations = resource_allocator.allocate_batch(requests)
+    allocations_by_incident = {
+        allocation["incident_id"]: allocation
+        for allocation in allocations
+        if isinstance(allocation, dict) and allocation.get("incident_id")
+    }
+
+    for result in eligible_results:
+        result.resource_allocation_result = allocations_by_incident.get(
+            result.incident_id
+        )
+
+    return allocations_by_incident
 
 # Each interval is set by what its source actually publishes, not by a shared
 # default:
@@ -213,6 +262,15 @@ def detect_and_coordinate():
         # a failed detection tick.
         logger.exception("incident dispatch failed after coordination")
         return []
+
+    try:
+        allocate_resources(processing_results)
+    except Exception:
+        # Allocation is downstream of analysis and planning. A routing, DB, or
+        # Mapbox failure must not discard their completed results.
+        logger.exception(
+            "resource allocation failed; processing results are unaffected"
+        )
 
     try:
         from ecoguard.coordinator.event_projection import project_processing_results
