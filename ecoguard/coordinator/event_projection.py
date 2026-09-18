@@ -17,11 +17,14 @@ from ecoguard.database.repositories.event_projections import (
     upsert_event_projection,
 )
 from ecoguard.shared.events import (
+    AirPollutionAdditionalVerification,
     AirPollutionBaselineContext,
     AirPollutionDetails,
     AirPollutionRecommendation,
     AirPollutionSettlement,
+    AirPollutionSettlementContext,
     AirPollutionSharedEvent,
+    AirPollutionPublicationPolicy,
     AirPollutionStation,
     AirPollutionTransportScreening,
     AirPollutionWindEvidence,
@@ -30,6 +33,7 @@ from ecoguard.shared.events import (
     GeoJsonLineString,
     GeoJsonPolygon,
     MinistryAirQualityIndex,
+    OfficialPollutantClassification,
     TransportTimeEvidence,
     VerifiedReference,
 )
@@ -122,11 +126,34 @@ def air_pollution_shared_event(
     wind = None
     transport = None
     settlements = []
+    settlement_context = (
+        AirPollutionSettlementContext.model_validate(
+            candidate.spatial_context.settlement_context.model_dump(mode="json")
+        )
+        if candidate.spatial_context is not None
+        and candidate.spatial_context.settlement_context is not None
+        else None
+    )
     population = None
     trend = None
+    official_classification = None
+    publication = None
+    verification = None
     limitations = []
     if analysis is not None:
         limitations.extend(analysis.limitations)
+        if analysis.official_pollutant_classification is not None:
+            official_classification = OfficialPollutantClassification.model_validate(
+                analysis.official_pollutant_classification.model_dump(mode="json")
+            )
+        if analysis.publication_policy is not None:
+            publication = AirPollutionPublicationPolicy.model_validate(
+                analysis.publication_policy.model_dump(mode="json")
+            )
+        if analysis.additional_verification is not None:
+            verification = AirPollutionAdditionalVerification.model_validate(
+                analysis.additional_verification.model_dump(mode="json")
+            )
         severity = analysis.severity_assessment.result
         if severity is not None:
             index = severity.ministry_index
@@ -165,6 +192,10 @@ def air_pollution_shared_event(
                 evidence_id=wind_evidence.evidence_id,
             )
             spatial = execution.spatial_output
+            if spatial.settlement_context is not None:
+                settlement_context = AirPollutionSettlementContext.model_validate(
+                    spatial.settlement_context.model_dump(mode="json")
+                )
             population_result = analysis.population_impact.result
             geometry_reference = (
                 population_result.geometry_reference
@@ -314,9 +345,13 @@ def air_pollution_shared_event(
                 baseline_content_sha256=baseline.version.content_sha256,
             ),
             ministry_aqi=ministry,
+            official_pollutant_classification=official_classification,
+            publication_policy=publication,
+            additional_verification=verification,
             wind=wind,
             transport=transport,
             relevant_settlements=settlements,
+            settlement_context=settlement_context,
             population_within_screening_corridor=population,
             recommendations=recommendations,
             verified_references=references,

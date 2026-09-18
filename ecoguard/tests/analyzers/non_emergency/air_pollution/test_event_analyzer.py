@@ -130,15 +130,19 @@ def _candidate(*, live_value: float = 21.0, baseline_p95: float = 20.0):
         location=POINT,
         lookup_radius_km=2.0,
         status="success",
-        source="OpenStreetMap / Overpass API",
+        source="shared_postgis_towns",
         collected_at=OBSERVED_AT,
-        provider_collection_status="success",
+        provider_collection_status="SUCCESS_WITH_RESULTS",
+        settlement_context={
+            "status": "success",
+            "outcome": "SUCCESS_WITH_RESULTS",
+            "candidate_count": 1,
+        },
         nearby_settlements=[
             {
                 "name": "East Town",
                 "type": "town",
-                "osm_id": 123,
-                "osm_type": "node",
+                "ref": "5000",
                 "latitude": 32.1,
                 "longitude": 34.81,
             }
@@ -302,6 +306,7 @@ def test_analyzer_composes_existing_wind_corridor_time_and_spatial_output():
     assert execution.spatial_output.corridor_polygon is not None
     assert execution.spatial_output.downwind_to_direction_deg == 90.0
     assert execution.spatial_output.settlements[0].name == "East Town"
+    assert execution.spatial_output.settlement_context.outcome == "SUCCESS_WITH_RESULTS"
     assert execution.spatial_output.settlements[0].kinematic_advection_time_seconds is not None
     assert execution.spatial_output.exposure_not_confirmed is True
     assert any("not confirmed" in item.lower() for item in execution.spatial_output.limitations)

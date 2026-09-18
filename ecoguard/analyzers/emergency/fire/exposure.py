@@ -47,7 +47,7 @@ EXPOSURE_RANK = {BURNING: 0, LIKELY: 1, POSSIBLE: 2}
 
 @lru_cache(maxsize=4)
 def load_localities(path: str | None = None) -> tuple[dict[str, Any], ...]:
-    """Locality outlines, as (properties + ring) records.
+    """Locality outlines, as (properties + rings) records.
 
     Cached because it is read once per incident and never changes within a
     run. Returns a tuple so the cache cannot be mutated by a caller.
@@ -59,13 +59,31 @@ def load_localities(path: str | None = None) -> tuple[dict[str, Any], ...]:
     records = []
     for feature in payload.get("features", ()):
         geometry = feature.get("geometry") or {}
-        if geometry.get("type") != "Polygon":
+        kind = geometry.get("type")
+        coordinates = geometry.get("coordinates") or []
+
+        # A town is one outline or several. Ariel is its built-up area plus a
+        # detached industrial zone two kilometres west; reading only the first
+        # part would report a fire burning in that estate as reaching nothing.
+        if kind == "Polygon":
+            parts = [coordinates]
+        elif kind == "MultiPolygon":
+            parts = coordinates
+        else:
             continue
-        rings = geometry.get("coordinates") or []
-        if not rings or len(rings[0]) < 4:
+
+        # Outer rings only. A hole in a town outline is a park or a quarry, and
+        # a fire in one of those is still a fire in the town.
+        rings = tuple(
+            tuple(tuple(point) for point in part[0])
+            for part in parts
+            if part and len(part[0]) >= 4
+        )
+        if not rings:
             continue
+
         properties = dict(feature.get("properties") or {})
-        records.append({**properties, "ring": tuple(tuple(point) for point in rings[0])})
+        records.append({**properties, "rings": rings})
     return tuple(records)
 
 
@@ -218,6 +236,40 @@ def _reach_on_bearing(radii: Mapping[Any, float], bearing: float) -> float:
     return float(radii[best_key])
 
 
+def _nearest_approach(
+    outlines: Sequence[Sequence[tuple[float, float]]],
+    radii: Mapping[Any, float],
+    horizon: float,
+) -> dict[str, Any]:
+    """`_approach` across every part of a locality, worst case per question.
+
+    Distance and arrival are minimised independently, because they can belong
+    to different parts: a fire west of Ariel is nearest to the industrial
+    estate while the head of the run reaches the town itself first. Taking
+    whichever part is closest and reading both answers off it would report an
+    arrival time for the wrong piece of ground.
+    """
+    best: dict[str, Any] | None = None
+    for outline in outlines:
+        approach = _approach(outline, radii, horizon)
+        if best is None:
+            best = approach
+            continue
+
+        if approach["distance_m"] < best["distance_m"]:
+            best["distance_m"] = approach["distance_m"]
+            best["bearing_deg"] = approach["bearing_deg"]
+
+        theirs, ours = approach["arrival_minutes"], best["arrival_minutes"]
+        if theirs is not None and (ours is None or theirs < ours):
+            best["arrival_minutes"] = theirs
+            best["arrival_bearing_deg"] = approach["arrival_bearing_deg"]
+            best["arrival_distance_m"] = approach["arrival_distance_m"]
+
+    return best or {"distance_m": 0.0, "bearing_deg": 0.0, "arrival_minutes": None,
+                    "arrival_bearing_deg": None, "arrival_distance_m": None}
+
+
 def localities_at_risk(
     latitude: float,
     longitude: float,
@@ -252,20 +304,23 @@ def localities_at_risk(
 
     at_risk = []
     for record in records:
-        outline = _ring_metres(record["ring"], latitude, longitude)
-        if not outline:
+        outlines = [_ring_metres(ring, latitude, longitude) for ring in record["rings"]]
+        outlines = [outline for outline in outlines if outline]
+        if not outlines:
             continue
-        inside = point_in_ring((0.0, 0.0), outline)
-        if inside:
+
+        # Any part burning means the town is burning; any part in the ring
+        # means the town is in the ring.
+        if any(point_in_ring((0.0, 0.0), outline) for outline in outlines):
             status = BURNING
-        elif likely and rings_overlap(likely, outline):
+        elif likely and any(rings_overlap(likely, outline) for outline in outlines):
             status = LIKELY
-        elif possible and rings_overlap(possible, outline):
+        elif possible and any(rings_overlap(possible, outline) for outline in outlines):
             status = POSSIBLE
         else:
             continue
 
-        approach = _approach(outline, radii, horizon)
+        approach = _nearest_approach(outlines, radii, horizon)
         arrival = approach["arrival_minutes"] if status == LIKELY else None
 
         at_risk.append({

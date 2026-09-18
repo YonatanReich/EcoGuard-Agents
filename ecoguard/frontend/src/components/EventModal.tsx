@@ -211,6 +211,8 @@ function AirPollutionEventDetails({ event }: { event: AirPollutionEvent }) {
   const details = event.details
   const baseline = details.historical_baseline
   const ministry = details.ministry_aqi
+  const officialClassification = details.official_pollutant_classification
+  const verification = details.additional_verification
   const transport = details.transport
   const population = details.population_within_screening_corridor
   const insideSettlements = details.relevant_settlements.filter(
@@ -276,10 +278,52 @@ function AirPollutionEventDetails({ event }: { event: AirPollutionEvent }) {
               </dd>
             </div>
             {ministry.pollutant_sub_index != null && <div><dt>Pollutant sub-index</dt><dd>{ministry.pollutant_sub_index}</dd></div>}
+            {officialClassification && (
+              <div>
+                <dt>Official pollutant classification</dt>
+                <dd>{officialClassification.classification.replaceAll('_', ' ')}</dd>
+              </div>
+            )}
             <div><dt>Provider time</dt><dd>{formatTimestamp(ministry.provider_timestamp)}</dd></div>
           </dl>
         ) : <p>Ministry-native air-quality index evidence is unavailable.</p>}
+        {officialClassification?.classification === 'MODERATE' && (
+          <p className="event-modal__semantic-note">
+            Moderate is source-native official context for this pollutant; this event remains a non-emergency advisory.
+          </p>
+        )}
       </section>
+
+      {verification && (
+        <section className="event-modal__section">
+          <h3>Additional verification</h3>
+          <p><strong>{verification.status.replaceAll('_', ' ')}</strong></p>
+          {verification.status === 'NO_EXTERNAL_EVIDENCE' && (
+            <p>No supporting external evidence was found. This does not invalidate the qualified Air Pollution event.</p>
+          )}
+          {verification.status === 'VERIFICATION_UNAVAILABLE' && (
+            <p>Additional verification was unavailable; the qualified event remains visible.</p>
+          )}
+          {verification.status === 'CONTEXT_ONLY' && (
+            <p>Additional source verification was not triggered for this official classification.</p>
+          )}
+          {verification.possible_source_correlations.length > 0 && (
+            <ul>
+              {verification.possible_source_correlations.map((correlation) => (
+                <li key={`${correlation.source_hazard}-${correlation.source_incident_id}`}>
+                  Possible source correlation with Fire incident {correlation.source_incident_id}.
+                  {' '}{correlation.statement}
+                </li>
+              ))}
+            </ul>
+          )}
+          {verification.providers_checked.length > 0 && (
+            <p className="event-modal__semantic-note">
+              Evidence checked: {verification.providers_checked.join(', ')}.
+            </p>
+          )}
+        </section>
+      )}
 
       <section className="event-modal__section">
         <h3>Wind evidence</h3>
@@ -325,7 +369,13 @@ function AirPollutionEventDetails({ event }: { event: AirPollutionEvent }) {
               </li>
             ))}
           </ul>
-        ) : <p>No settlements are identified inside the available screening corridor.</p>}
+        ) : details.settlement_context?.status === 'success' ? (
+          <p>No settlements are identified inside the available screening corridor.</p>
+        ) : details.settlement_context?.outcome === 'REFERENCE_DATA_NOT_LOADED' ? (
+          <p>Settlement screening is unavailable because town reference data has not been loaded.</p>
+        ) : (
+          <p>Settlement screening is unavailable.</p>
+        )}
       </section>
 
       <section className="event-modal__section">

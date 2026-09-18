@@ -307,6 +307,66 @@ def get_police_stations():
         raise HTTPException(status_code=503, detail="Police station data is unavailable.")
 
 
+@app.get("/api/towns/search")
+def search_towns_endpoint(
+    q: str = Query(description="Part of a town name, in Hebrew or English."),
+    limit: int = Query(default=10, ge=1, le=50),
+):
+    """Find settlements by name, for the operator's search box.
+
+    Deliberately geometry-free. The response carries the bounding box and a
+    label point, which is everything the map needs to fly to the town and open
+    a popup inside it; the outline itself is a second request, made once the
+    operator has actually picked one.
+
+    Args:
+        q: any part of the Hebrew or English name.
+        limit: how many matches to return, best first.
+
+    Returns:
+        dict: `{"towns": [...]}`, each with name, population, fire district,
+            responsible police station, authority contact details, `bbox` and
+            `label`.
+
+    Raises:
+        HTTPException: 503 when the store cannot be reached.
+    """
+    from ecoguard.database.repositories.towns import search_towns
+
+    try:
+        return {"towns": search_towns(q, limit=limit)}
+    except Exception as error:
+        logging.error("Town search failed: %s", error, exc_info=True)
+        raise HTTPException(status_code=503, detail="Town data is unavailable.")
+
+
+@app.get("/api/towns/{town_id}")
+def get_town(town_id: str):
+    """One settlement as a GeoJSON Feature, outline included.
+
+    Args:
+        town_id: the id from a search result.
+
+    Returns:
+        dict: a GeoJSON Feature whose properties are the same town record the
+            search endpoint returns.
+
+    Raises:
+        HTTPException: 404 when no such town, 503 when the store is unreachable.
+    """
+    from ecoguard.database.repositories.towns import town_outline
+
+    try:
+        feature = town_outline(town_id)
+    except Exception as error:
+        logging.error("Town lookup failed: %s", error, exc_info=True)
+        raise HTTPException(status_code=503, detail="Town data is unavailable.")
+
+    if feature is None:
+        raise HTTPException(status_code=404, detail=f"No town {town_id!r}.")
+    return feature
+
+
 @app.get("/api/mda-stations")
 def get_mda_stations():
     """Serve the Magen David Adom station roster as GeoJSON points.

@@ -1,0 +1,198 @@
+/*
+ * TownSearch — the settlement search box and the card it opens.
+ *
+ * Positioned top-centre rather than in a corner: the corners are taken by
+ * LayersControl and the navigation cluster, and a search box is the one
+ * control an operator reaches for without looking.
+ */
+
+.town-search {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  width: min(380px, calc(100vw - 140px));
+  font-size: 0.9rem;
+}
+
+.town-search__field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+}
+
+.town-search__icon {
+  color: #64748b;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.town-search__input {
+  flex: 1;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: #111827;
+  font: inherit;
+  min-width: 0;
+}
+
+/* The type="search" widget draws its own clear affordance in WebKit, which
+   would sit next to ours. */
+.town-search__input::-webkit-search-cancel-button { display: none; }
+
+.town-search__clear {
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.town-search__clear:hover { color: #111827; }
+
+.town-search__results {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 4px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.town-search__result {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+  text-align: start;
+  font: inherit;
+}
+
+.town-search__result:hover,
+.town-search__result:focus-visible {
+  background: #e0f2fe;
+  outline: none;
+}
+
+/* Hebrew is the primary name and reads right-to-left; giving it its own
+   direction stops a mixed-script row rendering in the wrong order. */
+.town-search__he {
+  direction: rtl;
+  unicode-bidi: isolate;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.town-search__en {
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.town-search__pop {
+  margin-inline-start: auto;
+  color: #0369a1;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.town-search__empty {
+  margin-top: 6px;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #64748b;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+}
+
+
+/* ---------- the card that opens inside the polygon ---------- */
+
+.town-popup .mapboxgl-popup-content {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #0b1220;
+  color: #e2e8f0;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+
+.town-popup .mapboxgl-popup-tip { border-top-color: #0b1220; }
+
+.town-popup .mapboxgl-popup-close-button {
+  color: #94a3b8;
+  font-size: 1.1rem;
+  padding: 2px 7px;
+}
+
+.town-card__name {
+  direction: rtl;
+  unicode-bidi: isolate;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.town-card__sub {
+  color: #94a3b8;
+  font-size: 0.8rem;
+  margin-top: 1px;
+}
+
+.town-card__population {
+  margin: 9px 0;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: rgba(56, 189, 248, 0.12);
+  font-size: 0.92rem;
+}
+
+.town-card__population strong {
+  font-size: 1.1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.town-card__unknown {
+  color: #94a3b8;
+  font-style: italic;
+}
+
+/* Two columns: label, value. The values are Hebrew and the labels English, so
+   each cell isolates its own direction. */
+.town-card__facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 12px;
+  margin: 0;
+  font-size: 0.84rem;
+}
+
+.town-card__facts dt {
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+.town-card__facts dd {
+  margin: 0;
+  unicode-bidi: isolate;
+  text-align: start;
+}
+
+.town-card__facts a { color: #7dd3fc; }
+
+.town-card__qualifier {
+  color: #94a3b8;
+  font-size: 0.78rem;
+}

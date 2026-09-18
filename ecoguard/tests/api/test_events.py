@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -58,6 +59,10 @@ def _row(*, incident_id=None, payload=None, **overrides):
     incident, result = _successful_result()
     event = air_pollution_shared_event(result, incident)
     event_payload = payload or event.model_dump(mode="json")
+    if event_payload.get("type") == "air_pollution":
+        # EA-371 operational display threshold: use an official MODERATE
+        # pollutant-specific sub-index unless a test supplies another value.
+        event_payload["details"]["ministry_aqi"]["pollutant_sub_index"] = 25.0
     station = event.details.station
     observed_at = event.details.observation_timestamp
     values = {
@@ -239,6 +244,74 @@ def test_different_pollutants_do_not_spatially_corroborate_publication():
 
 def test_same_pollutant_at_different_stations_qualifies_path_a():
     assert len(event_api.shared_event_feed([_row()]).events) == 1
+
+
+def test_qualified_good_event_is_retained_in_projection_but_not_published():
+    row = _row()
+    row["event_payload"]["details"]["ministry_aqi"]["pollutant_sub_index"] = 75.0
+
+    assert row["event_payload"] is not None
+    assert event_api.shared_event_feed([row]).events == []
+
+
+def test_qualified_unknown_official_classification_is_not_published():
+    row = _row()
+    row["event_payload"]["details"]["ministry_aqi"] = None
+
+    assert event_api.shared_event_feed([row]).events == []
+
+
+def test_historical_projection_without_ea371_fields_still_loads():
+    row = _row()
+    details = row["event_payload"]["details"]
+    details.pop("official_pollutant_classification", None)
+    details.pop("publication_policy", None)
+    details.pop("additional_verification", None)
+    details.pop("settlement_context", None)
+
+    event = event_api.shared_event_feed([row]).events[0]
+
+    assert event.details.official_pollutant_classification is None
+    assert event.details.publication_policy is None
+    assert event.details.additional_verification is None
+    assert event.details.settlement_context is None
+
+
+def test_station_wide_category_does_not_override_matching_pollutant_sub_index():
+    row = _row()
+    index = row["event_payload"]["details"]["ministry_aqi"]
+    index["station_category"] = "טובה"
+    index["station_index"] = 80.0
+    index["driving_pollutant"] = "O3"
+    index["pollutant_sub_index"] = 25.0
+
+    assert len(event_api.shared_event_feed([row]).events) == 1
+
+
+@pytest.mark.parametrize(
+    "verification_status",
+    ["NO_EXTERNAL_EVIDENCE", "VERIFICATION_UNAVAILABLE"],
+)
+def test_low_event_remains_visible_for_non_corroborating_verification_states(
+    verification_status,
+):
+    row = _row()
+    details = row["event_payload"]["details"]
+    details["ministry_aqi"]["pollutant_sub_index"] = -25.0
+    details["additional_verification"] = {
+        "status": verification_status,
+        "checked_at": NOW.isoformat(),
+        "providers_checked": ["NASA FIRMS", "IMS"],
+        "evidence_references": [],
+        "reason": "test_verification_state",
+        "limitations": ["Possible source correlation only."],
+        "possible_source_correlations": [],
+    }
+
+    event = event_api.shared_event_feed([row]).events[0]
+
+    assert event.details.additional_verification.status == verification_status
+    assert event.classification == "advisory"
 
 
 def test_same_station_persistence_without_negative_pollutant_aqi_is_internal():

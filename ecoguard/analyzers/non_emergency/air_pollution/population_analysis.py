@@ -22,7 +22,7 @@ POPULATION_LIMITATIONS = [
     "This is estimated population geographically located within a screening corridor, not an affected or exposed population count.",
     "The screening corridor is not a physical plume and does not confirm pollutant transport or inhalation.",
     "Dataset source, version, reference year, and checksum are not currently available through the shared database layer.",
-    "Per-settlement population is unavailable because authoritative locality polygons and codes are not integrated.",
+    "Per-settlement corridor population is unavailable because whole-town population metadata is not apportioned to the screening corridor.",
 ]
 
 
