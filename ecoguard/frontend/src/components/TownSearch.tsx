@@ -2,9 +2,11 @@
  * TownSearch — find a settlement by name, frame it, and read its details.
  *
  * The operator types a name in Hebrew or English, picks from the matches, and
- * the map flies to that town with its outline drawn and a card open inside it:
- * population, which fire district it falls in, which police station answers
- * for it, and the local authority's phone number.
+ * the map flies to that town with its outline drawn. The card is not forced on
+ * them: hovering the outline shows it, moving off hides it again, and clicking
+ * pins it until it is closed. Picking a town answers "where is it"; the details
+ * — population, fire district, responsible police station, the authority's
+ * phone number — are asked for separately.
  *
  * Two requests, not one. Search returns no geometry — the operator may type
  * six characters before choosing, and shipping polygons per keystroke to
@@ -74,6 +76,28 @@ const FIT_PADDING = { top: 90, bottom: 180, left: 80, right: 80 }
  */
 const MAX_FIT_ZOOM = 14.5
 
+/**
+ * How long the card is kept mounted after it is dismissed.
+ *
+ * Unmounting on the same frame as the close leaves nothing to animate, so the
+ * popup outlives its own dismissal by exactly the length of the exit
+ * animation. Must match the --closing duration in townsearch.css.
+ */
+const CLOSE_MS = 150
+
+/**
+ * Grace period between the pointer leaving the outline and the card fading.
+ *
+ * A town is often several disjoint parts — Ariel is six, its built-up area
+ * plus the industrial estate — and crossing the gap between two of them fires
+ * mouseleave then mouseenter. Without this pause the card would blink every
+ * time the pointer crossed open ground inside the town it is describing.
+ */
+const LEAVE_GRACE_MS = 90
+
+/** The drawn outline's fill, which is what the pointer interacts with. */
+const FILL_LAYER_ID = 'town-selected-fill'
+
 
 function TownSearch() {
   const { current: map } = useMap()
@@ -84,6 +108,27 @@ function TownSearch() {
   const [selected, setSelected] = useState<Town | null>(null)
   const [outline, setOutline] = useState<TownFeature | null>(null)
   const [searching, setSearching] = useState(false)
+
+  /**
+   * Two ways for the card to be up, and they behave differently.
+   *
+   * `hovered` follows the pointer and is transient. `pinned` is a deliberate
+   * click and stays until dismissed. A pin outranks a hover, so moving the
+   * pointer off a pinned town does not take its card away.
+   */
+  const [hovered, setHovered] = useState<Town | null>(null)
+  const [pinned, setPinned] = useState<Town | null>(null)
+  const [closing, setClosing] = useState(false)
+  const closeTimer = useRef<number | null>(null)
+
+  // The pointer-leave handler has to know whether a pin is up. Reading it from
+  // a ref rather than the closure keeps the listener effect from re-binding on
+  // every pin, and keeps the check out of a state updater, which React is
+  // free to run twice.
+  const pinnedRef = useRef<Town | null>(null)
+  useEffect(() => { pinnedRef.current = pinned }, [pinned])
+
+  const leaveTimer = useRef<number | null>(null)
 
   // Identifies the most recent request, so a slow early response cannot
   // overwrite the results of a later, faster one.
@@ -123,7 +168,89 @@ function TownSearch() {
     return () => clearTimeout(timer)
   }, [needle, tooShort])
 
+  // Unmounting on the same frame as the close would leave nothing to animate,
+  // so the card is held for the length of the exit animation first.
+  const dismiss = useCallback(() => {
+    if (closeTimer.current !== null) return
+    setClosing(true)
+    closeTimer.current = window.setTimeout(() => {
+      setHovered(null)
+      setPinned(null)
+      setClosing(false)
+      closeTimer.current = null
+    }, CLOSE_MS)
+  }, [])
+
+  const cancelDismiss = useCallback(() => {
+    if (closeTimer.current !== null) {
+      window.clearTimeout(closeTimer.current)
+      closeTimer.current = null
+    }
+    setClosing(false)
+  }, [])
+
+  const cancelLeave = useCallback(() => {
+    if (leaveTimer.current !== null) {
+      window.clearTimeout(leaveTimer.current)
+      leaveTimer.current = null
+    }
+  }, [])
+
+  useEffect(() => () => {
+    if (closeTimer.current !== null) window.clearTimeout(closeTimer.current)
+    if (leaveTimer.current !== null) window.clearTimeout(leaveTimer.current)
+  }, [])
+
+  // Hover and click on the drawn outline. Bound to the layer rather than the
+  // canvas, so the pointer leaving the polygon for the basemap counts as
+  // leaving even without leaving the map.
+  useEffect(() => {
+    if (!map || !selected) return
+
+    const show = () => {
+      cancelLeave()
+      cancelDismiss()
+      setHovered(selected)
+      map.getCanvas().style.cursor = 'pointer'
+    }
+
+    const hide = () => {
+      map.getCanvas().style.cursor = ''
+      // A pinned card is not the pointer's to take away.
+      if (pinnedRef.current || leaveTimer.current !== null) return
+      leaveTimer.current = window.setTimeout(() => {
+        leaveTimer.current = null
+        dismiss()
+      }, LEAVE_GRACE_MS)
+    }
+
+    const pin = () => {
+      cancelLeave()
+      cancelDismiss()
+      setPinned(selected)
+      setHovered(selected)
+    }
+
+    map.on('mouseenter', FILL_LAYER_ID, show)
+    map.on('mouseleave', FILL_LAYER_ID, hide)
+    map.on('click', FILL_LAYER_ID, pin)
+
+    return () => {
+      map.off('mouseenter', FILL_LAYER_ID, show)
+      map.off('mouseleave', FILL_LAYER_ID, hide)
+      map.off('click', FILL_LAYER_ID, pin)
+      map.getCanvas().style.cursor = ''
+    }
+  }, [map, selected, dismiss, cancelDismiss, cancelLeave])
+
   const choose = useCallback((town: Town) => {
+    // No card on selection: flying somewhere answers "where", not "what". The
+    // previous town's card goes immediately — it describes a place the map is
+    // no longer looking at.
+    cancelLeave()
+    cancelDismiss()
+    setHovered(null)
+    setPinned(null)
     setSelected(town)
     setOpen(false)
     setQuery(town.name_he)
@@ -149,14 +276,22 @@ function TownSearch() {
         )
       })
       .catch(() => undefined)
-  }, [map])
+  }, [map, cancelDismiss, cancelLeave])
+
+  // A pin outranks a hover, so the card does not swap to a different town
+  // just because the pointer wandered.
+  const shown = pinned ?? hovered
 
   const clear = useCallback(() => {
+    cancelLeave()
+    cancelDismiss()
     setSelected(null)
     setOutline(null)
+    setHovered(null)
+    setPinned(null)
     setQuery('')
     setResults([])
-  }, [])
+  }, [cancelDismiss, cancelLeave])
 
   return (
     <>
@@ -218,7 +353,7 @@ function TownSearch() {
       {outline && (
         <Source id="town-selected" type="geojson" data={outline}>
           <Layer
-            id="town-selected-fill"
+            id={FILL_LAYER_ID}
             type="fill"
             paint={{ 'fill-color': '#38bdf8', 'fill-opacity': 0.22 }}
           />
@@ -230,27 +365,37 @@ function TownSearch() {
         </Source>
       )}
 
-      {selected && (
+      {shown && (
         <Popup
-          longitude={selected.label.longitude}
-          latitude={selected.label.latitude}
+          key={shown.town_id}
+          longitude={shown.label.longitude}
+          latitude={shown.label.latitude}
           anchor="bottom"
           offset={12}
           closeOnClick={false}
           maxWidth="320px"
-          className="town-popup"
-          onClose={() => setSelected(null)}
+          // A hovered card has no close button — there is nothing to close,
+          // moving the pointer away is the dismissal — and it must not eat
+          // pointer events, or opening over the cursor would immediately read
+          // as leaving the polygon and flicker the card away.
+          closeButton={Boolean(pinned)}
+          className={[
+            'town-popup',
+            closing ? 'town-popup--closing' : 'town-popup--open',
+            pinned ? 'town-popup--pinned' : 'town-popup--transient',
+          ].join(' ')}
+          onClose={dismiss}
         >
           <div className="town-card">
-            <div className="town-card__name">{selected.name_he}</div>
+            <div className="town-card__name">{shown.name_he}</div>
             <div className="town-card__sub">
-              {selected.name_en}
-              {selected.place ? ` · ${selected.place}` : ''}
+              {shown.name_en}
+              {shown.place ? ` · ${shown.place}` : ''}
             </div>
 
             <div className="town-card__population">
-              {selected.population != null
-                ? <><strong>{selected.population.toLocaleString()}</strong> residents</>
+              {shown.population != null
+                ? <><strong>{shown.population.toLocaleString()}</strong> residents</>
                 // Population is only known for about one town in seven — OSM
                 // tags it on cities and rarely on villages. Saying so beats
                 // showing a zero the operator might act on.
@@ -258,37 +403,37 @@ function TownSearch() {
             </div>
 
             <dl className="town-card__facts">
-              {selected.fire_district && (
-                <><dt>Fire district</dt><dd>{selected.fire_district}</dd></>
+              {shown.fire_district && (
+                <><dt>Fire district</dt><dd>{shown.fire_district}</dd></>
               )}
-              {selected.police_station && (
-                <><dt>Police</dt><dd>{selected.police_station}</dd></>
+              {shown.police_station && (
+                <><dt>Police</dt><dd>{shown.police_station}</dd></>
               )}
-              {selected.authority && (
-                <><dt>Authority</dt><dd>{selected.authority}</dd></>
+              {shown.authority && (
+                <><dt>Authority</dt><dd>{shown.authority}</dd></>
               )}
-              {selected.authority_phone && (
+              {shown.authority_phone && (
                 <>
                   <dt>Phone</dt>
                   <dd>
-                    <a href={`tel:${selected.authority_phone.replace(/[^0-9+]/g, '')}`}>
-                      {selected.authority_phone}
+                    <a href={`tel:${shown.authority_phone.replace(/[^0-9+]/g, '')}`}>
+                      {shown.authority_phone}
                     </a>
                   </dd>
                 </>
               )}
-              {selected.households != null && (
-                <><dt>Households</dt><dd>{selected.households.toLocaleString()}</dd></>
+              {shown.households != null && (
+                <><dt>Households</dt><dd>{shown.households.toLocaleString()}</dd></>
               )}
-              {selected.area_km2 != null && (
+              {shown.area_km2 != null && (
                 <>
                   <dt>Area</dt>
                   <dd>
-                    {selected.area_km2.toFixed(2)} km²
+                    {shown.area_km2.toFixed(2)} km²
                     {/* A municipal-boundary outline is the jurisdiction, not
                         the built-up town, and is the larger of the two. Say so
                         rather than letting the number read as the town. */}
-                    {selected.outline_source === 'municipal boundary' && (
+                    {shown.outline_source === 'municipal boundary' && (
                       <span className="town-card__qualifier"> (municipal area)</span>
                     )}
                   </dd>

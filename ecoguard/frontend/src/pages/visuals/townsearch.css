@@ -130,6 +130,68 @@
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
 }
 
+/*
+ * Keyframes rather than transitions, for the same reason firestationpopup.css
+ * gives: react-map-gl builds the Mapbox popup once, in a useMemo with an empty
+ * dependency list, so the element enters the DOM already carrying --open and a
+ * transition has no earlier state to move from. An animation plays regardless.
+ */
+@keyframes town-card-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.94); }
+  /* Opaque well before it settles, so it reads as arriving rather than
+   * swimming into view. */
+  45%  { opacity: 1; }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes town-card-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(3px) scale(0.97); }
+}
+
+@keyframes town-tip-in  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes town-tip-out { from { opacity: 1; } to { opacity: 0; } }
+
+.town-popup--open .mapboxgl-popup-content {
+  /* The slight overshoot in this curve is what makes it feel placed rather
+   * than faded in. */
+  animation: town-card-in 200ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
+}
+
+.town-popup--open .mapboxgl-popup-tip {
+  animation: town-tip-in 110ms ease-out both;
+}
+
+/* Must match CLOSE_MS in TownSearch.tsx, or the card is unmounted mid-fade. */
+.town-popup--closing .mapboxgl-popup-content {
+  animation: town-card-out 150ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+.town-popup--closing .mapboxgl-popup-tip {
+  animation: town-tip-out 110ms ease-in both;
+}
+
+/*
+ * A hover card must never take the pointer. It opens at the polygon's label
+ * point, which can be under the cursor; if it captured the pointer, the map
+ * would fire mouseleave on the polygon underneath and the card would flicker
+ * itself out of existence. A pinned card has a close button and a phone link,
+ * so it takes events normally.
+ */
+.town-popup--transient .mapboxgl-popup-content,
+.town-popup--transient .mapboxgl-popup-tip {
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .town-popup--open .mapboxgl-popup-content,
+  .town-popup--open .mapboxgl-popup-tip,
+  .town-popup--closing .mapboxgl-popup-content,
+  .town-popup--closing .mapboxgl-popup-tip {
+    animation: none;
+  }
+}
+
 .town-popup .mapboxgl-popup-tip { border-top-color: #0b1220; }
 
 .town-popup .mapboxgl-popup-close-button {
