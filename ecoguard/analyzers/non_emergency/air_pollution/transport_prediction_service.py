@@ -13,6 +13,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Literal, Protocol
 
+from dotenv import load_dotenv
 from pydantic import Field
 
 from ecoguard.detectors.air_pollution.schemas import ContractModel, GeographicCoordinate
@@ -46,6 +47,10 @@ TRANSPORT_MAX_DISTANCE_ENV = "AIR_POLLUTION_TRANSPORT_MAX_DISTANCE_M"
 TRANSPORT_ARC_SEGMENTS_ENV = "AIR_POLLUTION_TRANSPORT_ARC_SEGMENT_COUNT"
 WIND_MAX_AGE_MINUTES_ENV = "AIR_POLLUTION_WIND_MAX_AGE_MINUTES"
 TRANSPORT_MIN_WIND_SPEED_ENV = "AIR_POLLUTION_TRANSPORT_MIN_WIND_SPEED_MPS"
+
+# Match the repository's existing backend configuration convention. This is
+# intentionally non-overriding: explicit process variables still win.
+load_dotenv()
 
 
 class AirPollutionTransportConfigurationError(RuntimeError):
@@ -332,6 +337,11 @@ class AirPollutionTransportPredictionService:
             validated.anomaly.location,
             corridor_with_time,
             arc_segment_count=self.configuration.arc_segment_count,
+            settlement_context=(
+                validated.spatial_context.settlement_context
+                if validated.spatial_context is not None
+                else None
+            ),
         )
         return AirPollutionTransportPredictionExecution(
             analysis_origin=origin,

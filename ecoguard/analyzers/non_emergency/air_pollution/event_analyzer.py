@@ -7,9 +7,9 @@ from ecoguard.detectors.air_pollution.correlation import PollutionCorrelationCan
 from ecoguard.analyzers.non_emergency.air_pollution.event_analysis_schemas import (
     AirPollutionAnalysisInput,
     AirPollutionEventAnalysis,
+    AirPollutionTrendPrediction,
     AnalysisComponent,
     EventSeverityAssessment,
-    PollutantConcentrationPrediction,
     PopulationImpactContext,
 )
 from ecoguard.analyzers.non_emergency.air_pollution.transport_schemas import TransportEvidenceReference
@@ -21,12 +21,14 @@ from ecoguard.analyzers.non_emergency.air_pollution.population_analysis import (
     AirPollutionPopulationAnalysisService,
 )
 from ecoguard.shared.ministry_air_quality_client import MinistryAirQualityClient
+from ecoguard.analyzers.non_emergency.air_pollution.trend_inference_service import (
+    AirPollutionTrendInferenceService,
+)
 
 ANALYZER_LIMITATIONS = [
     "Transport output is deterministic screening, not proof of pollutant transport or exposure.",
     "The monitoring location is not assumed to be an emission source.",
     "Ministry index evidence is source-native context, not an EcoGuard LOW/MEDIUM/HIGH severity tier.",
-    "Trend prediction remains unavailable without an approved method.",
 ]
 
 
@@ -39,11 +41,13 @@ class AirPollutionNonEmergencyAnalyzer:
         transport_service: AirPollutionTransportPredictionService | None,
         ministry_index_client: MinistryAirQualityClient | None = None,
         population_service: AirPollutionPopulationAnalysisService | None = None,
+        trend_inference_service: AirPollutionTrendInferenceService | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
         self._transport_service = transport_service
         self._ministry_index_client = ministry_index_client
         self._population_service = population_service
+        self._trend_inference_service = trend_inference_service
         self._clock = clock
 
     def analyze(self, analysis_input: AirPollutionAnalysisInput) -> AirPollutionEventAnalysis:
@@ -57,14 +61,11 @@ class AirPollutionNonEmergencyAnalyzer:
         transport = self._transport_component(validated)
         population = self._population_component(validated, transport, generated_at)
         severity = self._severity_component(validated)
-        unavailable_prediction = AnalysisComponent[PollutantConcentrationPrediction](
-            status="unavailable",
-            unavailable_reason="trend_prediction_not_implemented",
-        )
+        prediction = self._trend_component(validated)
         component_statuses = (
             validated.current_state.status,
             severity.status,
-            unavailable_prediction.status,
+            prediction.status,
             transport.status,
             population.status,
         )
@@ -80,11 +81,38 @@ class AirPollutionNonEmergencyAnalyzer:
             generated_at=generated_at,
             status=status,
             severity_assessment=severity,
-            future_prediction=unavailable_prediction,
+            future_prediction=prediction,
             transport_analysis=transport,
             population_impact=population,
             limitations=list(dict.fromkeys([*ANALYZER_LIMITATIONS, *population.limitations])),
         )
+
+    def _trend_component(
+        self, analysis_input: AirPollutionAnalysisInput
+    ) -> AnalysisComponent[AirPollutionTrendPrediction]:
+        if self._trend_inference_service is None:
+            return AnalysisComponent[AirPollutionTrendPrediction](
+                status="unavailable",
+                unavailable_reason="trend_inference_service_unavailable",
+            )
+        matches = self._origin_candidates(analysis_input)
+        if not matches:
+            return AnalysisComponent[AirPollutionTrendPrediction](
+                status="unavailable",
+                unavailable_reason="analysis_origin_detection_unavailable",
+            )
+        if len(matches) != 1:
+            return AnalysisComponent[AirPollutionTrendPrediction](
+                status="unavailable",
+                unavailable_reason="ambiguous_origin_series",
+            )
+        try:
+            return self._trend_inference_service.predict(matches[0])
+        except Exception:
+            return AnalysisComponent[AirPollutionTrendPrediction](
+                status="unavailable",
+                unavailable_reason="trend_inference_failure",
+            )
 
     def _population_component(
         self,
@@ -227,14 +255,30 @@ class AirPollutionNonEmergencyAnalyzer:
     def _origin_candidate(
         analysis_input: AirPollutionAnalysisInput,
     ) -> PollutionCorrelationCandidate | None:
+        matches = AirPollutionNonEmergencyAnalyzer._origin_candidates(analysis_input)
+        return matches[0] if matches else None
+
+    @staticmethod
+    def _origin_candidates(
+        analysis_input: AirPollutionAnalysisInput,
+    ) -> list[PollutionCorrelationCandidate]:
         state = analysis_input.current_state.result
         if state is None:
-            return None
-        origin = analysis_input.analysis_origin.analysis_origin_coordinates
-        return next(
-            (item for item in state.detections if item.anomaly.location == origin),
-            None,
+            return []
+        referenced_ids = set(
+            analysis_input.analysis_origin.evidence_reference_ids
         )
+        referenced = [
+            item
+            for item in state.detections
+            if item.anomaly.detection_id in referenced_ids
+        ]
+        if referenced:
+            return referenced
+        origin = analysis_input.analysis_origin.analysis_origin_coordinates
+        return [
+            item for item in state.detections if item.anomaly.location == origin
+        ]
 
     @staticmethod
     def _transport_evidence(

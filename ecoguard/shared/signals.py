@@ -68,7 +68,7 @@ FIRE = "fire"
 FIRE_WEATHER = "fire_weather"
 
 FLOOD = "flood"
-AIR_QUALITY = "air_quality"
+AIR_POLLUTION = "air_pollution"
 HEAT = "heat"
 
 # --- which tail is the concerning one --------------------------------------
@@ -108,10 +108,10 @@ CONCERNING_DIRECTION: dict[tuple[str, str], str] = {
     (FLOOD, "precipitation"): HIGH,
     (FLOOD, "soil_moisture_0_to_7cm"): HIGH,
     (FLOOD, "water_level"): HIGH,
-    (AIR_QUALITY, "pm25"): HIGH,
-    (AIR_QUALITY, "pm10"): HIGH,
-    (AIR_QUALITY, "ozone"): HIGH,
-    (AIR_QUALITY, "no2"): HIGH,
+    (AIR_POLLUTION, "pm25"): HIGH,
+    (AIR_POLLUTION, "pm10"): HIGH,
+    (AIR_POLLUTION, "ozone"): HIGH,
+    (AIR_POLLUTION, "no2"): HIGH,
     (HEAT, "temperature_2m"): HIGH,
 }
 
@@ -262,8 +262,9 @@ class CellSignal:
     unit: str
     source: str
 
-    # How unusual, 0..1. None when no baseline exists for this cell yet — an
-    # honest "not assessed", which must never be read as "assessed and fine".
+    # How unusual, 0..1. None when no comparable numeric rarity was assessed —
+    # for example when a detector establishes only that a threshold was
+    # exceeded. This must never be read as "assessed and fine".
     rarity: float | None
     direction: str
     baseline: Baseline | None = None
@@ -275,7 +276,9 @@ class CellSignal:
     location: "CellLocation | None" = None
 
     # How much the reading itself can be trusted, before asking what it means.
-    confidence: float = 1.0
+    # None means the detector does not assess observation confidence. The
+    # default remains 1.0 for compatibility with existing signal producers.
+    confidence: float | None = 1.0
 
     # How dangerous. Left None by detectors on purpose; the analysers fill it.
     # See the module docstring for why this is not merged into rarity.

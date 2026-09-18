@@ -14,6 +14,7 @@ from ecoguard.shared.protocols import ProtocolRetriever
 from ecoguard.tests.analyzers.non_emergency.air_pollution.test_event_analyzer import (
     GENERATED_AT,
     _analysis_input,
+    _trend_component,
     _transport_service,
 )
 
@@ -231,6 +232,17 @@ def test_unknown_or_unverified_evidence_reference_fails_closed():
     assert result.plan.actions == []
 
 
+def test_trend_model_evidence_is_available_for_grounding():
+    analysis, _ = _analysis(with_transport=False)
+    analysis = analysis.model_copy(
+        update={"future_prediction": _trend_component()}
+    )
+
+    assert "trend-ml:test" in AirPollutionResponsePlanner._analysis_evidence_ids(
+        analysis
+    )
+
+
 def test_missing_guidance_or_model_failure_is_safe():
     analysis, _ = _analysis()
     no_guidance = _planner(chunks=[])[0].plan_response(analysis)
@@ -269,5 +281,5 @@ def test_planner_does_not_repeat_detector_or_analyzer_science():
     prompt = llm.calls[0]["user_text"]
     assert analysis.current_state.result.detections[0].anomaly.detector_rule_version in prompt
     assert "ministry_air_quality_index_service_unavailable" in prompt
-    assert "trend_prediction_not_implemented" in prompt
+    assert "trend_inference_service_unavailable" in prompt
     assert "shared_population_service_unavailable" in prompt

@@ -157,21 +157,20 @@ scheduler.add_job(
 )
 
 
-def detect_and_coordinate() -> None:
-    """Sweep the stored hours for candidates and fold them into incidents.
+def detect_and_coordinate():
+    """Sweep stored observations for shared hazard signals and coordinate once.
 
-    One job rather than two because the coordinator deduplicates *across*
-    detectors: handing it satellite hotspots now and fire weather ten minutes
-    later would let the same fire open an incident twice, once per arrival.
-    Every detector's output goes into one call, which is the whole reason that
-    stage exists.
+    The two detectors intentionally emit separate hazard streams. Satellite
+    hotspots emit ``fire`` signals for emergency routing; weather anomalies
+    emit ``fire_weather`` signals for separate non-emergency advisories. The
+    Coordinator currently has no FIRE-to-FIRE_WEATHER corroboration or
+    association rule, so batching them does not merge one into the other.
 
     The satellite comes first in the list for readability only — the
-    coordinator sorts by observation time — but the distinction it stands for
-    matters. FIRMS *sees* fires; the weather sweep sees the conditions they
-    spread in and cannot detect a fire at all, because the feed is a numerical
-    model that has no knowledge one exists. Corroboration between the two is
-    what turns a lone hotspot into a confident incident.
+    Coordinator sorts by observation time. FIRMS *sees* fires; the weather
+    sweep sees conditions under which a fire could spread and cannot detect a
+    fire, because the feed is a numerical model with no knowledge that one
+    exists.
 
     A detector that raises must not take the others down with it, so each is
     called separately. Losing the satellite for a tick is a detection outage;
@@ -189,17 +188,43 @@ def detect_and_coordinate() -> None:
     their own, and were running before any of this existed.
     """
     from ecoguard.coordinator.agent import run as coordinate
+    from ecoguard.detectors.air_pollution import observation_processing
     from ecoguard.detectors.fire import satellite, weather
 
     signals = []
-    for detector in (satellite, weather):
+    for detector in (satellite, weather, observation_processing):
         try:
             signals.extend(detector.detect_new())
         except Exception:
             logger.exception("detector %s failed; continuing without it",
                              detector.__name__)
 
-    coordinate(signals)
+    coordination = coordinate(signals)
+    if coordination is None:
+        return []
+
+    try:
+        from ecoguard.coordinator.dispatcher import dispatch_touched
+
+        processing_results = dispatch_touched(coordination.touched_ids)
+    except Exception:
+        # Incidents are already safely persisted. Analysis/planning is a
+        # downstream attempt and must never turn successful coordination into
+        # a failed detection tick.
+        logger.exception("incident dispatch failed after coordination")
+        return []
+
+    try:
+        from ecoguard.coordinator.event_projection import project_processing_results
+
+        project_processing_results(processing_results)
+    except Exception:
+        # Projection is delivery state. It must not erase completed processing
+        # or affect the authoritative persisted Coordinator incident.
+        logger.exception(
+            "incident event projection failed; processing results are unaffected"
+        )
+    return processing_results
 
 
 # Every thirty minutes, set by the satellite rather than the weather.

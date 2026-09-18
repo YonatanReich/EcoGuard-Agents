@@ -1,20 +1,31 @@
 """Bounded shared-observation to Air Pollution detector connection.
 
-This module owns no schedule, cursor, persistence, retry loop, candidate store,
-or downstream routing. It reads a caller-selected batch, strips the collection
-envelope explicitly, performs the active baseline lookup, and returns one
-detector result for every input row in the same order.
+This module owns no schedule, candidate store, or downstream routing. It reads
+a caller-selected batch, strips the collection envelope explicitly, performs
+the active baseline lookup, and returns one detector result for every input row
+in the same order. ``detect_new`` is the scheduled detector entry point: it
+uses the shared ``collector_runs`` bookmark and leaves scheduling and
+coordination to the shared runtime.
 """
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Iterable, Mapping
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from pydantic import AwareDatetime, Field, ValidationError
 
 from ecoguard.detectors.air_pollution.detector import AirPollutionAnomalyDetector
+from ecoguard.detectors.air_pollution.cell_signal_adapter import (
+    AirPollutionCellSignalAdapterError,
+    air_pollution_detection_to_cell_signal,
+)
+from ecoguard.detectors.air_pollution.correlation import correlation_candidate
+from ecoguard.detectors.air_pollution.spatial_enrichment import (
+    AirPollutionSpatialEnricher,
+)
 from ecoguard.detectors.air_pollution.schemas import (
     AnomalyContract,
     AirPollutionDetectionResult,
@@ -25,8 +36,13 @@ from ecoguard.detectors.air_pollution.live_baseline import (
     AirPollutionLiveBaselineContextService,
 )
 from ecoguard.shared.air_quality_schemas import AirQualityObservation
+from ecoguard.shared.signals import CellSignal
+
+logger = logging.getLogger(__name__)
 
 AIR_POLLUTION_SOURCE = "air_pollution"
+RUN_SOURCE = "detector_air_pollution"
+DETECTION_BATCH_SIZE = 500
 
 # Deliberately excludes collector envelope fields such as collected_at and
 # collection_status. New envelope metadata cannot silently enter the strict
@@ -196,3 +212,130 @@ class AirPollutionObservationProcessor:
                 detector_reason=detection.reason,
             ))
         return output
+
+
+def detect_new(
+    *,
+    processor: AirPollutionObservationProcessor | None = None,
+    spatial_enricher: AirPollutionSpatialEnricher | None = None,
+    spatial_radius_km: float | None = None,
+    at: datetime | None = None,
+) -> list[CellSignal]:
+    """Convert newly ingested persisted observations to qualified signals.
+
+    The durable bookmark is this detector's last successful ``collector_runs``
+    start time. The current run is logged before reading, so rows arriving
+    during the sweep overlap the next run rather than falling into a gap. A
+    fixed upper bound makes pagination deterministic, and ``after_id`` safely
+    advances through collector batches that share one ingestion timestamp.
+
+    NORMAL, NOT_EVALUATED, and safely rejected candidates advance the bookmark
+    but emit nothing. Unexpected processing failures mark the run failed and
+    leave the previous successful bookmark in force for a retry.
+    """
+    from ecoguard.database.repositories.collector_runs import (
+        last_success_at,
+        log_finish,
+        log_start,
+    )
+
+    since = last_success_at(RUN_SOURCE)
+    run_id = log_start(RUN_SOURCE)
+    try:
+        through = at or datetime.now(timezone.utc)
+        if through.tzinfo is None or through.utcoffset() is None:
+            raise ValueError("at must carry a UTC offset")
+        through = through.astimezone(timezone.utc)
+        cursor_at = since
+        cursor_id = 0 if since is not None else None
+        service = processor or AirPollutionObservationProcessor()
+        enrichment = spatial_enricher
+        enrichment_radius = spatial_radius_km
+        if enrichment is None and enrichment_radius is None:
+            try:
+                from ecoguard.analyzers.non_emergency.air_pollution.transport_prediction_service import (
+                    load_air_pollution_transport_configuration,
+                )
+
+                transport = load_air_pollution_transport_configuration()
+                if transport is not None:
+                    enrichment = AirPollutionSpatialEnricher()
+                    enrichment_radius = transport.max_screening_distance_m / 1000.0
+            except Exception:
+                logger.exception(
+                    "Air Pollution spatial enrichment configuration unavailable"
+                )
+        if (enrichment is None) != (enrichment_radius is None):
+            raise ValueError(
+                "spatial_enricher and spatial_radius_km must be supplied together"
+            )
+        signals: list[CellSignal] = []
+        examined = 0
+
+        while True:
+            results = service.read_and_process(
+                ingested_after=cursor_at,
+                after_id=cursor_id,
+                ingested_through=through,
+                limit=DETECTION_BATCH_SIZE,
+            )
+            if not results:
+                break
+
+            examined += len(results)
+            for result in results:
+                if result.detector_status != "SUSPECTED_ANOMALY":
+                    continue
+                try:
+                    candidate = None
+                    if enrichment is not None and enrichment_radius is not None:
+                        enriched = enrichment.enrich_detection_result(
+                            result.detection,
+                            radius_km=enrichment_radius,
+                        )
+                        if enriched is None:
+                            raise RuntimeError(
+                                "qualified anomaly was not spatially enriched"
+                            )
+                        candidate = correlation_candidate(enriched)
+                    signals.append(
+                        air_pollution_detection_to_cell_signal(
+                            result.detection,
+                            candidate=candidate,
+                        )
+                    )
+                except AirPollutionCellSignalAdapterError as error:
+                    logger.warning(
+                        "air pollution observation %s rejected by signal adapter: %s",
+                        result.observation_id,
+                        error.reason,
+                    )
+
+            tail = results[-1]
+            if tail.ingested_at is None or tail.observation_id is None:
+                raise RuntimeError("persisted result missing ingestion cursor")
+            if cursor_at is not None and (
+                tail.ingested_at,
+                tail.observation_id,
+            ) <= (cursor_at, cursor_id or 0):
+                raise RuntimeError("persisted ingestion cursor did not advance")
+            cursor_at = tail.ingested_at
+            cursor_id = tail.observation_id
+            if len(results) < DETECTION_BATCH_SIZE:
+                break
+
+        log_finish(run_id, status="ok", rows_written=len(signals))
+        logger.info(
+            "air pollution: %s signals from %s persisted observations since %s",
+            len(signals),
+            examined,
+            since or "the beginning of the persisted stream",
+        )
+        return signals
+    except Exception as error:
+        log_finish(
+            run_id,
+            status="failed",
+            error=f"{type(error).__name__}: {error}",
+        )
+        raise

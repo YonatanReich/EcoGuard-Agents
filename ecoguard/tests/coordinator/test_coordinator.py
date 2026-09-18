@@ -36,7 +36,7 @@ from ecoguard.coordinator.queues import (
 )
 from ecoguard.shared.cells import service_area_cells
 from ecoguard.shared.signals import (
-    AIR_QUALITY,
+    AIR_POLLUTION,
     FIRE,
     HIGH,
     VIIRS_PIXEL_M,
@@ -86,7 +86,7 @@ def cells():
 
 def test_the_queues_route_by_response_not_severity():
     assert queue_for(FIRE) == EMERGENCY
-    assert queue_for(AIR_QUALITY) == NON_EMERGENCY
+    assert queue_for(AIR_POLLUTION) == NON_EMERGENCY
 
 
 def test_an_unrouted_hazard_raises_rather_than_defaulting():
@@ -97,8 +97,8 @@ def test_an_unrouted_hazard_raises_rather_than_defaulting():
 
 
 def test_a_hybrid_belongs_to_both_queues():
-    assert queues_for([FIRE, AIR_QUALITY]) == (EMERGENCY, NON_EMERGENCY)
-    assert is_hybrid([FIRE, AIR_QUALITY]) is True
+    assert queues_for([FIRE, AIR_POLLUTION]) == (EMERGENCY, NON_EMERGENCY)
+    assert is_hybrid([FIRE, AIR_POLLUTION]) is True
     assert is_hybrid([FIRE]) is False
 
 
@@ -178,7 +178,7 @@ def test_matching_needs_the_same_hazard(clean, cells):
         store.next_incident_id(WHEN), _signal(home.cell_id), [EMERGENCY]
     )
 
-    pollution = _signal(home.cell_id, hazard=AIR_QUALITY, variable="pm25")
+    pollution = _signal(home.cell_id, hazard=AIR_POLLUTION, variable="pm25")
 
     # Cross-hazard joining is causation, not identity, and lives in packaging.
     assert matches(pollution, store.incident_by_id(incident["id"])) is False
@@ -196,7 +196,7 @@ def test_the_closest_in_time_wins_when_several_match(clean, cells):
 
 def test_quiet_is_judged_per_hazard():
     fire = {"primary_hazard": FIRE, "last_signal_at": WHEN}
-    smog = {"primary_hazard": AIR_QUALITY, "last_signal_at": WHEN}
+    smog = {"primary_hazard": AIR_POLLUTION, "last_signal_at": WHEN}
     twelve_hours_later = WHEN + timedelta(hours=12)
 
     # A fire nothing has seen for twelve hours is out. An air quality episode
@@ -271,7 +271,7 @@ def test_pollution_lands_in_the_advisory_queue_only(clean, cells):
     home, _, _ = cells
 
     result = coordinate(
-        [_signal(home.cell_id, hazard=AIR_QUALITY, variable="pm25")], at=WHEN
+        [_signal(home.cell_id, hazard=AIR_POLLUTION, variable="pm25")], at=WHEN
     )
 
     assert result.emergency == []
@@ -352,7 +352,7 @@ def _wind_split(cell_id, at):
     )
     from ecoguard.shared.cells import cell_by_id, service_area_cells
 
-    rule = CAUSAL_RULES[(FIRE, AIR_QUALITY)]
+    rule = CAUSAL_RULES[(FIRE, AIR_POLLUTION)]
     direction = wind_direction_at(cell_id, at)
     if direction is None:
         return None
@@ -386,13 +386,13 @@ def test_pollution_downwind_of_a_fire_becomes_one_hybrid_incident(clean, databas
     result = coordinate([
         _signal(origin, at=at, hazard=FIRE),
         _signal(downwind_cell, at=at + timedelta(hours=1),
-                hazard=AIR_QUALITY, variable="pm25"),
+                hazard=AIR_POLLUTION, variable="pm25"),
     ], at=at + timedelta(hours=1))
 
     assert len(result.linked) == 1, "the plume should have joined the fire"
     hybrid = store.incident_by_id(result.created[0])
     # One incident, two hazards, both queues — requirement 3 and 4 together.
-    assert set(hybrid["hazards"]) == {FIRE, AIR_QUALITY}
+    assert set(hybrid["hazards"]) == {FIRE, AIR_POLLUTION}
     assert set(hybrid["queues"]) == {EMERGENCY, NON_EMERGENCY}
     assert len(result.emergency) == 1
     assert len(result.non_emergency) == 1
@@ -409,7 +409,7 @@ def test_pollution_upwind_of_a_fire_stays_its_own_incident(clean, database):
     result = coordinate([
         _signal(origin, at=at, hazard=FIRE),
         _signal(upwind_cell, at=at + timedelta(hours=1),
-                hazard=AIR_QUALITY, variable="pm25"),
+                hazard=AIR_POLLUTION, variable="pm25"),
     ], at=at + timedelta(hours=1))
 
     # Same hazards, same distance, same lag — only the bearing differs. Smoke
@@ -430,12 +430,12 @@ def test_a_merged_incident_records_why(clean, database):
     result = coordinate([
         _signal(origin, at=at, hazard=FIRE),
         _signal(downwind_cell, at=at + timedelta(hours=1),
-                hazard=AIR_QUALITY, variable="pm25"),
+                hazard=AIR_POLLUTION, variable="pm25"),
     ], at=at + timedelta(hours=1))
 
     # A merge nobody can account for is one nobody can correct.
     link = store.incident_by_id(result.created[0])["links"][0]
     assert link["cause_hazard"] == FIRE
-    assert link["effect_hazard"] == AIR_QUALITY
+    assert link["effect_hazard"] == AIR_POLLUTION
     assert "downwind on bearing" in link["rationale"]
     assert link["distance_km"] > 0

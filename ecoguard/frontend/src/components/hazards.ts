@@ -1,27 +1,15 @@
-/**
- * The one place hazard colour and emergency classification are decided.
- *
- * The legend, the event cards and the map markers all read from here, which is
- * what makes them agree. A colour defined twice is a colour that will drift.
- */
-
-import type { RiskEvent } from '../pages/Dashboard'
-
-
-export type HazardKind = 'fire' | 'air_pollution' | 'flood' | 'other'
-
-export type Classification = 'emergency' | 'advisory'
-
+import type {
+  EventClassification,
+  HazardKind,
+  SharedEvent,
+} from '../types/events'
 
 export type HazardStyle = {
   kind: HazardKind
   label: string
-  /** Card border, marker fill, legend swatch — the identity colour. */
   color: string
-  /** Same hue, translucent, for the pulsing halo on the map. */
   halo: string
 }
-
 
 export const HAZARDS: Record<HazardKind, HazardStyle> = {
   fire: {
@@ -50,38 +38,18 @@ export const HAZARDS: Record<HazardKind, HazardStyle> = {
   },
 }
 
-
-/** Map the backend's free-text event type onto a known hazard. */
-export function hazardOf(event: RiskEvent): HazardStyle {
-  const type = (event.type ?? '').toLowerCase()
-  if (type.includes('fire')) return HAZARDS.fire
-  if (type.includes('air') || type.includes('pollution')) return HAZARDS.air_pollution
-  if (type.includes('flood')) return HAZARDS.flood
-  return HAZARDS.other
+export function hazardOf(event: SharedEvent): HazardStyle {
+  return HAZARDS[event.type]
 }
 
-
-/**
- * Emergency or advisory.
- *
- * This is a placeholder for `events.classification`, which the triage stage
- * will set from severity, proximity to population and actionability. Triage
- * does not exist yet, so the panels derive it from the risk band instead.
- *
- * Deliberately one function with one caller-visible name: when triage lands,
- * this body becomes `return event.classification` and nothing else changes.
- *
- * Note this is NOT classification by hazard type. A brush fire in an empty
- * field is not an emergency; an industrial chemical release is. Only severity
- * decides, which is why the colour (hazard) and the panel (urgency) are
- * separate axes here.
- */
-export function classify(event: RiskEvent): Classification {
-  return event.risk_level === 'critical' || event.risk_level === 'high'
-    ? 'emergency'
-    : 'advisory'
+export function classify(event: SharedEvent): EventClassification {
+  // Air Pollution is advisory by domain contract, regardless of source-native
+  // AQI category or historical anomaly evidence.
+  if (event.type === 'air_pollution') return 'advisory'
+  return event.classification
 }
 
-
-/** True while the classification is inferred rather than supplied by triage. */
+/** Fire classification remains inferred until the shared event feed exists. */
 export const CLASSIFICATION_IS_INFERRED = true
+
+export type { HazardKind } from '../types/events'

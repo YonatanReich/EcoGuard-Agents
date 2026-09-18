@@ -46,7 +46,7 @@ QUIET_PERIOD: dict[str, timedelta] = {
     # — the same weather system reported as a fresh event daily.
     "fire_weather": timedelta(hours=24),
     "flood": timedelta(hours=12),
-    "air_quality": timedelta(hours=18),
+    "air_pollution": timedelta(hours=18),
     "heat": timedelta(hours=24),
 }
 

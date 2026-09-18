@@ -26,8 +26,8 @@ separates them.
 
 What this proves and what it does not: it proves the statistics are right - that
 "unusual for this place at this time of year" is computed and thresholded
-correctly. It says nothing about whether a statistical anomaly is a fire. That
-is a different question, and the answer is in fire_weather_analysis.txt.
+correctly. It does not prove that a statistical fire-weather anomaly is an
+active fire; that requires separate fire-detection evidence.
 """
 
 import json

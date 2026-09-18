@@ -59,7 +59,18 @@ class CoordinationResult:
     @property
     def touched(self) -> int:
         """Incidents this run created or changed."""
-        return len(set(self.created) | set(self.updated))
+        return len(self.touched_ids)
+
+    @property
+    def touched_ids(self) -> list[str]:
+        """Final incident identities affected, including hybrid merge causes."""
+        identifiers = [*self.created, *self.updated]
+        identifiers.extend(
+            link["cause_incident"]
+            for link in self.linked
+            if link.get("cause_incident")
+        )
+        return list(dict.fromkeys(identifiers))
 
 
 def coordinate(
@@ -154,7 +165,7 @@ def _package(at: datetime) -> list[dict[str, Any]]:
     return links
 
 
-def run(signals: Sequence[CellSignal] | None = None) -> None:
+def run(signals: Sequence[CellSignal] | None = None) -> CoordinationResult | None:
     """Coordinate once, recording the outcome like any other scheduled job.
 
     Never raises, for the same reason the collectors do not: a failed
@@ -181,6 +192,7 @@ def run(signals: Sequence[CellSignal] | None = None) -> None:
                     len(result.created), len(result.updated), len(result.closed),
                     len(result.linked), len(result.emergency), len(result.non_emergency),
                 )
+                return result
             except Exception as error:
                 log_finish(run_id, status="failed", error=f"{type(error).__name__}: {error}")
                 logger.exception("coordinator failed")
@@ -188,3 +200,4 @@ def run(signals: Sequence[CellSignal] | None = None) -> None:
         # The database itself is unreachable, so there is nowhere to record a
         # failure. Log and return; the next tick tries again.
         logger.exception("coordinator could not reach the database")
+    return None

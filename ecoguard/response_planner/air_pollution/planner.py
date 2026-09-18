@@ -278,6 +278,9 @@ class AirPollutionResponsePlanner:
         identifiers.update(
             item.evidence_id for item in analysis.transport_analysis.evidence
         )
+        identifiers.update(
+            item.evidence_id for item in analysis.future_prediction.evidence
+        )
         state = analysis.current_state.result
         if state is not None:
             for candidate in state.detections:

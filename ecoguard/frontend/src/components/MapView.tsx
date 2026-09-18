@@ -37,7 +37,7 @@ import 'mapbox-gl/dist/mapbox-gl.css'
 import IsraelMask from './layers/IsraelMask'
 import { classify, hazardOf } from './hazards'
 
-import { type RiskEvent } from '../pages/Dashboard'
+import type { SharedEvent } from '../types/events'
 
 
 /**
@@ -130,9 +130,9 @@ type MapViewProps = {
   /**
    * Detected events to plot.
    *
-   * Marker colour is derived from risk_level.
+   * Marker colour is derived from the canonical hazard type.
    */
-  events: RiskEvent[]
+  events: SharedEvent[]
 
   /**
    * Inline style for the wrapping container.
@@ -167,7 +167,7 @@ type MapViewProps = {
    * Called when an event marker is clicked, so the card list and the map
    * open the same modal.
    */
-  onEventClick?: (event: RiskEvent) => void
+  onEventClick?: (event: SharedEvent) => void
 } & Pick<MapProps, 'onLoad'>
 
 
