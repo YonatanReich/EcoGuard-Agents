@@ -50,6 +50,7 @@ class IncidentProcessingResult:
     planner_result: Any | None = None
     failure_stage: str | None = None
     failure_reason: str | None = None
+    resource_allocation_result: dict[str, Any] | None = None
 
 
 class IncidentHandler(Protocol):

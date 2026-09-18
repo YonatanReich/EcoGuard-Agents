@@ -162,7 +162,6 @@ def shared_event_feed(rows: Sequence[Mapping[str, Any]]) -> SharedEventFeed:
 def get_shared_events(
     limit: int = Query(default=100, ge=1, le=200),
 ) -> SharedEventFeed:
-    """Return newest durable projections; no detection or analysis runs here."""
 
     try:
         return shared_event_feed(read_projected_events(limit=limit))

@@ -40,6 +40,7 @@ import FireStationsLayer from '../components/layers/FireStationsLayer'
 import PoliceStationsLayer from '../components/layers/PoliceStationsLayer'
 import MdaStationsLayer from '../components/layers/MdaStationsLayer'
 import AirPollutionCorridorLayer from '../components/layers/AirPollutionCorridorLayer'
+import ResourceAllocationLayer from '../components/layers/ResourceAllocationLayer'
 import {
   detectedFireToSharedEvent,
   type DetectedEventsResponse,
@@ -114,6 +115,8 @@ function Dashboard() {
   /** The event whose modal is open, from either a card or a map marker. */
   const [openEvent, setOpenEvent] =
     useState<SharedEvent | null>(null)
+  const [directionsStationKey, setDirectionsStationKey] =
+    useState<string | null>(null)
 
   /** The event selected on the map; closing its modal must not clear it. */
   const [selectedEventKey, setSelectedEventKey] =
@@ -128,6 +131,13 @@ function Dashboard() {
 
   const selectAndOpenEvent = (event: SharedEvent) => {
     setSelectedEventKey(`${event.type}:${event.id}`)
+    setDirectionsStationKey(null)
+    setOpenEvent(event)
+  }
+
+  const showStationDirections = (event: SharedEvent, stationKey: string) => {
+    setSelectedEventKey(`${event.type}:${event.id}`)
+    setDirectionsStationKey(stationKey)
     setOpenEvent(event)
   }
 
@@ -171,6 +181,10 @@ function Dashboard() {
   )
 
   const corridorEvent = selectedEvent?.type === 'air_pollution'
+    ? selectedEvent
+    : null
+  const allocationEvent = selectedEvent?.type === 'fire'
+    && selectedEvent.details.resource_allocation
     ? selectedEvent
     : null
 
@@ -1083,6 +1097,16 @@ function Dashboard() {
               <AirPollutionCorridorLayer event={corridorEvent} />
             )}
 
+            {allocationEvent && (
+              <ResourceAllocationLayer
+                key={allocationEvent.id}
+                event={allocationEvent}
+                onShowDirections={(stationKey) => (
+                  showStationDirections(allocationEvent, stationKey)
+                )}
+              />
+            )}
+
 
             {/* ================================================= */}
             {/* Layer controls                                    */}
@@ -1187,7 +1211,11 @@ function Dashboard() {
       {openEvent && (
         <EventModal
           event={openEvent}
-          onClose={() => setOpenEvent(null)}
+          directionsStationKey={directionsStationKey}
+          onClose={() => {
+            setOpenEvent(null)
+            setDirectionsStationKey(null)
+          }}
         />
       )}
 

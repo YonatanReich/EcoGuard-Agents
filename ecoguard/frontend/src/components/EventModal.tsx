@@ -24,6 +24,12 @@ function formatDistance(distance: number | null | undefined) {
     : `${Math.round(distance)} m`
 }
 
+function formatRouteStepDistance(distance: number) {
+  return distance >= 1000
+    ? `${(distance / 1000).toFixed(1)} km`
+    : `${Math.round(distance)} m`
+}
+
 function formatDuration(seconds: number | null) {
   if (seconds == null) return null
   if (seconds < 3600) return `${Math.round(seconds / 60)} min`
@@ -116,6 +122,66 @@ function FireEventDetails({ event }: { event: FireEvent }) {
         <section className="event-modal__section">
           <h3>Recommended units</h3>
           <ul>{details.recommended_units.map((unit) => <li key={unit}>{unit}</li>)}</ul>
+        </section>
+      )}
+
+      {details.resource_allocation && (
+        <section className="event-modal__section">
+          <h3>Resource allocation</h3>
+          <dl className="event-modal__facts event-modal__facts--compact">
+            <div><dt>Allocation</dt><dd>{details.resource_allocation.status}</dd></div>
+            <div><dt>Routing</dt><dd>{details.resource_allocation.routing_status.replaceAll('_', ' ')}</dd></div>
+          </dl>
+
+          <ul className="event-modal__allocations">
+            {details.resource_allocation.stations.map((station) => (
+              <li key={`${station.recommended_unit}-${station.database_id}`}>
+                <strong>{station.name}</strong>
+                <span>{formatComponentName(station.recommended_unit)}</span>
+                <span>
+                  {station.distance_km == null ? 'Distance unavailable' : `${station.distance_km.toFixed(1)} km`}
+                  {station.route?.duration_s != null && ` · ${formatDuration(station.route.duration_s)}`}
+                </span>
+                {station.address && <span>{station.address}</span>}
+                {station.route?.estimated_arrival_at && (
+                  <span>ETA {formatTimestamp(station.route.estimated_arrival_at)}</span>
+                )}
+                {station.route?.requires_field_access_confirmation && (
+                  <span className="event-modal__allocation-warning">Field access requires confirmation</span>
+                )}
+                {station.route?.steps_he && station.route.steps_he.length > 0 && (
+                  <details
+                    id={`allocation-directions-${station.recommended_unit}-${station.database_id}`}
+                    className="event-modal__directions"
+                    dir="rtl"
+                  >
+                    <summary>הוראות נסיעה</summary>
+                    <ol>
+                      {station.route.steps_he.map((step, index) => (
+                        <li key={`${station.database_id}-step-${index}`}>
+                          <span className="event-modal__direction-instruction">
+                            {step.instruction ?? 'המשך במסלול'}
+                          </span>
+                          <span className="event-modal__direction-meta">
+                            {step.distance_m != null
+                              && formatRouteStepDistance(step.distance_m)}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  </details>
+                )}
+              </li>
+            ))}
+          </ul>
+
+          {Object.values(details.resource_allocation.requirements).some(
+            (requirement) => requirement.shortfall > 0,
+          ) && (
+            <p className="event-modal__allocation-warning">
+              The allocation is partial; at least one requested resource is missing.
+            </p>
+          )}
         </section>
       )}
 
@@ -387,9 +453,10 @@ function AirPollutionEventDetails({ event }: { event: AirPollutionEvent }) {
   )
 }
 
-function EventModal({ event, onClose }: {
+function EventModal({ event, onClose, directionsStationKey = null }: {
   event: SharedEvent
   onClose: () => void
+  directionsStationKey?: string | null
 }) {
   const hazard = hazardOf(event)
   const urgency = classify(event)
@@ -401,6 +468,22 @@ function EventModal({ event, onClose }: {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
+
+  useEffect(() => {
+    if (!directionsStationKey) return
+    const frame = window.requestAnimationFrame(() => {
+      const targetId = `allocation-directions-${directionsStationKey}`
+      document.querySelectorAll<HTMLDetailsElement>('.event-modal__directions')
+        .forEach((element) => {
+          element.open = element.id === targetId
+        })
+      document.getElementById(targetId)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [directionsStationKey, event.id])
 
   return (
     <div className="event-modal__backdrop" onClick={onClose} role="presentation">
@@ -443,7 +526,9 @@ function EventModal({ event, onClose }: {
             )}
           </section>
         )}
-        {event.type === 'fire' && <FireEventDetails event={event} />}
+        {event.type === 'fire' && (
+          <FireEventDetails event={event} />
+        )}
         {event.type === 'air_pollution' && <AirPollutionEventDetails event={event} />}
       </div>
     </div>

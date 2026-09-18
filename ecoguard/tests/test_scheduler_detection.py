@@ -1,6 +1,7 @@
 """Shared scheduled detector/coordinator batch integration tests."""
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from ecoguard.shared.signals import AIR_POLLUTION, FIRE, HIGH, CellSignal
 
@@ -149,3 +150,103 @@ def test_scheduler_projection_failure_does_not_erase_processing_results(monkeypa
     )
 
     assert shared_runtime.detect_and_coordinate() == ["processed"]
+
+
+def test_scheduler_allocates_all_eligible_fire_plans_in_one_batch(monkeypatch):
+    from ecoguard import scheduler as shared_runtime
+
+    requested_at = datetime(2026, 9, 16, 10, 0, tzinfo=timezone.utc)
+    fire_one = SimpleNamespace(
+        incident_id="INC-FIRE-1",
+        hazard="fire",
+        route="emergency",
+        requested_at=requested_at,
+        planner_result={"event_id": "PLAN-1"},
+        resource_allocation_result=None,
+    )
+    fire_two = SimpleNamespace(
+        incident_id="INC-FIRE-2",
+        hazard="fire",
+        route="emergency",
+        requested_at=requested_at,
+        planner_result={"event_id": "PLAN-2"},
+        resource_allocation_result=None,
+    )
+    advisory = SimpleNamespace(
+        incident_id="INC-AIR-1",
+        hazard="air_pollution",
+        route="advisory",
+        requested_at=requested_at,
+        planner_result={"event_id": "PLAN-3"},
+        resource_allocation_result=None,
+    )
+
+    class RecordingAllocator:
+        def __init__(self):
+            self.calls = []
+
+        def allocate_batch(self, requests):
+            self.calls.append(requests)
+            return [
+                {"incident_id": request["incident_id"], "status": "allocated"}
+                for request in requests
+            ]
+
+    allocator = RecordingAllocator()
+    monkeypatch.setattr(shared_runtime, "resource_allocator", allocator)
+
+    allocations = shared_runtime.allocate_resources(
+        [fire_one, advisory, fire_two]
+    )
+
+    assert len(allocator.calls) == 1
+    assert [
+        request["incident_id"] for request in allocator.calls[0]
+    ] == ["INC-FIRE-1", "INC-FIRE-2"]
+    assert allocator.calls[0][0]["response_plan"] == {"event_id": "PLAN-1"}
+    assert fire_one.resource_allocation_result == {
+        "incident_id": "INC-FIRE-1",
+        "status": "allocated",
+    }
+    assert fire_two.resource_allocation_result == {
+        "incident_id": "INC-FIRE-2",
+        "status": "allocated",
+    }
+    assert advisory.resource_allocation_result is None
+    assert set(allocations) == {"INC-FIRE-1", "INC-FIRE-2"}
+
+
+def test_scheduler_allocation_failure_does_not_block_projection(monkeypatch):
+    from ecoguard import scheduler as shared_runtime
+    from ecoguard.coordinator import agent, dispatcher, event_projection
+    from ecoguard.detectors.air_pollution import observation_processing
+    from ecoguard.detectors.fire import satellite, weather
+
+    processing_results = ["planned"]
+    projected = []
+    monkeypatch.setattr(satellite, "detect_new", lambda: [])
+    monkeypatch.setattr(weather, "detect_new", lambda: [])
+    monkeypatch.setattr(observation_processing, "detect_new", lambda: [])
+    monkeypatch.setattr(
+        agent,
+        "run",
+        lambda signals: agent.CoordinationResult(created=["INC-1"]),
+    )
+    monkeypatch.setattr(
+        dispatcher,
+        "dispatch_touched",
+        lambda identifiers: processing_results,
+    )
+    monkeypatch.setattr(
+        shared_runtime,
+        "allocate_resources",
+        lambda results: (_ for _ in ()).throw(RuntimeError("allocator failed")),
+    )
+    monkeypatch.setattr(
+        event_projection,
+        "project_processing_results",
+        lambda results: projected.extend(results),
+    )
+
+    assert shared_runtime.detect_and_coordinate() == processing_results
+    assert projected == processing_results
