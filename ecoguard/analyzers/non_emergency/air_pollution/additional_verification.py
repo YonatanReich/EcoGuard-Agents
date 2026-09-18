@@ -98,7 +98,10 @@ class AirPollutionAdditionalVerificationService:
             return self._unavailable(
                 checked_at,
                 "firms_collection_state_unavailable",
-                ["shared_coordinator_fire_air_pollution_links", "IMS"],
+                [
+                    "shared_coordinator_fire_air_pollution_links",
+                    wind.wind_evidence.provider,
+                ],
             )
         providers = [
             "shared_coordinator_fire_air_pollution_links",

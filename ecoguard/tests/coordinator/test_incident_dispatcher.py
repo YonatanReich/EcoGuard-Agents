@@ -1,5 +1,7 @@
 """Shared incident dispatch and Air Pollution production-handler tests."""
 
+from datetime import timedelta
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 from ecoguard.analyzers.non_emergency.air_pollution.event_analysis_schemas import (
@@ -21,6 +23,9 @@ from ecoguard.analyzers.non_emergency.air_pollution.population_analysis import (
 from ecoguard.analyzers.non_emergency.air_pollution.transport_schemas import (
     TransportEvidenceReference,
 )
+from ecoguard.analyzers.non_emergency.air_pollution.wind_evidence_service import (
+    PersistedFirstWindEvidenceService,
+)
 from ecoguard.coordinator.agent import CoordinationResult
 from ecoguard.coordinator.dispatcher import dispatch_incidents, dispatch_touched
 from ecoguard.coordinator.incidents import signal_as_json
@@ -28,6 +33,9 @@ from ecoguard.detectors.air_pollution.cell_signal_adapter import (
     air_pollution_candidate_to_cell_signal,
 )
 from ecoguard.detectors.air_pollution.correlation import PollutionCorrelationCandidate
+from ecoguard.detectors.air_pollution.spatial_schemas import (
+    SpatiallyEnrichedAirPollutionAnomaly,
+)
 from ecoguard.response_planner.air_pollution.schemas import AirPollutionPlanningResult
 from ecoguard.shared.signals import FIRE, HIGH, CellSignal
 from ecoguard.tests.analyzers.non_emergency.air_pollution.test_event_analyzer import (
@@ -36,6 +44,7 @@ from ecoguard.tests.analyzers.non_emergency.air_pollution.test_event_analyzer im
     _candidate,
     _index_lookup,
     _transport_service,
+    _wind,
 )
 from ecoguard.tests.response_planner.air_pollution.test_planner import (
     CHUNK,
@@ -103,6 +112,9 @@ def _working_handler(
     trend_component=None,
     pollutant_sub_index=71.0,
     verification_service=None,
+    wind_evidence_provider=None,
+    spatial_enricher=None,
+    population_query=None,
 ):
     candidate = _candidate()
     trend_component = trend_component or AnalysisComponent[AirPollutionTrendPrediction](
@@ -134,17 +146,19 @@ def _working_handler(
     index.get_station_index_evidence.return_value = _index_lookup(
         pollutant_sub_index=pollutant_sub_index
     )
-    population = AirPollutionPopulationAnalysisService(Mock(return_value={
+    population_query = population_query or Mock(return_value={
         "grid_available": True,
         "intersected_cell_count": 2,
         "weighted_population": 50.0,
-    }))
-    transport, _ = _transport_service()
+    })
+    population = AirPollutionPopulationAnalysisService(population_query)
+    transport, _ = _transport_service(wind_evidence_provider)
     analyzer = AirPollutionNonEmergencyAnalyzer(
         transport_service=transport,
         ministry_index_client=index,
         population_service=population,
         trend_inference_service=trend,
+        spatial_enricher=spatial_enricher,
         clock=lambda: GENERATED_AT,
     )
 
@@ -280,6 +294,186 @@ def test_qualified_low_event_triggers_verification_and_preserves_advisory_route(
     assert "does not confirm causation" in statement
 
 
+def test_internal_incidents_never_pay_heavy_analysis_cost():
+    wind = Mock()
+    towns = Mock()
+    population_query = Mock()
+    handler, _ = _working_handler(
+        pollutant_sub_index=71.0,
+        wind_evidence_provider=wind,
+        spatial_enricher=towns,
+        population_query=population_query,
+    )
+    transport = Mock(wraps=handler._analyzer._transport_component)
+    population = Mock(wraps=handler._analyzer._population_component)
+    corridor = Mock(wraps=handler._analyzer._transport_service.predict)
+    handler._analyzer._transport_component = transport
+    handler._analyzer._population_component = population
+    handler._analyzer._transport_service.predict = corridor
+    incidents = [_incident(identifier=f"INC-INTERNAL-{index}")[0] for index in range(4)]
+
+    results = dispatch_incidents(
+        incidents,
+        registry={("air_pollution", "non_emergency"): handler},
+        at=REQUESTED_AT,
+    )
+
+    assert len(results) == 4
+    assert all(
+        result.analysis_result.publication_policy.publish_to_operational_dashboard
+        is False
+        for result in results
+    )
+    assert all(
+        result.analysis_result.transport_analysis.unavailable_reason
+        == "not_run_for_non_publishable_event"
+        for result in results
+    )
+    transport.assert_not_called()
+    population.assert_not_called()
+    wind.select_wind_evidence.assert_not_called()
+    towns.enrich.assert_not_called()
+    corridor.assert_not_called()
+    population_query.assert_not_called()
+
+
+def test_qualified_good_and_unknown_events_do_not_run_heavy_analysis():
+    for pollutant_sub_index, expected in ((71.0, "GOOD"), (500.0, "UNKNOWN")):
+        handler, _ = _working_handler(pollutant_sub_index=pollutant_sub_index)
+        transport = Mock(wraps=handler._analyzer._transport_component)
+        population = Mock(wraps=handler._analyzer._population_component)
+        handler._analyzer._transport_component = transport
+        handler._analyzer._population_component = population
+
+        result = dispatch_incidents(
+            [_path_a_incident(identifier=f"INC-{expected}")],
+            registry={("air_pollution", "non_emergency"): handler},
+            at=REQUESTED_AT,
+        )[0]
+
+        assert result.analysis_result.event_qualification.path == "PATH_A"
+        assert (
+            result.analysis_result.official_pollutant_classification.classification
+            == expected
+        )
+        assert result.analysis_result.publication_policy.publish_to_operational_dashboard is False
+        transport.assert_not_called()
+        population.assert_not_called()
+
+
+def test_publishable_event_runs_transport_and_population_once():
+    handler, _ = _working_handler(pollutant_sub_index=25.0)
+    transport = Mock(wraps=handler._analyzer._transport_component)
+    population = Mock(wraps=handler._analyzer._population_component)
+    handler._analyzer._transport_component = transport
+    handler._analyzer._population_component = population
+
+    result = dispatch_incidents(
+        [_path_a_incident()],
+        registry={("air_pollution", "non_emergency"): handler},
+        at=REQUESTED_AT,
+    )[0]
+
+    assert result.analysis_result.publication_policy.publish_to_operational_dashboard is True
+    transport.assert_called_once()
+    population.assert_called_once()
+
+
+def test_publishable_event_uses_fresh_db_wind_then_towns_corridor_and_population():
+    candidate = _candidate()
+    reader = Mock(return_value={
+        "source": "weather",
+        "cell_id": "weather-grid:1",
+        "observed_at": OBSERVED_AT - timedelta(minutes=10),
+        "latitude": candidate.anomaly.location.latitude,
+        "longitude": candidate.anomaly.location.longitude,
+        "distance_m": 0.0,
+        "payload": {
+            "wind_speed_10m": 18.0,
+            "wind_direction_10m": 270.0,
+            "wind_gusts_10m": 25.2,
+        },
+    })
+    live = Mock()
+    wind = PersistedFirstWindEvidenceService(
+        live,
+        reader=reader,
+        writer=Mock(),
+        clock=lambda: GENERATED_AT,
+    )
+    spatial = Mock()
+    spatial.enrich.return_value = SpatiallyEnrichedAirPollutionAnomaly(
+        anomaly=candidate.anomaly,
+        spatial_context=candidate.spatial_context,
+    )
+    population_query = Mock(return_value={
+        "grid_available": True,
+        "intersected_cell_count": 2,
+        "weighted_population": 50.0,
+    })
+    handler, _ = _working_handler(
+        pollutant_sub_index=25.0,
+        wind_evidence_provider=wind,
+        spatial_enricher=spatial,
+        population_query=population_query,
+    )
+
+    result = dispatch_incidents(
+        [_path_a_incident()],
+        registry={("air_pollution", "non_emergency"): handler},
+        at=REQUESTED_AT,
+    )[0]
+
+    analysis = result.analysis_result
+    assert analysis.transport_analysis.result.wind_evidence.provider == "Open-Meteo"
+    assert analysis.transport_analysis.result.spatial_output.corridor_polygon is not None
+    assert analysis.population_impact.result.total_relevant_population == 50
+    live.select_wind_evidence.assert_not_called()
+    spatial.enrich.assert_called_once()
+    population_query.assert_called_once()
+
+
+def test_publishable_event_falls_back_live_persists_and_runs_downstream():
+    candidate = _candidate()
+    live = Mock()
+    live.select_wind_evidence.return_value = SimpleNamespace(wind_evidence=_wind())
+    writer = Mock(return_value=1)
+    wind = PersistedFirstWindEvidenceService(
+        live,
+        reader=Mock(return_value=None),
+        writer=writer,
+        clock=lambda: GENERATED_AT,
+    )
+    spatial = Mock()
+    spatial.enrich.return_value = SpatiallyEnrichedAirPollutionAnomaly(
+        anomaly=candidate.anomaly,
+        spatial_context=candidate.spatial_context,
+    )
+    population_query = Mock(return_value={
+        "grid_available": True,
+        "intersected_cell_count": 2,
+        "weighted_population": 50.0,
+    })
+    handler, _ = _working_handler(
+        pollutant_sub_index=25.0,
+        wind_evidence_provider=wind,
+        spatial_enricher=spatial,
+        population_query=population_query,
+    )
+
+    result = dispatch_incidents(
+        [_path_a_incident()],
+        registry={("air_pollution", "non_emergency"): handler},
+        at=REQUESTED_AT,
+    )[0]
+
+    assert result.analysis_result.transport_analysis.result.wind_evidence.provider == "IMS"
+    live.select_wind_evidence.assert_called_once()
+    writer.assert_called_once()
+    spatial.enrich.assert_called_once()
+    population_query.assert_called_once()
+
+
 def test_hybrid_invokes_only_air_pollution_advisory_facet():
     incident, _ = _incident(hybrid=True)
     handler, _ = _working_handler()
@@ -314,6 +508,10 @@ def test_analysis_and_planner_failures_are_isolated():
     incident_a, _ = _incident(identifier="INC-AP-A")
     incident_b, _ = _incident(identifier="INC-AP-B")
     analyzer = Mock()
+    analyzer.assess_official_index.return_value = AnalysisComponent(
+        status="unavailable",
+        unavailable_reason="ministry_air_quality_index_lookup_unavailable",
+    )
     analyzer.analyze.side_effect = [RuntimeError("analysis failed"), Mock(status="partial")]
     planner = Mock()
     planner.plan_response.side_effect = RuntimeError("planner failed")

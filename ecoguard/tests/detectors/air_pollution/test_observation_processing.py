@@ -298,7 +298,7 @@ def test_detect_new_turns_only_persisted_qualified_anomalies_into_signals(
     assert finished == [(91, {"status": "ok", "rows_written": 1})]
 
 
-def test_detect_new_spatially_enriches_with_transport_screening_radius(monkeypatch):
+def test_detect_new_does_not_spatially_enrich_from_transport_configuration(monkeypatch):
     from ecoguard.detectors.air_pollution import observation_processing
 
     service, _ = processor(reader=lambda **_: [row(12, 21.0)])
@@ -343,10 +343,9 @@ def test_detect_new_spatially_enriches_with_transport_screening_radius(monkeypat
 
     signals = detect_new(processor=service, at=DETECTED)
 
-    assert calls == [10.0]
+    assert calls == []
     context = signals[0].evidence["correlation_candidate"]["spatial_context"]
-    assert context["lookup_radius_km"] == 10.0
-    assert context["nearby_settlements"][0]["name"] == "Real provider settlement"
+    assert context is None
     assert signals[0].evidence["detection_result"]["status"] == "SUSPECTED_ANOMALY"
 
 

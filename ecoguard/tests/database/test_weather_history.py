@@ -18,6 +18,7 @@ from ecoguard.database.repositories.weather_history import (
     current_for_point,
     hourly_for_cells,
     missing_hours,
+    wind_for_point_at,
 )
 
 UTC = timezone.utc
@@ -180,3 +181,32 @@ def test_a_stale_reading_is_not_served_as_current(store):
     store(CELLS[0], [at(0)], latitude=FAR_LATITUDE, longitude=FAR_LONGITUDE)
 
     assert current_for_point(FAR_LATITUDE, FAR_LONGITUDE) is None
+
+
+def test_event_time_wind_read_is_causal_fresh_and_preserves_provenance(store):
+    observed = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    event_time = observed + timedelta(minutes=30)
+    store(CELLS[0], [observed], latitude=FAR_LATITUDE, longitude=FAR_LONGITUDE)
+
+    reading = wind_for_point_at(
+        FAR_LATITUDE,
+        FAR_LONGITUDE,
+        at=event_time,
+        maximum_age_seconds=1800,
+        sources=("weather",),
+        maximum_distance_m=5_000,
+    )
+
+    assert reading is not None
+    assert reading["source"] == "weather"
+    assert reading["cell_id"] == CELLS[0]
+    assert reading["observed_at"] == observed
+    assert reading["payload"]["wind_speed_10m"] == 5.0
+    assert reading["payload"]["wind_direction_10m"] == 180.0
+    assert wind_for_point_at(
+        FAR_LATITUDE,
+        FAR_LONGITUDE,
+        at=event_time,
+        maximum_age_seconds=60,
+        sources=("weather",),
+    ) is None
