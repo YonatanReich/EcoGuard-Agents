@@ -55,7 +55,16 @@ ecoguard/data/generated/fire_prediction_ml_dataset_2023_2026.csv
 
 # Workspace-local baseline ML environment and generated model artifacts
 .ml-venv/
-ecoguard/data/generated/ml/
+ecoguard/data/generated/ml/*
+!ecoguard/data/generated/ml/air_pollution_trend/
+ecoguard/data/generated/ml/air_pollution_trend/*
+!ecoguard/data/generated/ml/air_pollution_trend/final/
+ecoguard/data/generated/ml/air_pollution_trend/final/*
+!ecoguard/data/generated/ml/air_pollution_trend/final/no2.joblib
+!ecoguard/data/generated/ml/air_pollution_trend/final/o3.joblib
+!ecoguard/data/generated/ml/air_pollution_trend/final/pm2_5.joblib
+!ecoguard/data/generated/ml/air_pollution_trend/final/so2.joblib
+!ecoguard/data/generated/ml/air_pollution_trend/final/manifest.json
 
 # Generated historical environmental feature dataset and static elevation cache
 ecoguard/data/generated/fire_prediction_ml_environmental_dataset_2023_2026.csv
@@ -108,3 +117,17 @@ ecoguard/data/generated/evaluation/
 # by scripts/load_population_grid.py. Republished yearly by WorldPop; there is
 # no reason to carry a copy in the history.
 ecoguard/data/generated/isr_ppp_*.tif
+
+# Raw Overpass responses cached by scripts/build_localities.py (~33 MB)
+ecoguard/data/reference/.osm_cache/
+
+# Scratch logs from fire-weather replay runs
+/fire_weather_*.txt
+
+# GIS source formats nothing in the codebase reads. The shapefile itself is
+# kept — scripts/build_muni_geojson.py regenerates muni_il.geojson from it —
+# but the AutoCAD copy and the zipped duplicate are 32 MB of the same data,
+# and .sr.lock files are leftover ArcGIS session locks.
+*.dwg
+*.sr.lock
+ecoguard/data/reference/**/muni_il.zip

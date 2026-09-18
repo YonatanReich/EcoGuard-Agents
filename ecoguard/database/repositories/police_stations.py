@@ -24,7 +24,8 @@ def police_stations_geojson() -> dict[str, Any]:
     """
     with Session() as session:
         rows = session.execute(text("""
-            SELECT station_id,
+            SELECT id,
+                   station_id,
                    name,
                    kind,
                    city,
@@ -44,6 +45,7 @@ def police_stations_geojson() -> dict[str, Any]:
                 "coordinates": [row["longitude"], row["latitude"]],
             },
             "properties": {
+                "database_id": row["id"],
                 "station_id": row["station_id"],
                 "name": row["name"],
                 # district | region | station | post | base | centre — the rank

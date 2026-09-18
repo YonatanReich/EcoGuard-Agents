@@ -1,9 +1,13 @@
-"""The collection layer's timers.
+"""The timers.
 
 Each collector wakes on its own interval, does its work, and writes rows. No
 collector calls another, and none of them return anything to a caller. This is
 the only place in the system that reaches out to an upstream provider —
 everything else reads what these wrote.
+
+One job is not a collector: detection. It reads what the collectors stored and
+hands the result to the coordinator, and it is here because that is where the
+clocks live, not because it fetches anything.
 """
 
 from __future__ import annotations
@@ -22,8 +26,57 @@ from ecoguard.collection.fire.gibs.collector import VegetationCollector
 from ecoguard.collection.fire.telegram.collector import TelegramCollector
 from ecoguard.collection.shared.open_meteo.forecast import WeatherForecastCollector
 from ecoguard.collection.shared.open_meteo.observations import WeatherCollector
+from ecoguard.resource_allocator.allocation_agent import ResourceAllocationAgent
 
 logger = logging.getLogger(__name__)
+
+# The allocator exists for the lifetime of the scheduler process, so its static
+# station catalog is loaded once. Availability is not cached here: atomic DB
+# claims keep concurrent scheduler processes in sync.
+resource_allocator = ResourceAllocationAgent()
+
+
+def allocate_resources(processing_results):
+    """Allocate one contended station pool across all eligible fire plans."""
+    requests = []
+    eligible_results = []
+
+    for result in processing_results:
+        response_plan = getattr(result, "planner_result", None)
+        if (
+            getattr(result, "hazard", None) != "fire"
+            or getattr(result, "route", None) != "emergency"
+            or not isinstance(response_plan, dict)
+        ):
+            continue
+
+        eligible_results.append(result)
+        requests.append(
+            {
+                "incident_id": result.incident_id,
+                "queued_at": result.requested_at,
+                "response_plan": response_plan,
+            }
+        )
+
+    if not requests:
+        return {}
+
+    # One batch call is essential: the allocator must compare incidents that
+    # compete for the same stations before making any assignment.
+    allocations = resource_allocator.allocate_batch(requests)
+    allocations_by_incident = {
+        allocation["incident_id"]: allocation
+        for allocation in allocations
+        if isinstance(allocation, dict) and allocation.get("incident_id")
+    }
+
+    for result in eligible_results:
+        result.resource_allocation_result = allocations_by_incident.get(
+            result.incident_id
+        )
+
+    return allocations_by_incident
 
 # Each interval is set by what its source actually publishes, not by a shared
 # default:
@@ -148,6 +201,106 @@ scheduler.add_job(
     "interval",
     hours=24,
     id="prune_observations",
+    max_instances=1,
+    coalesce=True,
+)
+
+
+def detect_and_coordinate():
+    """Sweep stored observations for shared hazard signals and coordinate once.
+
+    The two detectors intentionally emit separate hazard streams. Satellite
+    hotspots emit ``fire`` signals for emergency routing; weather anomalies
+    emit ``fire_weather`` signals for separate non-emergency advisories. The
+    Coordinator currently has no FIRE-to-FIRE_WEATHER corroboration or
+    association rule, so batching them does not merge one into the other.
+
+    The satellite comes first in the list for readability only — the
+    Coordinator sorts by observation time. FIRMS *sees* fires; the weather
+    sweep sees conditions under which a fire could spread and cannot detect a
+    fire, because the feed is a numerical model with no knowledge that one
+    exists.
+
+    A detector that raises must not take the others down with it, so each is
+    called separately. Losing the satellite for a tick is a detection outage;
+    losing the whole run because the weather sweep hit a bad row would be a
+    worse one.
+
+    Each detector reads what has arrived since its own last successful run
+    rather than what falls inside a fixed window, so a tick that never happened
+    — a hang, a restart, a deploy — costs latency and nothing else. A window
+    would have dropped everything older than itself and said nothing about it,
+    which for a fire detector is the one unacceptable failure.
+
+    Imported inside the function so a failure to import the coordinator cannot
+    take the collection timers down with it — the collectors are useful on
+    their own, and were running before any of this existed.
+    """
+    from ecoguard.coordinator.agent import run as coordinate
+    from ecoguard.detectors.air_pollution import observation_processing
+    from ecoguard.detectors.fire import satellite, weather
+
+    signals = []
+    for detector in (satellite, weather, observation_processing):
+        try:
+            signals.extend(detector.detect_new())
+        except Exception:
+            logger.exception("detector %s failed; continuing without it",
+                             detector.__name__)
+
+    coordination = coordinate(signals)
+    if coordination is None:
+        return []
+
+    try:
+        from ecoguard.coordinator.dispatcher import dispatch_touched
+
+        processing_results = dispatch_touched(coordination.touched_ids)
+    except Exception:
+        # Incidents are already safely persisted. Analysis/planning is a
+        # downstream attempt and must never turn successful coordination into
+        # a failed detection tick.
+        logger.exception("incident dispatch failed after coordination")
+        return []
+
+    try:
+        allocate_resources(processing_results)
+    except Exception:
+        # Allocation is downstream of analysis and planning. A routing, DB, or
+        # Mapbox failure must not discard their completed results.
+        logger.exception(
+            "resource allocation failed; processing results are unaffected"
+        )
+
+    try:
+        from ecoguard.coordinator.event_projection import project_processing_results
+
+        project_processing_results(processing_results)
+    except Exception:
+        # Projection is delivery state. It must not erase completed processing
+        # or affect the authoritative persisted Coordinator incident.
+        logger.exception(
+            "incident event projection failed; processing results are unaffected"
+        )
+    return processing_results
+
+
+# Every thirty minutes, set by the satellite rather than the weather.
+#
+# The weather half only changes hourly and a second look at the same stored
+# hour finds the same anomaly. But FIRMS is the half that detects fires, its
+# overpasses arrive irregularly, and the collector already polls at thirty
+# minutes — so an hourly detector would sit on a fresh hotspot for up to an
+# hour after it landed. That is the one delay in this pipeline that costs
+# something real.
+#
+# The cost of the extra tick is re-reporting detections already attached to an
+# open incident, which the coordinator absorbs by design.
+scheduler.add_job(
+    detect_and_coordinate,
+    "interval",
+    minutes=30,
+    id="detect_and_coordinate",
     max_instances=1,
     coalesce=True,
 )

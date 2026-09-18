@@ -15,6 +15,7 @@ from typing import Annotated, Literal, TypeAlias
 from pydantic import Field, field_validator, model_validator
 
 from ecoguard.detectors.air_pollution.schemas import ContractModel, GeographicCoordinate
+from ecoguard.detectors.air_pollution.spatial_schemas import SettlementContextStatus
 from ecoguard.analyzers.non_emergency.air_pollution.transport_schemas import (
     AngularDifferenceDegrees,
     DirectionDegrees,
@@ -145,6 +146,7 @@ class PollutionTransportSpatialOutput(ContractModel):
         "reject_longitude_discontinuity"
     )
     settlements: list[SettlementSpatialOutput] = Field(default_factory=list)
+    settlement_context: SettlementContextStatus | None = None
     limitations: list[str] = Field(min_length=1)
     exposure_not_confirmed: Literal[True] = True
 
@@ -320,6 +322,7 @@ def prepare_transport_spatial_output(
     corridor_result: CorridorInput,
     *,
     arc_segment_count: int,
+    settlement_context: SettlementContextStatus | None = None,
 ) -> PollutionTransportSpatialOutput:
     """Serialize existing corridor/settlement results without recalculation."""
 
@@ -336,6 +339,7 @@ def prepare_transport_spatial_output(
         "max_screening_distance_m": corridor.parameters.max_screening_distance_m,
         "direction_stddev_deg": corridor.parameters.direction_stddev_deg,
         "arc_segment_count": segment_count,
+        "settlement_context": settlement_context,
         "limitations": [
             *corridor.limitations,
             "Sector geometry is a screening visualization, not a physical plume.",

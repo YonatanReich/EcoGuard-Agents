@@ -42,6 +42,8 @@ cp .env.example .env
 | Variable | Needed for | Without it |
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | Risk analysis and response planning | Events are detected but not assessed; status reports `missing credentials` |
+| `ANTHROPIC_WORKSPACE_ID` | Anthropic identity-linked API keys only | Omit it for ordinary organisation keys |
+| `IMS_API_TOKEN` | IMS-backed Air Pollution wind evidence | Wind, transport corridor, settlement screening and corridor population remain unavailable |
 | `NASA_FIRMS_API_KEY` | Satellite fire detection | `/api/detected-events` cannot detect anything |
 | `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` | Telegram fire intelligence listener | That standalone script cannot run |
 
@@ -50,6 +52,12 @@ The frontend map additionally needs `VITE_MAPTILER_KEY` in
 
 Every agent degrades rather than crashing when a key is absent, so the app still
 runs with none of them set. It just reports honestly about what it could not do.
+
+The `AIR_POLLUTION_TRANSPORT_*` values in `.env.example` are the current v1
+deterministic screening policy: a 45-degree half-angle, 10 km maximum distance,
+eight arc segments, a 30-minute wind-age limit and a 0.5 m/s minimum wind
+speed. They define possible-transport screening geometry. They are not
+plume-physics constants and do not establish a source, plume or exposure.
 
 ### Run the tests
 
@@ -239,8 +247,11 @@ crossing its own line is the normal case, and PostGIS repairs it with
 
 #### Loading the population grid
 
-`population_cells` is empty until the grid is loaded, and until then
-`population` reads `0`. It holds one row per raster pixel of a population
+`population_cells` is empty until the grid is loaded. Area-summary reads then
+have no contributing cells, while Air Pollution corridor analysis reports
+`shared_population_grid_unavailable_or_unloaded`; neither path treats missing
+reference data as a confirmed population of zero. The table holds one row per
+raster pixel of a population
 **count** grid, as the pixel's own footprint — the footprint, not the centroid,
 is what makes the area weighting possible.
 
@@ -259,6 +270,10 @@ check that the right raster went in. Pass `--coarsen 2` for 200 m cells
 if the row count matters more than the resolution. It is a full reload —
 `population_cells` is truncated first — because this is reference data published
 once a year, not a feed.
+
+This is a one-time deployment/reference-data prerequisite for every database
+that should support Air Pollution corridor population screening. Run it only
+against the explicitly intended database; the loader performs a full reload.
 
 #### Loading the surface grid
 

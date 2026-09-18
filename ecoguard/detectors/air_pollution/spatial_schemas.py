@@ -30,6 +30,34 @@ class NearbyGeographicFeature(AnomalyContract):
         return self
 
 
+class SettlementContextStatus(AnomalyContract):
+    """Availability of the DB-backed towns layer, independent of wind."""
+
+    status: Literal["success", "unavailable"]
+    outcome: Literal[
+        "SUCCESS_WITH_RESULTS",
+        "SUCCESS_EMPTY",
+        "REFERENCE_DATA_NOT_LOADED",
+        "UNAVAILABLE",
+    ]
+    source: Literal["shared_postgis_towns"] = "shared_postgis_towns"
+    candidate_count: int = Field(default=0, ge=0)
+    reason: str | None = None
+
+    @model_validator(mode="after")
+    def _coherent_status(self) -> "SettlementContextStatus":
+        succeeded = self.outcome in {"SUCCESS_WITH_RESULTS", "SUCCESS_EMPTY"}
+        if (self.status == "success") != succeeded:
+            raise ValueError("settlement status must match repository outcome")
+        if self.outcome == "SUCCESS_WITH_RESULTS" and self.candidate_count == 0:
+            raise ValueError("successful town result must contain candidates")
+        if self.outcome != "SUCCESS_WITH_RESULTS" and self.candidate_count != 0:
+            raise ValueError("only a result outcome can contain candidates")
+        if self.status == "unavailable" and not self.reason:
+            raise ValueError("unavailable settlement context requires a reason")
+        return self
+
+
 class PollutionSpatialContext(AnomalyContract):
     location: GeographicCoordinate
     lookup_radius_km: float = Field(gt=0, strict=True)
@@ -37,6 +65,7 @@ class PollutionSpatialContext(AnomalyContract):
     source: str | None = None
     collected_at: AwareDatetime | None = None
     provider_collection_status: str | None = None
+    settlement_context: SettlementContextStatus | None = None
     nearby_settlements: list[NearbyGeographicFeature] = Field(default_factory=list)
     nearby_roads: list[NearbyGeographicFeature] = Field(default_factory=list)
     nearby_hospitals: list[NearbyGeographicFeature] = Field(default_factory=list)

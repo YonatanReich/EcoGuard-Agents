@@ -1,0 +1,256 @@
+{
+  "purpose": "Artificial coordinator output with a known right answer, for the fire spread analyser.",
+  "how_to_read_this": "Each case is a coordinator incident exactly as incidents.py stores one, plus the environment the store would have supplied for that cell, plus what is independently known to be true about the situation it describes. The expectations are not recordings of what the analyser printed. Every one of them is derived in `ground_truth` from the geometry and the physics before the analyser is run, and the tolerances are stated so that a number drifting outside them fails rather than being quietly re-baselined. A case whose expectation had to be widened to make it pass is a finding about the analyser, not about the case.",
+  "geometry_note": "Distances are computed against ecoguard/data/reference/localities.geojson, whose outlines are approximate to roughly 200 m. Distance tolerances below are wider than that error and no test asserts a distance more tightly than the outlines can support.",
+  "cases": [
+    {
+      "case_id": "spread-01-petah-tikva-runs-west",
+      "title": "Street fire in western Petah Tikva, easterly wind, Givat Shmuel downwind",
+      "probes": ["direction", "named-exposure", "arrival-time", "ordering"],
+      "notes": "The scenario this analyser exists for. An open lot on the western edge of Petah Tikva, a hot dry September afternoon, and a 28 km/h easterly. The question is whether a coordinate turns into the sentence a duty officer needs: not 'fire at 32.083, 34.870' but 'fire in Petah Tikva heading for Givat Shmuel'.",
+      "ground_truth": "Wind FROM 090 carries fire toward 270, due west. The ignition point sits inside the Petah Tikva outline, so Petah Tikva is burning. Givat Shmuel's eastern edge lies at longitude 34.8575 at this latitude; (34.8700 - 34.8575) x 111.320 km x cos(32.083) = 1.18 km due west of the ignition, and at the modelled 19 m/min head rate the front covers that in about 62 minutes - inside the 3 hour horizon, so Givat Shmuel is in the likely path. Bnei Brak lies beyond it on the same bearing and is reached later. Kiryat Ono lies 1.4 km away on bearing 211, some 60 degrees off the head, so it is out of the forecast path but inside the wind-error fan: possible, not likely.",
+      "incident": {
+        "id": "inc-synthetic-pt-01",
+        "status": "open",
+        "primary_hazard": "fire",
+        "hazards": ["fire"],
+        "queues": ["emergency"],
+        "cells": ["risk-05000m-r0242-c0011"],
+        "latitude": 32.083,
+        "longitude": 34.87,
+        "precision_m": 375,
+        "location_method": "viirs_pixel",
+        "first_seen_at": "2026-09-14T11:10:00Z",
+        "last_signal_at": "2026-09-14T11:40:00Z",
+        "signal_count": 3,
+        "peak_rarity": 0.998,
+        "signals": [
+          {"source": "firms", "variable": "frp", "value": 14.2, "unit": "MW", "rarity": 0.998, "observed_at": "2026-09-14T11:10:00Z"},
+          {"source": "open_meteo", "variable": "wind_speed_10m", "value": 28.0, "unit": "km/h", "rarity": 0.981, "observed_at": "2026-09-14T11:00:00Z"},
+          {"source": "open_meteo", "variable": "relative_humidity_2m", "value": 22.0, "unit": "%", "rarity": 0.993, "observed_at": "2026-09-14T11:00:00Z"}
+        ]
+      },
+      "environment": {
+        "temperature_c": 33.0,
+        "humidity_percent": 22.0,
+        "wind_speed_kmh": 28.0,
+        "wind_direction_deg": 90.0,
+        "cover_fractions": {"built_up": 0.45, "grassland": 0.35, "shrubland": 0.15, "bare_sparse_vegetation": 0.05},
+        "slope_deg": 1.5,
+        "aspect_deg": 270.0
+      },
+      "horizon_minutes": 180.0,
+      "expected": {
+        "status": "ok",
+        "origin_locality": "Petah Tikva",
+        "heading_compass": "west",
+        "heading_deg": {"value": 270.0, "tolerance": 10.0},
+        "head_ros_m_per_min": {"min": 8.0, "max": 40.0},
+        "risk_level": "critical",
+        "exposure": {
+          "petah-tikva": "burning",
+          "givat-shmuel": "likely",
+          "kiryat-ono": "possible"
+        },
+        "not_exposed": ["or-yehuda"],
+        "distance_m": {"givat-shmuel": {"value": 1180.0, "tolerance": 250.0}},
+        "arrival_minutes": {"givat-shmuel": {"min": 30.0, "max": 100.0}},
+        "headline_contains": ["Petah Tikva", "Givat Shmuel", "west"],
+        "headline_excludes": ["Or Yehuda"]
+      }
+    },
+    {
+      "case_id": "spread-02-petah-tikva-runs-east",
+      "title": "The same fire, the same hour, the wind reversed",
+      "probes": ["direction", "false-positive-control"],
+      "notes": "The control for case 01 and the only one of these that can prove the direction means anything. Every input is identical except the wind bearing, so any locality still named downwind is being named by proximity rather than by the forecast - which is precisely the failure that would make the whole analyser decorative.",
+      "ground_truth": "Wind FROM 270 carries fire toward 090, due east, into the interior of Petah Tikva and away from every neighbouring town. Givat Shmuel is 1.18 km upwind and behind the backing edge, which at a length-to-width ratio near 2.7 advances roughly 3% of the head rate - about 100 m in three hours. Nothing outside Petah Tikva is reached.",
+      "incident": {
+        "id": "inc-synthetic-pt-02",
+        "status": "open",
+        "primary_hazard": "fire",
+        "hazards": ["fire"],
+        "queues": ["emergency"],
+        "cells": ["risk-05000m-r0242-c0011"],
+        "latitude": 32.083,
+        "longitude": 34.87,
+        "precision_m": 375,
+        "location_method": "viirs_pixel",
+        "first_seen_at": "2026-09-14T11:10:00Z",
+        "last_signal_at": "2026-09-14T11:40:00Z",
+        "signal_count": 3,
+        "peak_rarity": 0.998,
+        "signals": []
+      },
+      "environment": {
+        "temperature_c": 33.0,
+        "humidity_percent": 22.0,
+        "wind_speed_kmh": 28.0,
+        "wind_direction_deg": 270.0,
+        "cover_fractions": {"built_up": 0.45, "grassland": 0.35, "shrubland": 0.15, "bare_sparse_vegetation": 0.05},
+        "slope_deg": 1.5,
+        "aspect_deg": 270.0
+      },
+      "horizon_minutes": 180.0,
+      "expected": {
+        "status": "ok",
+        "origin_locality": "Petah Tikva",
+        "heading_compass": "east",
+        "heading_deg": {"value": 90.0, "tolerance": 10.0},
+        "head_ros_m_per_min": {"min": 8.0, "max": 40.0},
+        "exposure": {"petah-tikva": "burning"},
+        "not_exposed": ["givat-shmuel", "bnei-brak", "ramat-gan", "kiryat-ono", "or-yehuda"],
+        "headline_contains": ["Petah Tikva", "east"],
+        "headline_excludes": ["Givat Shmuel", "Bnei Brak"]
+      }
+    },
+    {
+      "case_id": "spread-03-petah-tikva-short-horizon",
+      "title": "Case 01 asked 45 minutes ahead instead of three hours",
+      "probes": ["horizon", "arrival-time-consistency"],
+      "notes": "Same fire, same wind, shorter question. A forecast that names the same towns whatever horizon it is asked about is not forecasting anything, it is listing neighbours.",
+      "ground_truth": "At the modelled 19 m/min the head covers about 855 m in 45 minutes. Givat Shmuel's nearest edge is 1.18 km away, so the fire has not reached it and must not be reported as in the likely path. Petah Tikva still contains the ignition point.",
+      "incident": {
+        "id": "inc-synthetic-pt-03",
+        "status": "open",
+        "primary_hazard": "fire",
+        "hazards": ["fire"],
+        "cells": ["risk-05000m-r0242-c0011"],
+        "latitude": 32.083,
+        "longitude": 34.87,
+        "first_seen_at": "2026-09-14T11:10:00Z",
+        "last_signal_at": "2026-09-14T11:40:00Z",
+        "signals": []
+      },
+      "environment": {
+        "temperature_c": 33.0,
+        "humidity_percent": 22.0,
+        "wind_speed_kmh": 28.0,
+        "wind_direction_deg": 90.0,
+        "cover_fractions": {"built_up": 0.45, "grassland": 0.35, "shrubland": 0.15, "bare_sparse_vegetation": 0.05},
+        "slope_deg": 1.5,
+        "aspect_deg": 270.0
+      },
+      "horizon_minutes": 45.0,
+      "expected": {
+        "status": "ok",
+        "origin_locality": "Petah Tikva",
+        "heading_compass": "west",
+        "exposure": {"petah-tikva": "burning"},
+        "not_exposed": ["givat-shmuel"],
+        "headline_contains": ["45 minutes"],
+        "headline_excludes": ["Givat Shmuel", "1 hours"]
+      }
+    },
+    {
+      "case_id": "spread-04-dense-urban-no-wildland-fuel",
+      "title": "A fire in solidly built-up ground",
+      "probes": ["no-fabrication", "stall-reason"],
+      "notes": "A structure fire in a dense block. The analyser has nothing to say about it and the whole question is whether it says nothing loudly enough. A zero polygon and a low risk score would both read downstream as 'assessed, and fine'.",
+      "ground_truth": "Built-up land carries no wildland fuel by construction, so there is no surface fire to propagate and no polygon to draw. The correct output is a stall naming no_burnable_fuel, a null risk score - never zero, never low - and a headline that says explicitly this is not a judgement about the fire itself.",
+      "incident": {
+        "id": "inc-synthetic-pt-04",
+        "status": "open",
+        "primary_hazard": "fire",
+        "hazards": ["fire"],
+        "cells": ["risk-05000m-r0242-c0011"],
+        "latitude": 32.083,
+        "longitude": 34.87,
+        "first_seen_at": "2026-09-14T11:10:00Z",
+        "last_signal_at": "2026-09-14T11:40:00Z",
+        "signals": []
+      },
+      "environment": {
+        "temperature_c": 33.0,
+        "humidity_percent": 22.0,
+        "wind_speed_kmh": 28.0,
+        "wind_direction_deg": 90.0,
+        "cover_fractions": {"built_up": 0.97, "bare_sparse_vegetation": 0.03},
+        "slope_deg": 1.5,
+        "aspect_deg": 270.0
+      },
+      "horizon_minutes": 180.0,
+      "expected": {
+        "status": "stalled",
+        "reason": "no_burnable_fuel",
+        "risk_score": null,
+        "risk_level": null,
+        "not_exposed": ["givat-shmuel", "bnei-brak"],
+        "headline_contains": ["No wildland spread", "not an assessment of the fire itself"]
+      }
+    },
+    {
+      "case_id": "spread-05-wet-fuel-will-not-carry",
+      "title": "The same easterly, on a damp winter morning",
+      "probes": ["moisture-of-extinction", "stall-reason"],
+      "notes": "Identical geometry and wind to case 01, in February at 88% humidity. Wind is the input people expect to dominate, and this is the case where it must not: above the fuel's moisture of extinction the rate of spread is exactly zero however hard it blows.",
+      "ground_truth": "At 12 C and 88% relative humidity the Simard equilibrium moisture content is around 22%, above the roughly 15% blended extinction moisture of this grass-and-brush mixture. Rothermel's damping term is then zero and so is the rate of spread. The stall reason must distinguish this from case 04: the fuel is there, it is merely too wet, and that changes within a day where missing fuel does not.",
+      "incident": {
+        "id": "inc-synthetic-pt-05",
+        "status": "open",
+        "primary_hazard": "fire",
+        "hazards": ["fire"],
+        "cells": ["risk-05000m-r0242-c0011"],
+        "latitude": 32.083,
+        "longitude": 34.87,
+        "first_seen_at": "2026-02-08T07:10:00Z",
+        "last_signal_at": "2026-02-08T07:40:00Z",
+        "signals": []
+      },
+      "environment": {
+        "temperature_c": 12.0,
+        "humidity_percent": 88.0,
+        "wind_speed_kmh": 28.0,
+        "wind_direction_deg": 90.0,
+        "cover_fractions": {"built_up": 0.45, "grassland": 0.35, "shrubland": 0.15, "bare_sparse_vegetation": 0.05},
+        "slope_deg": 1.5,
+        "aspect_deg": 270.0
+      },
+      "horizon_minutes": 180.0,
+      "expected": {
+        "status": "stalled",
+        "reason": "fuel_above_moisture_of_extinction",
+        "risk_score": null,
+        "risk_level": null,
+        "not_exposed": ["givat-shmuel"],
+        "headline_contains": ["too wet"]
+      }
+    },
+    {
+      "case_id": "spread-06-not-a-fire",
+      "title": "An air quality incident handed to the fire analyser",
+      "probes": ["routing", "no-fabrication"],
+      "notes": "The coordinator routes hybrids into more than one queue, so an incident whose primary hazard is not fire can reach here. It must decline rather than model a fire that was never reported.",
+      "ground_truth": "Primary hazard is air_pollution. The correct output is skipped with a null score, no polygon and no named localities.",
+      "incident": {
+        "id": "inc-synthetic-aq-01",
+        "status": "open",
+        "primary_hazard": "air_pollution",
+        "hazards": ["air_pollution"],
+        "cells": ["risk-05000m-r0242-c0011"],
+        "latitude": 32.083,
+        "longitude": 34.87,
+        "first_seen_at": "2026-09-14T11:10:00Z",
+        "last_signal_at": "2026-09-14T11:40:00Z",
+        "signals": []
+      },
+      "environment": {
+        "temperature_c": 33.0,
+        "humidity_percent": 22.0,
+        "wind_speed_kmh": 28.0,
+        "wind_direction_deg": 90.0,
+        "cover_fractions": {"grassland": 1.0},
+        "slope_deg": 1.5,
+        "aspect_deg": 270.0
+      },
+      "horizon_minutes": 180.0,
+      "expected": {
+        "status": "skipped",
+        "reason": "not_a_fire_incident",
+        "risk_score": null,
+        "risk_level": null,
+        "not_exposed": ["petah-tikva", "givat-shmuel"]
+      }
+    }
+  ]
+}

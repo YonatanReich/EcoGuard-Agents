@@ -7,7 +7,11 @@ from pydantic import ValidationError
 
 from ecoguard.detectors.air_pollution.schemas import AirPollutionAnomaly, AirPollutionBaselineEvidence
 from ecoguard.detectors.air_pollution.correlation import correlation_candidate
-from ecoguard.analyzers.non_emergency.air_pollution.event_analysis_schemas import AirPollutionAnalysisInput
+from ecoguard.analyzers.non_emergency.air_pollution.event_analysis_schemas import (
+    AirPollutionAnalysisInput,
+    AirPollutionTrendPrediction,
+    AnalysisComponent,
+)
 from ecoguard.analyzers.non_emergency.air_pollution.event_analyzer import AirPollutionNonEmergencyAnalyzer
 from ecoguard.detectors.air_pollution.spatial_schemas import (
     PollutionSpatialContext,
@@ -126,15 +130,19 @@ def _candidate(*, live_value: float = 21.0, baseline_p95: float = 20.0):
         location=POINT,
         lookup_radius_km=2.0,
         status="success",
-        source="OpenStreetMap / Overpass API",
+        source="shared_postgis_towns",
         collected_at=OBSERVED_AT,
-        provider_collection_status="success",
+        provider_collection_status="SUCCESS_WITH_RESULTS",
+        settlement_context={
+            "status": "success",
+            "outcome": "SUCCESS_WITH_RESULTS",
+            "candidate_count": 1,
+        },
         nearby_settlements=[
             {
                 "name": "East Town",
                 "type": "town",
-                "osm_id": 123,
-                "osm_type": "node",
+                "ref": "5000",
                 "latitude": 32.1,
                 "longitude": 34.81,
             }
@@ -298,6 +306,7 @@ def test_analyzer_composes_existing_wind_corridor_time_and_spatial_output():
     assert execution.spatial_output.corridor_polygon is not None
     assert execution.spatial_output.downwind_to_direction_deg == 90.0
     assert execution.spatial_output.settlements[0].name == "East Town"
+    assert execution.spatial_output.settlement_context.outcome == "SUCCESS_WITH_RESULTS"
     assert execution.spatial_output.settlements[0].kinematic_advection_time_seconds is not None
     assert execution.spatial_output.exposure_not_confirmed is True
     assert any("not confirmed" in item.lower() for item in execution.spatial_output.limitations)
@@ -336,7 +345,7 @@ def test_missing_wind_is_explicit_and_safe():
     assert "provider unavailable" not in report.model_dump_json()
 
 
-def test_unimplemented_population_trend_and_severity_are_not_fabricated():
+def test_unavailable_population_trend_and_severity_are_not_fabricated():
     report = AirPollutionNonEmergencyAnalyzer(
         transport_service=None, clock=lambda: GENERATED_AT
     ).analyze(_analysis_input())
@@ -346,6 +355,138 @@ def test_unimplemented_population_trend_and_severity_are_not_fabricated():
     assert report.severity_assessment.status == "unavailable"
     assert report.transport_analysis.status == "unavailable"
     assert report.exposure_not_confirmed is True
+
+
+def _trend_component():
+    return AnalysisComponent[AirPollutionTrendPrediction](
+        status="success",
+        result=AirPollutionTrendPrediction(
+            trend="RISING",
+            confidence=0.7,
+            probabilities={"FALLING": 0.1, "STABLE": 0.2, "RISING": 0.7},
+            pollutant="NO2",
+            station_id="42",
+            channel_id="7001",
+            unit="ppb",
+            issued_at=GENERATED_AT,
+            as_of=OBSERVED_AT,
+            model_version="test-model-v1",
+            artifact_version="test-artifact-v1",
+            feature_policy_version="test-features-v1",
+            preprocessing_version="test-preprocessing-v1",
+            epsilon_policy_version="test-epsilon-v1",
+        ),
+        evidence=[
+            TransportEvidenceReference(
+                evidence_id="trend-ml:test",
+                source_name="test trend model",
+                source_type="sgd_logistic_trend_model",
+            )
+        ],
+    )
+
+
+def test_trend_component_is_integrated_without_blocking_transport():
+    transport, _ = _transport_service()
+    trend = Mock()
+    trend.predict.return_value = _trend_component()
+
+    report = AirPollutionNonEmergencyAnalyzer(
+        transport_service=transport,
+        trend_inference_service=trend,
+        clock=lambda: GENERATED_AT,
+    ).analyze(_analysis_input())
+
+    trend.predict.assert_called_once()
+    assert report.future_prediction.result.trend == "RISING"
+    assert report.transport_analysis.result is not None
+
+
+def test_trend_failure_does_not_block_other_analysis_components():
+    transport, _ = _transport_service()
+    trend = Mock()
+    trend.predict.side_effect = RuntimeError("private inference detail")
+
+    report = AirPollutionNonEmergencyAnalyzer(
+        transport_service=transport,
+        trend_inference_service=trend,
+        clock=lambda: GENERATED_AT,
+    ).analyze(_analysis_input())
+
+    assert report.future_prediction.unavailable_reason == "trend_inference_failure"
+    assert report.transport_analysis.result is not None
+    assert "private inference detail" not in report.model_dump_json()
+
+
+def test_multiple_candidates_at_origin_make_only_trend_unavailable():
+    second_payload = _candidate().model_dump(round_trip=True)
+    second_payload["anomaly"]["detection_id"] = "air-pollution:test-2"
+    second = type(_candidate()).model_validate(second_payload)
+    trend = Mock()
+
+    report = AirPollutionNonEmergencyAnalyzer(
+        transport_service=None,
+        trend_inference_service=trend,
+        clock=lambda: GENERATED_AT,
+    ).analyze(
+        _analysis_input(correlated_detections=[_candidate(), second])
+    )
+
+    trend.predict.assert_not_called()
+    assert report.future_prediction.unavailable_reason == "ambiguous_origin_series"
+    assert report.severity_assessment.unavailable_reason == (
+        "ministry_air_quality_index_service_unavailable"
+    )
+
+
+def test_origin_evidence_reference_disambiguates_candidates_at_same_location():
+    second_payload = _candidate().model_dump(round_trip=True)
+    second_payload["anomaly"]["detection_id"] = "air-pollution:test-2"
+    second_payload["anomaly"]["observed_at"] = OBSERVED_AT + timedelta(minutes=1)
+    second_payload["anomaly"]["detected_at"] = OBSERVED_AT + timedelta(minutes=1, seconds=10)
+    second_payload["anomaly"]["live_observation"]["observed_at"] = (
+        OBSERVED_AT + timedelta(minutes=1)
+    )
+    second_payload["anomaly"]["live_observation"]["provider_timestamp"] = (
+        "2026-09-13T19:20:00+02:00"
+    )
+    second = type(_candidate()).model_validate(second_payload)
+    trend = Mock()
+    trend.predict.return_value = _trend_component()
+    index_client = Mock()
+    index_client.get_station_index_evidence.return_value = _index_lookup(
+        provider_timestamp=OBSERVED_AT + timedelta(minutes=15)
+    )
+
+    report = AirPollutionNonEmergencyAnalyzer(
+        transport_service=None,
+        ministry_index_client=index_client,
+        trend_inference_service=trend,
+        clock=lambda: GENERATED_AT,
+    ).analyze(_analysis_input(
+        correlated_detections=[_candidate(), second],
+        analysis_origin=AnalysisOrigin(
+            analysis_origin_kind="monitoring_location",
+            analysis_origin_coordinates=POINT,
+            evidence_reference_ids=["air-pollution:test-2"],
+        ),
+        evidence=[
+            *_incident_evidence(),
+            TransportEvidenceReference(
+                evidence_id="air-pollution:test-2",
+                source_name="test",
+            ),
+        ],
+    ))
+
+    trend.predict.assert_called_once_with(second)
+    index_client.get_station_index_evidence.assert_called_once_with(
+        station_id="42",
+        channel_id="7001",
+        pollutant="NO2",
+        observed_at=OBSERVED_AT + timedelta(minutes=1),
+    )
+    assert report.future_prediction.status == "success"
 
 
 def test_analyzer_preserves_native_ministry_index_separately_from_p95_evidence():
