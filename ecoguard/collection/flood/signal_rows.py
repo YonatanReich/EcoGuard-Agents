@@ -7,6 +7,9 @@ from datetime import datetime
 from typing import Any, Iterable, Mapping
 
 
+FLOW_THRESHOLD_STATUS_COMPLETE = "complete_thresholds"
+
+
 def _grouped_records(
     rows: Iterable[dict[str, Any]],
     stations: Mapping[int, Mapping[str, Any]],
@@ -46,6 +49,7 @@ def _grouped_records(
             "flow_threshold_20y_m3s",
             "flow_threshold_50y_m3s",
             "flow_threshold_100y_m3s",
+            "flow_threshold_status",
         ):
             if field in station:
                 item[field] = station.get(field)
@@ -72,7 +76,16 @@ def hydrometric_signal_records(
     rows: Iterable[dict[str, Any]],
     stations: Mapping[int, Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
-    return _grouped_records(rows, stations, ("discharge_m3s", "water_height_m"))
+    eligible_stations = {
+        station_id: station
+        for station_id, station in stations.items()
+        if station.get("flow_threshold_status") == FLOW_THRESHOLD_STATUS_COMPLETE
+    }
+    return _grouped_records(
+        rows,
+        eligible_stations,
+        ("discharge_m3s", "water_height_m"),
+    )
 
 
 def rainfall_signal_records(

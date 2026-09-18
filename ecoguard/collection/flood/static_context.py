@@ -134,7 +134,10 @@ REBUILD_BASELINES = text(
              observation.discharge_m3s,
              observation.water_height_m
       FROM hydrometric_observations AS observation
+      JOIN hydrometric_stations AS station
+        ON station.id = observation.hydrometric_station_id
       WHERE observation.hydrometric_station_id IS NOT NULL
+        AND station.flow_threshold_status = 'complete_thresholds'
         AND observation.observed_at < :computed_at - interval '7 days'
       UNION ALL
       SELECT station_link.hydrometric_station_id,
@@ -145,7 +148,10 @@ REBUILD_BASELINES = text(
       JOIN hydrometric_station_history_links AS station_link
         ON station_link.historical_station_id =
            observation.historical_station_id
+      JOIN hydrometric_stations AS station
+        ON station.id = station_link.hydrometric_station_id
       WHERE NOT observation.is_sewage
+        AND station.flow_threshold_status = 'complete_thresholds'
     ),
     historical AS (
       -- Segment boundaries repeat some source timestamps. Collapse them once
@@ -280,6 +286,7 @@ STATION_TOPOLOGY_INPUT = text(
         LIMIT 20
       ) AS candidate
     ) AS stream_match ON true
+    WHERE station.flow_threshold_status = 'complete_thresholds'
     ORDER BY station.source_station_id
     """
 )
@@ -308,6 +315,11 @@ STREAM_NETWORK_INPUT = text(
 
 
 def _station_context_rows(session: Any, table: str) -> list[dict[str, Any]]:
+    eligibility_filter = (
+        "WHERE station.flow_threshold_status = 'complete_thresholds'"
+        if table == "hydrometric_stations"
+        else ""
+    )
     rows = session.execute(
         text(
             f"""
@@ -323,6 +335,7 @@ def _station_context_rows(session: Any, table: str) -> list[dict[str, Any]]:
               ORDER BY ST_Area(candidate.geometry), candidate.basin_id
               LIMIT 1
             ) AS basin ON true
+            {eligibility_filter}
             """
         )
     ).mappings()

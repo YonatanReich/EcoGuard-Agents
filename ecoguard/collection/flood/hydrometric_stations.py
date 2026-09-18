@@ -32,6 +32,9 @@ TOKEN_PATTERN = re.compile(
 )
 RETURN_PERIODS = (2, 5, 10, 20, 50, 100)
 MISSING_THRESHOLD = 999.0
+FLOW_THRESHOLD_STATUS_COMPLETE = "complete_thresholds"
+FLOW_THRESHOLD_STATUS_MISSING = "missing_thresholds"
+FLOW_THRESHOLD_STATUS_PARTIAL = "partial_thresholds"
 
 
 class HydrometricStationCatalogError(ValueError):
@@ -100,6 +103,16 @@ def _threshold(value: Any, label: str) -> float | None:
     return number
 
 
+def _flow_threshold_status(thresholds: list[float | None]) -> str:
+    """Classify the complete rating curve once, at the source boundary."""
+    available = sum(value is not None for value in thresholds)
+    if available == len(RETURN_PERIODS):
+        return FLOW_THRESHOLD_STATUS_COMPLETE
+    if available == 0:
+        return FLOW_THRESHOLD_STATUS_MISSING
+    return FLOW_THRESHOLD_STATUS_PARTIAL
+
+
 def parse_hydrometric_station_catalog(
     response: Any,
     *,
@@ -163,6 +176,7 @@ def parse_hydrometric_station_catalog(
             _threshold(value, f"station {source_station_id} threshold {period}y")
             for value, period in zip(thresholds, RETURN_PERIODS)
         ]
+        flow_threshold_status = _flow_threshold_status(normalized_thresholds)
 
         name_he = _optional_text(station.get("name_he"))
         name_en = _optional_text(station.get("name_en"))
@@ -193,6 +207,7 @@ def parse_hydrometric_station_catalog(
                 f"flow_threshold_{period}y_m3s": value
                 for period, value in zip(RETURN_PERIODS, normalized_thresholds)
             },
+            "flow_threshold_status": flow_threshold_status,
             "source_metadata": _canonical_json(station),
             "synced_at": synced_at,
         })
@@ -296,7 +311,8 @@ STATION_UPSERT = text(
       (source_station_id, name_he, name_en, location, cell_id, owner_id, map_zoom_level,
        flow_start_water_level_m, flow_threshold_2y_m3s, flow_threshold_5y_m3s,
        flow_threshold_10y_m3s, flow_threshold_20y_m3s, flow_threshold_50y_m3s,
-       flow_threshold_100y_m3s, is_active, source_metadata, synced_at)
+       flow_threshold_100y_m3s, flow_threshold_status, is_active,
+       source_metadata, synced_at)
     VALUES
       (:source_station_id, :name_he, :name_en,
        ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
@@ -304,6 +320,7 @@ STATION_UPSERT = text(
        :flow_threshold_2y_m3s, :flow_threshold_5y_m3s,
        :flow_threshold_10y_m3s, :flow_threshold_20y_m3s,
        :flow_threshold_50y_m3s, :flow_threshold_100y_m3s,
+       :flow_threshold_status,
        true, CAST(:source_metadata AS jsonb), :synced_at)
     ON CONFLICT ON CONSTRAINT hydrometric_stations_identity DO UPDATE SET
       name_he = EXCLUDED.name_he,
@@ -319,6 +336,7 @@ STATION_UPSERT = text(
       flow_threshold_20y_m3s = EXCLUDED.flow_threshold_20y_m3s,
       flow_threshold_50y_m3s = EXCLUDED.flow_threshold_50y_m3s,
       flow_threshold_100y_m3s = EXCLUDED.flow_threshold_100y_m3s,
+      flow_threshold_status = EXCLUDED.flow_threshold_status,
       is_active = true,
       source_metadata = EXCLUDED.source_metadata,
       synced_at = EXCLUDED.synced_at

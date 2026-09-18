@@ -541,6 +541,7 @@ def refresh_historical_station_links() -> int:
                            ST_X(location::geometry) AS longitude
                     FROM hydrometric_stations
                     WHERE is_active
+                      AND flow_threshold_status = 'complete_thresholds'
                     ORDER BY source_station_id
                     """
                 )

@@ -147,6 +147,7 @@ STATION_CONTEXTS = text(
     LEFT JOIN flood_station_topology AS topology
       ON topology.hydrometric_station_id = station.id
     WHERE station.source_station_id IN :station_ids
+      AND station.flow_threshold_status = 'complete_thresholds'
     """
 ).bindparams(bindparam("station_ids", expanding=True))
 
@@ -169,6 +170,7 @@ BASELINES = text(
     JOIN hydrometric_stations AS station
       ON station.id = baseline.hydrometric_station_id
     WHERE station.source_station_id IN :station_ids
+      AND station.flow_threshold_status = 'complete_thresholds'
     """
 ).bindparams(bindparam("station_ids", expanding=True))
 

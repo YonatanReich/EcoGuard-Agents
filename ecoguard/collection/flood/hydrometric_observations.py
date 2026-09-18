@@ -288,8 +288,10 @@ def persist_hydrometric_observations(
                            flow_threshold_10y_m3s,
                            flow_threshold_20y_m3s,
                            flow_threshold_50y_m3s,
-                           flow_threshold_100y_m3s
+                           flow_threshold_100y_m3s,
+                           flow_threshold_status
                     FROM hydrometric_stations
+                    WHERE flow_threshold_status = 'complete_thresholds'
                     """
                 )
             ).mappings()
