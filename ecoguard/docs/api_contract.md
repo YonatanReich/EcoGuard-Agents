@@ -634,22 +634,21 @@ is not implemented.
 
 ---
 
-## 6. Flood Detector Worker Contract
+## 6. Flood Detector and Incident Lifecycle Contract
 
 This section is the authoritative contract for the current flood detector.
 The public Python entry point is:
 
 ```python
-from ecoguard.detectors.flood.worker import run_flood_detector
+from ecoguard.detectors.flood.observation_processing import detect_new
 
-result = run_flood_detector()
+signals = detect_new()
 ```
 
-This is a timer-safe worker entry point, not an HTTP endpoint and not a
-scheduler. Scheduling remains outside the flood package. The active worker
-reads only eligible hydrometric discharge observations, atomically persists
-lifecycle transitions and cursor progress, and returns newly committed
-transitions.
+The detector reads persisted hydrometric observations and returns the same
+`list[CellSignal]` contract as Fire and Air Pollution. It never writes event
+state. The shared Coordinator is the sole owner of event lifecycle state in
+`incidents`.
 
 ### 6.1 System Flow
 
@@ -658,24 +657,23 @@ The runtime flow is:
 1. The Water Authority collector keeps every reading in its raw source table,
    but copies readings to the detector stream only for stations classified as
    `complete_thresholds`. The detector never calls an upstream provider.
-2. The worker reads the hydrometric cursor from `detector_cursors`. A cursor is
-   the pair `(last_ingested_at, last_observation_id)`, so equal ingestion
-   timestamps are ordered safely by database id.
-3. If no new rows exist, the worker returns a no-op and performs no writes.
+2. Hydrometric collection runs every ten minutes, matching the provider's
+   publication cadence. The detector runs in the shared thirty-minute Fire,
+   Air Pollution and Flood detection cycle. Like the other detectors, its last
+   successful run is the ingestion bookmark.
+3. If no new rows exist, it returns an empty list.
 4. New rows with an ingestion lag over two hours, or an observed timestamp
    more than 15 minutes in the future, are not allowed to open or close a
-   real-time event. They are still consumed after a successful transaction so
-   the worker does not retry an old backfill forever.
-5. For every affected 5 km cell, the worker reloads a six-hour hydrometric
-   window, the active event state and any confirmed station-to-stream id. It
-   does not load rainfall, radar, baselines or basin context. The stream id is
-   output enrichment only and does not participate in the decision.
-6. `FloodDetectionAgent.evaluate()` applies deterministic threshold,
-   persistence and hysteresis rules. It has no database, collection or
-   scheduling responsibility.
-7. New candidates, event resolutions and all source cursor advances are
-   committed in one transaction. If evaluation or persistence fails, no cursor
-   advances and the same rows can be retried.
+   real-time event.
+5. For every affected 5 km cell, the detector reloads a six-hour hydrometric
+   window and any confirmed station-to-stream id. It does not load event state,
+   rainfall, radar, baselines or basin context. The stream id is output
+   enrichment only and does not participate in the decision.
+6. `FloodDetectionAgent.evaluate()` applies deterministic threshold and
+   persistence rules. It has no database, collection or scheduling
+   responsibility.
+7. The Scheduler adds the returned signals to the same Coordinator batch as
+   Fire and Air Pollution. The Coordinator applies its normal incident flow.
 
 The consumed sources are:
 
@@ -683,61 +681,33 @@ The consumed sources are:
 |---|---|
 | `water_authority_hydrometric_observations` | Discharge measurements from stations with a complete Q2-Q100 vector. |
 
-### 6.2 Worker Response
+### 6.2 Detector Response
 
-`run_flood_detector()` returns a JSON-serializable object with this exact root
-shape:
-
-| Field | Type | Meaning |
-|---|---|---|
-| `no_op` | Boolean | `true` only when `observations_processed` is zero. |
-| `observations_processed` | Integer | Number of newly ingested hydrometric observation rows read before delayed/future rows are filtered. This is not a count of stations nested inside payloads. |
-| `cells_evaluated` | Integer | Number of distinct cells containing at least one accepted real-time row. It can be zero while `observations_processed` is positive when every pending row is a delayed backfill or has an implausible future timestamp. |
-| `candidates` | Array of FloodCandidate | Newly inserted opening transitions only. A candidate rejected by the database uniqueness key because it was already emitted is not returned again. |
-| `resolutions` | Array of FloodResolution | Newly committed closing transitions only. |
+`detect_new()` returns `list[CellSignal]`, identical to the other scheduled
+detectors. Every item represents two consecutive readings at or above Q10.
 
 A true no-op is:
 
-```json
-{
-  "no_op": true,
-  "observations_processed": 0,
-  "cells_evaluated": 0,
-  "candidates": [],
-  "resolutions": []
-}
+```python
+[]
 ```
 
-The worker does not convert unexpected failures into a successful response.
-An evaluation or transaction error is raised to the caller; cursor progress is
-not committed.
+Unexpected failures are raised to the Scheduler and logged as a failed
+detector run. No event lifecycle state changes before the Coordinator accepts
+the returned batch.
 
-### 6.3 FloodCandidate
+### 6.3 Flood `CellSignal`
 
-Every object in `candidates` contains the complete detector result. The worker
-does not return a reduced candidate summary.
+Flood detections use the existing shared `CellSignal` shape.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `event_key` | String | Stable identity `flood:gauge:<cell_id>:<station_id>`, used to prevent reopening an active event. |
-| `candidate_key` | String | Immutable identity of this opening transition, including trigger and crossing timestamp. Used for idempotent persistence. |
-| `event_type` | String | Always `flood`. |
-| `detected` | Boolean | Always `true` for an opening candidate. |
-| `cell_id` | String | 5 km risk cell evaluated by the worker. |
-| `station_id` | Integer | Water Authority source-station identifier. |
-| `stream_id` | Integer or null | Internal `streams.id` for a confirmed materialized station-to-stream match; `null` when no confirmed match exists. This field does not affect detection. |
-| `timestamp` | ISO 8601 String | Timestamp of the second confirming reading. |
-| `current_discharge` | Float | Discharge at `timestamp`, in m³/s. |
-| `severity_level` | Integer | Confirmed threshold level from 3 through 6. |
-| `alert_level` | String | Operational state: `active` at Q10, `severe` at Q20, and `emergency` at Q50/Q100. |
+| `cell_id` | String | 5 km risk cell evaluated by the detector. |
 | `observed_at` | ISO 8601 String | Timestamp at which the opening threshold crossing was observed. |
-| `latitude`, `longitude` | Float | Best event reference coordinate; identical to the coordinate in `location`. |
-| `location` | Object | `known`, coordinates, `source` and `uncertainty_m`. See 7.7. |
-| `confidence` | Float | Evidence confidence in `[0, 1]`; it is not a calibrated flood probability. |
-| `severity_hint` | String | Compatibility mapping: `moderate` at Q10, `high` at Q20 and `critical` at Q50/Q100. |
-| `location_uncertainty_m` | Float | Same uncertainty value exposed inside `location`. |
-| `trigger` | String | Always `gauge_discharge_threshold`. |
-| `evidence` | Object | Compact lifecycle evidence used for deduplication and resolution. |
+| `hazard` | String | Always `flood`. |
+| `variable`, `value`, `unit` | Mixed | `discharge`, the current value and `m3/s`. |
+| `location` | `CellLocation` | Hydrometric station coordinate with 100 m precision. |
+| `evidence` | Object | Threshold vector, station/stream ids, severity and confirming readings. |
 
 ### 6.4 Active Hydrometric Rules
 
@@ -749,10 +719,8 @@ or above Q10. Q10 is `active`, Q20 is `severe`, and Q50/Q100 are `emergency`.
 Severity is calculated from the current reading; the previous reading supplies
 persistence confirmation.
 
-An active event resolves only after two consecutive valid readings are both
-strictly below 80% of Q10. Missing or ineligible readings break persistence and
-cannot resolve an event. Rain, radar, water height and statistical baselines do
-not participate in the active decision.
+Readings below Q10 emit no signal. Rain, radar, water height and statistical
+baselines do not participate in the active decision.
 
 ### 6.5 Station Eligibility
 
@@ -761,112 +729,44 @@ complete Q2, Q5, Q10, Q20, Q50 and Q100 curve. The catalog records this as
 `flow_threshold_status: "complete_thresholds"`. A curve containing six `999`
 sentinels is recorded as `missing_thresholds`; its raw measurements remain
 auditable but are excluded from the shared detector observation stream and
-cannot participate in event opening or resolution.
+cannot participate in event detection.
 
 ### 6.6 Evidence
 
-Candidate evidence contains the complete threshold vector, the two confirming
+Signal evidence contains the complete threshold vector and the two confirming
 discharges, current and previous severity levels, the current threshold, its
 return period, the Q10 alert threshold and the optional matched stream id. No
 inferred trend, rainfall or baseline evidence participates in this version.
 
 ### 6.7 Location and Limitations
 
-Candidates use the hydrometric station coordinate with 100 m uncertainty.
+Signals use the hydrometric station coordinate with 100 m uncertainty.
 Threshold exceedance identifies statistically elevated discharge; by itself it
 does not prove bank overtopping, inundation extent, water depth or travel time.
 
 ### 6.8 Event Resolution
 
-An active event is not repeated in `candidates`. It remains active until a
-fresh low-signal transition is committed.
+Flood uses the same quiet-period lifecycle as Fire and Air Pollution. Every
+qualifying signal updates the matched incident's `last_signal_at`. After three
+hours without a new qualifying Flood signal, the Coordinator closes the
+incident on its next shared thirty-minute cycle. A later confirmed Q10 pair
+opens a new incident.
 
-- Station events resolve after two new consecutive discharge readings are both
-  strictly below 80% of Q10. The readings may be at most 30 minutes apart.
-- Missing, ineligible or stale observations never close an event.
+This intentionally treats a prolonged collection outage like signal silence,
+which is the same operational limitation as the existing Fire and Air
+Pollution lifecycle.
 
-Every returned resolution has this shape:
+### 6.9 Coordinator lifecycle
 
-```json
-{
-  "event_key": "flood:gauge:risk-05000m-r0040-c0012:50",
-  "candidate_key": "flood:gauge_discharge_threshold:risk-05000m-r0040-c0012:50:2026-09-16T08:00:00+00:00",
-  "event_type": "flood",
-  "cell_id": "risk-05000m-r0040-c0012",
-  "observed_at": "2026-09-16T08:20:00+00:00",
-  "status": "resolved",
-  "reason": "discharge_below_hysteresis_threshold",
-  "evidence": {
-    "station_id": 50,
-    "alert_threshold_m3s": 30.0,
-    "exit_threshold_m3s": 24.0,
-    "recent_discharges_m3s": [23.9, 23.0]
-  }
-}
-```
-
-### 6.9 Complete Worker Example
-
-```json
-{
-  "no_op": false,
-  "observations_processed": 2,
-  "cells_evaluated": 1,
-  "candidates": [
-    {
-      "event_key": "flood:gauge:risk-05000m-r0040-c0012:50",
-      "candidate_key": "flood:gauge_discharge_threshold:risk-05000m-r0040-c0012:50:2026-09-16T08:00:00+00:00",
-      "event_type": "flood",
-      "detected": true,
-      "cell_id": "risk-05000m-r0040-c0012",
-      "station_id": 50,
-      "stream_id": 701,
-      "timestamp": "2026-09-16T08:00:00+00:00",
-      "current_discharge": 32.0,
-      "severity_level": 3,
-      "alert_level": "active",
-      "observed_at": "2026-09-16T08:00:00+00:00",
-      "latitude": 32.01,
-      "longitude": 34.81,
-      "location": {
-        "known": true,
-        "latitude": 32.01,
-        "longitude": 34.81,
-        "source": "hydrometric_station",
-        "uncertainty_m": 100.0
-      },
-      "confidence": 0.9,
-      "severity_hint": "moderate",
-      "location_uncertainty_m": 100.0,
-      "trigger": "gauge_discharge_threshold",
-      "evidence": {
-        "station_id": 50,
-        "source_station_id": 50,
-        "stream_id": 701,
-        "timestamp": "2026-09-16T08:00:00+00:00",
-        "current_discharge": 32.0,
-        "severity_level": 3,
-        "alert_level": "active",
-        "previous_severity_level": 3,
-        "current_threshold_m3s": 30.0,
-        "return_period_years": 10,
-        "alert_threshold_m3s": 30.0,
-        "thresholds_m3s": [10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
-        "recent_discharges_m3s": [31.0, 32.0]
-      }
-    }
-  ],
-  "resolutions": []
-}
-```
+The Coordinator performs its existing hazard, geographic and temporal match.
+There is no Flood-specific lifecycle key, update-only behavior, explicit
+resolution type or deduplication path in the shared Coordinator.
 
 ### 6.10 Persistence Boundary
 
-`flood_candidates` stores one lifecycle row per candidate key. Rich event data
-is kept under the persisted evidence object, while lifecycle fields remain
-queryable at the row root. The worker returns only candidates and resolutions
-confirmed by the commit result. The cursor and event changes are therefore
-consistent even when a retry repeats the same source rows.
+`incidents` is the sole event lifecycle store for Flood, Fire, Fire Weather and
+Air Pollution. Closed incidents are historical records and are not deleted by
+the detector.
 
 The detector contract intentionally does not include nearby roads, rescue
 forces, exposure, damage estimates or response recommendations. Those are

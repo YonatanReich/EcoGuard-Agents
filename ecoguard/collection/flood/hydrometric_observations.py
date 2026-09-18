@@ -2,12 +2,13 @@
 
 The provider returns a rolling seven-day window. Recent observations have a
 ten-minute resolution and older observations are hourly. This collector has no
-scheduler: another system agent may invoke it every five minutes, while the
+scheduler: another system agent may invoke it every ten minutes, while the
 database identity prevents the repeated window from creating duplicates.
 """
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -38,6 +39,8 @@ OBSERVATIONS_PATH = "/db_requests/get_hydro_observations_A7f3Q.php"
 SOURCE_TIMEZONE = ZoneInfo("Asia/Jerusalem")
 SOURCE_TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
 CHUNK_SIZE = 500
+
+logger = logging.getLogger(__name__)
 
 
 class HydrometricObservationError(ValueError):
@@ -354,3 +357,37 @@ def load_hydrometric_observations(
     except Exception as error:
         log_finish(run_id, status="failed", error=f"{type(error).__name__}: {error}")
         raise
+
+
+class HydrometricObservationCollector:
+    """Scheduler-safe wrapper around the Water Authority rolling-window load."""
+
+    source = SOURCE
+
+    def __init__(self, http_session: requests.Session | None = None) -> None:
+        self.http_session = http_session
+
+    def run(self) -> None:
+        """Collect once without letting provider or database failure kill a timer."""
+        from ecoguard.database.locks import single_flight
+
+        try:
+            with single_flight(f"collect_{self.source}") as acquired:
+                if not acquired:
+                    logger.info(
+                        "%s collector: previous run still going, skipping tick",
+                        self.source,
+                    )
+                    return
+                result = load_hydrometric_observations(self.http_session)
+                logger.info(
+                    "%s collector: %s source rows, %s detector rows",
+                    self.source,
+                    result["written"],
+                    result["detector_observations_written"],
+                )
+        except Exception:
+            # load_hydrometric_observations already records a failed run when
+            # the database is reachable. This outer guard also covers a lock
+            # acquisition failure when the database itself is unavailable.
+            logger.exception("%s collector failed", self.source)

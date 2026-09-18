@@ -1,1 +1,1 @@
-"""Tests for flood candidate detection."""
+"""Tests for shared Flood signals and quiet-period incident lifecycle."""

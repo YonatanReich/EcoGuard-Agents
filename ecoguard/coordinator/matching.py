@@ -45,7 +45,7 @@ QUIET_PERIOD: dict[str, timedelta] = {
     # cools. At the six-hour default that becomes a new incident every morning
     # — the same weather system reported as a fresh event daily.
     "fire_weather": timedelta(hours=24),
-    "flood": timedelta(hours=12),
+    "flood": timedelta(hours=3),
     "air_pollution": timedelta(hours=18),
     "heat": timedelta(hours=24),
 }

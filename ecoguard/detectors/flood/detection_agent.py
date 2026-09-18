@@ -1,42 +1,22 @@
-"""Flood-specific evaluation behind the shared detector worker.
-
-The agent has no database or scheduling responsibilities. It receives the
-hydrometric observation window prepared by the worker, then applies the
-deterministic station rules.
-"""
+"""Pure flood-domain evaluation behind persisted observation processing."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
 
-from ecoguard.detectors.flood.station_rules import (
-    FloodCandidate,
-    FloodPolicy,
-    FloodResolution,
-    evaluate_cell,
-    evaluate_resolutions,
-)
-
-
-@dataclass(frozen=True)
-class FloodEvaluation:
-    """The open and resolved transitions produced for one cell."""
-
-    candidates: list[FloodCandidate]
-    resolutions: list[FloodResolution]
+from ecoguard.detectors.flood.station_rules import FloodPolicy, evaluate_cell
+from ecoguard.shared.signals import CellSignal
 
 
 class FloodDetectionAgent:
-    """Evaluate one risk cell with the configured flood policy."""
+    """Evaluate hydrometric readings without database or scheduler concerns."""
 
     def __init__(self, policy: FloodPolicy | None = None) -> None:
         self.policy = policy or FloodPolicy()
 
     @property
     def lookback(self) -> timedelta:
-        """Return the history window the worker must load for each new row."""
         return self.policy.lookback
 
     def accepts_pending(self, observation: Mapping[str, Any]) -> bool:
@@ -67,25 +47,12 @@ class FloodDetectionAgent:
         cell_id: str,
         observations: list[Mapping[str, Any]],
         stream_ids: Mapping[int, int] | None = None,
-        active_events: Sequence[Mapping[str, Any]] = (),
-    ) -> FloodEvaluation:
-        """Return lifecycle transitions for one cell without side effects."""
-        active_event_keys = {str(event["event_key"]) for event in active_events}
-        candidates = evaluate_cell(
+        target_observed_at: set[datetime] | None = None,
+    ) -> list[CellSignal]:
+        return evaluate_cell(
             cell_id,
             observations,
             self.policy,
             stream_ids=stream_ids,
-        )
-        return FloodEvaluation(
-            candidates=[
-                candidate
-                for candidate in candidates
-                if candidate.event_key not in active_event_keys
-            ],
-            resolutions=evaluate_resolutions(
-                observations,
-                active_events,
-                self.policy,
-            ),
+            target_observed_at=target_observed_at,
         )

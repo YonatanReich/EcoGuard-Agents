@@ -285,7 +285,7 @@ def _load_mapping(signature: str) -> list[RadarCellMapping]:
 
 
 def _load_active_rain_cells() -> set[str]:
-    """Keep sparse radar storage while allowing open rain events to resolve."""
+    """Keep sparse radar storage while retaining cells of open flood events."""
     from ecoguard.database.engine import Session
 
     with Session() as session:
@@ -293,10 +293,10 @@ def _load_active_rain_cells() -> set[str]:
             session.execute(
                 text(
                     """
-                    SELECT DISTINCT cell_id
-                    FROM flood_candidates
-                    WHERE status = 'active'
-                      AND event_key LIKE 'flood:rain:%'
+                    SELECT DISTINCT unnest(cells) AS cell_id
+                    FROM incidents
+                    WHERE status = 'open'
+                      AND 'flood' = ANY(hazards)
                     """
                 )
             ).scalars()

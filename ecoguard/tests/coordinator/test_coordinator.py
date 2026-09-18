@@ -20,7 +20,12 @@ from sqlalchemy import text
 
 from ecoguard.coordinator import incidents as store
 from ecoguard.coordinator.agent import coordinate
-from ecoguard.coordinator.matching import best_match, has_gone_quiet, matches
+from ecoguard.coordinator.matching import (
+    best_match,
+    has_gone_quiet,
+    matches,
+    quiet_period_for,
+)
 from ecoguard.coordinator.packaging import (
     angular_gap,
     bearing_between,
@@ -38,11 +43,16 @@ from ecoguard.shared.cells import service_area_cells
 from ecoguard.shared.signals import (
     AIR_POLLUTION,
     FIRE,
+    FLOOD,
     HIGH,
     VIIRS_PIXEL_M,
     CellLocation,
     CellSignal,
 )
+
+
+def test_flood_quiet_period_is_three_hours():
+    assert quiet_period_for(FLOOD) == timedelta(hours=3)
 
 WHEN = datetime(2026, 9, 14, 12, 0, tzinfo=timezone.utc)
 
