@@ -49,10 +49,6 @@ import {
 import './visuals/dashboard.css'
 
 
-// Development currently focuses on the allocation preview. Loading it
-// automatically also avoids the paid fire analysis endpoint during UI work.
-const RESOURCE_ALLOCATION_DEMO = import.meta.env.DEV
-
 const WIND_MIN_HOURS = -6
 const WIND_MAX_HOURS = 12
 
@@ -347,9 +343,7 @@ function Dashboard() {
     // No setIsLoadingEvents(true) here: the state already initializes to true
     // and this effect runs once on mount, so setting it again would only
     // trigger a cascading render.
-    const fireRequest = RESOURCE_ALLOCATION_DEMO
-      ? Promise.resolve()
-      : fetch('/api/detected-events')
+    const fireRequest = fetch('/api/detected-events')
       .then((response) => {
         if (!response.ok) throw new Error('Fire event feed is unavailable')
         return response.json() as Promise<DetectedEventsResponse>
@@ -369,10 +363,7 @@ function Dashboard() {
         )
       )
 
-    const projectedEventsUrl = RESOURCE_ALLOCATION_DEMO
-      ? '/api/events?include_resource_allocation_demo=true'
-      : '/api/events'
-    const projectedRequest = fetch(projectedEventsUrl)
+    const projectedRequest = fetch('/api/events')
       .then((response) => {
         if (!response.ok) throw new Error('Projected event feed is unavailable')
         return response.json() as Promise<SharedEventFeed>

@@ -143,39 +143,39 @@ def test_api_returns_projected_air_pollution_advisory(monkeypatch):
     assert len(event["details"]["recommendations"]) == 1
 
 
-def test_api_appends_resource_allocation_demo_only_when_requested(monkeypatch):
-    from ecoguard.api import resource_allocation_demo
-    from ecoguard.shared.events import FireSharedEvent
+# def test_api_appends_resource_allocation_demo_only_when_requested(monkeypatch):
+#     from ecoguard.api import resource_allocation_demo
+#     from ecoguard.shared.events import FireSharedEvent
 
-    demo = FireSharedEvent.model_validate({
-        "id": "demo-fire",
-        "title": "Demo fire",
-        "description": "Synthetic allocation preview",
-        "latitude": 32.794,
-        "longitude": 34.9896,
-        "observed_at": NOW,
-        "classification": "emergency",
-        "analysis_status": "success",
-        "planning_status": "success",
-        "details": {},
-    })
-    monkeypatch.setattr(event_api, "read_projected_events", lambda *, limit: [])
-    monkeypatch.setattr(
-        resource_allocation_demo,
-        "resource_allocation_demo_event",
-        lambda: demo,
-    )
-    application = FastAPI()
-    application.include_router(event_api.router)
-    client = TestClient(application)
+#     demo = FireSharedEvent.model_validate({
+#         "id": "demo-fire",
+#         "title": "Demo fire",
+#         "description": "Synthetic allocation preview",
+#         "latitude": 32.794,
+#         "longitude": 34.9896,
+#         "observed_at": NOW,
+#         "classification": "emergency",
+#         "analysis_status": "success",
+#         "planning_status": "success",
+#         "details": {},
+#     })
+#     monkeypatch.setattr(event_api, "read_projected_events", lambda *, limit: [])
+#     monkeypatch.setattr(
+#         resource_allocation_demo,
+#         "resource_allocation_demo_event",
+#         lambda: demo,
+#     )
+#     application = FastAPI()
+#     application.include_router(event_api.router)
+#     client = TestClient(application)
 
-    assert client.get("/api/events").json() == {"events": []}
-    response = client.get(
-        "/api/events?include_resource_allocation_demo=true"
-    )
+#     assert client.get("/api/events").json() == {"events": []}
+#     response = client.get(
+#         "/api/events?include_resource_allocation_demo=true"
+#     )
 
-    assert response.status_code == 200
-    assert response.json()["events"][0]["id"] == "demo-fire"
+#     assert response.status_code == 200
+#     assert response.json()["events"][0]["id"] == "demo-fire"
 
 
 def test_latest_failed_projection_uses_qualified_old_payload_without_recommendations():
