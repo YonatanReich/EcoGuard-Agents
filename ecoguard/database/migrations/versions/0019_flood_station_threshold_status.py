@@ -21,6 +21,60 @@ def upgrade() -> None:
         ADD COLUMN flow_threshold_status text
         """
     )
+    # IMS publishes IDF curves separately from the live rain-station catalog.
+    # Keep the curve grain relational so callers can select one duration and
+    # return period without unpacking a station-sized JSON document. The
+    # importer links every row to the existing rain station after validating
+    # the complete 63-station source file.
+    op.execute(
+        """
+        CREATE TABLE rain_station_idf_values (
+          rain_station_id          bigint NOT NULL
+            REFERENCES rain_stations(id) ON DELETE CASCADE,
+          source_station_name_he   text NOT NULL,
+          measure_type             text NOT NULL,
+          number_of_years          smallint NOT NULL,
+          duration_minutes         smallint NOT NULL,
+          probability_percent      numeric(5, 2) NOT NULL,
+          return_period_years      numeric(6, 1) NOT NULL,
+          estimate                 double precision NOT NULL,
+          lower_bound              double precision NOT NULL,
+          upper_bound              double precision NOT NULL,
+          match_method             text NOT NULL,
+          source_dataset           text NOT NULL,
+          imported_at              timestamptz NOT NULL,
+          CONSTRAINT rain_station_idf_values_pk PRIMARY KEY (
+            rain_station_id,
+            measure_type,
+            duration_minutes,
+            probability_percent
+          ),
+          CONSTRAINT rain_station_idf_values_measure_type_valid
+            CHECK (measure_type IN ('amount', 'intensity')),
+          CONSTRAINT rain_station_idf_values_years_positive
+            CHECK (number_of_years > 0),
+          CONSTRAINT rain_station_idf_values_duration_positive
+            CHECK (duration_minutes > 0),
+          CONSTRAINT rain_station_idf_values_probability_range
+            CHECK (probability_percent > 0 AND probability_percent <= 100),
+          CONSTRAINT rain_station_idf_values_return_period_positive
+            CHECK (return_period_years > 0),
+          CONSTRAINT rain_station_idf_values_bounds_valid CHECK (
+            lower_bound >= 0 AND
+            estimate >= lower_bound AND
+            upper_bound >= estimate
+          ),
+          CONSTRAINT rain_station_idf_values_match_method_valid CHECK (
+            match_method IN ('official_name_exact', 'manual_override')
+          )
+        )
+        """
+    )
+    op.execute(
+        "CREATE INDEX rain_station_idf_values_lookup_idx "
+        "ON rain_station_idf_values "
+        "(rain_station_id, duration_minutes, return_period_years)"
+    )
     # The active detector uses only the official live-station threshold vector.
     # Drop the historical import pipeline and its derived baseline in dependency
     # order. The import metadata table is removed with the four domain tables
@@ -113,6 +167,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute("DROP TABLE IF EXISTS rain_station_idf_values")
     op.execute(
         """
         ALTER TABLE hydrometric_stations

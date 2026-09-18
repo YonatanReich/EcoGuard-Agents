@@ -44,7 +44,8 @@ def main() -> None:
         f"{context['cells']:,} cells, "
         f"{context['hydrometric_stations']:,} hydrometric stations, "
         f"{context['rain_stations']:,} rain stations, "
-        f"{context['station_topologies']:,} station routes"
+        f"{context['station_topologies']:,} station routes, "
+        f"{context['hydrometric_idf_links']:,} hydrometric-IDF links"
     )
 
 

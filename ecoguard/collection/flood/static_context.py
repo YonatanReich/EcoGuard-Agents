@@ -373,6 +373,17 @@ def refresh_flood_static_context() -> dict[str, int]:
             refreshed_at=refreshed_at,
         )
 
+        # Basin assignments can change when either station catalog or basin
+        # geometry is refreshed. Rebuild the derived IDF links in the same
+        # transaction so consumers never see mismatched basin relationships.
+        from ecoguard.collection.flood.rainfall_idf import (
+            refresh_hydrometric_idf_basin_links_in_session,
+        )
+
+        hydrometric_idf_link_count = refresh_hydrometric_idf_basin_links_in_session(
+            session, linked_at=refreshed_at
+        )
+
         session.commit()
 
     return {
@@ -380,4 +391,5 @@ def refresh_flood_static_context() -> dict[str, int]:
         "hydrometric_stations": len(hydrometric_rows),
         "rain_stations": len(rain_rows),
         "station_topologies": station_topology_count,
+        "hydrometric_idf_links": hydrometric_idf_link_count,
     }
