@@ -1,9 +1,10 @@
-"""Collect and cache Water Authority flow and water-height observations.
+"""Collect Water Authority flow and water-height observations.
 
 The provider returns a rolling seven-day window. Recent observations have a
 ten-minute resolution and older observations are hourly. This collector has no
 scheduler: another system agent may invoke it every ten minutes, while the
-database identity prevents the repeated window from creating duplicates.
+shared observation identity prevents the repeated window from creating
+duplicates.
 """
 
 from __future__ import annotations
@@ -16,9 +17,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import requests
-from sqlalchemy import BigInteger, Column, DateTime, Float, Integer, MetaData, Table
 from sqlalchemy import text
-from sqlalchemy.dialects.postgresql import JSONB, insert
 
 from ecoguard.collection.flood.hydrology_static import (
     BASE_URL,
@@ -38,8 +37,6 @@ SOURCE = "water_authority_hydrometric_observations"
 OBSERVATIONS_PATH = "/db_requests/get_hydro_observations_A7f3Q.php"
 SOURCE_TIMEZONE = ZoneInfo("Asia/Jerusalem")
 SOURCE_TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
-CHUNK_SIZE = 500
-
 logger = logging.getLogger(__name__)
 
 
@@ -53,24 +50,6 @@ class HydrometricObservationBatch:
     provider_latest_at: datetime
     radar_frame_count: int
     rows: list[dict[str, Any]]
-
-
-# A lightweight SQLAlchemy table gives the PostgreSQL bulk INSERT its JSONB and
-# timestamp types without coupling this collector to ORM models for reference
-# tables that are managed directly by Alembic.
-_metadata = MetaData()
-HYDROMETRIC_OBSERVATIONS = Table(
-    "hydrometric_observations",
-    _metadata,
-    Column("id", BigInteger, primary_key=True),
-    Column("source_station_id", Integer, nullable=False),
-    Column("hydrometric_station_id", BigInteger),
-    Column("observed_at", DateTime(timezone=True), nullable=False),
-    Column("discharge_m3s", Float),
-    Column("water_height_m", Float),
-    Column("source_payload", JSONB, nullable=False),
-    Column("collected_at", DateTime(timezone=True), nullable=False),
-)
 
 
 def _source_timestamp(value: Any, label: str) -> datetime:
@@ -166,7 +145,6 @@ def parse_hydrometric_observations(payload: Any) -> HydrometricObservationBatch:
                     "observed_at": observed_at,
                     "discharge_m3s": discharge,
                     "water_height_m": water_height,
-                    "source_payload": raw_values,
                 }
             )
 
@@ -226,56 +204,14 @@ def fetch_hydrometric_observations(
     return parse_hydrometric_observations(payload)
 
 
-def _database_rows(
-    batch: HydrometricObservationBatch,
-    station_ids: dict[int, int],
-    collected_at: datetime,
-) -> tuple[list[dict[str, Any]], int]:
-    rows = [
-        {
-            **row,
-            "hydrometric_station_id": station_ids.get(row["source_station_id"]),
-            "collected_at": collected_at,
-        }
-        for row in batch.rows
-    ]
-    unlinked_stations = len(
-        {
-            row["source_station_id"]
-            for row in rows
-            if row["hydrometric_station_id"] is None
-        }
-    )
-    return rows, unlinked_stations
-
-
 def persist_hydrometric_observations(
     batch: HydrometricObservationBatch,
 ) -> dict[str, int]:
-    """Cache new observations and return received/written/link statistics."""
+    """Write eligible station readings to the shared observation stream."""
     from ecoguard.database.engine import Session
 
     collected_at = datetime.now(timezone.utc)
-    written = 0
     with Session() as session:
-        # A formerly unknown source id may have appeared in a later catalog
-        # refresh. Repair those nullable links before inserting the new window.
-        session.execute(
-            text(
-                """
-                UPDATE hydrometric_observations AS observation
-                SET hydrometric_station_id = station.id
-                FROM hydrometric_stations AS station
-                WHERE observation.source_station_id = station.source_station_id
-                  AND observation.hydrometric_station_id IS DISTINCT FROM station.id
-                """
-            )
-        )
-        station_ids = dict(
-            session.execute(
-                text("SELECT source_station_id, id FROM hydrometric_stations")
-            ).all()
-        )
         station_metadata = {
             row["source_station_id"]: dict(row)
             for row in session.execute(
@@ -299,33 +235,7 @@ def persist_hydrometric_observations(
                 )
             ).mappings()
         }
-        rows, unlinked_stations = _database_rows(batch, station_ids, collected_at)
-
-        for start in range(0, len(rows), CHUNK_SIZE):
-            statement = insert(HYDROMETRIC_OBSERVATIONS).values(
-                rows[start:start + CHUNK_SIZE]
-            )
-            statement = statement.on_conflict_do_update(
-                constraint="hydrometric_observations_identity",
-                set_={
-                    "hydrometric_station_id": statement.excluded.hydrometric_station_id,
-                    "discharge_m3s": statement.excluded.discharge_m3s,
-                    "water_height_m": statement.excluded.water_height_m,
-                    "source_payload": statement.excluded.source_payload,
-                    "collected_at": statement.excluded.collected_at,
-                },
-                where=(
-                    HYDROMETRIC_OBSERVATIONS.c.discharge_m3s.is_distinct_from(
-                        statement.excluded.discharge_m3s
-                    )
-                    | HYDROMETRIC_OBSERVATIONS.c.water_height_m.is_distinct_from(
-                        statement.excluded.water_height_m
-                    )
-                ),
-            ).returning(HYDROMETRIC_OBSERVATIONS.c.id)
-            written += len(session.execute(statement).scalars().all())
-
-        detector_observations_written = upsert_flood_observations_in_session(
+        written = upsert_flood_observations_in_session(
             session,
             SOURCE,
             hydrometric_signal_records(batch.rows, station_metadata),
@@ -336,8 +246,6 @@ def persist_hydrometric_observations(
     return {
         "received": len(batch.rows),
         "written": written,
-        "detector_observations_written": detector_observations_written,
-        "unlinked_stations": unlinked_stations,
     }
 
 
@@ -381,10 +289,10 @@ class HydrometricObservationCollector:
                     return
                 result = load_hydrometric_observations(self.http_session)
                 logger.info(
-                    "%s collector: %s source rows, %s detector rows",
+                    "%s collector: %s provider rows, %s shared observations",
                     self.source,
+                    result["received"],
                     result["written"],
-                    result["detector_observations_written"],
                 )
         except Exception:
             # load_hydrometric_observations already records a failed run when

@@ -16,8 +16,9 @@ def test_upgrade_preserves_legacy_rows_before_dropping_parallel_tables():
     insert_at = upgrade.index("INSERT INTO incidents")
     drop_candidates_at = upgrade.index("DROP TABLE flood_candidates")
     drop_cursors_at = upgrade.index("DROP TABLE detector_cursors")
+    drop_hydrometric_at = upgrade.index("DROP TABLE hydrometric_observations")
 
-    assert insert_at < drop_candidates_at < drop_cursors_at
+    assert insert_at < drop_candidates_at < drop_cursors_at < drop_hydrometric_at
 
 
 def test_upgrade_does_not_expand_the_shared_incident_schema():

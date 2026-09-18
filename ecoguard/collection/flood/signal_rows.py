@@ -27,8 +27,7 @@ def _grouped_records(
         source_station_id = int(row["source_station_id"])
         station = stations.get(source_station_id)
         if not station or not station.get("cell_id"):
-            # Unknown stations remain in the source cache. They enter the
-            # detector stream after a later catalog refresh supplies a cell.
+            # Unknown or unmapped stations are not part of the detector stream.
             continue
         key = (str(station["cell_id"]), row["observed_at"])
         item = {

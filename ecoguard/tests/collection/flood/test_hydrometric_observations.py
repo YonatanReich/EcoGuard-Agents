@@ -8,7 +8,6 @@ import pytest
 
 from ecoguard.collection.flood.hydrometric_observations import (
     HydrometricObservationError,
-    _database_rows,
     fetch_hydrometric_observations,
     parse_hydrometric_observations,
 )
@@ -36,7 +35,6 @@ def test_parses_flow_height_and_israel_local_time():
     assert first["source_station_id"] == 50
     assert first["discharge_m3s"] == 0
     assert first["water_height_m"] == -0.04
-    assert first["source_payload"] == [0, -0.04]
     assert first["observed_at"] == datetime(
         2026, 9, 10, 9, 20, tzinfo=timezone.utc
     )
@@ -76,20 +74,6 @@ def test_rejects_a_latest_time_older_than_an_observation():
 
     with pytest.raises(HydrometricObservationError, match="precedes"):
         parse_hydrometric_observations(payload)
-
-
-def test_database_rows_keep_unknown_source_stations_unlinked():
-    batch = parse_hydrometric_observations(_payload())
-    collected_at = datetime(2026, 9, 10, 10, 0, tzinfo=timezone.utc)
-
-    rows, unlinked = _database_rows(batch, {50: 700}, collected_at)
-
-    assert rows[0]["hydrometric_station_id"] == 700
-    assert next(
-        row for row in rows if row["source_station_id"] == 51
-    )["hydrometric_station_id"] is None
-    assert unlinked == 1
-    assert all(row["collected_at"] == collected_at for row in rows)
 
 
 class _Response:

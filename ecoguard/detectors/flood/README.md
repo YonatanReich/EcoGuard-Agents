@@ -13,14 +13,12 @@ Flood-specific worker, cursor table, candidate table or scheduler job.
 ## Collection and eligibility
 
 The Water Authority collector runs every ten minutes, matching the provider's
-publication cadence. It keeps every provider reading in the raw hydrometric
-source table, but copies readings into the shared `observations` stream only
-for stations classified as `complete_thresholds`.
+publication cadence. It writes directly to the shared `observations` stream
+and includes only stations classified as `complete_thresholds`.
 
 Stations whose threshold vector is six `999` sentinels are classified as
-`missing_thresholds`. Beyond the catalog and raw source table, the live system
-does no work for those stations: it stores no shared observation and therefore
-cannot evaluate them or open an incident.
+`missing_thresholds`. They remain in the station catalog, but their measurements
+are not stored, evaluated or allowed to open an incident.
 
 ## Severity and alert threshold
 

@@ -654,9 +654,9 @@ state. The shared Coordinator is the sole owner of event lifecycle state in
 
 The runtime flow is:
 
-1. The Water Authority collector keeps every reading in its raw source table,
-   but copies readings to the detector stream only for stations classified as
-   `complete_thresholds`. The detector never calls an upstream provider.
+1. The Water Authority collector writes directly to the shared `observations`
+   stream and includes only stations classified as `complete_thresholds`.
+   The detector never calls an upstream provider.
 2. Hydrometric collection runs every ten minutes, matching the provider's
    publication cadence. The detector runs in the shared thirty-minute Fire,
    Air Pollution and Flood detection cycle. Like the other detectors, its last
@@ -727,9 +727,8 @@ baselines do not participate in the active decision.
 Hydrometric stations are eligible only when the source catalog supplies the
 complete Q2, Q5, Q10, Q20, Q50 and Q100 curve. The catalog records this as
 `flow_threshold_status: "complete_thresholds"`. A curve containing six `999`
-sentinels is recorded as `missing_thresholds`; its raw measurements remain
-auditable but are excluded from the shared detector observation stream and
-cannot participate in event detection.
+sentinels is recorded as `missing_thresholds`. Measurements from that station
+are not stored, and the station cannot participate in event detection.
 
 ### 6.6 Evidence
 
