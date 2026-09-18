@@ -1,8 +1,8 @@
 """Flood-specific evaluation behind the shared detector worker.
 
 The agent has no database or scheduling responsibilities. It receives the
-observation window and static context prepared by the worker, then applies the
-deterministic rules from ``rules.py``.
+hydrometric observation window prepared by the worker, then applies the
+deterministic station rules.
 """
 
 from __future__ import annotations
@@ -66,11 +66,7 @@ class FloodDetectionAgent:
         *,
         cell_id: str,
         observations: list[Mapping[str, Any]],
-        context: Mapping[str, Any] | None = None,
-        baselines: Mapping[tuple[int, int], Mapping[str, Any]] | None = None,
-        station_contexts: Mapping[int, Mapping[str, Any]] | None = None,
         active_events: Sequence[Mapping[str, Any]] = (),
-        catchment_observations: list[Mapping[str, Any]] | None = None,
     ) -> FloodEvaluation:
         """Return lifecycle transitions for one cell without side effects."""
         active_event_keys = {str(event["event_key"]) for event in active_events}

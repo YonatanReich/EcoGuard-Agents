@@ -6,17 +6,14 @@ Apply the database migrations first, then run from the repository root:
     python -m ecoguard.scripts.load_hydrology_static_data
 
 The command is safe to repeat. It synchronizes the three GeoJSON layers and
-the hydrometric station catalog. Each collector independently skips database
-writes when its source checksum has not changed.
+the current hydrometric station catalog. Each collector independently skips
+database writes when its source checksum has not changed.
 """
 
 from __future__ import annotations
 
 from ecoguard.collection.flood.hydrology_static import (
     load_static_hydrology_layers,
-)
-from ecoguard.collection.flood.historical_stations import (
-    load_historical_station_registry,
 )
 from ecoguard.collection.flood.hydrometric_stations import (
     load_hydrometric_station_catalog,
@@ -41,26 +38,13 @@ def main() -> None:
             f"{station_result['rain_links']:,} rain-station links synchronized"
         )
 
-    history_result = load_historical_station_registry()
-    history_state = (
-        f"loaded {history_result['historical_stations']:,} stations"
-        if history_result["historical_stations"]
-        else "unchanged"
-    )
-    print(
-        "historical station registry: "
-        f"{history_state}, "
-        f"{history_result['automatic_links']:,} automatic links"
-    )
-
     context = refresh_flood_static_context()
     print(
         "flood context: "
         f"{context['cells']:,} cells, "
         f"{context['hydrometric_stations']:,} hydrometric stations, "
         f"{context['rain_stations']:,} rain stations, "
-        f"{context['station_topologies']:,} station routes, "
-        f"{context['baselines']:,} monthly baselines"
+        f"{context['station_topologies']:,} station routes"
     )
 
 

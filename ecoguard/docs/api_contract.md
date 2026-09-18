@@ -749,48 +749,14 @@ strictly below 80% of Q5. Missing or ineligible readings break persistence and
 cannot resolve an event. Rain, radar, water height and statistical baselines do
 not participate in the active decision.
 
-### 6.5 Rain Rules, Urban and Natural Areas
-
-This subsection describes the retained legacy implementation only. Rain and
-radar rules are not imported or consumed by the active detector.
-
-Rainfall uses accumulation windows rather than an instantaneous radar colour.
-Gauge and radar values estimate the same rain and therefore are not added
-together; the larger estimate is used for each window. Radar rows participate
-only when at least 50% of the mapped pixels are valid.
-
-Urban classification is precomputed in static cell context from built-up land
-cover. A classified cell is urban when built-up fraction is at least 0.35. The
-detector does not recompute land cover per event. When classification is
-unknown, a rain-only event is not opened.
-
-Opening thresholds are:
-
-| Regime | Trigger | Base threshold |
-|---|---|---:|
-| Urban | `urban_rain_10m` | 8 mm / 10 min |
-| Urban | `urban_rain_1h` | 20 mm / 1 h |
-| Urban | `urban_rain_6h` | 45 mm / 6 h |
-| Natural | `natural_rain_1h` | 15 mm / 1 h |
-| Natural | `natural_rain_6h` | 35 mm / 6 h |
-| Natural | `natural_rain_24h` | 55 mm / 24 h |
-
-For natural cells, slope lowers the 1-hour and 6-hour thresholds by 5% from
-3 degrees and by 15% from 8 degrees. At least 25 mm of antecedent 24-hour rain
-outside the latest hour applies another 15% reduction to those two thresholds.
-The natural 24-hour threshold receives only the slope adjustment. A natural
-rain-only candidate also requires a drainage basin or a known stream within
-5 km. Basin-average rain can increase confidence and prevent premature
-resolution, but cannot open an event by itself.
-
-The only active opening trigger is `gauge_discharge_threshold`.
+### 6.5 Station Eligibility
 
 Hydrometric stations are eligible only when the source catalog supplies the
 complete Q2, Q5, Q10, Q20, Q50 and Q100 curve. The catalog records this as
 `flow_threshold_status: "complete_thresholds"`. A curve containing six `999`
 sentinels is recorded as `missing_thresholds`; its raw measurements remain
-auditable but are excluded from the shared detector observation stream,
-seasonal-baseline construction and event opening.
+auditable but are excluded from the shared detector observation stream and
+cannot participate in event opening or resolution.
 
 ### 6.6 Evidence
 
@@ -836,10 +802,6 @@ Every returned resolution has this shape:
 
 ### 6.9 Complete Worker Example
 
-The historical expanded example below predates the minimal station-only
-contract. New integrations should use the compact fields defined in 6.3; the
-example will be removed when downstream consumers finish migrating.
-
 ```json
 {
   "no_op": false,
@@ -848,10 +810,14 @@ example will be removed when downstream consumers finish migrating.
   "candidates": [
     {
       "event_key": "flood:gauge:risk-05000m-r0040-c0012:50",
-      "candidate_key": "flood:gauge_discharge_rating_curve:risk-05000m-r0040-c0012:50:2026-09-16T08:00:00+00:00",
+      "candidate_key": "flood:gauge_discharge_threshold:risk-05000m-r0040-c0012:50:2026-09-16T08:00:00+00:00",
       "event_type": "flood",
       "detected": true,
       "cell_id": "risk-05000m-r0040-c0012",
+      "station_id": 50,
+      "timestamp": "2026-09-16T08:00:00+00:00",
+      "current_discharge": 32.0,
+      "severity_level": 3,
       "observed_at": "2026-09-16T08:00:00+00:00",
       "latitude": 32.01,
       "longitude": 34.81,
@@ -862,128 +828,22 @@ example will be removed when downstream consumers finish migrating.
         "source": "hydrometric_station",
         "uncertainty_m": 100.0
       },
-      "confidence": 0.88,
-      "confidence_level": "high",
+      "confidence": 0.9,
       "severity_hint": "high",
-      "flow_intensity": "high",
       "location_uncertainty_m": 100.0,
-      "is_urban": true,
-      "trigger": "gauge_discharge_rating_curve",
+      "trigger": "gauge_discharge_threshold",
       "evidence": {
+        "station_id": 50,
         "source_station_id": 50,
-        "value": 32.0,
-        "threshold": 10.0,
-        "opening_return_period_years": 2,
-        "exceeded_return_period_years": 10,
-        "rainfall_1h_mm": null,
-        "rainfall_6h_mm": null
-      },
-      "metadata": {
         "timestamp": "2026-09-16T08:00:00+00:00",
-        "collection_status": "cached_observations"
-      },
-      "detection_state": "observed_high_flow",
-      "reasons": ["station_specific_discharge_threshold_crossed"],
-      "reasoning": {
-        "summary": "Hydrometric discharge crossed the station-specific Q2 threshold.",
-        "primary_signal": "gauge_discharge_rating_curve",
-        "reason_codes": ["station_specific_discharge_threshold_crossed"],
-        "threshold": 10.0,
-        "observed_value": 32.0
-      },
-      "station": {
-        "source_station_id": 50,
-        "hydrometric_station_id": 7,
-        "name_he": "תחנת נחל בדיקה",
-        "name_en": "Test stream gauge"
-      },
-      "drainage_basin": {
-        "basin_id": 12,
-        "name_he": "אגן בדיקה",
-        "name_en": "Test basin"
-      },
-      "stream_context": {
-        "association": "same_drainage_basin",
-        "matched": true,
-        "confidence": "high",
-        "method": "same_basin_name_and_distance",
-        "candidate_count": 1,
-        "distinct_candidate_count": 1,
-        "stream": {"water_source_id": 9001, "distance_m": 40.0},
-        "nearest_candidate": null,
-        "warnings": []
-      },
-      "downstream_route": {
-        "status": "complete",
-        "confidence": "high",
-        "method": "water_authority_draining_water_id",
-        "origin_water_source_id": 9001,
-        "segment_count": 3,
-        "segments": [
-          {"hop": 0, "water_source_id": 9001},
-          {"hop": 1, "water_source_id": 9002},
-          {"hop": 2, "water_source_id": 9003}
-        ],
-        "termination": "declared_network_end",
-        "limitations": [
-          "route_uses_declared_connections_not_hydraulic_simulation",
-          "coordinate_order_is_not_used_as_flow_direction",
-          "route_does_not_predict_inundation_extent_or_travel_time",
-          "representative_points_are_not_flood_boundaries"
-        ]
-      },
-      "hydrological_evidence": {
-        "discharge_m3s": 32.0,
-        "water_height_m": 1.3,
-        "flow_start_water_level_m": 1.0,
-        "flow_started": true,
-        "threshold_status": "valid",
-        "available_return_periods": [2, 5, 10, 20, 50, 100],
-        "missing_return_periods": [],
-        "crossed_thresholds": [
-          {"return_period_years": 2, "threshold_m3s": 10.0},
-          {"return_period_years": 5, "threshold_m3s": 20.0},
-          {"return_period_years": 10, "threshold_m3s": 30.0}
-        ],
-        "highest_crossed_return_period_years": 10,
-        "opening_threshold": 10.0,
-        "opening_return_period_years": 2,
-        "trend": {
-          "sample_count": 2,
-          "elapsed_minutes": 10.0,
-          "discharge_change_m3s": 23.0,
-          "water_height_change_m": 0.0
-        }
-      },
-      "rainfall_context": {
-        "association": "same_drainage_basin",
-        "basin_id": 12,
-        "available": false,
-        "sources": [],
-        "rainfall_10m_mm": null,
-        "rainfall_1h_mm": null,
-        "rainfall_6h_mm": null,
-        "rainfall_24h_mm": null,
-        "max_rate_mm_h": null,
-        "limitations": [
-          "basin_average_does_not_prove_rainfall_upstream_of_the_event"
-        ]
-      },
-      "rainfall_evidence": {
-        "available": false,
-        "sources": [],
-        "rainfall_10m_mm": null,
-        "rainfall_1h_mm": null,
-        "rainfall_6h_mm": null,
-        "rainfall_24h_mm": null,
-        "max_rate_mm_h": null
-      },
-      "urban_context": {
-        "is_urban": true,
-        "classification_status": "classified",
-        "built_up_fraction": 0.8,
-        "sample_count": 9,
-        "classification_threshold": 0.35
+        "current_discharge": 32.0,
+        "severity_level": 3,
+        "previous_severity_level": 2,
+        "current_threshold_m3s": 30.0,
+        "return_period_years": 10,
+        "alert_threshold_m3s": 20.0,
+        "thresholds_m3s": [10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
+        "recent_discharges_m3s": [21.0, 32.0]
       }
     }
   ],

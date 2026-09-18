@@ -1,8 +1,7 @@
 # Flood detector
 
 The active detector is deliberately limited to official hydrometric discharge
-thresholds. Rain, radar, seasonal baselines, water height, basin context and
-stream topology do not participate in its decision.
+thresholds. No inferred or environmental context participates in its decision.
 
 ## Components
 
@@ -12,8 +11,6 @@ stream topology do not participate in its decision.
   suppresses duplicate openings for active events.
 - `station_rules.py` contains the active deterministic threshold, persistence
   and hysteresis rules.
-- `rules.py` retains the previous multi-signal implementation for reference;
-  production code does not import it.
 
 ## Eligible observations
 

@@ -152,29 +152,6 @@ STATION_CONTEXTS = text(
 ).bindparams(bindparam("station_ids", expanding=True))
 
 
-BASELINES = text(
-    """
-    SELECT station.source_station_id,
-           baseline.month,
-           baseline.discharge_sample_count,
-           baseline.discharge_distinct_days,
-           baseline.stage_sample_count,
-           baseline.stage_distinct_days,
-           baseline.covered_months,
-           baseline.history_span_days,
-           baseline.discharge_median_m3s,
-           baseline.discharge_p95_m3s,
-           baseline.stage_median_m,
-           baseline.stage_p95_m
-    FROM flood_station_baselines AS baseline
-    JOIN hydrometric_stations AS station
-      ON station.id = baseline.hydrometric_station_id
-    WHERE station.source_station_id IN :station_ids
-      AND station.flow_threshold_status = 'complete_thresholds'
-    """
-).bindparams(bindparam("station_ids", expanding=True))
-
-
 ACTIVE_EVENTS = text(
     """
     SELECT event_key, candidate_key, cell_id, observed_at AS opened_at,
@@ -300,20 +277,6 @@ class FloodWorkerRepository:
                     },
                 ).mappings()
             ]
-
-    def load_baselines(
-        self, source_station_ids: Sequence[int]
-    ) -> dict[tuple[int, int], dict[str, Any]]:
-        if not source_station_ids:
-            return {}
-        with Session() as session:
-            rows = session.execute(
-                BASELINES, {"station_ids": list(source_station_ids)}
-            ).mappings()
-            return {
-                (row["source_station_id"], row["month"]): dict(row)
-                for row in rows
-            }
 
     def load_station_contexts(
         self, source_station_ids: Sequence[int]

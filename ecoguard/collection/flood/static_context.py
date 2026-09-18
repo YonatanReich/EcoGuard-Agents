@@ -126,111 +126,6 @@ ENRICH_CELLS = text(
 )
 
 
-REBUILD_BASELINES = text(
-    """
-    WITH baseline_input AS (
-      SELECT observation.hydrometric_station_id,
-             observation.observed_at,
-             observation.discharge_m3s,
-             observation.water_height_m
-      FROM hydrometric_observations AS observation
-      JOIN hydrometric_stations AS station
-        ON station.id = observation.hydrometric_station_id
-      WHERE observation.hydrometric_station_id IS NOT NULL
-        AND station.flow_threshold_status = 'complete_thresholds'
-        AND observation.observed_at < :computed_at - interval '7 days'
-      UNION ALL
-      SELECT station_link.hydrometric_station_id,
-             observation.observed_at,
-             observation.discharge_m3s,
-             NULL::double precision AS water_height_m
-      FROM historical_hydrometric_observations AS observation
-      JOIN hydrometric_station_history_links AS station_link
-        ON station_link.historical_station_id =
-           observation.historical_station_id
-      JOIN hydrometric_stations AS station
-        ON station.id = station_link.hydrometric_station_id
-      WHERE NOT observation.is_sewage
-        AND station.flow_threshold_status = 'complete_thresholds'
-    ),
-    historical AS (
-      -- Segment boundaries repeat some source timestamps. Collapse them once
-      -- before calculating counts and percentiles. MAX keeps a non-null value
-      -- and avoids lowering the fallback threshold on a conflicting boundary.
-      -- Historical water elevation is cached for audit but excluded here
-      -- because its datum has not been proven equivalent to the live height.
-      SELECT observation.hydrometric_station_id,
-             observation.observed_at,
-             max(observation.discharge_m3s) AS discharge_m3s,
-             max(observation.water_height_m) AS water_height_m
-      FROM baseline_input AS observation
-      GROUP BY observation.hydrometric_station_id, observation.observed_at
-    ),
-    station_coverage AS (
-      SELECT observation.hydrometric_station_id,
-             count(DISTINCT EXTRACT(MONTH FROM observation.observed_at))::smallint
-               AS covered_months,
-             floor(
-               EXTRACT(EPOCH FROM (
-                 max(observation.observed_at) - min(observation.observed_at)
-               )) / 86400
-             )::integer AS history_span_days
-      FROM historical AS observation
-      GROUP BY observation.hydrometric_station_id
-    )
-    INSERT INTO flood_station_baselines (
-      hydrometric_station_id, month,
-      discharge_sample_count, discharge_distinct_days,
-      stage_sample_count, stage_distinct_days,
-      covered_months, history_span_days,
-      discharge_median_m3s, discharge_p95_m3s,
-      stage_median_m, stage_p95_m, computed_at
-    )
-    SELECT observation.hydrometric_station_id,
-           EXTRACT(MONTH FROM observation.observed_at)::smallint,
-           count(observation.discharge_m3s)::integer,
-           (count(DISTINCT observation.observed_at::date)
-             FILTER (WHERE observation.discharge_m3s IS NOT NULL))::integer,
-           count(observation.water_height_m)::integer,
-           (count(DISTINCT observation.observed_at::date)
-             FILTER (WHERE observation.water_height_m IS NOT NULL))::integer,
-           coverage.covered_months,
-           coverage.history_span_days,
-           percentile_cont(0.50) WITHIN GROUP (
-             ORDER BY observation.discharge_m3s
-           ) FILTER (WHERE observation.discharge_m3s IS NOT NULL),
-           percentile_cont(0.95) WITHIN GROUP (
-             ORDER BY observation.discharge_m3s
-           ) FILTER (WHERE observation.discharge_m3s IS NOT NULL),
-           percentile_cont(0.50) WITHIN GROUP (
-             ORDER BY observation.water_height_m
-           ) FILTER (WHERE observation.water_height_m IS NOT NULL),
-           percentile_cont(0.95) WITHIN GROUP (
-             ORDER BY observation.water_height_m
-           ) FILTER (WHERE observation.water_height_m IS NOT NULL),
-           :computed_at
-    FROM historical AS observation
-    JOIN station_coverage AS coverage
-      ON coverage.hydrometric_station_id = observation.hydrometric_station_id
-    WHERE coverage.covered_months = 12
-      AND coverage.history_span_days >= 330
-    GROUP BY observation.hydrometric_station_id,
-             EXTRACT(MONTH FROM observation.observed_at),
-             coverage.covered_months,
-             coverage.history_span_days
-    HAVING (
-      count(observation.discharge_m3s) >= 300 AND
-      count(DISTINCT observation.observed_at::date)
-        FILTER (WHERE observation.discharge_m3s IS NOT NULL) >= 10
-    ) OR (
-      count(observation.water_height_m) >= 300 AND
-      count(DISTINCT observation.observed_at::date)
-        FILTER (WHERE observation.water_height_m IS NOT NULL) >= 10
-    )
-    """
-)
-
-
 STATION_TOPOLOGY_INPUT = text(
     """
     SELECT station.id AS hydrometric_station_id,
@@ -349,20 +244,6 @@ def _station_context_rows(session: Any, table: str) -> list[dict[str, Any]]:
     ]
 
 
-def rebuild_flood_station_baselines_in_session(
-    session: Any,
-    *,
-    computed_at: datetime,
-) -> int:
-    """Replace compact baseline rows inside the caller's transaction."""
-    session.execute(text("DELETE FROM flood_station_baselines"))
-    baseline_count = session.execute(
-        REBUILD_BASELINES,
-        {"computed_at": computed_at},
-    ).rowcount
-    return max(baseline_count or 0, 0)
-
-
 def rebuild_flood_station_topology_in_session(
     session: Any,
     *,
@@ -422,19 +303,6 @@ def rebuild_flood_station_topology_in_session(
     return len(rows)
 
 
-def refresh_flood_station_baselines() -> int:
-    """Rebuild monthly baselines without repeating spatial materialization."""
-    from ecoguard.database.engine import Session
-
-    with Session() as session:
-        baseline_count = rebuild_flood_station_baselines_in_session(
-            session,
-            computed_at=datetime.now(timezone.utc),
-        )
-        session.commit()
-    return baseline_count
-
-
 def refresh_flood_station_topology() -> int:
     """Refresh only the static station-to-stream routes already stored in DB."""
     from ecoguard.database.engine import Session
@@ -449,11 +317,11 @@ def refresh_flood_station_topology() -> int:
 
 
 def refresh_flood_static_context() -> dict[str, int]:
-    """Refresh grid enrichment, station-to-cell links and monthly baselines.
+    """Refresh grid enrichment, station-to-cell links and stream topology.
 
     Run this after the hydrology and surface static loaders. It is deliberately
-    explicit rather than part of the real-time worker because all spatial joins
-    and percentile calculations are stable between source-data refreshes.
+    explicit rather than part of the real-time worker because the spatial joins
+    and stream matching are stable between source-data refreshes.
     """
     from ecoguard.database.engine import Session
 
@@ -505,10 +373,6 @@ def refresh_flood_static_context() -> dict[str, int]:
             refreshed_at=refreshed_at,
         )
 
-        baseline_count = rebuild_flood_station_baselines_in_session(
-            session,
-            computed_at=refreshed_at,
-        )
         session.commit()
 
     return {
@@ -516,5 +380,4 @@ def refresh_flood_static_context() -> dict[str, int]:
         "hydrometric_stations": len(hydrometric_rows),
         "rain_stations": len(rain_rows),
         "station_topologies": station_topology_count,
-        "baselines": max(baseline_count or 0, 0),
     }
