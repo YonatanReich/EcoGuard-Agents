@@ -719,7 +719,13 @@ class IMSWindEvidenceService:
             )
         wind_capable.sort(key=lambda item: (item[0], item[1]))
         unusable_response_errors: list[IMSWindObservationError] = []
+        nearest_eligible_distance: float | None = None
         for distance, _, station in wind_capable:
+            if (
+                nearest_eligible_distance is not None
+                and distance > nearest_eligible_distance
+            ):
+                break
             diagnostic_counts["wind_capable_stations_queried"] += 1
             payload, no_data_days, unusable_responses = self._observation_payload(
                 station.station_id, start_wall, end_wall
@@ -757,6 +763,10 @@ class IMSWindEvidenceService:
             age = (anomaly_utc - observation.observed_at).total_seconds()
             candidates.append((distance, age, station.station_id, station, observation))
             diagnostic_counts["eligible_stations"] += 1
+            # Distance is the primary selection key.  Continue only through
+            # exact-distance ties so age/station-ID tie-breaking is preserved;
+            # the next farther station cannot win and is not downloaded.
+            nearest_eligible_distance = distance
 
         if not candidates:
             if (

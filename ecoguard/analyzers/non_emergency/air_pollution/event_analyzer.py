@@ -24,6 +24,10 @@ from ecoguard.shared.ministry_air_quality_client import MinistryAirQualityClient
 from ecoguard.analyzers.non_emergency.air_pollution.trend_inference_service import (
     AirPollutionTrendInferenceService,
 )
+from ecoguard.detectors.air_pollution.spatial_enrichment import (
+    AirPollutionSpatialEnricher,
+)
+from ecoguard.detectors.air_pollution.correlation import correlation_candidate
 
 ANALYZER_LIMITATIONS = [
     "Transport output is deterministic screening, not proof of pollutant transport or exposure.",
@@ -33,7 +37,11 @@ ANALYZER_LIMITATIONS = [
 
 
 class AirPollutionNonEmergencyAnalyzer:
-    """Analyze externally routed evidence; never detect, route, persist, or plan."""
+    """Analyze externally routed evidence; never detect, route, or plan.
+
+    The composed wind adapter may persist a newly fetched observation before
+    returning it, so transport never consumes live-only unaudited evidence.
+    """
 
     def __init__(
         self,
@@ -42,15 +50,23 @@ class AirPollutionNonEmergencyAnalyzer:
         ministry_index_client: MinistryAirQualityClient | None = None,
         population_service: AirPollutionPopulationAnalysisService | None = None,
         trend_inference_service: AirPollutionTrendInferenceService | None = None,
+        spatial_enricher: AirPollutionSpatialEnricher | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
         self._transport_service = transport_service
         self._ministry_index_client = ministry_index_client
         self._population_service = population_service
         self._trend_inference_service = trend_inference_service
+        self._spatial_enricher = spatial_enricher
         self._clock = clock
 
-    def analyze(self, analysis_input: AirPollutionAnalysisInput) -> AirPollutionEventAnalysis:
+    def analyze(
+        self,
+        analysis_input: AirPollutionAnalysisInput,
+        *,
+        severity_assessment: AnalysisComponent[EventSeverityAssessment] | None = None,
+        run_heavy_analysis: bool = True,
+    ) -> AirPollutionEventAnalysis:
         validated = AirPollutionAnalysisInput.model_validate(
             analysis_input.model_dump(round_trip=True)
         )
@@ -58,9 +74,25 @@ class AirPollutionNonEmergencyAnalyzer:
         if generated_at.utcoffset() is None:
             raise ValueError("analyzer clock must be timezone-aware")
         generated_at = generated_at.astimezone(timezone.utc)
-        transport = self._transport_component(validated)
-        population = self._population_component(validated, transport, generated_at)
-        severity = self._severity_component(validated)
+        if run_heavy_analysis:
+            transport = self._transport_component(validated)
+            population = self._population_component(validated, transport, generated_at)
+        else:
+            transport = AnalysisComponent[AirPollutionTransportPredictionExecution](
+                status="unavailable",
+                unavailable_reason="not_run_for_non_publishable_event",
+                limitations=[
+                    "Wind and transport screening were not requested because the event is not publishable."
+                ],
+            )
+            population = AnalysisComponent[PopulationImpactContext](
+                status="unavailable",
+                unavailable_reason="not_run_for_non_publishable_event",
+                limitations=[
+                    "Corridor population screening was not requested because the event is not publishable."
+                ],
+            )
+        severity = severity_assessment or self._severity_component(validated)
         prediction = self._trend_component(validated)
         component_statuses = (
             validated.current_state.status,
@@ -86,6 +118,16 @@ class AirPollutionNonEmergencyAnalyzer:
             population_impact=population,
             limitations=list(dict.fromkeys([*ANALYZER_LIMITATIONS, *population.limitations])),
         )
+
+    def assess_official_index(
+        self, analysis_input: AirPollutionAnalysisInput
+    ) -> AnalysisComponent[EventSeverityAssessment]:
+        """Perform the single Ministry lookup needed for qualification/policy."""
+
+        validated = AirPollutionAnalysisInput.model_validate(
+            analysis_input.model_dump(round_trip=True)
+        )
+        return self._severity_component(validated)
 
     def _trend_component(
         self, analysis_input: AirPollutionAnalysisInput
@@ -228,8 +270,23 @@ class AirPollutionNonEmergencyAnalyzer:
                 unavailable_reason="analysis_origin_detection_unavailable",
             )
         try:
+            # Wind comes first.  A missing or stale observation terminates the
+            # heavy path before the shared towns repository is queried.
+            wind_evidence = self._transport_service.obtain_wind_evidence(candidate)
+            transport_candidate = candidate
+            if self._spatial_enricher is not None:
+                enriched = self._spatial_enricher.enrich(
+                    candidate.anomaly,
+                    radius_km=(
+                        self._transport_service.configuration.max_screening_distance_m
+                        / 1000.0
+                    ),
+                )
+                transport_candidate = correlation_candidate(enriched)
             result = self._transport_service.predict(
-                candidate, analysis_origin=analysis_input.analysis_origin
+                transport_candidate,
+                wind_evidence=wind_evidence,
+                analysis_origin=analysis_input.analysis_origin,
             )
         except Exception:
             return AnalysisComponent[AirPollutionTransportPredictionExecution](

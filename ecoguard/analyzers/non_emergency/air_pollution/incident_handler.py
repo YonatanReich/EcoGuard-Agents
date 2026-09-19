@@ -47,6 +47,9 @@ from ecoguard.coordinator.dispatcher import (
     IncidentProcessingResult,
 )
 from ecoguard.detectors.air_pollution.correlation import PollutionCorrelationCandidate
+from ecoguard.detectors.air_pollution.spatial_enrichment import (
+    AirPollutionSpatialEnricher,
+)
 from ecoguard.response_planner.air_pollution.planner import AirPollutionResponsePlanner
 from ecoguard.shared.ministry_air_quality_client import MinistryAirQualityClient
 
@@ -109,15 +112,27 @@ class AirPollutionIncidentHandler:
             return self._failure(context, "adaptation", error)
 
         try:
-            analysis = self._analyzer.analyze(analysis_input)
+            severity = self._analyzer.assess_official_index(analysis_input)
+            qualification, classification, policy = self._ea371_decision(
+                incident=incident,
+                latest=latest,
+                severity=severity,
+            )
+            analysis = self._analyzer.analyze(
+                analysis_input,
+                severity_assessment=severity,
+                run_heavy_analysis=policy.publish_to_operational_dashboard,
+            )
         except Exception as error:
             return self._failure(context, "analysis", error)
 
         if isinstance(analysis, AirPollutionEventAnalysis):
             analysis = self._apply_ea371_policy(
                 incident=incident,
-                latest=latest,
                 analysis=analysis,
+                qualification=qualification,
+                classification=classification,
+                policy=policy,
             )
 
         try:
@@ -156,12 +171,38 @@ class AirPollutionIncidentHandler:
         self,
         *,
         incident: Mapping[str, Any],
-        latest: PollutionCorrelationCandidate,
         analysis: AirPollutionEventAnalysis,
+        qualification,
+        classification,
+        policy,
     ) -> AirPollutionEventAnalysis:
+        verification = self._verification_service.verify(
+            incident=incident,
+            analysis=analysis,
+            qualification=qualification,
+            classification=classification,
+            checked_at=self._now(),
+        )
+        analysis = analysis.model_copy(update={
+            "event_qualification": qualification,
+            "official_pollutant_classification": classification,
+            "publication_policy": policy,
+            "additional_verification": verification,
+        })
+        return AirPollutionEventAnalysis.model_validate(
+            analysis.model_dump(round_trip=True)
+        )
+
+    @staticmethod
+    def _ea371_decision(
+        *,
+        incident: Mapping[str, Any],
+        latest: PollutionCorrelationCandidate,
+        severity,
+    ):
         ministry = (
-            analysis.severity_assessment.result.ministry_index
-            if analysis.severity_assessment.result is not None
+            severity.result.ministry_index
+            if severity.result is not None
             else None
         )
         official_index = (
@@ -198,22 +239,7 @@ class AirPollutionIncidentHandler:
             ),
         )
         policy = publication_policy(qualification, classification)
-        verification = self._verification_service.verify(
-            incident=incident,
-            analysis=analysis,
-            qualification=qualification,
-            classification=classification,
-            checked_at=self._now(),
-        )
-        analysis = analysis.model_copy(update={
-            "event_qualification": qualification,
-            "official_pollutant_classification": classification,
-            "publication_policy": policy,
-            "additional_verification": verification,
-        })
-        return AirPollutionEventAnalysis.model_validate(
-            analysis.model_dump(round_trip=True)
-        )
+        return qualification, classification, policy
 
     def _failure(
         self,
@@ -323,11 +349,13 @@ def configured_air_pollution_incident_handler() -> AirPollutionIncidentHandler:
     except Exception:
         logger.exception("Air Pollution transport composition unavailable")
         transport_service = None
+    ministry_client = MinistryAirQualityClient()
     analyzer = AirPollutionNonEmergencyAnalyzer(
         transport_service=transport_service,
-        ministry_index_client=MinistryAirQualityClient(),
+        ministry_index_client=ministry_client,
         population_service=AirPollutionPopulationAnalysisService(),
         trend_inference_service=AirPollutionTrendInferenceService(),
+        spatial_enricher=AirPollutionSpatialEnricher(),
     )
     return AirPollutionIncidentHandler(
         analyzer=analyzer,
