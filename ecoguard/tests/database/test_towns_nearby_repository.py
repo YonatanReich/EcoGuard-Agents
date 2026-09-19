@@ -1,4 +1,8 @@
-from ecoguard.database.repositories.towns import TownLookupStatus, nearby_towns
+from ecoguard.database.repositories.towns import (
+    TownLookupStatus,
+    nearby_towns,
+    responsible_police_stations,
+)
 
 
 class _Result:
@@ -14,6 +18,9 @@ class _Result:
 
     def all(self):
         return self.rows
+
+    def first(self):
+        return self.rows[0] if self.rows else None
 
 
 class _Session:
@@ -103,3 +110,39 @@ def test_missing_or_empty_towns_reference_layer_is_not_a_zero_result():
     assert missing.status == TownLookupStatus.REFERENCE_DATA_NOT_LOADED
     assert empty.status == TownLookupStatus.REFERENCE_DATA_NOT_LOADED
     assert missing.reason == empty.reason == "reference_data_not_loaded"
+
+
+def test_responsible_police_stations_returns_internal_database_keys():
+    session = _Session([
+        _Result(rows=[{
+            "town_id": "haifa",
+            "name_he": "חיפה",
+            "police_station_ids": [12, 18, 21],
+        }]),
+    ])
+
+    result = responsible_police_stations(
+        latitude=32.794,
+        longitude=34.990,
+        session_factory=lambda: session,
+    )
+
+    assert result == {
+        "town_id": "haifa",
+        "town_name": "חיפה",
+        "police_station_ids": [12, 18, 21],
+    }
+    query, parameters = session.calls[0]
+    assert "ST_Covers" in query
+    assert "town_police_stations" in query
+    assert parameters == {"latitude": 32.794, "longitude": 34.990}
+
+
+def test_responsible_police_stations_returns_none_outside_every_town():
+    result = responsible_police_stations(
+        latitude=31.0,
+        longitude=35.0,
+        session_factory=lambda: _Session([_Result(rows=[])]),
+    )
+
+    assert result is None

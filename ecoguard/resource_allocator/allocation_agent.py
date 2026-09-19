@@ -10,6 +10,7 @@ from ecoguard.database.repositories.police_stations import police_stations_geojs
 from ecoguard.database.repositories.resource_allocations import (
     ResourceAllocationRepository,
 )
+from ecoguard.database.repositories.towns import responsible_police_stations
 from ecoguard.resource_allocator.mapbox_client import MapboxClient, RoutingError
 
 # Temporary station counts until an operational source can provide real
@@ -68,6 +69,7 @@ class ResourceAllocationAgent:
         station_readers=None,
         routing_client=None,
         allocation_repository=None,
+        police_responsibility_reader=None,
     ):
         self.station_readers = (
             _default_station_readers()
@@ -77,6 +79,9 @@ class ResourceAllocationAgent:
         self.routing_client = routing_client or MapboxClient()
         self.allocation_repository = (
             allocation_repository or ResourceAllocationRepository()
+        )
+        self.police_responsibility_reader = (
+            police_responsibility_reader or responsible_police_stations
         )
         self._station_catalogs = {}
         self._stations_by_key = {}
@@ -168,6 +173,11 @@ class ResourceAllocationAgent:
         recommended_unit,
     ):
         """Exclude stations currently claimed by another incident in the DB."""
+        if recommended_unit == "police":
+            # A police allocation assigns the responsible station, not one of
+            # its vehicles. The station may receive several incidents.
+            return candidates
+
         occupied = {
             allocation["station_id"]
             for allocation in self.allocation_repository.active_allocations()
@@ -185,6 +195,7 @@ class ResourceAllocationAgent:
         stations,
         event_location,
         required_count,
+        selection_reason="shortest_road_travel_time",
     ):
         """Search nearby batches until enough road-reachable stations exist."""
         batch_size = getattr(self.routing_client, "matrix_max_sources", 9)
@@ -212,7 +223,7 @@ class ResourceAllocationAgent:
                     continue
                 candidate = station.copy()
                 candidate["_routing_metric"] = metric
-                candidate["selection_reason"] = "shortest_road_travel_time"
+                candidate["selection_reason"] = selection_reason
                 ranked.append(candidate)
 
             if len(ranked) >= required_count:
@@ -277,7 +288,93 @@ class ResourceAllocationAgent:
 
     @staticmethod
     def _required_station_count(risk_level, recommended_unit):
+        if recommended_unit == "police":
+            # Severity is sent to the responsible station; the station decides
+            # how many internal units it dispatches.
+            return 1
         return STATIONS_REQUIRED_BY_RISK[risk_level].get(recommended_unit, 1)
+
+    def _police_candidates_for_event(self, stations, event_location):
+        """Prefer the event town's responsible police stations."""
+
+        fallback = [
+            station
+            for station in stations
+            if (station.get("kind") or "station") == "station"
+        ]
+        try:
+            responsibility = self.police_responsibility_reader(
+                latitude=event_location["latitude"],
+                longitude=event_location["longitude"],
+            )
+        except Exception as error:
+            return (
+                fallback,
+                {
+                    "status": "fallback",
+                    "reason": "responsibility_lookup_unavailable",
+                    "town_id": None,
+                    "town_name": None,
+                    "responsible_station_ids": [],
+                },
+                str(error),
+            )
+
+        if responsibility is not None:
+            responsible_ids = set(
+                responsibility.get("police_station_ids") or []
+            )
+            responsible = [
+                station
+                for station in stations
+                if station["database_id"] in responsible_ids
+            ]
+            if responsible:
+                selection_reason = (
+                    "responsible_for_area"
+                    if len(responsible) == 1
+                    else "nearest_responsible_station"
+                )
+                return (
+                    responsible,
+                    {
+                        "status": "matched",
+                        "reason": selection_reason,
+                        "town_id": responsibility.get("town_id"),
+                        "town_name": responsibility.get("town_name"),
+                        "responsible_station_ids": sorted(responsible_ids),
+                    },
+                    None,
+                )
+
+            fallback_reason = (
+                "town_has_no_mapped_police_station"
+                if not responsible_ids
+                else "responsible_station_not_in_catalog"
+            )
+            return (
+                fallback,
+                {
+                    "status": "fallback",
+                    "reason": fallback_reason,
+                    "town_id": responsibility.get("town_id"),
+                    "town_name": responsibility.get("town_name"),
+                    "responsible_station_ids": sorted(responsible_ids),
+                },
+                None,
+            )
+
+        return (
+            fallback,
+            {
+                "status": "fallback",
+                "reason": "event_outside_town",
+                "town_id": None,
+                "town_name": None,
+                "responsible_station_ids": [],
+            },
+            None,
+        )
 
     def _prepare_batch_request(self, item, now):
         """Validate one Planner response before allocation starts."""
@@ -433,14 +530,19 @@ class ResourceAllocationAgent:
             **station,
             "database_id": allocation["station_id"],
             "recommended_unit": allocation["recommended_unit"],
+            "allocation_scope": "station",
             "resource_key": station_key,
             "allocation_id": allocation.get("id"),
             "assigned_incident_id": allocation["incident_id"],
             "distance_km": allocation["distance_km"],
             "risk_score": allocation.get("risk_score"),
             "risk_level": allocation.get("risk_level"),
+            "severity": allocation.get("risk_level"),
             "allocation_status": status,
-            "available_for_ecoguard": status == "released",
+            "available_for_ecoguard": (
+                allocation["recommended_unit"] == "police"
+                or status == "released"
+            ),
             "real_world_availability": "unknown",
             "selection_reason": "nearest_available_station",
         }
@@ -584,9 +686,11 @@ class ResourceAllocationAgent:
             "status": "fulfilled",
             "risk_score": request["risk_score"],
             "risk_level": request["risk_level"],
+            "severity": request["risk_level"],
             "effective_priority": request["effective_priority"],
             "queued_at": request["queued_at"].isoformat(),
             "allocation_needed": bool(recommended_units),
+            "allocation_scope": "station",
             "allocated_units": {},
             "requirements": {},
             "shortages": {},
@@ -618,6 +722,28 @@ class ResourceAllocationAgent:
             unit_routing_failure = None
             catalog_error = self._station_catalog_errors.get(recommended_unit)
             stations = self._station_catalogs.get(recommended_unit, [])
+            selection_reason = "shortest_road_travel_time"
+            if recommended_unit == "police":
+                stations, responsibility, responsibility_error = (
+                    self._police_candidates_for_event(
+                        stations,
+                        event_location,
+                    )
+                )
+                result["police_responsibility"] = responsibility
+                selection_reason = (
+                    responsibility["reason"]
+                    if responsibility["status"] == "matched"
+                    else "nearest_police_station_fallback"
+                )
+                if responsibility_error is not None:
+                    result["errors"].append(
+                        {
+                            "station_type": station_type,
+                            "reason": "police_responsibility_lookup_failed",
+                            "message": responsibility_error,
+                        }
+                    )
             # Every located station is eligible, including coarse points.
             candidates = self._rank_stations(
                 stations,
@@ -634,6 +760,7 @@ class ResourceAllocationAgent:
                     candidates,
                     event_location,
                     required_count,
+                    selection_reason,
                 )
                 if result["road_access"] is None and road_access is not None:
                     result["road_access"] = road_access
@@ -651,7 +778,12 @@ class ResourceAllocationAgent:
                         **candidate,
                         "distance_km": candidate["straight_line_distance_km"],
                         "_routing_metric": None,
-                        "selection_reason": "straight_line_fallback",
+                        "selection_reason": (
+                            "straight_line_fallback"
+                            if selection_reason
+                            == "shortest_road_travel_time"
+                            else f"{selection_reason}_straight_line_fallback"
+                        ),
                     }
                     for candidate in candidates
                 ]

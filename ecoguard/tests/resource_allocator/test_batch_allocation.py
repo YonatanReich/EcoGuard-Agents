@@ -94,6 +94,8 @@ class FakeRoutingClient:
 class FailingRoutingClient(FakeRoutingClient):
     def travel_metrics(self, stations, event_location):
         raise RoutingError("Mapbox is unavailable")
+
+
 class InMemoryAllocationRepository:
     """Test double with the same atomic claim semantics as PostgreSQL."""
 
@@ -125,14 +127,19 @@ class InMemoryAllocationRepository:
                 (row["recommended_unit"], row["station_id"])
                 for row in self._rows
                 if row["released_at"] is None
+                and row["recommended_unit"] != "police"
             }
+            active_station_ids = {row["station_id"] for row in active}
 
             for candidate in candidates:
                 if len(active) >= required_count:
                     break
                 station_id = candidate["database_id"]
                 resource_key = (recommended_unit, station_id)
-                if resource_key in occupied:
+                if (
+                    station_id in active_station_ids
+                    or resource_key in occupied
+                ):
                     continue
 
                 row = {
@@ -150,6 +157,7 @@ class InMemoryAllocationRepository:
                 self._next_id += 1
                 self._rows.append(row)
                 active.append(row)
+                active_station_ids.add(station_id)
                 occupied.add(resource_key)
 
             return [row.copy() for row in active]
@@ -179,12 +187,16 @@ def allocation_agent(
     station_readers,
     routing_client=None,
     allocation_repository=None,
+    police_responsibility_reader=None,
 ):
     return ResourceAllocationAgent(
         station_readers=station_readers,
         routing_client=routing_client or FakeRoutingClient(),
         allocation_repository=(
             allocation_repository or InMemoryAllocationRepository()
+        ),
+        police_responsibility_reader=(
+            police_responsibility_reader or (lambda **_: None)
         ),
     )
 
@@ -197,6 +209,7 @@ def station(
     precision=None,
     district="test-district",
     station_id=None,
+    kind=None,
 ):
     properties = {
         "database_id": database_id,
@@ -206,6 +219,8 @@ def station(
     }
     if precision is not None:
         properties["precision"] = precision
+    if kind is not None:
+        properties["kind"] = kind
     return {
         "type": "Feature",
         "geometry": {
@@ -446,6 +461,144 @@ def test_busy_nearest_station_falls_back_to_next_available_station():
 
     assert first["allocated_units"]["fire_stations"][0]["name"] == "Nearest"
     assert second["allocated_units"]["fire_stations"][0]["name"] == "Farther"
+
+
+def test_police_allocation_uses_only_the_event_towns_responsible_stations():
+    routing = FakeRoutingClient()
+    agent = allocation_agent(
+        {
+            "police": lambda: catalog(
+                station(1, "Closer but not responsible", 31.001, 35.0, kind="station"),
+                station(2, "Responsible", 31.02, 35.0, kind="station"),
+            )
+        },
+        routing_client=routing,
+        police_responsibility_reader=lambda **_: {
+            "town_id": "test-town",
+            "town_name": "Test town",
+            "police_station_ids": [2],
+        },
+    )
+
+    result = agent.allocate_batch(
+        [
+            allocation_request(
+                "incident-1",
+                response_plan(
+                    "event-1",
+                    risk_score=90,
+                    risk_level="critical",
+                    units=["police"],
+                ),
+            )
+        ],
+        now=NOW,
+    )[0]
+
+    assigned = result["allocated_units"]["police_stations"]
+    assert [item["database_id"] for item in assigned] == [2]
+    assert assigned[0]["selection_reason"] == "responsible_for_area"
+    assert assigned[0]["allocation_scope"] == "station"
+    assert assigned[0]["severity"] == "critical"
+    assert assigned[0]["available_for_ecoguard"] is True
+    assert result["severity"] == "critical"
+    assert result["allocation_scope"] == "station"
+    assert result["requirements"]["police"] == {
+        "requested": 1,
+        "assigned": 1,
+        "shortfall": 0,
+    }
+    assert routing.metric_calls == [["Responsible"]]
+
+
+def test_multiple_responsible_police_stations_are_ranked_by_travel_time():
+    routing = FakeRoutingClient(
+        durations_by_name={"Near but slow": 500, "Far but fast": 100}
+    )
+    agent = allocation_agent(
+        {
+            "police": lambda: catalog(
+                station(1, "Near but slow", 31.001, 35.0, kind="station"),
+                station(2, "Far but fast", 31.02, 35.0, kind="station"),
+            )
+        },
+        routing_client=routing,
+        police_responsibility_reader=lambda **_: {
+            "town_id": "test-town",
+            "town_name": "Test town",
+            "police_station_ids": [1, 2],
+        },
+    )
+
+    result = agent.allocate_batch(
+        [allocation_request("incident-1", response_plan("event-1", units=["police"]))],
+        now=NOW,
+    )[0]
+
+    assigned = result["allocated_units"]["police_stations"][0]
+    assert assigned["database_id"] == 2
+    assert assigned["selection_reason"] == "nearest_responsible_station"
+
+
+def test_police_fallback_uses_nearest_full_station_when_town_has_no_mapping():
+    agent = allocation_agent(
+        {
+            "police": lambda: catalog(
+                station(1, "Nearby region", 31.001, 35.0, kind="region"),
+                station(2, "Nearest full station", 31.01, 35.0, kind="station"),
+                station(3, "Far full station", 31.02, 35.0, kind="station"),
+            )
+        },
+        police_responsibility_reader=lambda **_: {
+            "town_id": "unmapped-town",
+            "town_name": "Unmapped town",
+            "police_station_ids": [],
+        },
+    )
+
+    result = agent.allocate_batch(
+        [allocation_request("incident-1", response_plan("event-1", units=["police"]))],
+        now=NOW,
+    )[0]
+
+    assigned = result["allocated_units"]["police_stations"][0]
+    assert assigned["database_id"] == 2
+    assert assigned["selection_reason"] == "nearest_police_station_fallback"
+    assert result["police_responsibility"]["reason"] == (
+        "town_has_no_mapped_police_station"
+    )
+
+
+def test_police_station_can_receive_multiple_incidents_but_retries_are_idempotent():
+    repository = InMemoryAllocationRepository()
+    agent = allocation_agent(
+        {
+            "police": lambda: catalog(
+                station(1, "Responsible", 31.01, 35.0, kind="station")
+            )
+        },
+        allocation_repository=repository,
+        police_responsibility_reader=lambda **_: {
+            "town_id": "test-town",
+            "town_name": "Test town",
+            "police_station_ids": [1],
+        },
+    )
+    first_request = allocation_request(
+        "incident-a", response_plan("event-a", units=["police"])
+    )
+    second_request = allocation_request(
+        "incident-b", response_plan("event-b", units=["police"])
+    )
+
+    first = agent.allocate_batch([first_request], now=NOW)[0]
+    second = agent.allocate_batch([second_request], now=NOW)[0]
+    retry = agent.allocate_batch([first_request], now=NOW)[0]
+
+    assert first["requirements"]["police"]["assigned"] == 1
+    assert second["requirements"]["police"]["assigned"] == 1
+    assert retry["requirements"]["police"]["assigned"] == 1
+    assert len(repository.active_allocations()) == 2
 
 
 def test_repeated_allocation_for_same_incident_is_idempotent():

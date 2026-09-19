@@ -40,7 +40,12 @@ class ResourceAllocationRepository:
         risk_level: str,
         allocated_at: datetime,
     ) -> list[dict[str, Any]]:
-        """Claim nearest free stations without exceeding incident demand."""
+        """Assign stations without exceeding one incident's demand.
+
+        Fire and MDA stations are exclusive while active. Police stations may
+        receive several incidents because the allocation represents area
+        responsibility, not a particular vehicle.
+        """
         station_column = self._station_column(recommended_unit)
 
         with Session() as session:
@@ -130,7 +135,8 @@ class ResourceAllocationRepository:
                         },
                     ).mappings().first()
                     if inserted is None:
-                        # Another allocator committed this station first.
+                        # A concurrent retry already created the claim, or an
+                        # exclusive fire/MDA station was claimed first.
                         continue
 
                     row = dict(inserted)

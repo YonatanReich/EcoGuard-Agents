@@ -97,6 +97,33 @@ _NEARBY_TOWNS_SQL = text(
     """
 )
 
+_RESPONSIBLE_POLICE_STATIONS_SQL = text(
+    """
+    WITH event_town AS (
+      SELECT town_id, name_he
+      FROM towns
+      WHERE ST_Covers(
+        outline::geometry,
+        ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)
+      )
+      ORDER BY area_km2 ASC NULLS LAST, town_id
+      LIMIT 1
+    )
+    SELECT
+      event_town.town_id,
+      event_town.name_he,
+      coalesce(
+        array_agg(link.police_station_id ORDER BY link.police_station_id)
+          FILTER (WHERE link.police_station_id IS NOT NULL),
+        ARRAY[]::bigint[]
+      ) AS police_station_ids
+    FROM event_town
+    LEFT JOIN town_police_stations AS link
+      ON link.town_id = event_town.town_id
+    GROUP BY event_town.town_id, event_town.name_he
+    """
+)
+
 
 def nearby_towns(
     *,
@@ -147,6 +174,29 @@ def nearby_towns(
         ),
         candidates=candidates,
     )
+
+
+def responsible_police_stations(
+    *,
+    latitude: float,
+    longitude: float,
+    session_factory=Session,
+) -> dict[str, Any] | None:
+    """Return the town covering a point and its responsible station DB keys."""
+
+    with session_factory() as session:
+        row = session.execute(
+            _RESPONSIBLE_POLICE_STATIONS_SQL,
+            {"latitude": latitude, "longitude": longitude},
+        ).mappings().first()
+
+    if row is None:
+        return None
+    return {
+        "town_id": row["town_id"],
+        "town_name": row["name_he"],
+        "police_station_ids": list(row["police_station_ids"] or []),
+    }
 
 
 def search_towns(query: str, limit: int = DEFAULT_LIMIT) -> list[dict[str, Any]]:
