@@ -1,6 +1,7 @@
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -189,6 +190,7 @@ def allocation_agent(
     allocation_repository=None,
     police_responsibility_reader=None,
     town_reader=None,
+    flood_target_agent=None,
 ):
     return ResourceAllocationAgent(
         station_readers=station_readers,
@@ -200,6 +202,7 @@ def allocation_agent(
             police_responsibility_reader or (lambda **_: None)
         ),
         town_reader=town_reader or (lambda **_: None),
+        flood_target_agent=flood_target_agent or Mock(),
     )
 
 
@@ -359,6 +362,144 @@ def test_allocator_attaches_only_frontend_settlement_fields():
         "area_km2": 8.5,
     }
     town_reader.assert_called_once_with(latitude=31.0, longitude=35.0)
+
+
+def test_explicit_station_count_overrides_risk_count_but_police_stays_one():
+    plan = {"station_requirements": {"medical_services": 1, "police": 1}}
+
+    assert ResourceAllocationAgent._required_station_count(
+        "high", "medical_services", plan
+    ) == 1
+    assert ResourceAllocationAgent._required_station_count(
+        "critical", "police", plan
+    ) == 1
+
+
+def _flood_site(severity, road_class="primary", target_id="target-primary"):
+    return {
+        "target_id": target_id,
+        "severity_level": severity,
+        "urban": True,
+        "road": {"base_class": road_class, "ref": "4"},
+        "mapbox_verification": {"mapbox_snap_distance_m": 4.0},
+        "allocation_location": {"latitude": 32.0, "longitude": 34.8},
+        "allocation_eligible": True,
+    }
+
+
+@pytest.mark.parametrize(
+    ("severity", "expected"),
+    [
+        (3, {"fire_department": 1, "police": 1}),
+        (4, {"fire_department": 2, "police": 1, "medical_services": 1}),
+        (5, {"fire_department": 3, "police": 1, "medical_services": 1}),
+        (6, {"fire_department": 4, "police": 1, "medical_services": 2}),
+    ],
+)
+def test_flood_counts_are_hardcoded_in_resource_allocator(severity, expected):
+    agent = allocation_agent({})
+    prepared = agent._prepare_batch_request(
+        {
+            "incident_id": "INC-FLOOD-1",
+            "hazard": "flood",
+            "queued_at": NOW,
+            "flood_targeting": {
+                "allocation_ready_sites": [_flood_site(severity)],
+            },
+        },
+        NOW,
+    )
+
+    assert prepared["response_plan"]["station_requirements"] == expected
+    assert prepared["response_plan"]["station_requirements"]["police"] == 1
+    assert prepared["hazard"] == "flood"
+
+
+def test_flood_allocator_selects_the_highest_priority_verified_road():
+    agent = allocation_agent({})
+    street = _flood_site(4, "street", "street-target")
+    motorway = _flood_site(4, "motorway", "motorway-target")
+
+    prepared = agent._prepare_batch_request(
+        {
+            "incident_id": "INC-FLOOD-1",
+            "hazard": "flood",
+            "queued_at": NOW,
+            "flood_targeting": {
+                "allocation_ready_sites": [street, motorway],
+            },
+        },
+        NOW,
+    )
+
+    assert prepared["allocation_target"]["target_id"] == "motorway-target"
+    assert prepared["allocation_target"]["covered_response_site_ids"] == [
+        "street-target",
+        "motorway-target",
+    ]
+
+
+def test_flood_allocator_skips_when_no_site_was_verified():
+    agent = allocation_agent({})
+
+    prepared = agent._prepare_batch_request(
+        {
+            "incident_id": "INC-FLOOD-1",
+            "hazard": "flood",
+            "queued_at": NOW,
+            "flood_targeting": {"allocation_ready_sites": []},
+        },
+        NOW,
+    )
+
+    assert prepared["terminal"]["status"] == "skipped"
+    assert prepared["terminal"]["reason"] == "no_verified_flood_response_site"
+
+
+def test_resource_allocator_discovers_flood_roads_and_assigns_one_police_station():
+    targeting = {
+        "incident_id": "INC-FLOOD-1",
+        "status": "targets_identified",
+        "response_sites": [_flood_site(3)],
+        "allocation_ready_sites": [_flood_site(3)],
+        "resource_allocations": [],
+        "advisories": [],
+    }
+    flood_target_agent = Mock()
+    flood_target_agent.identify.return_value = targeting
+    agent = allocation_agent(
+        {
+            "fire_department": lambda: catalog(
+                station(1, "Fire station", 32.01, 34.8)
+            ),
+            "police": lambda: catalog(
+                station(2, "Police station", 32.02, 34.8, kind="station")
+            ),
+        },
+        flood_target_agent=flood_target_agent,
+    )
+    incident = {"id": "INC-FLOOD-1", "signals": []}
+    result = SimpleNamespace(
+        incident_id="INC-FLOOD-1",
+        hazard="flood",
+        route="emergency",
+        requested_at=NOW,
+        allocation_input={"incident": incident},
+        planner_result=None,
+        resource_allocation_result=None,
+    )
+
+    allocations = agent.allocate_processing_results([result])
+
+    flood_target_agent.identify.assert_called_once_with(incident)
+    station_allocation = result.resource_allocation_result["station_allocation"]
+    assert station_allocation["requirements"]["police"] == {
+        "requested": 1,
+        "assigned": 1,
+        "shortfall": 0,
+    }
+    assert len(station_allocation["allocated_units"]["police_stations"]) == 1
+    assert allocations["INC-FLOOD-1"] is station_allocation
 
 
 def test_allocator_returns_no_settlement_outside_every_town_polygon():

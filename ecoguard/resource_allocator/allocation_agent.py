@@ -1,4 +1,4 @@
-"""Select and reserve nearby stations requested by fire response plans."""
+"""Select and reserve nearby stations for emergency response requests."""
 
 import math
 from copy import deepcopy
@@ -15,6 +15,7 @@ from ecoguard.database.repositories.towns import (
     town_at_location,
 )
 from ecoguard.resource_allocator.mapbox_client import MapboxClient, RoutingError
+from ecoguard.resource_allocator.flood_road_targets import FloodRoadTargetAgent
 
 # Temporary station counts until an operational source can provide real
 # vehicle quantities. These numbers represent stations, not vehicles.
@@ -54,6 +55,30 @@ STATION_TYPES = {
     "medical_services": ("mda_station", "mda_stations"),
 }
 
+# Temporary Flood station counts until an operational policy source provides
+# real requirements.  These are station assignments, not vehicle quantities.
+FLOOD_STATIONS_REQUIRED_BY_SEVERITY = {
+    3: {"police": 1},
+    4: { "police": 1},
+    5: {"fire_department": 1, "police": 1, "medical_services": 1},
+    6: {"fire_department": 1, "police": 1, "medical_services": 1},
+}
+FLOOD_RISK_BY_SEVERITY = {
+    3: ("low", 40.0),
+    4: ("medium", 60.0),
+    5: ("high", 80.0),
+    6: ("critical", 100.0),
+}
+FLOOD_ROAD_PRIORITY = {
+    "motorway": 6,
+    "trunk": 5,
+    "primary": 4,
+    "secondary": 3,
+    "tertiary": 2,
+    "street": 1,
+    "street_limited": 1,
+}
+
 SETTLEMENT_FIELDS = (
     "population",
     "households",
@@ -85,6 +110,7 @@ class ResourceAllocationAgent:
         allocation_repository=None,
         police_responsibility_reader=None,
         town_reader=None,
+        flood_target_agent=None,
     ):
         self.station_readers = (
             _default_station_readers()
@@ -99,6 +125,9 @@ class ResourceAllocationAgent:
             police_responsibility_reader or responsible_police_stations
         )
         self.town_reader = town_reader or town_at_location
+        self.flood_target_agent = flood_target_agent or FloodRoadTargetAgent(
+            mapbox_client=self.routing_client
+        )
         self._station_catalogs = {}
         self._stations_by_key = {}
         self._station_catalog_errors = {}
@@ -303,12 +332,125 @@ class ResourceAllocationAgent:
         )
 
     @staticmethod
-    def _required_station_count(risk_level, recommended_unit):
+    def _required_station_count(risk_level, recommended_unit, response_plan=None):
         if recommended_unit == "police":
             # Severity is sent to the responsible station; the station decides
             # how many internal units it dispatches.
             return 1
+        explicit = (
+            (response_plan or {}).get("station_requirements") or {}
+        ).get(recommended_unit)
+        if explicit is not None:
+            return explicit
         return STATIONS_REQUIRED_BY_RISK[risk_level].get(recommended_unit, 1)
+
+    @staticmethod
+    def _flood_site_priority(site):
+        road = site.get("road") or {}
+        verification = site.get("mapbox_verification") or {}
+        snap_distance = verification.get("mapbox_snap_distance_m")
+        return (
+            int(site.get("severity_level") or 0),
+            FLOOD_ROAD_PRIORITY.get(str(road.get("base_class") or ""), 0),
+            int(site.get("urban") is True),
+            (
+                -float(snap_distance)
+                if isinstance(snap_distance, (int, float))
+                else -math.inf
+            ),
+            str(site.get("target_id") or ""),
+        )
+
+    def _prepare_flood_batch_request(self, item, now):
+        """Convert verified Flood road targets to a station request."""
+
+        incident_id = str(item.get("incident_id") or "").strip()
+        if not incident_id:
+            raise ValueError("incident_id is required")
+        targeting = item.get("flood_targeting")
+        if not isinstance(targeting, dict):
+            raise ValueError("flood_targeting must be an object")
+        ready_sites = [
+            site
+            for site in targeting.get("allocation_ready_sites") or []
+            if isinstance(site, dict)
+            and site.get("allocation_eligible") is True
+            and isinstance(site.get("allocation_location"), dict)
+        ]
+        if not ready_sites:
+            return {
+                "terminal": {
+                    "incident_id": incident_id,
+                    "event_id": f"{incident_id}:flood-road-fallback",
+                    "hazard": "flood",
+                    "status": "skipped",
+                    "reason": "no_verified_flood_response_site",
+                    "allocated_units": {},
+                    "requirements": {},
+                    "shortages": {},
+                    "unsupported_units": [],
+                    "errors": [],
+                    "allocation_target": None,
+                }
+            }
+
+        primary = max(ready_sites, key=self._flood_site_priority)
+        severity = max(
+            3,
+            min(
+                6,
+                max(int(site.get("severity_level") or 3) for site in ready_sites),
+            ),
+        )
+        requirements = dict(FLOOD_STATIONS_REQUIRED_BY_SEVERITY[severity])
+        risk_level, risk_score = FLOOD_RISK_BY_SEVERITY[severity]
+        location = primary["allocation_location"]
+        event_id = f"{incident_id}:flood-road-fallback"
+        allocation_target = {
+            "target_id": primary.get("target_id"),
+            "road": dict(primary.get("road") or {}),
+            "allocation_location": dict(location),
+            "covered_response_site_ids": [
+                site.get("target_id") for site in ready_sites
+            ],
+        }
+        response_plan = {
+            "metadata": {
+                "planning_status": "success",
+                "timestamp": self._utc(item.get("queued_at") or now).isoformat(),
+                "agent": "deterministic_flood_station_fallback",
+            },
+            "event_id": event_id,
+            "location": {
+                "latitude": float(location["latitude"]),
+                "longitude": float(location["longitude"]),
+            },
+            "responding_to": {
+                "risk_semantics": "detected_event_operational_risk",
+                "risk_score": risk_score,
+                "risk_level": risk_level,
+                "severity_level": severity,
+                "primary_target_id": primary.get("target_id"),
+            },
+            "recommended_units": list(requirements),
+            "station_requirements": requirements,
+            "response_actions": [
+                {"timeframe": "immediate", "responsible_unit": unit}
+                for unit in requirements
+            ],
+        }
+        prepared = self._prepare_batch_request(
+            {
+                "incident_id": incident_id,
+                "hazard": "prepared_flood",
+                "queued_at": item.get("queued_at"),
+                "response_plan": response_plan,
+            },
+            now,
+        )
+        prepared["hazard"] = "flood"
+        prepared["allocation_target"] = allocation_target
+        return prepared
 
     def _police_candidates_for_event(self, stations, event_location):
         """Prefer the event town's responsible police stations."""
@@ -397,6 +539,9 @@ class ResourceAllocationAgent:
         if not isinstance(item, dict):
             raise ValueError("allocation request must be an object")
 
+        if item.get("hazard") == "flood":
+            return self._prepare_flood_batch_request(item, now)
+
         # The Coordinator wrapper adds its canonical incident identity and
         # queue time without changing the Planner response.
         response_plan = item.get("response_plan", item)
@@ -452,6 +597,27 @@ class ResourceAllocationAgent:
         if risk_level not in STATIONS_REQUIRED_BY_RISK:
             raise ValueError("operational risk level is unavailable")
 
+        recommended_units = list(
+            dict.fromkeys(response_plan.get("recommended_units") or [])
+        )
+        station_requirements = response_plan.get("station_requirements")
+        if station_requirements is not None:
+            if not isinstance(station_requirements, dict):
+                raise ValueError("station_requirements must be an object")
+            for unit, count in station_requirements.items():
+                if unit not in recommended_units:
+                    raise ValueError(
+                        "station requirement has no matching recommended unit"
+                    )
+                if (
+                    not isinstance(count, int)
+                    or isinstance(count, bool)
+                    or not 1 <= count <= 8
+                ):
+                    raise ValueError("station requirement must be between 1 and 8")
+                if unit == "police" and count != 1:
+                    raise ValueError("police allocation is one station per incident")
+
         metadata = response_plan.get("metadata") or {}
         queued_at = self._utc(
             item.get("queued_at") or metadata.get("timestamp") or now
@@ -461,6 +627,7 @@ class ResourceAllocationAgent:
 
         return {
             "incident_id": incident_id,
+            "hazard": str(item.get("hazard") or "fire"),
             "response_plan": response_plan,
             "risk_score": float(risk_score),
             "risk_level": risk_level,
@@ -699,6 +866,7 @@ class ResourceAllocationAgent:
         result = {
             "incident_id": request["incident_id"],
             "event_id": response_plan.get("event_id"),
+            "hazard": request.get("hazard"),
             "status": "fulfilled",
             "risk_score": request["risk_score"],
             "risk_level": request["risk_level"],
@@ -713,6 +881,8 @@ class ResourceAllocationAgent:
             "unsupported_units": [],
             "errors": [],
         }
+        if request.get("allocation_target") is not None:
+            result["allocation_target"] = request["allocation_target"]
 
         # Settlement context is resolved once per incident by the allocator,
         # using the same event coordinates that drive station selection.
@@ -734,7 +904,7 @@ class ResourceAllocationAgent:
 
         for recommended_unit in recommended_units:
             required_count = self._required_station_count(
-                request["risk_level"], recommended_unit
+                request["risk_level"], recommended_unit, response_plan
             )
             mapping = STATION_TYPES.get(recommended_unit)
             if mapping is None:
@@ -948,6 +1118,117 @@ class ResourceAllocationAgent:
         prepared.sort(key=self._priority_key)
         allocated = [self._allocate_batch_request(item) for item in prepared]
         return [*allocated, *terminal_results]
+
+    def allocate_processing_results(self, processing_results):
+        """Build and allocate every eligible emergency request in one batch.
+
+        Hazard-specific preparation belongs here.  In particular, Flood road
+        discovery and Mapbox verification happen inside resource allocation,
+        while the scheduler remains a generic orchestration boundary.
+        """
+
+        requests = []
+        bindings = []
+        for result in processing_results or []:
+            hazard = getattr(result, "hazard", None)
+            if getattr(result, "route", None) != "emergency":
+                continue
+
+            if hazard == "fire":
+                response_plan = getattr(result, "planner_result", None)
+                if not isinstance(response_plan, dict):
+                    continue
+                request = {
+                    "incident_id": result.incident_id,
+                    "hazard": "fire",
+                    "queued_at": result.requested_at,
+                    "response_plan": response_plan,
+                }
+                targeting = None
+            elif hazard == "flood":
+                allocation_input = getattr(result, "allocation_input", None)
+                incident = (
+                    allocation_input.get("incident")
+                    if isinstance(allocation_input, dict)
+                    else None
+                )
+                if not isinstance(incident, dict):
+                    result.resource_allocation_result = {
+                        "incident_id": result.incident_id,
+                        "hazard": "flood",
+                        "status": "failed",
+                        "reason": "flood_incident_input_unavailable",
+                        "response_sites": [],
+                        "allocation_ready_sites": [],
+                        "resource_allocations": {},
+                        "errors": [],
+                    }
+                    continue
+                try:
+                    targeting = self.flood_target_agent.identify(incident)
+                except Exception as error:
+                    targeting = {
+                        "incident_id": result.incident_id,
+                        "hazard": "flood",
+                        "status": "failed",
+                        "reason": "flood_road_targeting_failed",
+                        "response_sites": [],
+                        "allocation_ready_sites": [],
+                        "resource_allocations": {},
+                        "errors": [str(error)],
+                    }
+                    result.resource_allocation_result = targeting
+                    continue
+                result.resource_allocation_result = targeting
+                request = {
+                    "incident_id": result.incident_id,
+                    "hazard": "flood",
+                    "queued_at": result.requested_at,
+                    "flood_targeting": targeting,
+                }
+            else:
+                continue
+
+            requests.append(request)
+            bindings.append((result, hazard, targeting))
+
+        if not requests:
+            return {}
+
+        allocations = self.allocate_batch(requests)
+        allocations_by_key = {
+            (allocation.get("incident_id"), allocation.get("hazard")): allocation
+            for allocation in allocations
+            if isinstance(allocation, dict) and allocation.get("incident_id")
+        }
+        allocations_by_incident = {
+            allocation["incident_id"]: allocation
+            for allocation in allocations
+            if isinstance(allocation, dict) and allocation.get("incident_id")
+        }
+
+        for result, hazard, targeting in bindings:
+            allocation = allocations_by_key.get(
+                (result.incident_id, hazard)
+            ) or allocations_by_incident.get(result.incident_id)
+            if hazard == "fire":
+                result.resource_allocation_result = allocation
+                continue
+            combined = dict(targeting)
+            combined["station_allocation"] = allocation
+            combined["resource_allocations"] = (
+                allocation.get("allocated_units", {})
+                if isinstance(allocation, dict)
+                else {}
+            )
+            combined["allocation_target"] = (
+                allocation.get("allocation_target")
+                if isinstance(allocation, dict)
+                else None
+            )
+            result.resource_allocation_result = combined
+
+        return allocations_by_incident
 
     def release_incident(
         self,
