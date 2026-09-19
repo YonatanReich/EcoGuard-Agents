@@ -7,7 +7,8 @@
 The system boundaries remain separate:
 
 - Prediction agent: prepared current conditions → estimated fire risk.
-- FIRMS/Telegram detection: observations or reports that may evidence an actual event.
+- FIRMS detection: structured hotspot observations that may evidence an actual event.
+- Telegram: supporting report evidence checked only after a structured Fire signal exists.
 - Risk Analysis (Developer B): analyzes an already detected incident.
 - Resource Allocation/Response Planning (Developer C): recommends operational resources and response.
 

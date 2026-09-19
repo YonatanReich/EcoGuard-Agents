@@ -66,6 +66,32 @@ class TownLookupResult(BaseModel):
     reason: str | None = None
 
 
+class NamedTownMatch(BaseModel):
+    """A text-named town related spatially to a structured signal point."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    town_id: str
+    name_he: str
+    name_en: str
+    place: str | None = None
+    cbs_code: str | None = None
+    outline_source: str | None = None
+    authority: str | None = None
+    authority_type: str | None = None
+    distance_m: float = Field(ge=0)
+    contains_signal: bool
+
+
+class NamedTownLookupResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    status: TownLookupStatus
+    match: NamedTownMatch | None = None
+    source: str = "shared_postgis_towns"
+    reason: str | None = None
+
+
 _TOWNS_EXISTS_SQL = text(
     "SELECT to_regclass('public.towns') IS NOT NULL AS layer_exists"
 )
@@ -96,6 +122,87 @@ _NEARBY_TOWNS_SQL = text(
     ORDER BY distance_m, town_id
     """
 )
+
+_NAMED_TOWN_SQL = text(
+    """
+    WITH origin AS (
+      SELECT ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326) AS point
+    )
+    SELECT
+      town_id,
+      name_he,
+      name_en,
+      place,
+      cbs_code,
+      outline_source,
+      authority,
+      authority_type,
+      ST_Distance(outline, origin.point::geography) AS distance_m,
+      ST_Covers(outline::geometry, origin.point) AS contains_signal
+    FROM towns, origin
+    WHERE name_he = ANY(CAST(:candidate_names AS text[]))
+    ORDER BY
+      array_position(CAST(:candidate_names AS text[]), name_he),
+      distance_m,
+      population DESC NULLS LAST,
+      town_id
+    LIMIT 1
+    """
+)
+
+
+def resolve_named_town(
+    *,
+    candidate_names: list[str],
+    latitude: float,
+    longitude: float,
+    session_factory=Session,
+) -> NamedTownLookupResult:
+    """Resolve explicit Hebrew locality names and relate their outline to a signal.
+
+    The returned distance is from the authoritative town polygon, not its label
+    point.  Label coordinates are deliberately not returned: a locality match
+    is an area-level observation and must never masquerade as an event point.
+    """
+    names = list(dict.fromkeys(name.strip() for name in candidate_names if name.strip()))
+    if not names:
+        return NamedTownLookupResult(status=TownLookupStatus.SUCCESS_EMPTY)
+
+    try:
+        with session_factory() as session:
+            if not session.execute(_TOWNS_EXISTS_SQL).scalar_one():
+                return NamedTownLookupResult(
+                    status=TownLookupStatus.REFERENCE_DATA_NOT_LOADED,
+                    reason="reference_data_not_loaded",
+                )
+            if not session.execute(_TOWNS_POPULATED_SQL).scalar_one():
+                return NamedTownLookupResult(
+                    status=TownLookupStatus.REFERENCE_DATA_NOT_LOADED,
+                    reason="reference_data_not_loaded",
+                )
+            row = session.execute(
+                _NAMED_TOWN_SQL,
+                {
+                    "candidate_names": names,
+                    "latitude": latitude,
+                    "longitude": longitude,
+                },
+            ).mappings().first()
+            match = NamedTownMatch.model_validate(dict(row)) if row else None
+    except (SQLAlchemyError, ValidationError, TypeError, ValueError):
+        return NamedTownLookupResult(
+            status=TownLookupStatus.UNAVAILABLE,
+            reason="town_repository_unavailable",
+        )
+
+    return NamedTownLookupResult(
+        status=(
+            TownLookupStatus.SUCCESS_WITH_RESULTS
+            if match is not None
+            else TownLookupStatus.SUCCESS_EMPTY
+        ),
+        match=match,
+    )
 
 
 def nearby_towns(

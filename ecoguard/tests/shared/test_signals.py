@@ -215,7 +215,9 @@ def test_severity_is_absent_until_an_analyser_fills_it():
 
 def test_two_sources_on_one_cell_corroborate():
     satellite = _signal(source="firms", variable="brightness")
-    ground = _signal(source="telegram", variable="report", observed_at=WHEN + timedelta(hours=1))
+    # Generic signal correlation remains valid, but EA-374 deliberately does
+    # not model Telegram evidence as an independently coordinatable CellSignal.
+    ground = _signal(source="ground_sensor", variable="report", observed_at=WHEN + timedelta(hours=1))
 
     assert corroborates(satellite, ground)
 

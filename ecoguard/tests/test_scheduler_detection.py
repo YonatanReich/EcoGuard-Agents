@@ -24,6 +24,13 @@ def _empty_flood_detector(monkeypatch):
         "detect_new",
         lambda: [],
     )
+    from ecoguard.detectors.telegram import evidence
+
+    monkeypatch.setattr(
+        evidence,
+        "enrich_signals_with_telegram",
+        lambda signals: list(signals),
+    )
 
 
 def _fire_signal() -> CellSignal:
@@ -73,6 +80,35 @@ def test_fire_and_air_pollution_share_one_coordinator_batch(monkeypatch):
     shared_runtime.detect_and_coordinate()
 
     assert batches == [[fire, pollution]]
+
+
+def test_telegram_enrichment_occurs_once_immediately_before_coordinator(monkeypatch):
+    from ecoguard import scheduler as shared_runtime
+    from ecoguard.coordinator import agent
+    from ecoguard.detectors.air_pollution import observation_processing
+    from ecoguard.detectors.fire import satellite, weather
+    from ecoguard.detectors.telegram import evidence
+
+    fire = _fire_signal()
+    enriched = CellSignal(**{**fire.__dict__, "evidence": {"telegram_evidence": {}}})
+    calls = []
+    monkeypatch.setattr(satellite, "detect_new", lambda: [fire])
+    monkeypatch.setattr(weather, "detect_new", lambda: [])
+    monkeypatch.setattr(observation_processing, "detect_new", lambda: [])
+    monkeypatch.setattr(
+        evidence,
+        "enrich_signals_with_telegram",
+        lambda signals: calls.append(("enrich", list(signals))) or [enriched],
+    )
+    monkeypatch.setattr(
+        agent,
+        "run",
+        lambda signals: calls.append(("coordinate", list(signals))),
+    )
+
+    shared_runtime.detect_and_coordinate()
+
+    assert calls == [("enrich", [fire]), ("coordinate", [enriched])]
 
 
 def test_air_pollution_failure_does_not_suppress_fire_signals(monkeypatch):

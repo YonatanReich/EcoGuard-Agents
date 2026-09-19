@@ -22,10 +22,10 @@ Ways a fire becomes a candidate:
   fire danger, weather and OSM context into one detected event. Predates the
   `CellSignal` contract, still calls the providers live rather than reading
   what the collectors stored, and is superseded by `satellite.py`.
-- `telegram_candidate_filter.py` — social. Rule-based scoring of Hebrew channel
-  messages. No network, no LLM: it flags what is worth verifying, nothing more.
-- `hebrew_location_extractor.py` — turns a flagged message into coordinates via
-  an offline gazetteer.
+- `telegram_candidate_filter.py` — rule-based scoring reused by the shared
+  Telegram evidence service. It never emits a `CellSignal`.
+- `hebrew_location_extractor.py` — shared Fire/Flood location extraction via an
+  offline gazetteer. A resolved report can only corroborate an existing signal.
 
 None of these decide how dangerous the fire is.
 

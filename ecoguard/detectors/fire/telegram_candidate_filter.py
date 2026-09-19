@@ -83,6 +83,14 @@ AMBIGUOUS_TERMS = (
     "דוד שמש שהתפוצץ",
 )
 
+RESOLVED_OR_NEGATED_TERMS = (
+    "אין שריפה",
+    "אין חשש לשריפה",
+    "השריפה כובתה",
+    "האירוע הסתיים",
+    "הושגה שליטה",
+)
+
 _NIQQUD_PATTERN = re.compile(
     "[\u0591-\u05bd\u05bf\u05c1\u05c2\u05c4\u05c5\u05c7]"
 )
@@ -142,9 +150,14 @@ def detect_fire_candidate(text: str | None) -> dict:
     smoke_terms = _find_terms(normalized_text, SMOKE_TERMS)
     context_terms = _find_context_terms(normalized_text)
     ambiguous_terms = _find_terms(normalized_text, AMBIGUOUS_TERMS)
+    resolved_terms = _find_terms(normalized_text, RESOLVED_OR_NEGATED_TERMS)
     matched_terms = strong_terms + smoke_terms + context_terms + ambiguous_terms
 
-    if strong_terms:
+    if resolved_terms:
+        confidence = 0.2
+        matched_terms.extend(resolved_terms)
+        reason = "The message explicitly negates or resolves the reported fire."
+    elif strong_terms:
         confidence = min(1.0, 0.85 + 0.05 * len(context_terms))
         reason = "Explicit active-fire language was found."
         if context_terms:
