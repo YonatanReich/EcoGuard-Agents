@@ -30,7 +30,6 @@ Consumed by: ecoguard.api.main.get_detected_events
 
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timezone
 
 from ecoguard.analyzers.emergency.fire.risk_analysis_agent import (
@@ -39,13 +38,17 @@ from ecoguard.analyzers.emergency.fire.risk_analysis_agent import (
     render_excerpts,
     section,
 )
-from ecoguard.shared.schemas import ResponsePlan
 from ecoguard.shared.llm import (
     ClaudeLLMService,
-    ClaudeProviderError,
     build_system_blocks,
 )
-from ecoguard.shared.protocols import ProtocolRetriever, verify_citations
+from ecoguard.shared.protocols import ProtocolRetriever
+from ecoguard.response_planner.emergency.adapters import (
+    OperationalAnalysisUnavailable,
+    build_fire_plan_input,
+)
+from ecoguard.response_planner.emergency.planner import EmergencyResponsePlanner
+from ecoguard.response_planner.emergency.schemas import EmergencyPlanProposal
 
 AGENT_NAME = "ResponsePlanningAgent"
 
@@ -120,9 +123,12 @@ form [chunk_id: some-id]. These excerpts are the only source you may cite.
    [chunk_id: ...] marker in this request. Never construct, guess or adapt an id.
 2. Every quoted_text must be a verbatim span copied from the body of that same
    chunk. Do not paraphrase and do not join text from two chunks.
-3. Cite at least one passage and at most six. Each citation's `supports` field
+3. Each action's `supporting_protocol_chunk_ids` must contain only the supplied
+   chunk ids that directly support that specific action. Never copy all plan
+   citations onto every action.
+4. Cite at least one passage and at most six. Each citation's `supports` field
    must state which part of the plan that passage backs up.
-4. Where the excerpts do not cover something your plan depends on, put it in
+5. Where the excerpts do not cover something your plan depends on, put it in
    assumptions. Do not cite from memory or dress up general knowledge as
    protocol guidance.
 
@@ -156,6 +162,17 @@ class ResponsePlanningAgent:
         self.llm_service = llm_service if llm_service is not None else ClaudeLLMService()
         self.retriever = retriever if retriever is not None else ProtocolRetriever()
         self.top_k = top_k
+        self.shared_planner = EmergencyResponsePlanner(
+            llm_service=self.llm_service,
+            retriever=self.retriever,
+            # Legacy injected test retrievers predate hazard metadata. Binding
+            # them here is explicit and cannot accidentally authorize Flood.
+            retriever_hazard="fire",
+            top_k=top_k,
+            query_builder=self._shared_query,
+            prompt_builder=self._shared_prompt,
+            proposal_model=EmergencyPlanProposal,
+        )
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -177,58 +194,51 @@ class ResponsePlanningAgent:
         if not isinstance(risk_assessment, dict):
             return self.build_skipped_plan("risk_analysis_unavailable", detected_event)
 
-        status = self._section(risk_assessment, "metadata").get("analysis_status")
-
-        # The hard gate. No risk score means no basis for a plan, and planning
-        # anyway would hand an operator actions justified by nothing. This also
-        # avoids a model call on every no-event scan, which is most of them.
-        if status != "success":
+        try:
+            analysis = build_fire_plan_input(detected_event, risk_assessment)
+        except OperationalAnalysisUnavailable:
             return self.build_skipped_plan("risk_analysis_unavailable", detected_event)
 
-        if not getattr(self.llm_service, "available", False):
-            return self.build_failed_plan("missing credentials", detected_event)
+        result = self.shared_planner.plan_response(analysis).model_dump(mode="json")
+        return self._legacy_wire_result(result)
 
-        query = self.build_query(detected_event, risk_assessment)
-        chunks = self.retriever.retrieve(query, top_k=self.top_k)
-
-        if not chunks:
-            corpus_loaded = getattr(self.retriever, "available", True)
-            error = "no protocol match" if corpus_loaded else "protocol corpus unavailable"
-            logging.error("Response planning aborted before the model call: %s", error)
-            return self.build_failed_plan(error, detected_event)
-
-        system_blocks, user_text = self.build_prompt(
-            detected_event, risk_assessment, chunks
+    def _shared_query(self, analysis) -> str:
+        context = analysis.additional_context
+        legacy_terms = self.build_query(
+            context["detected_event"], context["risk_assessment"]
         )
+        return f"{analysis.event_description} {legacy_terms}"
 
-        try:
-            plan = self.llm_service.parse_structured(
-                system_blocks=system_blocks,
-                user_text=user_text,
-                output_format=ResponsePlan,
-            )
-        except ClaudeProviderError as error:
-            logging.error("Response planning model call failed: %s", error)
-            return self.build_failed_plan(str(error), detected_event)
-
-        payload = plan.model_dump(mode="json")
-
-        verified, dropped = verify_citations(payload["protocol_citations"], chunks)
-
-        if not verified:
-            logging.error(
-                "Response plan discarded: no citation verified (%s dropped)", dropped
-            )
-            return self.build_failed_plan("ungrounded response", detected_event)
-
-        return self.build_response_plan(
-            payload=payload,
-            detected_event=detected_event,
-            risk_assessment=risk_assessment,
-            chunks=chunks,
-            citations=verified,
-            dropped=dropped,
+    def _shared_prompt(self, analysis, chunks):
+        context = analysis.additional_context
+        system_blocks, legacy_prompt = self.build_prompt(
+            context["detected_event"], context["risk_assessment"], chunks
         )
+        user_text = (
+            "# Analyzer event description\n\n"
+            f"{analysis.event_description}\n\n"
+            f"{legacy_prompt}"
+        )
+        return system_blocks, user_text
+
+    @staticmethod
+    def _legacy_wire_result(result: dict) -> dict:
+        """Add the established Fire aliases and legacy error vocabulary."""
+        error_map = {
+            "missing_credentials": "missing credentials",
+            "protocol_corpus_unavailable": "protocol corpus unavailable",
+            "no_protocol_match": "no protocol match",
+            "protocol_retrieval_failed": "protocol corpus unavailable",
+            "protocol_hazard_mismatch": "protocol corpus unavailable",
+            "ungrounded_response": "ungrounded response",
+            "malformed_response": "malformed response",
+        }
+        result["event_id"] = result.get("incident_id")
+        result["event_type"] = result.get("hazard_type", "fire")
+        result["metadata"]["agent"] = AGENT_NAME
+        if result.get("error") in error_map:
+            result["error"] = error_map[result["error"]]
+        return result
 
     # ------------------------------------------------------------------
     # Query construction
@@ -438,7 +448,7 @@ class ResponsePlanningAgent:
         owns transport concerns.
 
         Args:
-            payload (dict): ResponsePlan.model_dump(mode="json").
+            payload (dict): Validated proposal model output.
             detected_event (dict): The event planned for, used for identity.
             risk_assessment (dict): The assessment this plan answers.
             chunks (list[dict]): Chunks that were retrieved.

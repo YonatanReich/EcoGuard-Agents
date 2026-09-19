@@ -608,20 +608,13 @@ def test_hazard_selects_the_corpus_directory():
     ]
 
 
-def test_missing_hazard_corpus_degrades_without_raising():
-    """
-    The forward-compatibility guarantee.
-
-    A flood judge can be constructed today and will simply have nothing to say
-    until response_planner/protocols/flood exists. Constructing it must not raise, and it
-    must not silently fall back to the fire corpus — answering flood questions
-    from fire doctrine would be worse than answering nothing.
-    """
+def test_flood_hazard_selects_the_production_flood_corpus():
+    """The Flood hazard selects the committed Flood corpus without fallback."""
     retriever = ProtocolRetriever(hazard="flood")
 
-    assert retriever.available is False
-    assert retriever.chunks == []
-    assert retriever.retrieve("water rescue evacuation", top_k=5) == []
+    assert retriever.available is True
+    assert len(retriever.documents) == 13
+    assert retriever.retrieve("water rescue evacuation", top_k=5)
 
 
 def test_explicit_corpus_path_overrides_hazard(make_retriever):
@@ -643,7 +636,10 @@ def test_hazards_do_not_share_an_index():
     flood = ProtocolRetriever(hazard="flood")
 
     assert fire.corpus_path != flood.corpus_path
-    assert fire.chunks and not flood.chunks
+    assert fire.chunks and flood.chunks
+    assert {chunk["document_id"] for chunk in fire.chunks}.isdisjoint(
+        {chunk["document_id"] for chunk in flood.chunks}
+    )
 
 
 def test_real_corpus_loads_and_is_internally_consistent():

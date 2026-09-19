@@ -1,8 +1,9 @@
-"""Transitional orchestration for provider-backed pollution transport screening.
+"""Transitional orchestration for wind-backed pollution transport screening.
 
-The service is independent of FastAPI, scheduling, and persistence so it can
-move behind the future generic Coordinator unchanged. It composes the existing
-EA-318 through EA-322 calculations and never invokes response planning.
+The deterministic service is independent of FastAPI and scheduling.  Its wind
+provider may use the shared observation repository before returning evidence.
+It composes the existing EA-318 through EA-322 calculations and never invokes
+response planning.
 """
 
 from __future__ import annotations
@@ -39,6 +40,9 @@ from ecoguard.analyzers.non_emergency.air_pollution.transport_time import (
 )
 from ecoguard.analyzers.non_emergency.air_pollution.ims_wind_evidence_service import IMSWindEvidenceService
 from ecoguard.analyzers.non_emergency.air_pollution.ims_wind_observation_client import IMSWindObservationClient
+from ecoguard.analyzers.non_emergency.air_pollution.wind_evidence_service import (
+    PersistedFirstWindEvidenceService,
+)
 
 
 TRANSPORT_ENABLED_ENV = "AIR_POLLUTION_TRANSPORT_SCREENING_ENABLED"
@@ -352,14 +356,14 @@ class AirPollutionTransportPredictionService:
 
 def configured_air_pollution_transport_prediction_service(
 ) -> AirPollutionTransportPredictionService | None:
-    """Build the IMS-backed bridge only when explicitly enabled and configured."""
+    """Build the persisted-first bridge only when explicitly configured."""
 
     configuration = load_air_pollution_transport_configuration()
     if configuration is None:
         return None
     return AirPollutionTransportPredictionService(
-        wind_evidence_service=IMSWindEvidenceService(
-            IMSWindObservationClient()
+        wind_evidence_service=PersistedFirstWindEvidenceService(
+            IMSWindEvidenceService(IMSWindObservationClient())
         ),
         configuration=configuration,
     )

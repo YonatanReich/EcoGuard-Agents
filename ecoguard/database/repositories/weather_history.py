@@ -18,6 +18,7 @@ rows, which is what the three public functions are:
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Sequence
 
@@ -289,4 +290,109 @@ def current_for_point(latitude: float, longitude: float) -> dict[str, Any] | Non
         "longitude": row["longitude"],
         "distance_m": round(row["distance_m"], 1),
         **{variable: (row["payload"] or {}).get(variable) for variable in HOURLY_VARIABLES},
+    }
+
+
+def wind_for_point_at(
+    latitude: float,
+    longitude: float,
+    *,
+    at: datetime,
+    maximum_age_seconds: float,
+    sources: Sequence[str] = (SOURCE,),
+    maximum_distance_m: float | None = None,
+) -> dict[str, Any] | None:
+    """Return the nearest fresh measured wind row at or before ``at``.
+
+    This is an event-time read, unlike :func:`current_for_point`, whose public
+    contract intentionally remains tied to the database wall clock.  Callers
+    choose the accepted observation sources and freshness window.  Forecasts
+    are excluded structurally by requiring ``issued_at IS NULL``.
+    """
+
+    if at.tzinfo is None or at.utcoffset() is None:
+        raise ValueError("at must carry a UTC offset")
+    if (
+        isinstance(maximum_age_seconds, bool)
+        or not isinstance(maximum_age_seconds, (int, float))
+        or not math.isfinite(float(maximum_age_seconds))
+        or maximum_age_seconds <= 0
+    ):
+        raise ValueError("maximum_age_seconds must be positive")
+    accepted_sources = [
+        source.strip()
+        for source in sources
+        if isinstance(source, str) and source.strip()
+    ]
+    if not accepted_sources or len(accepted_sources) != len(sources):
+        raise ValueError("sources must contain non-empty source names")
+    if maximum_distance_m is not None and (
+        isinstance(maximum_distance_m, bool)
+        or not isinstance(maximum_distance_m, (int, float))
+        or not math.isfinite(float(maximum_distance_m))
+        or maximum_distance_m <= 0
+    ):
+        raise ValueError("maximum_distance_m must be positive when supplied")
+
+    reference = at.astimezone(timezone.utc)
+    distance_filter = (
+        "AND ST_DWithin(location, origin.point, :maximum_distance_m)"
+        if maximum_distance_m is not None
+        else ""
+    )
+    with Session() as session:
+        row = session.execute(
+            text(
+                f"""
+                WITH origin AS (
+                  SELECT ST_SetSRID(
+                    ST_MakePoint(:longitude, :latitude), 4326
+                  )::geography AS point
+                )
+                SELECT source,
+                       cell_id,
+                       observed_at,
+                       payload,
+                       ST_Y(location::geometry) AS latitude,
+                       ST_X(location::geometry) AS longitude,
+                       ST_Distance(location, origin.point) AS distance_m
+                FROM observations, origin
+                WHERE source = ANY(CAST(:sources AS text[]))
+                  AND issued_at IS NULL
+                  AND location IS NOT NULL
+                  AND observed_at <= CAST(:at AS timestamptz)
+                  AND observed_at >= CAST(:at AS timestamptz)
+                      - make_interval(secs => :maximum_age_seconds)
+                  AND payload ? 'wind_speed_10m'
+                  AND payload ? 'wind_direction_10m'
+                  AND jsonb_typeof(payload->'wind_speed_10m') = 'number'
+                  AND jsonb_typeof(payload->'wind_direction_10m') = 'number'
+                  AND (payload->>'wind_speed_10m')::double precision >= 0
+                  AND (payload->>'wind_direction_10m')::double precision >= 0
+                  AND (payload->>'wind_direction_10m')::double precision < 360
+                  {distance_filter}
+                ORDER BY distance_m, observed_at DESC, source, cell_id
+                LIMIT 1
+                """
+            ),
+            {
+                "sources": accepted_sources,
+                "latitude": latitude,
+                "longitude": longitude,
+                "at": reference,
+                "maximum_age_seconds": float(maximum_age_seconds),
+                "maximum_distance_m": maximum_distance_m,
+            },
+        ).mappings().first()
+
+    if row is None:
+        return None
+    return {
+        "source": row["source"],
+        "cell_id": row["cell_id"],
+        "observed_at": row["observed_at"],
+        "latitude": row["latitude"],
+        "longitude": row["longitude"],
+        "distance_m": round(row["distance_m"], 1),
+        "payload": dict(row["payload"] or {}),
     }

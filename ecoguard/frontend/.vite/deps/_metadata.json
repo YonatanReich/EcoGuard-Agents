@@ -1,0 +1,74 @@
+{
+  "hash": "33bca662",
+  "configHash": "52486dc9",
+  "lockfileHash": "afe42b40",
+  "browserHash": "ddc99611",
+  "optimized": {
+    "@deck.gl/mapbox": {
+      "src": "../../node_modules/@deck.gl/mapbox/dist/index.js",
+      "file": "@deck__gl_mapbox.js",
+      "fileHash": "68bfe33f",
+      "needsInterop": false
+    },
+    "mapbox-gl": {
+      "src": "../../node_modules/mapbox-gl/dist/mapbox-gl.js",
+      "file": "mapbox-gl.js",
+      "fileHash": "89f5fe3d",
+      "needsInterop": true
+    },
+    "maplibre-gl-wind": {
+      "src": "../../node_modules/maplibre-gl-wind/dist/index.js",
+      "file": "maplibre-gl-wind.js",
+      "fileHash": "9be08be7",
+      "needsInterop": false
+    },
+    "react-dom/client": {
+      "src": "../../node_modules/react-dom/client.js",
+      "file": "react-dom_client.js",
+      "fileHash": "08256f59",
+      "needsInterop": true
+    },
+    "react-map-gl/mapbox": {
+      "src": "../../node_modules/react-map-gl/dist/mapbox.js",
+      "file": "react-map-gl_mapbox.js",
+      "fileHash": "7f1b7023",
+      "needsInterop": false
+    },
+    "react-router-dom": {
+      "src": "../../node_modules/react-router-dom/dist/index.mjs",
+      "file": "react-router-dom.js",
+      "fileHash": "549323e2",
+      "needsInterop": false
+    },
+    "react": {
+      "src": "../../node_modules/react/index.js",
+      "file": "react.js",
+      "fileHash": "7994b0bb",
+      "needsInterop": true
+    },
+    "react/jsx-dev-runtime": {
+      "src": "../../node_modules/react/jsx-dev-runtime.js",
+      "file": "react_jsx-dev-runtime.js",
+      "fileHash": "3417419d",
+      "needsInterop": true
+    }
+  },
+  "chunks": {
+    "chunk-B-1-B7_t": {
+      "file": "chunk-B-1-B7_t.js",
+      "isDynamicEntry": false
+    },
+    "react-dom-Br2l1Z8p": {
+      "file": "react-dom-Br2l1Z8p.js",
+      "isDynamicEntry": false
+    },
+    "webgl-developer-tools-CC6tnIIX": {
+      "file": "webgl-developer-tools-CC6tnIIX.js",
+      "isDynamicEntry": false
+    },
+    "webgl-device-DmZ5B3dw": {
+      "file": "webgl-device-DmZ5B3dw.js",
+      "isDynamicEntry": false
+    }
+  }
+}
