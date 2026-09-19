@@ -108,6 +108,7 @@ CONCERNING_DIRECTION: dict[tuple[str, str], str] = {
     (FLOOD, "precipitation"): HIGH,
     (FLOOD, "soil_moisture_0_to_7cm"): HIGH,
     (FLOOD, "water_level"): HIGH,
+    (FLOOD, "discharge"): HIGH,
     (AIR_POLLUTION, "pm25"): HIGH,
     (AIR_POLLUTION, "pm10"): HIGH,
     (AIR_POLLUTION, "ozone"): HIGH,

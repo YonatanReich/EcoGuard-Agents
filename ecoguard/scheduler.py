@@ -18,6 +18,10 @@ import os
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from ecoguard import retention
+from ecoguard.collection.flood.hydrometric_observations import (
+    SOURCE as HYDROMETRIC_OBSERVATIONS_SOURCE,
+    HydrometricObservationCollector,
+)
 from ecoguard.collection.pollution.collector import AirPollutionCollector
 from ecoguard.collection.fire.effis.collector import FireWeatherCollector
 from ecoguard.collection.fire.firms.collector import FirmsCollector
@@ -97,6 +101,9 @@ def allocate_resources(processing_results):
 #                 the new raster promptly whenever it lands.
 #   telegram      The only low-latency source, and the only one where a message
 #                 can be minutes old and still matter.
+#   hydrometric   The Water Authority publishes ten-minute readings through a
+#                 rolling window. Polling on that same cadence avoids duplicate
+#                 upstream requests without delaying newly published data.
 #
 #   weather_forecast
 #                 Open-Meteo refreshes its runs a few times a day, and a
@@ -128,6 +135,7 @@ INTERVAL_MINUTES = {
     "fwi": 360,
     "vegetation": 720,
     "telegram": 5,
+    HYDROMETRIC_OBSERVATIONS_SOURCE: 10,
 }
 
 COLLECTORS = {
@@ -139,6 +147,7 @@ COLLECTORS = {
     "fwi": FireWeatherIndexCollector,
     "vegetation": VegetationCollector,
     "telegram": TelegramCollector,
+    HYDROMETRIC_OBSERVATIONS_SOURCE: HydrometricObservationCollector,
 }
 
 # fwi reads the hours the weather collector wrote, so on a cold start it has
@@ -209,11 +218,11 @@ scheduler.add_job(
 def detect_and_coordinate():
     """Sweep stored observations for shared hazard signals and coordinate once.
 
-    The two detectors intentionally emit separate hazard streams. Satellite
-    hotspots emit ``fire`` signals for emergency routing; weather anomalies
-    emit ``fire_weather`` signals for separate non-emergency advisories. The
-    Coordinator currently has no FIRE-to-FIRE_WEATHER corroboration or
-    association rule, so batching them does not merge one into the other.
+    The detectors intentionally emit separate hazard streams. Satellite
+    hotspots emit ``fire`` signals for emergency routing, weather anomalies
+    emit ``fire_weather`` signals for separate non-emergency advisories, and
+    hydrometric observations emit ``flood`` signals. Batching them does not
+    merge one hazard into another.
 
     The satellite comes first in the list for readability only — the
     Coordinator sorts by observation time. FIRMS *sees* fires; the weather
@@ -226,11 +235,9 @@ def detect_and_coordinate():
     losing the whole run because the weather sweep hit a bad row would be a
     worse one.
 
-    Each detector reads what has arrived since its own last successful run
-    rather than what falls inside a fixed window, so a tick that never happened
-    — a hang, a restart, a deploy — costs latency and nothing else. A window
-    would have dropped everything older than itself and said nothing about it,
-    which for a fire detector is the one unacceptable failure.
+    Each detector reads what has arrived since its own last successful run.
+    Flood additionally loads a bounded hydrometric history to verify that a
+    new reading has the required consecutive predecessor.
 
     Imported inside the function so a failure to import the coordinator cannot
     take the collection timers down with it — the collectors are useful on
@@ -239,9 +246,10 @@ def detect_and_coordinate():
     from ecoguard.coordinator.agent import run as coordinate
     from ecoguard.detectors.air_pollution import observation_processing
     from ecoguard.detectors.fire import satellite, weather
+    from ecoguard.detectors.flood import observation_processing as flood_processing
 
     signals = []
-    for detector in (satellite, weather, observation_processing):
+    for detector in (satellite, weather, observation_processing, flood_processing):
         try:
             signals.extend(detector.detect_new())
         except Exception:

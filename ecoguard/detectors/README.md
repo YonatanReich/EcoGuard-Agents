@@ -10,4 +10,4 @@ A detector emits `CellSignal` (see `shared/signals.py`) and nothing else, which
 is what lets one coordinator deduplicate every hazard without knowing what any
 of them measure.
 
-One subfolder per hazard. `flood/` and `air_pollution/` are empty and waiting.
+One subfolder per hazard.

@@ -377,7 +377,7 @@ ecoguard/collection/
     fwi/                     our own FWI system    index.py   collector.py
     gibs/                    MODIS NDVI                       collector.py
     telegram/                ground reports        listener.py collector.py
-  flood/                     empty — EA-278 / EA-287 land here
+  flood/                     Water Authority hydrology catalogs and observations
   pollution/                 empty — EA-307 lands here
 ```
 

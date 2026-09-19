@@ -125,6 +125,7 @@ under 6 hours old gets `collection_status: "failed"` and an empty `current`.
     }
   }
 }
+```
 
 
 ---
@@ -630,3 +631,142 @@ OpenStreetMap Overpass lookup alone can take 30 seconds under load, and each
 model call adds several more. Pass `include_analysis=false` for a
 detection-only response. A background-job endpoint would be the proper fix and
 is not implemented.
+
+---
+
+## 6. Flood Detector and Incident Lifecycle Contract
+
+This section is the authoritative contract for the current flood detector.
+The public Python entry point is:
+
+```python
+from ecoguard.detectors.flood.observation_processing import detect_new
+
+signals = detect_new()
+```
+
+The detector reads persisted hydrometric observations and returns the same
+`list[CellSignal]` contract as Fire and Air Pollution. It never writes event
+state. The shared Coordinator is the sole owner of event lifecycle state in
+`incidents`.
+
+### 6.1 System Flow
+
+The runtime flow is:
+
+1. The Water Authority collector writes directly to the shared `observations`
+   stream and includes only stations classified as `complete_thresholds`.
+   The detector never calls an upstream provider.
+2. Hydrometric collection runs every ten minutes, matching the provider's
+   publication cadence. The detector runs in the shared thirty-minute Fire,
+   Air Pollution and Flood detection cycle. Like the other detectors, its last
+   successful run is the ingestion bookmark.
+3. If no new rows exist, it returns an empty list.
+4. New rows with an ingestion lag over two hours, or an observed timestamp
+   more than 15 minutes in the future, are not allowed to open or close a
+   real-time event.
+5. For every affected 5 km cell, the detector reloads a six-hour hydrometric
+   window and any confirmed station-to-stream id. It does not load event state,
+   rainfall, radar, baselines or basin context. The stream id is output
+   enrichment only and does not participate in the decision.
+6. `FloodDetectionAgent.evaluate()` applies deterministic threshold and
+   persistence rules. It has no database, collection or scheduling
+   responsibility.
+7. The Scheduler adds the returned signals to the same Coordinator batch as
+   Fire and Air Pollution. The Coordinator applies its normal incident flow.
+
+The consumed sources are:
+
+| Source key | Meaning |
+|---|---|
+| `water_authority_hydrometric_observations` | Discharge measurements from stations with a complete Q2-Q100 vector. |
+
+### 6.2 Detector Response
+
+`detect_new()` returns `list[CellSignal]`, identical to the other scheduled
+detectors. Every item represents two consecutive readings at or above Q10.
+
+A true no-op is:
+
+```python
+[]
+```
+
+Unexpected failures are raised to the Scheduler and logged as a failed
+detector run. No event lifecycle state changes before the Coordinator accepts
+the returned batch.
+
+### 6.3 Flood `CellSignal`
+
+Flood detections use the existing shared `CellSignal` shape.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `cell_id` | String | 5 km risk cell evaluated by the detector. |
+| `observed_at` | ISO 8601 String | Timestamp at which the opening threshold crossing was observed. |
+| `hazard` | String | Always `flood`. |
+| `variable`, `value`, `unit` | Mixed | `discharge`, the current value and `m3/s`. |
+| `location` | `CellLocation` | Hydrometric station coordinate with 100 m precision. |
+| `evidence` | Object | Threshold vector, station/stream ids, severity and confirming readings. |
+
+### 6.4 Active Hydrometric Rules
+
+Current discharge maps to levels 0-6 by the complete Q2, Q5, Q10, Q20, Q50
+and Q100 vector. Q2 is ordinary flow with no alert; Q5 is a preliminary
+`monitoring` state that does not open a flood event. A flood alert opens only
+when the two latest valid readings, no more than 30 minutes apart, are both at
+or above Q10. Q10 is `active`, Q20 is `severe`, and Q50/Q100 are `emergency`.
+Severity is calculated from the current reading; the previous reading supplies
+persistence confirmation.
+
+Readings below Q10 emit no signal. Rain, radar, water height and statistical
+baselines do not participate in the active decision.
+
+### 6.5 Station Eligibility
+
+Hydrometric stations are eligible only when the source catalog supplies the
+complete Q2, Q5, Q10, Q20, Q50 and Q100 curve. The catalog records this as
+`flow_threshold_status: "complete_thresholds"`. A curve containing six `999`
+sentinels is recorded as `missing_thresholds`. Measurements from that station
+are not stored, and the station cannot participate in event detection.
+
+### 6.6 Evidence
+
+Signal evidence contains the complete threshold vector and the two confirming
+discharges, current and previous severity levels, the current threshold, its
+return period, the Q10 alert threshold and the optional matched stream id. No
+inferred trend, rainfall or baseline evidence participates in this version.
+
+### 6.7 Location and Limitations
+
+Signals use the hydrometric station coordinate with 100 m uncertainty.
+Threshold exceedance identifies statistically elevated discharge; by itself it
+does not prove bank overtopping, inundation extent, water depth or travel time.
+
+### 6.8 Event Resolution
+
+Flood uses the same quiet-period lifecycle as Fire and Air Pollution. Every
+qualifying signal updates the matched incident's `last_signal_at`. After three
+hours without a new qualifying Flood signal, the Coordinator closes the
+incident on its next shared thirty-minute cycle. A later confirmed Q10 pair
+opens a new incident.
+
+This intentionally treats a prolonged collection outage like signal silence,
+which is the same operational limitation as the existing Fire and Air
+Pollution lifecycle.
+
+### 6.9 Coordinator lifecycle
+
+The Coordinator performs its existing hazard, geographic and temporal match.
+There is no Flood-specific lifecycle key, update-only behavior, explicit
+resolution type or deduplication path in the shared Coordinator.
+
+### 6.10 Persistence Boundary
+
+`incidents` is the sole event lifecycle store for Flood, Fire, Fire Weather and
+Air Pollution. Closed incidents are historical records and are not deleted by
+the detector.
+
+The detector contract intentionally does not include nearby roads, rescue
+forces, exposure, damage estimates or response recommendations. Those are
+inputs and outputs of downstream analysis and resource-allocation stages.

@@ -3,7 +3,27 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from ecoguard.shared.signals import AIR_POLLUTION, FIRE, HIGH, CellSignal
+import pytest
+
+from ecoguard.shared.signals import (
+    AIR_POLLUTION,
+    FIRE,
+    FLOOD,
+    HIGH,
+    CellSignal,
+)
+
+
+@pytest.fixture(autouse=True)
+def _empty_flood_detector(monkeypatch):
+    """Keep scheduler tests isolated unless they explicitly provide a batch."""
+    from ecoguard.detectors.flood import observation_processing
+
+    monkeypatch.setattr(
+        observation_processing,
+        "detect_new",
+        lambda: [],
+    )
 
 
 def _fire_signal() -> CellSignal:
@@ -86,6 +106,57 @@ def test_shared_detection_job_is_registered_exactly_once():
     assert jobs[0].trigger.interval.total_seconds() == 30 * 60
     assert jobs[0].max_instances == 1
     assert jobs[0].coalesce is True
+
+
+def test_flood_collection_runs_every_ten_minutes_without_a_dedicated_detector_job():
+    from ecoguard.collection.flood.hydrometric_observations import SOURCE
+    from ecoguard.scheduler import scheduler
+
+    collector = scheduler.get_job(f"collect_{SOURCE}")
+    assert collector is not None
+    assert collector.trigger.interval.total_seconds() == 10 * 60
+    assert scheduler.get_job("detect_flood_and_coordinate") is None
+
+
+def test_flood_signal_uses_the_same_coordinator_batch(monkeypatch):
+    from ecoguard import scheduler as shared_runtime
+    from ecoguard.coordinator import agent, dispatcher, event_projection
+    from ecoguard.detectors.air_pollution import observation_processing as air
+    from ecoguard.detectors.fire import satellite, weather
+    from ecoguard.detectors.flood import observation_processing
+
+    at = datetime(2026, 9, 16, 10, 0, tzinfo=timezone.utc)
+    signal = CellSignal(
+        cell_id="ISR-001-003",
+        observed_at=at,
+        hazard=FLOOD,
+        variable="discharge",
+        value=35.0,
+        unit="m3/s",
+        source="water_authority_hydrometric_observations",
+        rarity=None,
+        direction=HIGH,
+    )
+    received = []
+    monkeypatch.setattr(satellite, "detect_new", lambda: [])
+    monkeypatch.setattr(weather, "detect_new", lambda: [])
+    monkeypatch.setattr(air, "detect_new", lambda: [])
+    monkeypatch.setattr(
+        observation_processing,
+        "detect_new",
+        lambda: [signal],
+    )
+    monkeypatch.setattr(
+        agent,
+        "run",
+        lambda signals: received.extend(signals) or agent.CoordinationResult(),
+    )
+    monkeypatch.setattr(dispatcher, "dispatch_touched", lambda identifiers: [])
+    monkeypatch.setattr(event_projection, "project_processing_results", lambda _: None)
+
+    shared_runtime.detect_and_coordinate()
+
+    assert received == [signal]
 
 
 def test_scheduler_dispatches_only_coordinator_touched_incidents(monkeypatch):
