@@ -1,0 +1,266 @@
+{
+    "hazard": "flood",
+    "corpus_version": "1.0.0",
+    "description": "Operational flood and flash-flood response protocols.",
+    "documents": [
+        {
+            "document_id": "wollondilly-shire-flood-response",
+            "filename": "wollondilly-shire-flood-response.md",
+            "title": "Wollondilly Shire Flood Emergency Response Procedure",
+            "publisher": "Wollondilly Shire Council & NSW SES",
+            "source_url": "wollondilly-lga-local-flood-plan-feb-2022_2.pdf",
+            "license": "Official public document; redistribution status to be verified",
+            "jurisdiction": "Australia (New South Wales)",
+            "applicability": "supplementary operational guidance",
+            "local_adaptation_required": true,
+            "retrieved_at": "2026-09-17",
+            "sha256": "generate-hash-after-saving-file",
+            "covers": [
+                "flood rescue",
+                "evacuation protocols",
+                "road closure thresholds",
+                "dam failure alerts",
+                "post-incident return access"
+            ]
+        },
+        {
+            "document_id": "bayside-flood-response",
+            "filename": "bayside-flood-response.md",
+            "title": "Bayside Flood Emergency Response Procedure",
+            "publisher": "Bayside Council & NSW SES",
+            "source_url": "bayside-vol-1-lfp-endorsed-may-2023_2.pdf",
+            "license": "Official public document; redistribution status to be verified",
+            "jurisdiction": "Australia (New South Wales)",
+            "applicability": "supplementary operational guidance",
+            "local_adaptation_required": true,
+            "retrieved_at": "2026-09-17",
+            "sha256": "generate-hash-after-saving-file",
+            "covers": [
+                "flood warning and activation",
+                "evacuation protocols",
+                "flood rescue considerations",
+                "post-incident return access"
+            ]
+        },
+        {
+            "document_id": "armidale-regional-flood-response",
+            "filename": "armidale-regional-flood-response.md",
+            "title": "Armidale Regional Flood Emergency Response Procedure",
+            "publisher": "Armidale Regional Council & NSW SES",
+            "source_url": "armidale-regional-lfp-oct-2023-endorsed.pdf",
+            "license": "Official public document; redistribution status to be verified",
+            "jurisdiction": "Australia (New South Wales)",
+            "applicability": "supplementary operational guidance",
+            "local_adaptation_required": true,
+            "retrieved_at": "2026-09-17",
+            "sha256": "generate-hash-after-saving-file",
+            "covers": [
+                "flood activation criteria",
+                "dam failure alert thresholds",
+                "evacuation protocols",
+                "post-incident return access",
+                "flood rescue considerations"
+            ]
+        },
+        {
+            "document_id": "israel-moe-field-trip-flood-safety",
+            "filename": "israel-moe-field-trip-flood-safety.md",
+            "title": "Ministry of Education Field Trip Flood Safety Procedure",
+            "publisher": "Ministry of Education (Israel)",
+            "source_url": "הנחיות טיולים משרד החינוך.pdf",
+            "license": "Official public document; redistribution status to be verified",
+            "retrieved_at": "2026-09-17",
+            "sha256": "generate-hash-after-saving-file",
+            "covers": [
+                "wadi flash flood evacuation",
+                "trip coordination",
+                "field camp evacuation",
+                "weather monitoring",
+                "unreachable group extraction"
+            ]
+        },
+        {
+            "document_id": "israel-mot-transport-flood-preparedness",
+            "filename": "israel-mot-transport-flood-preparedness.md",
+            "title": "Ministry of Transport Flood Preparedness and Response Plan",
+            "publisher": "Ministry of Transport (Israel)",
+            "source_url": "תוכנית הערכות משרד התחבורה.pdf",
+            "license": "Official public document; redistribution status to be verified",
+            "jurisdiction": "Israel",
+            "applicability": "national infrastructure preparedness and operational response",
+            "local_adaptation_required": false,
+            "retrieved_at": "2026-09-17",
+            "sha256": "generate-hash-after-saving-file",
+            "covers": [
+                "road infrastructure response",
+                "railway route prioritization",
+                "airport runway water diversion",
+                "debris and mud clearance",
+                "flood alert sensors"
+            ]
+        },
+        {
+            "document_id": "netivei-israel-storm-response",
+            "filename": "netivei-israel-storm-response.md",
+            "title": "Netivei Israel Stormy Weather and Flood Response Procedure",
+            "publisher": "Netivei Israel (National Transport Infrastructure Company)",
+            "source_url": "ניהול-היערכות-וטיפול-במזג-אויר-סוער.pdf",
+            "license": "Official public document; redistribution status to be verified",
+            "jurisdiction": "Israel",
+            "applicability": "national road infrastructure response",
+            "local_adaptation_required": false,
+            "retrieved_at": "2026-09-17",
+            "sha256": "generate-hash-after-saving-file",
+            "covers": [
+                "road closure protocols",
+                "police coordination",
+                "heavy machinery deployment",
+                "responder safety equipment",
+                "hazard identification",
+                "debris and mud clearance"
+            ]
+        },
+        {
+            "document_id": "israel-national-flood-reference-scenario",
+            "filename": "israel-national-flood-reference-scenario.md",
+            "title": "National Reference Scenario for Extreme Floods (2022-2026)",
+            "publisher": "NEMA, Meteorological Service, Water Authority, Ministry of Agriculture",
+            "source_url": "תרחיש ייחוס שיטפונות והצפות - מרץ 2022 (2).pdf",
+            "license": "Official public document; redistribution status to be verified",
+            "jurisdiction": "Israel",
+            "applicability": "national infrastructure preparedness and operational thresholds",
+            "local_adaptation_required": false,
+            "retrieved_at": "2026-09-17",
+            "sha256": "generate-hash-after-saving-file",
+            "covers": [
+                "flood warning lead times",
+                "hydrological lag times",
+                "regional flood thresholds",
+                "infrastructure inundation points",
+                "road closure thresholds"
+            ]
+        },
+        {
+            "document_id": "oman-wadi-flash-flood-safety",
+            "filename": "oman-wadi-flash-flood-safety.md",
+            "title": "Oman Meteorology Wadi Flash Flood Safety Guidelines",
+            "publisher": "Directorate General of Meteorology (Oman CAA)",
+            "source_url": "safety during flash floods wadis.pdf",
+            "license": "Official public document; redistribution status to be verified",
+            "jurisdiction": "Oman",
+            "applicability": "supplementary operational guidance",
+            "local_adaptation_required": true,
+            "retrieved_at": "2026-09-17",
+            "sha256": "generate-hash-after-saving-file",
+            "covers": [
+                "water depth thresholds",
+                "flowing water risks",
+                "vehicle sweeping hazards",
+                "responder safety",
+                "wadi flash floods"
+            ]
+        },
+        {
+            "document_id": "israel-dead-sea-flood-reference-scenario",
+            "filename": "israel-dead-sea-flood-reference-scenario.md",
+            "title": "Dead Sea Region Extreme Flood Reference Scenario",
+            "publisher": "Dead Sea Drainage Authority & Tamar Regional Council",
+            "source_url": "תרחיש ייחוס לשטפונות במרחב ים המלח.pdf",
+            "license": "Official public document; redistribution status to be verified",
+            "jurisdiction": "Israel",
+            "applicability": "regional incident command and operational response",
+            "local_adaptation_required": false,
+            "retrieved_at": "2026-09-17",
+            "sha256": "generate-hash-after-saving-file",
+            "covers": [
+                "flood severity levels",
+                "incident command sectors",
+                "regional isolation management",
+                "trapped civilian extraction",
+                "infrastructure restoration",
+                "reservoir breach response"
+            ]
+        },
+        {
+            "document_id": "israel-ims-coastal-rainfall-scenarios",
+            "filename": "israel-ims-coastal-rainfall-scenarios.md",
+            "title": "Coastal Authorities Extreme Rainfall Reference Scenarios",
+            "publisher": "Israel Meteorological Service (IMS), Ministry of Transport",
+            "source_url": "תרחיש ייחוס רשויות חוף 071121 - עדכון.pdf",
+            "license": "Official public document; redistribution status to be verified",
+            "jurisdiction": "Israel",
+            "applicability": "national infrastructure preparedness and operational thresholds",
+            "local_adaptation_required": false,
+            "retrieved_at": "2026-09-17",
+            "sha256": "generate-hash-after-saving-file",
+            "covers": [
+                "extreme rainfall thresholds",
+                "coastal flood warning lead times",
+                "regional infrastructure vulnerabilities",
+                "urban flooding impacts",
+                "evacuation and rescue hotspots"
+            ]
+        },
+        {
+            "document_id": "israel-ims-extreme-weather-scenarios-2023",
+            "filename": "israel-ims-extreme-weather-scenarios-2023.md",
+            "title": "National Extreme Weather and Flood Reference Scenarios (March 2023)",
+            "publisher": "Israel Meteorological Service (IMS), Ministry of Transport",
+            "source_url": "תרחישי ייחוס מזג אוויר קיצוני - מרץ 2023 .pdf",
+            "license": "Official public document; redistribution status to be verified",
+            "jurisdiction": "Israel",
+            "applicability": "national infrastructure preparedness and operational thresholds",
+            "local_adaptation_required": false,
+            "retrieved_at": "2026-09-17",
+            "sha256": "generate-hash-after-saving-file",
+            "covers": [
+                "flood warning lead times",
+                "extreme weather thresholds",
+                "urban evacuation hotspots",
+                "desert flash flood impacts",
+                "highway and infrastructure vulnerabilities"
+            ]
+        },
+        {
+            "document_id": "israel-fire-lehava-diving-procedure",
+            "filename": "israel-fire-lehava-diving-procedure.md",
+            "title": "Fire and Rescue Israel Lehava Unit Diving Platoon Procedure",
+            "publisher": "Fire and Rescue Israel (Lehava Unit)",
+            "source_url": "נוהל צלילה מעודכן 2023_.pdf",
+            "license": "Official public document; redistribution status to be verified",
+            "jurisdiction": "Israel",
+            "applicability": "national fire and rescue underwater search and recovery",
+            "local_adaptation_required": false,
+            "retrieved_at": "2026-09-17",
+            "sha256": "generate-hash-after-saving-file",
+            "covers": [
+                "dive safety officer authority",
+                "rapid response golden hour protocols",
+                "underwater search patterns",
+                "contaminated water diving and decon",
+                "drowning rescue and recovery",
+                "medical and oxygen support"
+            ]
+        },
+        {
+            "document_id": "israel-fire-underground-parking-flood",
+            "filename": "israel-fire-underground-parking-flood.md",
+            "title": "Underground Parking Flood Standard Operating Procedure",
+            "publisher": "Fire and Rescue Israel (Lehava Unit & Operations Division)",
+            "source_url": "סדפ אופרטיבי לפעולת בחניון תת קרקעי.pdf",
+            "license": "Official public document; redistribution status to be verified",
+            "jurisdiction": "Israel",
+            "applicability": "national fire and rescue underground flood response",
+            "local_adaptation_required": false,
+            "retrieved_at": "2026-09-17",
+            "sha256": "generate-hash-after-saving-file",
+            "covers": [
+                "underground parking flood SOP",
+                "elevator rescue protocols",
+                "sprinkler system hazards",
+                "turbid water diving restrictions",
+                "initial reconnaissance and scene safety"
+            ]
+        }
+    ]
+}

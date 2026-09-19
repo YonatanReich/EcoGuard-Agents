@@ -1,9 +1,9 @@
 """
 Protocol Retrieval Service
 
-Responsible for the retrieval half of the project's RAG pipeline: it loads the
-committed fire-protocol corpus from the protocol root, splits it into chunks, and
-ranks those chunks against a query using BM25.
+Responsible for the retrieval half of the project's RAG pipeline: it loads one
+hazard-scoped protocol corpus, splits it into chunks, and ranks those chunks
+against a query using BM25.
 
 This is what makes the risk and planning agents "protocol-grounded" rather than
 reliant on the model's general knowledge. The agents may only cite text that
@@ -257,7 +257,7 @@ def verify_citations(citations: list[dict], chunks: list[dict]) -> tuple[list[di
 
 class ProtocolRetriever:
     """
-    Offline BM25 retrieval over the committed fire-protocol corpus.
+    Offline BM25 retrieval over one committed hazard protocol corpus.
 
     The corpus is loaded and indexed once, in __init__. Instances are stateless
     afterwards and safe to share across requests, which is how ecoguard.api.main uses
@@ -348,14 +348,18 @@ class ProtocolRetriever:
             document_id (str): Document id, derived from the filename stem.
 
         Returns:
-            dict: title, source_url and license for the document.
+            dict: Trusted provenance and applicability metadata for the document.
         """
         entry = self.documents.get(document_id, {})
 
         return {
             "document_title": entry.get("title", document_id),
+            "publisher": entry.get("publisher"),
             "source_url": entry.get("source_url"),
             "license": entry.get("license"),
+            "jurisdiction": entry.get("jurisdiction"),
+            "applicability": entry.get("applicability"),
+            "local_adaptation_required": entry.get("local_adaptation_required"),
         }
 
     def build_chunks(self) -> list[dict]:
@@ -426,8 +430,14 @@ class ProtocolRetriever:
                         "chunk_id": f"{document_id}#{section['slug']}#{part_index}",
                         "document_id": document_id,
                         "document_title": metadata["document_title"],
+                        "publisher": metadata["publisher"],
                         "source_url": metadata["source_url"],
                         "license": metadata["license"],
+                        "jurisdiction": metadata["jurisdiction"],
+                        "applicability": metadata["applicability"],
+                        "local_adaptation_required": metadata[
+                            "local_adaptation_required"
+                        ],
                         "heading_path": heading_path,
                         "text": part,
                         "tokens": tokenize(indexed_text),
@@ -685,10 +695,9 @@ class ProtocolRetriever:
             top_k (int): Maximum chunks to return.
 
         Returns:
-            list[dict]: Chunks sorted by score descending, each with chunk_id,
-                document_id, document_title, source_url, license, heading_path,
-                text, score and rank. Empty when the corpus is empty or nothing
-                matches.
+            list[dict]: Chunks sorted by score descending, carrying text,
+                ranking, trusted provenance, jurisdiction and applicability.
+                Empty when the corpus is empty or nothing matches.
         """
         if not self.chunks or top_k <= 0:
             return []
@@ -719,8 +728,14 @@ class ProtocolRetriever:
                     "chunk_id": chunk["chunk_id"],
                     "document_id": chunk["document_id"],
                     "document_title": chunk["document_title"],
+                    "publisher": chunk["publisher"],
                     "source_url": chunk["source_url"],
                     "license": chunk["license"],
+                    "jurisdiction": chunk["jurisdiction"],
+                    "applicability": chunk["applicability"],
+                    "local_adaptation_required": chunk[
+                        "local_adaptation_required"
+                    ],
                     "heading_path": chunk["heading_path"],
                     "text": chunk["text"],
                     "score": round(score, 4),
