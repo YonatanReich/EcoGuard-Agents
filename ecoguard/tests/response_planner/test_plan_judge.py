@@ -604,7 +604,8 @@ def test_judge_uses_a_hazard_scoped_corpus_by_default():
     judge = ResponsePlanJudgeAgent(llm_service=FakeLLM(None), hazard="flood")
 
     assert judge.retriever.hazard == "flood"
-    assert judge.retriever.available is False   # no flood corpus committed yet
+    assert judge.retriever.available is True
+    assert len(judge.retriever.documents) == 13
 
 
 # --------------------------------------------------------------------------

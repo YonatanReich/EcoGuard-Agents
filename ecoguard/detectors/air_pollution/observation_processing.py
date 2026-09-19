@@ -249,22 +249,12 @@ def detect_new(
         cursor_at = since
         cursor_id = 0 if since is not None else None
         service = processor or AirPollutionObservationProcessor()
+        # Production spatial enrichment belongs after event qualification and
+        # publication gating.  Explicit injection remains available for
+        # focused callers and tests, but detection itself performs no town
+        # lookup merely because transport screening is configured.
         enrichment = spatial_enricher
         enrichment_radius = spatial_radius_km
-        if enrichment is None and enrichment_radius is None:
-            try:
-                from ecoguard.analyzers.non_emergency.air_pollution.transport_prediction_service import (
-                    load_air_pollution_transport_configuration,
-                )
-
-                transport = load_air_pollution_transport_configuration()
-                if transport is not None:
-                    enrichment = AirPollutionSpatialEnricher()
-                    enrichment_radius = transport.max_screening_distance_m / 1000.0
-            except Exception:
-                logger.exception(
-                    "Air Pollution spatial enrichment configuration unavailable"
-                )
         if (enrichment is None) != (enrichment_radius is None):
             raise ValueError(
                 "spatial_enricher and spatial_radius_km must be supplied together"

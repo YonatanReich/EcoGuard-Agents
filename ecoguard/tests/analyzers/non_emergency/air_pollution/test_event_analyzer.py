@@ -189,7 +189,7 @@ def _analysis_input(candidate=None, **changes):
 def _wind() -> WindEvidence:
     return WindEvidence(
         evidence_id="ims-wind:10:2026-09-13T17:15:00Z",
-        provider="Israel Meteorological Service",
+        provider="IMS",
         source_type="station_observation",
         provider_location_kind="station",
         provider_location_id="10",
@@ -211,10 +211,12 @@ def _wind() -> WindEvidence:
 
 
 def _transport_service(wind_provider=None):
-    wind_provider = wind_provider or Mock()
-    wind_provider.select_wind_evidence.return_value = SimpleNamespace(
-        wind_evidence=_wind()
-    )
+    if wind_provider is None:
+        wind_provider = Mock()
+    if isinstance(wind_provider, Mock):
+        wind_provider.select_wind_evidence.return_value = SimpleNamespace(
+            wind_evidence=_wind()
+        )
     service = AirPollutionTransportPredictionService(
         wind_evidence_service=wind_provider,
         configuration=AirPollutionTransportConfiguration(
@@ -343,6 +345,26 @@ def test_missing_wind_is_explicit_and_safe():
         "wind_evidence_or_transport_screening_unavailable"
     )
     assert "provider unavailable" not in report.model_dump_json()
+
+
+def test_missing_wind_stops_before_town_and_population_queries():
+    wind_provider = Mock()
+    wind_provider.select_wind_evidence.side_effect = RuntimeError("provider unavailable")
+    service, _ = _transport_service(wind_provider)
+    enricher = Mock()
+    population = Mock()
+
+    report = AirPollutionNonEmergencyAnalyzer(
+        transport_service=service,
+        spatial_enricher=enricher,
+        population_service=population,
+        clock=lambda: GENERATED_AT,
+    ).analyze(_analysis_input())
+
+    assert report.transport_analysis.status == "unavailable"
+    assert report.population_impact.status == "unavailable"
+    enricher.enrich.assert_not_called()
+    population.analyze.assert_not_called()
 
 
 def test_unavailable_population_trend_and_severity_are_not_fabricated():
