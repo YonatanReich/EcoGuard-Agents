@@ -19,7 +19,7 @@ function EventCard({ event, onOpen, isSelected }: {
 }) {
   const hazard = hazardOf(event)
   const fire = event.type === 'fire' ? event.details : null
-  const assessed = event.analysis_status === 'success' && fire?.risk_score !== null
+  const assessed = event.analysis_status === 'success' && fire?.risk_level != null
   const officialClassification = event.type === 'air_pollution'
     ? event.details.official_pollutant_classification?.classification
     : null
@@ -61,7 +61,7 @@ function EventCard({ event, onOpen, isSelected }: {
         <span className="event-card__meta">
           {assessed && fire ? (
             <span className="event-card__score">
-              {fire.risk_level} · {fire.risk_score}
+              {fire.risk_level}
             </span>
           ) : (
             <span className="event-card__score event-card__score--none">

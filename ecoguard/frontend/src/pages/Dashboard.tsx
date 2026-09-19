@@ -44,6 +44,7 @@ import ResourceAllocationLayer from '../components/layers/ResourceAllocationLaye
 import {
   detectedFireToSharedEvent,
   type DetectedEventsResponse,
+  type FireEvent,
   type SharedEvent,
   type SharedEventFeed,
 } from '../types/events'
@@ -183,10 +184,14 @@ function Dashboard() {
   const corridorEvent = selectedEvent?.type === 'air_pollution'
     ? selectedEvent
     : null
-  const allocationEvent = selectedEvent?.type === 'fire'
-    && selectedEvent.details.resource_allocation
-    ? selectedEvent
-    : null
+  const allocationEvents = useMemo(
+    () => events.filter(
+      (event): event is FireEvent => (
+        event.type === 'fire' && event.details.resource_allocation !== null
+      ),
+    ),
+    [events],
+  )
 
   /**
    * True while the detection scan is running.
@@ -230,6 +235,13 @@ function Dashboard() {
     showFireDistricts,
     setShowFireDistricts,
   ] = useState(false)
+
+  // Stations and routes belong to one operational overlay. Event markers are
+  // rendered by MapView and remain visible when this layer is switched off.
+  const [
+    showAllocations,
+    setShowAllocations,
+  ] = useState(true)
 
   // Fire stations are reference data rather than an environmental overlay, so
   // they live in the "I want to see" bar above the map, not in LayersControl.
@@ -1097,15 +1109,15 @@ function Dashboard() {
               <AirPollutionCorridorLayer event={corridorEvent} />
             )}
 
-            {allocationEvent && (
+            {showAllocations && allocationEvents.map((event) => (
               <ResourceAllocationLayer
-                key={allocationEvent.id}
-                event={allocationEvent}
+                key={`${event.type}:${event.id}`}
+                event={event}
                 onShowDirections={(stationKey) => (
-                  showStationDirections(allocationEvent, stationKey)
+                  showStationDirections(event, stationKey)
                 )}
               />
-            )}
+            ))}
 
 
             {/* ================================================= */}
@@ -1153,6 +1165,16 @@ function Dashboard() {
               }
               onToggleFireDistricts={() =>
                 setShowFireDistricts(
+                  (current) =>
+                    !current
+                )
+              }
+
+              showAllocations={
+                showAllocations
+              }
+              onToggleAllocations={() =>
+                setShowAllocations(
                   (current) =>
                     !current
                 )
@@ -1210,6 +1232,7 @@ function Dashboard() {
 
       {openEvent && (
         <EventModal
+          key={`${openEvent.type}:${openEvent.id}`}
           event={openEvent}
           directionsStationKey={directionsStationKey}
           onClose={() => {

@@ -459,6 +459,12 @@
 .event-modal__facts dd {
     margin: 0.15rem 0 0;
     font-size: 0.92rem;
+    overflow-wrap: anywhere;
+}
+
+.event-modal__facts a {
+    color: #7dd3fc;
+    text-underline-offset: 2px;
 }
 
 .event-modal__facts--compact {

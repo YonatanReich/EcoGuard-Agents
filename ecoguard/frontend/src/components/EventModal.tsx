@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { classify, hazardOf } from './hazards'
 import type {
   AirPollutionEvent,
+  AllocationSettlement,
   FireEvent,
   SharedEvent,
 } from '../types/events'
@@ -46,6 +47,46 @@ function formatUnavailableReason(reason: string) {
   return reason.replaceAll('_', ' ')
 }
 
+function websiteUrl(value: string) {
+  return /^https?:\/\//i.test(value) ? value : `https://${value}`
+}
+
+function EventTownDetails({ town }: { town: AllocationSettlement }) {
+  return (
+    <section className="event-modal__section">
+      <h3>Settlement details</h3>
+      <dl className="event-modal__facts event-modal__facts--compact">
+        {town.population != null && <div><dt>Population</dt><dd>{town.population.toLocaleString()}</dd></div>}
+        {town.households != null && <div><dt>Households</dt><dd>{town.households.toLocaleString()}</dd></div>}
+        {town.authority && <div><dt>Authority</dt><dd>{town.authority}</dd></div>}
+        {town.authority_type && <div><dt>Authority type</dt><dd>{town.authority_type}</dd></div>}
+        {town.authority_phone && (
+          <div>
+            <dt>Phone</dt>
+            <dd>
+              <a href={`tel:${town.authority_phone.replace(/[^0-9+*]/g, '')}`}>
+                {town.authority_phone}
+              </a>
+            </dd>
+          </div>
+        )}
+        {town.authority_address && <div><dt>Address</dt><dd>{town.authority_address}</dd></div>}
+        {town.authority_website && (
+          <div>
+            <dt>Website</dt>
+            <dd>
+              <a href={websiteUrl(town.authority_website)} target="_blank" rel="noreferrer">
+                Open authority website
+              </a>
+            </dd>
+          </div>
+        )}
+        {town.area_km2 != null && <div><dt>Area</dt><dd>{town.area_km2.toFixed(2)} km²</dd></div>}
+      </dl>
+    </section>
+  )
+}
+
 function compactAirPollutionLimitations(limitations: string[]) {
   const unique = new Map<string, string>()
   let hasMonitoringLocationLimitation = false
@@ -80,14 +121,12 @@ function compactAirPollutionLimitations(limitations: string[]) {
 
 function FireEventDetails({ event }: { event: FireEvent }) {
   const details = event.details
-  const assessed = event.analysis_status === 'success' && details.risk_score !== null
+  const assessed = event.analysis_status === 'success' && details.risk_level !== null
 
   return (
     <>
       <dl className="event-modal__facts">
-        <div><dt>Risk</dt><dd>{assessed ? `${details.risk_level} · ${details.risk_score}` : 'not assessed'}</dd></div>
-        <div><dt>Detection confidence</dt><dd>{details.detection_confidence ?? '—'}</dd></div>
-        <div><dt>Fire weather severity</dt><dd>{details.fire_weather_severity ?? '—'}</dd></div>
+        <div><dt>Risk</dt><dd>{assessed ? details.risk_level : 'not assessed'}</dd></div>
       </dl>
 
       {details.explanation && (
@@ -515,6 +554,9 @@ function EventModal({ event, onClose, directionsStationKey = null }: {
         </dl>
 
         {event.description && <p className="event-modal__description">{event.description}</p>}
+        {event.type === 'fire' && event.details.resource_allocation?.settlement && (
+          <EventTownDetails town={event.details.resource_allocation.settlement} />
+        )}
         {event.processing?.failure_reason && (
           <section className="event-modal__section event-modal__section--gaps">
             <h3>Latest processing status</h3>

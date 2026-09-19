@@ -10,7 +10,10 @@ from ecoguard.database.repositories.police_stations import police_stations_geojs
 from ecoguard.database.repositories.resource_allocations import (
     ResourceAllocationRepository,
 )
-from ecoguard.database.repositories.towns import responsible_police_stations
+from ecoguard.database.repositories.towns import (
+    responsible_police_stations,
+    town_at_location,
+)
 from ecoguard.resource_allocator.mapbox_client import MapboxClient, RoutingError
 
 # Temporary station counts until an operational source can provide real
@@ -51,6 +54,17 @@ STATION_TYPES = {
     "medical_services": ("mda_station", "mda_stations"),
 }
 
+SETTLEMENT_FIELDS = (
+    "population",
+    "households",
+    "authority",
+    "authority_type",
+    "authority_phone",
+    "authority_address",
+    "authority_website",
+    "area_km2",
+)
+
 
 def _default_station_readers():
     """Return readers for the emergency-station tables already in the DB."""
@@ -70,6 +84,7 @@ class ResourceAllocationAgent:
         routing_client=None,
         allocation_repository=None,
         police_responsibility_reader=None,
+        town_reader=None,
     ):
         self.station_readers = (
             _default_station_readers()
@@ -83,6 +98,7 @@ class ResourceAllocationAgent:
         self.police_responsibility_reader = (
             police_responsibility_reader or responsible_police_stations
         )
+        self.town_reader = town_reader or town_at_location
         self._station_catalogs = {}
         self._stations_by_key = {}
         self._station_catalog_errors = {}
@@ -697,6 +713,18 @@ class ResourceAllocationAgent:
             "unsupported_units": [],
             "errors": [],
         }
+
+        # Settlement context is resolved once per incident by the allocator,
+        # using the same event coordinates that drive station selection.
+        try:
+            town = self.town_reader(latitude=event_lat, longitude=event_lon)
+        except Exception:
+            town = None
+        result["settlement"] = (
+            {field: town.get(field) for field in SETTLEMENT_FIELDS}
+            if isinstance(town, dict)
+            else None
+        )
 
         if not recommended_units:
             result["reason"] = "no_resources_required"

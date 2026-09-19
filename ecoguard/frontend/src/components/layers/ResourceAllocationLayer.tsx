@@ -43,11 +43,16 @@ function formatStationDistance(distanceKm: number | null) {
 function ResourceAllocationLayer({
   event,
   onShowDirections,
+  showLegend = false,
 }: {
   event: FireEvent
   onShowDirections: (stationKey: string) => void
+  showLegend?: boolean
 }) {
   const stations = event.details.resource_allocation?.stations ?? []
+  // Every event owns separate Mapbox source/layer IDs, allowing all active
+  // allocation routes to be rendered at the same time.
+  const layerSuffix = event.id.replace(/[^a-zA-Z0-9_-]/g, '_')
   const [selectedStationKey, setSelectedStationKey] = useState<string | null>(null)
   const selectedStation = stations.find(
     (station) => stationKey(station) === selectedStationKey,
@@ -69,12 +74,12 @@ function ResourceAllocationLayer({
     <>
       {routeFeatures.length > 0 && (
         <Source
-          id="resource-allocation-routes"
+          id={`resource-allocation-routes-${layerSuffix}`}
           type="geojson"
           data={{ type: 'FeatureCollection', features: routeFeatures }}
         >
           <Layer
-            id="resource-allocation-background-routes"
+            id={`resource-allocation-background-routes-${layerSuffix}`}
             type="line"
             slot="top"
             filter={selectedStationKey
@@ -95,7 +100,7 @@ function ResourceAllocationLayer({
             // This layer is declared after the background layer so Mapbox
             // always paints the selected route above every other route.
             <Layer
-              id="resource-allocation-selected-route"
+              id={`resource-allocation-selected-route-${layerSuffix}`}
               type="line"
               slot="top"
               filter={['==', ['get', 'routeKey'], selectedStationKey]}
@@ -171,7 +176,7 @@ function ResourceAllocationLayer({
         </Popup>
       )}
 
-      {stations.length > 0 && (
+      {showLegend && stations.length > 0 && (
         <div className="allocation-route-legend">
           Assigned stations and fastest routes
         </div>

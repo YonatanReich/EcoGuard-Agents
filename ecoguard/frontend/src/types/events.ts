@@ -52,6 +52,17 @@ export type AllocatedStation = {
   route: AllocationRoute | null
 }
 
+export type AllocationSettlement = {
+  population: number | null
+  households: number | null
+  authority: string | null
+  authority_type: string | null
+  authority_phone: string | null
+  authority_address: string | null
+  authority_website: string | null
+  area_km2: number | null
+}
+
 export type ResourceAllocationSummary = {
   status: string
   routing_status: string
@@ -63,6 +74,7 @@ export type ResourceAllocationSummary = {
   shortages: Record<string, number>
   stations: AllocatedStation[]
   errors: Array<Record<string, unknown>>
+  settlement: AllocationSettlement | null
 }
 
 export type FireDetails = {

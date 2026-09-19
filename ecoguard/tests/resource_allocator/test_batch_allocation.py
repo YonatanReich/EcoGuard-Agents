@@ -188,6 +188,7 @@ def allocation_agent(
     routing_client=None,
     allocation_repository=None,
     police_responsibility_reader=None,
+    town_reader=None,
 ):
     return ResourceAllocationAgent(
         station_readers=station_readers,
@@ -198,6 +199,7 @@ def allocation_agent(
         police_responsibility_reader=(
             police_responsibility_reader or (lambda **_: None)
         ),
+        town_reader=town_reader or (lambda **_: None),
     )
 
 
@@ -316,6 +318,65 @@ def test_coordinator_incident_id_owns_allocation_and_release():
         now=NOW,
     )
     assert fire_reader.call_count == 1
+
+
+def test_allocator_attaches_only_frontend_settlement_fields():
+    town_reader = Mock(return_value={
+        "town_id": "test-town",
+        "name_he": "עיר בדיקה",
+        "population": 12_000,
+        "households": 4_200,
+        "authority": "רשות בדיקה",
+        "authority_type": "עירייה",
+        "authority_phone": "03-0000000",
+        "authority_address": "רחוב בדיקה 1",
+        "authority_website": "https://example.test",
+        "area_km2": 8.5,
+        "police_station": "must not be exposed",
+    })
+    agent = allocation_agent(
+        {
+            "fire_department": lambda: catalog(
+                station(1, "Fire station", 31.01, 35.0)
+            )
+        },
+        town_reader=town_reader,
+    )
+
+    result = agent.allocate_batch(
+        [allocation_request("incident-1", response_plan("event-1"))],
+        now=NOW,
+    )[0]
+
+    assert result["settlement"] == {
+        "population": 12_000,
+        "households": 4_200,
+        "authority": "רשות בדיקה",
+        "authority_type": "עירייה",
+        "authority_phone": "03-0000000",
+        "authority_address": "רחוב בדיקה 1",
+        "authority_website": "https://example.test",
+        "area_km2": 8.5,
+    }
+    town_reader.assert_called_once_with(latitude=31.0, longitude=35.0)
+
+
+def test_allocator_returns_no_settlement_outside_every_town_polygon():
+    agent = allocation_agent(
+        {
+            "fire_department": lambda: catalog(
+                station(1, "Fire station", 31.01, 35.0)
+            )
+        },
+        town_reader=lambda **_: None,
+    )
+
+    result = agent.allocate_batch(
+        [allocation_request("incident-1", response_plan("event-1"))],
+        now=NOW,
+    )[0]
+
+    assert result["settlement"] is None
 
 
 def test_batch_uses_fire_police_and_mda_db_catalogs_including_coarse_points():

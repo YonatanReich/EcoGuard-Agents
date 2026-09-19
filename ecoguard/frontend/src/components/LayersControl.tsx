@@ -11,6 +11,7 @@
  *   - Fire Danger — Fire Weather Index (FWI) from GWIS/EFFIS.
  *   - Wind — animated near-surface wind visualization from Open-Meteo.
  *   - Fire Districts — the seven fire & rescue districts of responsibility.
+ *   - Allocations — assigned stations and their routes to the selected event.
  *
  * Additional layers can be added here later without changing MapView.
  */
@@ -48,6 +49,12 @@ type LayersControlProps = {
   /** Toggle the fire & rescue district outlines. */
   onToggleFireDistricts: () => void
 
+  /** Whether assigned stations and their routes are visible. */
+  showAllocations: boolean
+
+  /** Toggle assigned stations and their routes as one operational layer. */
+  onToggleAllocations: () => void
+
 }
 
 function LayersControl({
@@ -61,6 +68,8 @@ function LayersControl({
   onToggleWind,
   showFireDistricts,
   onToggleFireDistricts,
+  showAllocations,
+  onToggleAllocations,
 }: LayersControlProps) {
   return (
     <div style={containerStyle}>
@@ -109,6 +118,15 @@ function LayersControl({
           onChange={onToggleFireDistricts}
         />
         <span>🛡 Fire Districts</span>
+      </label>
+
+      <label style={rowStyle}>
+        <input
+          type="checkbox"
+          checked={showAllocations}
+          onChange={onToggleAllocations}
+        />
+        <span>🚨 Allocations</span>
       </label>
 
     </div>

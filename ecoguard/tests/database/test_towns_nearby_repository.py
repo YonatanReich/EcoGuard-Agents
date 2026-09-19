@@ -2,6 +2,7 @@ from ecoguard.database.repositories.towns import (
     TownLookupStatus,
     nearby_towns,
     responsible_police_stations,
+    town_at_location,
 )
 
 
@@ -146,3 +147,47 @@ def test_responsible_police_stations_returns_none_outside_every_town():
     )
 
     assert result is None
+
+
+def test_town_at_location_returns_full_contact_record():
+    row = {
+        "town_id": "haifa",
+        "name_he": "חיפה",
+        "name_en": "Haifa",
+        "place": "city",
+        "population": 295_000,
+        "households": 120_000,
+        "cbs_code": "4000",
+        "outline_source": "municipal boundary",
+        "fire_district": "חוף",
+        "authority": "חיפה",
+        "authority_type": "עירייה",
+        "authority_phone": "04-8356860",
+        "authority_address": "חסן שוקרי 14",
+        "authority_website": "https://www.haifa.muni.il",
+        "police_station": "תחנת חיפה",
+        "police_region": "מרחב כרמל",
+        "police_district": "חוף",
+        "area_km2": 64.6,
+        "label_lat": 32.794,
+        "label_lon": 34.9896,
+        "min_lon": 34.9,
+        "min_lat": 32.7,
+        "max_lon": 35.1,
+        "max_lat": 32.9,
+    }
+    session = _Session([_Result(rows=[row])])
+
+    result = town_at_location(
+        latitude=32.794,
+        longitude=34.9896,
+        session_factory=lambda: session,
+    )
+
+    assert result is not None
+    assert result["town_id"] == "haifa"
+    assert result["authority_phone"] == "04-8356860"
+    assert result["authority_website"] == "https://www.haifa.muni.il"
+    query, parameters = session.calls[0]
+    assert "ST_Covers" in query
+    assert parameters == {"latitude": 32.794, "longitude": 34.9896}

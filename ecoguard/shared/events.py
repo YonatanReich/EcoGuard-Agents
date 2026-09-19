@@ -83,6 +83,17 @@ class AllocatedStation(EventContract):
     route: AllocationRoute | None = None
 
 
+class AllocationSettlement(EventContract):
+    population: int | None = Field(default=None, ge=0)
+    households: int | None = Field(default=None, ge=0)
+    authority: str | None = None
+    authority_type: str | None = None
+    authority_phone: str | None = None
+    authority_address: str | None = None
+    authority_website: str | None = None
+    area_km2: float | None = Field(default=None, ge=0)
+
+
 class ResourceAllocationSummary(EventContract):
     status: str
     routing_status: str
@@ -90,6 +101,7 @@ class ResourceAllocationSummary(EventContract):
     shortages: dict[str, int] = Field(default_factory=dict)
     stations: list[AllocatedStation] = Field(default_factory=list)
     errors: list[dict[str, Any]] = Field(default_factory=list)
+    settlement: AllocationSettlement | None = None
 
 
 class FireDetails(EventContract):
