@@ -796,12 +796,17 @@ def build_dashboard_event(*, event: dict, risk: dict, plan: dict) -> dict:
         "primary_drivers": risk.get("primary_drivers") or [],
         "explanation": risk.get("explanation"),
         "evidence_gaps": risk.get("evidence_gaps") or [],
+        "limitations": list(dict.fromkeys([
+            *(risk.get("limitations") or []),
+            *(plan.get("limitations") or []),
+        ])),
 
         # Response plan. response_plan is the flattened form the dashboard
         # already expects; response_actions carries the unit and timeframe.
         "recommended_units": plan.get("recommended_units") or [],
         "response_plan": [action["action"] for action in actions],
         "response_actions": actions,
+        "assumptions": plan.get("assumptions") or [],
 
         # Verified citations from both reasoning steps, merged.
         "protocol_citations": risk_citations + plan_citations,

@@ -187,6 +187,15 @@ function FireEventDetails({ event }: { event: FireEvent }) {
                   )}
                 </span>
                 {station.address && <span>{station.address}</span>}
+                {(station.response_actions?.length ?? 0) > 0 && (
+                  <ul className="event-modal__station-actions">
+                    {station.response_actions?.map((action, index) => (
+                      <li key={`${station.database_id}-action-${index}`}>
+                        {action.action} <span className="event-modal__timeframe">{action.timeframe}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 {station.route?.requires_field_access_confirmation && (
                   <span className="event-modal__allocation-warning">
                     The straight dashed segment to the target is not a verified access route; its travel time is unknown.
@@ -232,6 +241,20 @@ function FireEventDetails({ event }: { event: FireEvent }) {
         <section className="event-modal__section event-modal__section--gaps">
           <h3>Evidence gaps</h3>
           <ul>{details.evidence_gaps.map((gap) => <li key={gap}>{gap}</li>)}</ul>
+        </section>
+      )}
+
+      {details.assumptions.length > 0 && (
+        <section className="event-modal__section">
+          <h3>Assumptions</h3>
+          <ul>{details.assumptions.map((item) => <li key={item}>{item}</li>)}</ul>
+        </section>
+      )}
+
+      {details.limitations.length > 0 && (
+        <section className="event-modal__section event-modal__section--gaps">
+          <h3>Limitations</h3>
+          <ul>{details.limitations.map((item) => <li key={item}>{item}</li>)}</ul>
         </section>
       )}
 
@@ -535,6 +558,21 @@ function FloodEventDetails({ event }: { event: FloodEvent }) {
         </section>
       )}
 
+      {(details.response_actions?.length ?? 0) > 0 && (
+        <section className="event-modal__section">
+          <h3>Response plan</h3>
+          <ol className="event-modal__actions">
+            {details.response_actions?.map((action, index) => (
+              <li key={`${action.responsible_unit}-${index}`}>
+                {action.action}
+                <span className="event-modal__timeframe">{action.timeframe}</span>
+                <span className="event-modal__action-owner">{formatComponentName(action.responsible_unit)}</span>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
       <section className="event-modal__section">
         <h3>Hydrometric sources</h3>
         <ul className="event-modal__allocations">
@@ -608,6 +646,15 @@ function FloodEventDetails({ event }: { event: FloodEvent }) {
                     The straight dashed segment to the target is not a verified access route; its travel time is unknown.
                   </span>
                 )}
+                {(station.response_actions?.length ?? 0) > 0 && (
+                  <ul className="event-modal__station-actions">
+                    {station.response_actions?.map((action, index) => (
+                      <li key={`${station.database_id}-flood-action-${index}`}>
+                        {action.action} <span className="event-modal__timeframe">{action.timeframe}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 {station.route?.steps_he && station.route.steps_he.length > 0 && (
                   <details
                     id={`allocation-directions-${station.recommended_unit}-${station.database_id}`}
@@ -630,6 +677,27 @@ function FloodEventDetails({ event }: { event: FloodEvent }) {
               </li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {(details.assumptions?.length ?? 0) > 0 && (
+        <section className="event-modal__section">
+          <h3>Assumptions</h3>
+          <ul>{details.assumptions?.map((item) => <li key={item}>{item}</li>)}</ul>
+        </section>
+      )}
+
+      {(details.evidence_gaps?.length ?? 0) > 0 && (
+        <section className="event-modal__section event-modal__section--gaps">
+          <h3>Evidence gaps</h3>
+          <ul>{details.evidence_gaps?.map((item) => <li key={item}>{item}</li>)}</ul>
+        </section>
+      )}
+
+      {details.limitations.length > 0 && (
+        <section className="event-modal__section event-modal__section--gaps">
+          <h3>Limitations</h3>
+          <ul>{details.limitations.map((item) => <li key={item}>{item}</li>)}</ul>
         </section>
       )}
     </>

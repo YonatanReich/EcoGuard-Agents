@@ -18,6 +18,7 @@ export type FireResponseAction = {
   action: string
   responsible_unit: string
   timeframe: 'immediate' | 'within_1_hour' | 'within_6_hours' | 'ongoing'
+  supporting_protocol_chunk_ids?: string[]
 }
 
 export type AllocationRoute = {
@@ -60,6 +61,7 @@ export type AllocatedStation = {
   distance_km: number | null
   allocation_status: string
   selection_reason: string
+  response_actions?: FireResponseAction[]
   route: AllocationRoute | null
 }
 
@@ -96,7 +98,9 @@ export type FireDetails = {
   confidence: 'low' | 'medium' | 'high' | null
   primary_drivers: string[]
   explanation: string | null
+  assumptions: string[]
   evidence_gaps: string[]
+  limitations: string[]
   recommended_units: string[]
   response_plan: string[]
   response_actions: FireResponseAction[]
@@ -190,6 +194,9 @@ export type FloodDetails = {
   targeting_reason: string | null
   allocation_target: Record<string, unknown> | null
   advisories: Array<{ type: string; action: string; instruction: string; scope: string | null }>
+  response_actions?: FireResponseAction[]
+  assumptions?: string[]
+  evidence_gaps?: string[]
   resource_allocation: ResourceAllocationSummary | null
   response_plan?: Record<string, unknown> | null
   change_type?: string | null
@@ -441,7 +448,9 @@ export type DetectedFireEventPayload = {
   confidence: 'low' | 'medium' | 'high' | null
   primary_drivers: string[]
   explanation: string | null
+  assumptions: string[]
   evidence_gaps: string[]
+  limitations: string[]
   recommended_units: string[]
   response_plan: string[]
   response_actions: FireResponseAction[]
@@ -490,7 +499,9 @@ export function detectedFireToSharedEvent(event: DetectedFireEventPayload): Fire
       confidence: event.confidence,
       primary_drivers: event.primary_drivers,
       explanation: event.explanation,
+      assumptions: event.assumptions,
       evidence_gaps: event.evidence_gaps,
+      limitations: event.limitations,
       recommended_units: event.recommended_units,
       response_plan: event.response_plan,
       response_actions: event.response_actions,

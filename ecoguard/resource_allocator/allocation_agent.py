@@ -470,33 +470,64 @@ class ResourceAllocationAgent:
             if ready_sites
             else f"{incident_id}:flood-station-fallback"
         )
-        response_plan = {
-            "metadata": {
-                "planning_status": "success",
-                "timestamp": self._utc(item.get("queued_at") or now).isoformat(),
-                "agent": "deterministic_flood_station_fallback",
-            },
-            "event_id": event_id,
-            "location": {
+        planner_plan = item.get("response_plan")
+        planner_succeeded = (
+            isinstance(planner_plan, dict)
+            and self._planning_status(planner_plan) == "success"
+        )
+        if planner_succeeded:
+            response_plan = deepcopy(planner_plan)
+            planned_risk = response_plan.get("responding_to") or {}
+            if (
+                planned_risk.get("risk_score") != risk_score
+                or str(planned_risk.get("risk_level") or "").lower() != risk_level
+            ):
+                raise ValueError("flood response plan does not match risk analyzer")
+            # Road targeting owns the dispatch destination. The planner owns
+            # the units and instructions, but must not replace that verified
+            # operational location with the gauge centroid.
+            response_plan["event_id"] = event_id
+            response_plan["location"] = {
                 "latitude": float(location["latitude"]),
                 "longitude": float(location["longitude"]),
-            },
-            "responding_to": {
-                "risk_semantics": "detected_event_operational_risk",
-                "risk_score": risk_score,
-                "risk_level": risk_level,
-                "severity_level": severity,
-                "risk_confidence": risk.confidence,
+            }
+            response_plan["responding_to"] = {
+                **planned_risk,
                 "primary_target_id": primary_target_id,
                 "fallback_reason": fallback_reason,
-            },
-            "recommended_units": list(requirements),
-            "station_requirements": requirements,
-            "response_actions": [
-                {"timeframe": "immediate", "responsible_unit": unit}
-                for unit in requirements
-            ],
-        }
+            }
+        else:
+            response_plan = {
+                "metadata": {
+                    "planning_status": "success",
+                    "timestamp": self._utc(item.get("queued_at") or now).isoformat(),
+                    "agent": "deterministic_flood_station_fallback",
+                },
+                "event_id": event_id,
+                "location": {
+                    "latitude": float(location["latitude"]),
+                    "longitude": float(location["longitude"]),
+                },
+                "responding_to": {
+                    "risk_semantics": "detected_event_operational_risk",
+                    "risk_score": risk_score,
+                    "risk_level": risk_level,
+                    "severity_level": severity,
+                    "risk_confidence": risk.confidence,
+                    "primary_target_id": primary_target_id,
+                    "fallback_reason": fallback_reason,
+                },
+                "recommended_units": list(requirements),
+                "station_requirements": requirements,
+                "response_actions": [
+                    {
+                        "action": "Secure access to the identified flood response site.",
+                        "timeframe": "immediate",
+                        "responsible_unit": unit,
+                    }
+                    for unit in requirements
+                ],
+            }
         prepared = self._prepare_batch_request(
             {
                 "incident_id": incident_id,
@@ -658,6 +689,28 @@ class ResourceAllocationAgent:
         recommended_units = list(
             dict.fromkeys(response_plan.get("recommended_units") or [])
         )
+        response_actions = response_plan.get("response_actions") or []
+        if not isinstance(response_actions, list):
+            raise ValueError("response_actions must be a list")
+        action_units = set()
+        for action in response_actions:
+            if not isinstance(action, dict):
+                raise ValueError("each response action must be an object")
+            responsible_unit = str(action.get("responsible_unit") or "").strip()
+            if responsible_unit not in recommended_units:
+                raise ValueError(
+                    "each response action must name a recommended responsible unit"
+                )
+            if not str(action.get("action") or "").strip():
+                raise ValueError("each response action must contain an instruction")
+            if action.get("timeframe") not in TIMEFRAME_PRIORITY:
+                raise ValueError("each response action must contain a valid timeframe")
+            action_units.add(responsible_unit)
+        missing_action_units = set(recommended_units) - action_units
+        if missing_action_units:
+            raise ValueError(
+                "each recommended unit must have at least one response action"
+            )
         station_requirements = response_plan.get("station_requirements")
         if station_requirements is not None:
             if not isinstance(station_requirements, dict):
@@ -982,6 +1035,10 @@ class ResourceAllocationAgent:
             "queued_at": request["queued_at"].isoformat(),
             "allocation_needed": bool(recommended_units),
             "allocation_scope": "station",
+            # Preserve the complete plan at the allocation boundary. Actions
+            # are also copied onto every assigned station of their responsible
+            # unit below, so dispatch consumers do not have to rejoin them.
+            "response_actions": deepcopy(response_plan.get("response_actions") or []),
             "allocated_units": {},
             "requirements": {},
             "shortages": {},
@@ -1136,6 +1193,13 @@ class ResourceAllocationAgent:
                         assigned, event_location
                     )
                 result["errors"].extend(route_errors)
+            assigned_actions = [
+                deepcopy(action)
+                for action in response_plan.get("response_actions") or []
+                if action.get("responsible_unit") == recommended_unit
+            ]
+            for station in assigned:
+                station["response_actions"] = deepcopy(assigned_actions)
             result["allocated_units"][output_key] = assigned
             if result["road_access"] is None:
                 for station in assigned:
@@ -1300,6 +1364,7 @@ class ResourceAllocationAgent:
                     "queued_at": result.requested_at,
                     "flood_targeting": targeting,
                     "risk_assessment": getattr(result, "risk_assessment", None),
+                    "response_plan": getattr(result, "planner_result", None),
                 }
             else:
                 continue

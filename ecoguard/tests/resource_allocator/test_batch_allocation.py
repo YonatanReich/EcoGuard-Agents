@@ -271,7 +271,14 @@ def response_plan(
             "risk_semantics": "detected_event_operational_risk",
         },
         "recommended_units": units or ["fire_department"],
-        "response_actions": [{"timeframe": "immediate"}],
+        "response_actions": [
+            {
+                "action": "Carry out the assigned operational response.",
+                "responsible_unit": unit,
+                "timeframe": "immediate",
+            }
+            for unit in (units or ["fire_department"])
+        ],
     }
 
 
@@ -827,6 +834,96 @@ def test_higher_operational_risk_gets_contended_stations_first():
     }
     assert results[1]["status"] == "partial"
     assert fire_reader.call_count == 1
+
+
+def test_fire_actions_are_preserved_and_attached_to_responsible_stations():
+    agent = allocation_agent({
+        "fire_department": lambda: catalog(
+            station(1, "Fire station", 31.01, 35.0)
+        ),
+        "police": lambda: catalog(
+            station(2, "Police station", 31.02, 35.0)
+        ),
+    })
+    plan = response_plan(
+        "fire-event",
+        units=["fire_department", "police"],
+    )
+    plan["response_actions"] = [
+        {
+            "action": "Contain the fire perimeter.",
+            "responsible_unit": "fire_department",
+            "timeframe": "immediate",
+        },
+        {
+            "action": "Restrict access to the incident area.",
+            "responsible_unit": "police",
+            "timeframe": "immediate",
+        },
+    ]
+
+    result = agent.allocate_batch(
+        [allocation_request("fire-incident", plan)], now=NOW
+    )[0]
+
+    assert result["response_actions"] == plan["response_actions"]
+    assert result["allocated_units"]["fire_stations"][0]["response_actions"] == [
+        plan["response_actions"][0]
+    ]
+    assert result["allocated_units"]["police_stations"][0]["response_actions"] == [
+        plan["response_actions"][1]
+    ]
+
+
+def test_flood_successful_planner_actions_drive_station_allocation():
+    agent = allocation_agent({
+        "fire_department": lambda: catalog(
+            station(1, "Fire station", 31.01, 35.0),
+            station(2, "Fire station 2", 31.02, 35.0),
+            station(3, "Fire station 3", 31.03, 35.0),
+        ),
+        "police": lambda: catalog(
+            station(4, "Police station", 31.04, 35.0)
+        ),
+    })
+    plan = response_plan(
+        "flood-event",
+        risk_score=60,
+        risk_level="high",
+        units=["fire_department", "police"],
+    )
+    plan["response_actions"] = [
+        {
+            "action": "Prepare for rescue at the verified road site.",
+            "responsible_unit": "fire_department",
+            "timeframe": "immediate",
+        },
+        {
+            "action": "Close access to the verified road site.",
+            "responsible_unit": "police",
+            "timeframe": "immediate",
+        },
+    ]
+
+    result = agent.allocate_batch([{
+        "incident_id": "INC-FLOOD-1",
+        "hazard": "flood",
+        "queued_at": NOW,
+        "risk_assessment": _flood_risk(4),
+        "flood_targeting": {
+            "allocation_ready_sites": [_flood_site(4)],
+        },
+        "response_plan": plan,
+    }], now=NOW)[0]
+
+    assert result["response_actions"] == plan["response_actions"]
+    assert all(
+        station_result["response_actions"] == [plan["response_actions"][0]]
+        for station_result in result["allocated_units"]["fire_stations"]
+    )
+    assert result["allocated_units"]["police_stations"][0]["response_actions"] == [
+        plan["response_actions"][1]
+    ]
 
 
 def test_concurrent_batches_cannot_claim_the_same_station():

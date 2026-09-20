@@ -85,6 +85,17 @@ def test_flood_result_projects_stream_station_and_distinct_road_locations():
         status="success",
         requested_at=REQUESTED_AT,
         completed_at=REQUESTED_AT,
+        planner_result={
+            "response_actions": [{
+                "action": "Close access to the flooded road.",
+                "responsible_unit": "police",
+                "timeframe": "immediate",
+                "supporting_protocol_chunk_ids": ["flood-protocol#0"],
+            }],
+            "assumptions": ["The road remains accessible to responders."],
+            "evidence_gaps": ["No confirmed trapped-person report."],
+            "limitations": ["Field conditions may change rapidly."],
+        },
         resource_allocation_result={
             "status": "targets_identified",
             "hydrometric_sources": [{
@@ -157,6 +168,14 @@ def test_flood_result_projects_stream_station_and_distinct_road_locations():
     assert event.details.response_sites[0].road.road_class == "primary"
     assert event.details.response_sites[0].crossing_location.longitude == 35.21
     assert event.details.response_sites[0].allocation_location.longitude == 35.211
+    assert event.details.response_actions[0].responsible_unit == "police"
+    assert event.details.assumptions == [
+        "The road remains accessible to responders."
+    ]
+    assert event.details.evidence_gaps == [
+        "No confirmed trapped-person report."
+    ]
+    assert "Field conditions may change rapidly." in event.details.limitations
 
 
 def test_flood_deescalation_projects_current_band_and_preserves_response():

@@ -52,6 +52,7 @@ from ecoguard.shared.events import (
     FloodSharedEvent,
     FloodSourceContext,
     FloodStream,
+    FireResponseAction,
     GeographicPoint,
     MinistryAirQualityIndex,
     OfficialPollutantClassification,
@@ -507,6 +508,11 @@ def _allocation_summary(value: Any) -> ResourceAllocationSummary | None:
                     distance_km=station.get("distance_km"),
                     allocation_status=str(station["allocation_status"]),
                     selection_reason=str(station["selection_reason"]),
+                    response_actions=[
+                        FireResponseAction.model_validate(action)
+                        for action in station.get("response_actions") or []
+                        if isinstance(action, Mapping)
+                    ],
                     route=route,
                 ))
     settlement_value = value.get("settlement")
@@ -619,6 +625,23 @@ def flood_shared_event(
     targeting_status = targeting.get("status")
     change = analysis.change_assessment if analysis is not None else None
     preserving = result.preserve_existing_response
+    plan = (
+        result.planner_result
+        if isinstance(result.planner_result, Mapping)
+        else {}
+    )
+    plan_actions = [
+        FireResponseAction.model_validate({
+            "action": action.get("action"),
+            "responsible_unit": action.get("responsible_unit"),
+            "timeframe": action.get("timeframe"),
+            "supporting_protocol_chunk_ids": (
+                action.get("supporting_protocol_chunk_ids") or []
+            ),
+        })
+        for action in plan.get("response_actions") or []
+        if isinstance(action, Mapping)
+    ]
     return FloodSharedEvent(
         id=result.incident_id,
         title=f"Flood warning: hydrometric station {primary.station.id}",
@@ -671,6 +694,13 @@ def flood_shared_event(
                 for advisory in targeting.get("advisories") or []
                 if isinstance(advisory, Mapping)
             ],
+            response_actions=plan_actions,
+            assumptions=[str(item) for item in plan.get("assumptions") or []],
+            evidence_gaps=list(dict.fromkeys([
+                *(analysis.evidence_gaps if analysis is not None else []),
+                *(risk.evidence_gaps if risk is not None else []),
+                *[str(item) for item in plan.get("evidence_gaps") or []],
+            ])),
             resource_allocation=_allocation_summary(targeting.get("station_allocation")),
             response_plan=(
                 dict(result.planner_result)
@@ -689,6 +719,7 @@ def flood_shared_event(
                 f"Drawable matched stream geometries: {drawable_streams} of {len(projected_sources)}.",
                 *(analysis.limitations if analysis is not None else []),
                 *(risk.limitations if risk is not None else []),
+                *[str(item) for item in plan.get("limitations") or []],
             ],
         ),
     )
@@ -721,9 +752,17 @@ def _preserve_flood_operational_response(
         "advisories",
         "resource_allocation",
         "response_plan",
+        "response_actions",
+        "assumptions",
     ):
         if key in previous_details:
             details[key] = previous_details[key]
+
+    for key in ("evidence_gaps", "limitations"):
+        details[key] = list(dict.fromkeys([
+            *(details.get(key) or []),
+            *(previous_details.get(key) or []),
+        ]))
 
     # Retain a previously verified stream geometry for a station, but never
     # copy its old severity or timestamp over the current analyzer state.
