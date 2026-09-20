@@ -69,6 +69,18 @@ function ResourceAllocationLayer({
       geometry,
     }]
   })
+  const offroadFeatures = stations.flatMap((station) => {
+    const segment = station.route?.offroad_segment
+    if (!segment?.geometry) return []
+    return [{
+      type: 'Feature' as const,
+      properties: {
+        routeKey: stationKey(station),
+        color: stationStyle(station).color,
+      },
+      geometry: segment.geometry,
+    }]
+  })
 
   return (
     <>
@@ -118,6 +130,37 @@ function ResourceAllocationLayer({
         </Source>
       )}
 
+      {offroadFeatures.length > 0 && (
+        <Source
+          id={`resource-allocation-field-segments-${layerSuffix}`}
+          type="geojson"
+          data={{ type: 'FeatureCollection', features: offroadFeatures }}
+        >
+          <Layer
+            id={`resource-allocation-field-segments-line-${layerSuffix}`}
+            type="line"
+            slot="top"
+            layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+            paint={{
+              'line-color': ['get', 'color'],
+              'line-width': selectedStationKey ? [
+                'case',
+                ['==', ['get', 'routeKey'], selectedStationKey],
+                5,
+                2,
+              ] : 3,
+              'line-opacity': selectedStationKey ? [
+                'case',
+                ['==', ['get', 'routeKey'], selectedStationKey],
+                1,
+                0.35,
+              ] : 0.8,
+              'line-dasharray': [2, 2],
+            }}
+          />
+        </Source>
+      )}
+
       {stations.map((station) => {
         const style = stationStyle(station)
         const key = stationKey(station)
@@ -164,14 +207,14 @@ function ResourceAllocationLayer({
             </strong>
             <span>
               {selectedStation.route?.requires_field_access_confirmation
-                ? 'זמן נסיעה עד נקודת הירידה לשטח'
+                ? 'זמן נסיעה עד נקודת סיום המסלול בכביש'
                 : 'זמן נסיעה'}:{' '}
               {formatTravelTime(selectedStation.route?.duration_s)},{' '}
               {formatStationDistance(selectedStation.distance_km)}
             </span>
             {selectedStation.route?.requires_field_access_confirmation && (
               <span className="event-modal__allocation-warning">
-                זמן ההתקדמות מנקודה זו בתוך השטח אינו ידוע
+                הקו המקווקו אל היעד הוא קטע שטח משוער; דרך הגישה וזמן ההתקדמות בו אינם מאומתים
               </span>
             )}
             <button

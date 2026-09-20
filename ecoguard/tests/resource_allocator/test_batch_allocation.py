@@ -441,7 +441,7 @@ def test_flood_allocator_selects_the_highest_priority_verified_road():
     ]
 
 
-def test_flood_allocator_skips_when_no_site_was_verified():
+def test_flood_allocator_assigns_police_to_gauge_when_no_site_was_verified():
     agent = allocation_agent({})
 
     prepared = agent._prepare_batch_request(
@@ -449,13 +449,32 @@ def test_flood_allocator_skips_when_no_site_was_verified():
             "incident_id": "INC-FLOOD-1",
             "hazard": "flood",
             "queued_at": NOW,
-            "flood_targeting": {"allocation_ready_sites": []},
+            "flood_targeting": {
+                "allocation_ready_sites": [],
+                "hydrometric_sources": [{
+                    "station": {
+                        "id": 50,
+                        "latitude": 30.735,
+                        "longitude": 35.235,
+                        "severity_level": 4,
+                    },
+                    "strategy": "station_buffer_primary",
+                    "stream": None,
+                }],
+            },
         },
         NOW,
     )
 
-    assert prepared["terminal"]["status"] == "skipped"
-    assert prepared["terminal"]["reason"] == "no_verified_flood_response_site"
+    assert prepared["response_plan"]["station_requirements"] == {"police": 1}
+    assert prepared["response_plan"]["location"] == {
+        "latitude": 30.735,
+        "longitude": 35.235,
+    }
+    assert prepared["allocation_target"]["target_type"] == (
+        "hydrometric_station_fallback"
+    )
+    assert prepared["allocation_target"]["requires_road_access_resolution"] is True
 
 
 def test_resource_allocator_discovers_flood_roads_and_assigns_one_police_station():
@@ -504,6 +523,70 @@ def test_resource_allocator_discovers_flood_roads_and_assigns_one_police_station
     }
     assert len(station_allocation["allocated_units"]["police_stations"]) == 1
     assert allocations["INC-FLOOD-1"] is station_allocation
+
+
+def test_flood_without_road_crossing_assigns_police_and_routes_to_road_access():
+    targeting = {
+        "incident_id": "INC-FLOOD-NO-ROAD",
+        "status": "no_road_targets",
+        "response_sites": [],
+        "allocation_ready_sites": [],
+        "hydrometric_sources": [{
+            "station": {
+                "id": 70,
+                "latitude": 30.735,
+                "longitude": 35.235,
+                "severity_level": 4,
+            },
+            "strategy": "station_buffer_primary",
+            "stream": None,
+        }],
+        "resource_allocations": [],
+        "advisories": [],
+    }
+    flood_target_agent = Mock()
+    flood_target_agent.identify.return_value = targeting
+    routing_client = FakeRoutingClient(snap_distance_m=175)
+    incident = {"id": "INC-FLOOD-NO-ROAD", "signals": []}
+    agent = allocation_agent(
+        {
+            "police": lambda: catalog(
+                station(2, "Police station", 30.75, 35.22, kind="station")
+            ),
+        },
+        routing_client=routing_client,
+        flood_target_agent=flood_target_agent,
+        incident_reader=lambda incident_id: (
+            incident if incident_id == incident["id"] else None
+        ),
+    )
+    result = SimpleNamespace(
+        incident_id=incident["id"],
+        hazard="flood",
+        route="emergency",
+        requested_at=NOW,
+        planner_result=None,
+        resource_allocation_result=None,
+    )
+
+    agent.allocate_processing_results([result])
+
+    allocation = result.resource_allocation_result["station_allocation"]
+    assigned = allocation["allocated_units"]["police_stations"]
+    assert allocation["requirements"]["police"] == {
+        "requested": 1,
+        "assigned": 1,
+        "shortfall": 0,
+    }
+    assert len(assigned) == 1
+    assert assigned[0]["route"]["status"] == "partial_offroad"
+    assert assigned[0]["route"]["duration_s"] is not None
+    assert assigned[0]["route"]["requires_field_access_confirmation"] is True
+    assert assigned[0]["route"]["offroad_segment"]["access_verified"] is False
+    assert assigned[0]["route"]["offroad_segment"]["distance_m"] == 175
+    assert result.resource_allocation_result["allocation_target"]["target_type"] == (
+        "hydrometric_station_fallback"
+    )
 
 
 def test_allocator_returns_no_settlement_outside_every_town_polygon():

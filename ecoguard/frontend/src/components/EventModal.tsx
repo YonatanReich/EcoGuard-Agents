@@ -182,14 +182,14 @@ function FireEventDetails({ event }: { event: FireEvent }) {
                   {station.distance_km == null ? 'Distance unavailable' : `${station.distance_km.toFixed(1)} km`}
                   {station.route?.duration_s != null && (
                     station.route.requires_field_access_confirmation
-                      ? ` · Travel time to field-access point: ${formatDuration(station.route.duration_s)}`
+                      ? ` · Travel time to road-route endpoint: ${formatDuration(station.route.duration_s)}`
                       : ` · Travel time: ${formatDuration(station.route.duration_s)}`
                   )}
                 </span>
                 {station.address && <span>{station.address}</span>}
                 {station.route?.requires_field_access_confirmation && (
                   <span className="event-modal__allocation-warning">
-                    Travel time beyond the field-access point is unknown and requires confirmation.
+                    The straight dashed segment to the target is not a verified access route; its travel time is unknown.
                   </span>
                 )}
                 {station.route?.steps_he && station.route.steps_he.length > 0 && (
@@ -576,13 +576,13 @@ function FloodEventDetails({ event }: { event: FloodEvent }) {
                   {station.distance_km == null ? 'Distance unavailable' : `${station.distance_km.toFixed(1)} km`}
                   {station.route?.duration_s != null && (
                     station.route.requires_field_access_confirmation
-                      ? ` · Travel time to field-access point: ${formatDuration(station.route.duration_s)}`
+                      ? ` · Travel time to road-route endpoint: ${formatDuration(station.route.duration_s)}`
                       : ` · Travel time: ${formatDuration(station.route.duration_s)}`
                   )}
                 </span>
                 {station.route?.requires_field_access_confirmation && (
                   <span className="event-modal__allocation-warning">
-                    Travel time beyond the field-access point is unknown and requires confirmation.
+                    The straight dashed segment to the target is not a verified access route; its travel time is unknown.
                   </span>
                 )}
                 {station.route?.steps_he && station.route.steps_he.length > 0 && (

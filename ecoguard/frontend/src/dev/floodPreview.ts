@@ -109,6 +109,8 @@ function station({
   latitude,
   longitude,
   destination,
+  fieldAccess = false,
+  fieldTarget,
 }: {
   id: number
   name: string
@@ -116,6 +118,8 @@ function station({
   latitude: number
   longitude: number
   destination: { latitude: number; longitude: number }
+  fieldAccess?: boolean
+  fieldTarget?: { latitude: number; longitude: number }
 }): AllocatedStation {
   const labels = {
     police: 'police_station',
@@ -134,7 +138,7 @@ function station({
     allocation_status: 'allocated',
     selection_reason: 'shortest_road_travel_time',
     route: {
-      status: 'available',
+      status: fieldAccess ? 'partial_offroad' : 'complete',
       provider: 'mapbox-development-fixture',
       profile: 'driving-traffic',
       distance_m: 4200,
@@ -147,9 +151,26 @@ function station({
           [destination.longitude, destination.latitude],
         ],
       },
+      destination: {
+        input_location: fieldTarget ?? destination,
+        snapped_location: destination,
+        snap_distance_m: fieldAccess && fieldTarget ? 175 : 0,
+        road_name: 'Development fixture road endpoint',
+      },
+      offroad_segment: fieldAccess && fieldTarget ? {
+        distance_m: 175,
+        geometry: {
+          type: 'LineString',
+          coordinates: [
+            [destination.longitude, destination.latitude],
+            [fieldTarget.longitude, fieldTarget.latitude],
+          ],
+        },
+        access_verified: false,
+      } : null,
       estimated_arrival_at: '2026-09-20T08:23:30Z',
-      road_access_verified: true,
-      requires_field_access_confirmation: false,
+      road_access_verified: !fieldAccess,
+      requires_field_access_confirmation: fieldAccess,
       steps_he: [
         { instruction: 'צא מהתחנה לכיוון נקודת הגישה', distance_m: 1800, duration_s: 220 },
         { instruction: 'המשך בדרך הראשית עד לנקודת החסימה', distance_m: 2400, duration_s: 290 },
@@ -309,12 +330,30 @@ export const floodPreviewEvents = [
       allocation_ready_site_ids: [],
       targeting_status: 'no_road_targets',
       targeting_reason: 'no_relevant_road_crossings',
-      allocation_target: null,
+      allocation_target: {
+        target_id: 'hydrometric-station-701',
+        target_type: 'hydrometric_station_fallback',
+        source_station_id: 701,
+        allocation_location: { latitude: 30.735, longitude: 35.235 },
+        covered_response_site_ids: [],
+        requires_road_access_resolution: true,
+      },
       advisories: [{
         type: 'stream_access_warning', action: 'warn_and_restrict_stream_access',
         scope: 'station_area', instruction: 'Issue a flash-Flood warning and restrict visitor access near the gauge.',
       }],
-      resource_allocation: null,
+      resource_allocation: allocation([
+        station({
+          id: 301,
+          name: 'תחנת משטרה אזורית ערבה',
+          unit: 'police',
+          latitude: 30.805,
+          longitude: 35.245,
+          destination: { latitude: 30.742, longitude: 35.220 },
+          fieldAccess: true,
+          fieldTarget: { latitude: 30.735, longitude: 35.235 },
+        }),
+      ], ['police']),
       limitations: ['DEVELOPMENT PREVIEW / NOT LIVE.', 'The dashed ring is station-location precision, not flood extent.'],
     },
   },

@@ -365,7 +365,7 @@ class ResourceAllocationAgent:
         )
 
     def _prepare_flood_batch_request(self, item, now):
-        """Convert verified Flood road targets to a station request."""
+        """Convert Flood targets, or its gauge fallback, to a station request."""
 
         incident_id = str(item.get("incident_id") or "").strip()
         if not incident_id:
@@ -380,43 +380,85 @@ class ResourceAllocationAgent:
             and site.get("allocation_eligible") is True
             and isinstance(site.get("allocation_location"), dict)
         ]
-        if not ready_sites:
-            return {
-                "terminal": {
-                    "incident_id": incident_id,
-                    "event_id": f"{incident_id}:flood-road-fallback",
-                    "hazard": "flood",
-                    "status": "skipped",
-                    "reason": "no_verified_flood_response_site",
-                    "allocated_units": {},
-                    "requirements": {},
-                    "shortages": {},
-                    "unsupported_units": [],
-                    "errors": [],
-                    "allocation_target": None,
-                }
+        if ready_sites:
+            primary = max(ready_sites, key=self._flood_site_priority)
+            severity = max(
+                3,
+                min(
+                    6,
+                    max(int(site.get("severity_level") or 3) for site in ready_sites),
+                ),
+            )
+            requirements = dict(FLOOD_STATIONS_REQUIRED_BY_SEVERITY[severity])
+            location = primary["allocation_location"]
+            allocation_target = {
+                "target_id": primary.get("target_id"),
+                "target_type": "verified_road_site",
+                "road": dict(primary.get("road") or {}),
+                "allocation_location": dict(location),
+                "covered_response_site_ids": [
+                    site.get("target_id") for site in ready_sites
+                ],
             }
+            primary_target_id = primary.get("target_id")
+            fallback_reason = None
+        else:
+            sources = [
+                source
+                for source in targeting.get("hydrometric_sources") or []
+                if isinstance(source, dict)
+                and isinstance(source.get("station"), dict)
+            ]
+            if not sources:
+                return {
+                    "terminal": {
+                        "incident_id": incident_id,
+                        "event_id": f"{incident_id}:flood-station-fallback",
+                        "hazard": "flood",
+                        "status": "skipped",
+                        "reason": "hydrometric_station_location_unavailable",
+                        "allocated_units": {},
+                        "requirements": {"police": {
+                            "requested": 1,
+                            "assigned": 0,
+                            "shortfall": 1,
+                        }},
+                        "shortages": {"police_station": 1},
+                        "unsupported_units": [],
+                        "errors": [],
+                        "allocation_target": None,
+                    }
+                }
+            primary_source = max(
+                sources,
+                key=lambda source: int(
+                    (source.get("station") or {}).get("severity_level") or 3
+                ),
+            )
+            station = primary_source["station"]
+            severity = max(3, min(6, int(station.get("severity_level") or 3)))
+            requirements = {"police": 1}
+            location = {
+                "latitude": float(station["latitude"]),
+                "longitude": float(station["longitude"]),
+            }
+            primary_target_id = f"hydrometric-station-{station.get('id')}"
+            allocation_target = {
+                "target_id": primary_target_id,
+                "target_type": "hydrometric_station_fallback",
+                "source_station_id": station.get("id"),
+                "allocation_location": dict(location),
+                "covered_response_site_ids": [],
+                "requires_road_access_resolution": True,
+            }
+            fallback_reason = "no_verified_flood_response_site"
 
-        primary = max(ready_sites, key=self._flood_site_priority)
-        severity = max(
-            3,
-            min(
-                6,
-                max(int(site.get("severity_level") or 3) for site in ready_sites),
-            ),
-        )
-        requirements = dict(FLOOD_STATIONS_REQUIRED_BY_SEVERITY[severity])
         risk_level, risk_score = FLOOD_RISK_BY_SEVERITY[severity]
-        location = primary["allocation_location"]
-        event_id = f"{incident_id}:flood-road-fallback"
-        allocation_target = {
-            "target_id": primary.get("target_id"),
-            "road": dict(primary.get("road") or {}),
-            "allocation_location": dict(location),
-            "covered_response_site_ids": [
-                site.get("target_id") for site in ready_sites
-            ],
-        }
+        event_id = (
+            f"{incident_id}:flood-road-target"
+            if ready_sites
+            else f"{incident_id}:flood-station-fallback"
+        )
         response_plan = {
             "metadata": {
                 "planning_status": "success",
@@ -433,7 +475,8 @@ class ResourceAllocationAgent:
                 "risk_score": risk_score,
                 "risk_level": risk_level,
                 "severity_level": severity,
-                "primary_target_id": primary.get("target_id"),
+                "primary_target_id": primary_target_id,
+                "fallback_reason": fallback_reason,
             },
             "recommended_units": list(requirements),
             "station_requirements": requirements,
@@ -845,6 +888,55 @@ class ResourceAllocationAgent:
 
         return sorted(enriched, key=self._allocation_sort_key), errors
 
+    def _mark_unverified_field_access(self, stations, event_location):
+        """Preserve the routed road leg and add an explicitly unverified gap."""
+
+        marked = []
+        for original in stations:
+            station = deepcopy(original)
+            route = station.get("route")
+            if not isinstance(route, dict):
+                marked.append(station)
+                continue
+            route["road_access_verified"] = False
+            route["requires_field_access_confirmation"] = True
+            if route.get("status") != "unavailable":
+                route["status"] = "partial_offroad"
+            destination = route.get("destination") or {}
+            snapped = destination.get("snapped_location")
+            if isinstance(snapped, dict):
+                try:
+                    snap_lat = float(snapped["latitude"])
+                    snap_lon = float(snapped["longitude"])
+                    target_lat = float(event_location["latitude"])
+                    target_lon = float(event_location["longitude"])
+                except (KeyError, TypeError, ValueError):
+                    pass
+                else:
+                    reported_distance = destination.get("snap_distance_m")
+                    distance_m = (
+                        float(reported_distance)
+                        if isinstance(reported_distance, (int, float))
+                        and not isinstance(reported_distance, bool)
+                        else self._haversine_distance(
+                            snap_lat, snap_lon, target_lat, target_lon
+                        ) * 1000
+                    )
+                    route["offroad_segment"] = {
+                        "distance_m": max(0.0, distance_m),
+                        "geometry": {
+                            "type": "LineString",
+                            "coordinates": [
+                                [snap_lon, snap_lat],
+                                [target_lon, target_lat],
+                            ],
+                        },
+                        "access_verified": False,
+                    }
+            station["route"] = route
+            marked.append(station)
+        return marked
+
     @staticmethod
     def _allocation_sort_key(station):
         route = station.get("route") or {}
@@ -1024,6 +1116,13 @@ class ResourceAllocationAgent:
                     request["allocation_time"],
                     unit_routing_failure,
                 )
+                if (
+                    (request.get("allocation_target") or {}).get("target_type")
+                    == "hydrometric_station_fallback"
+                ):
+                    assigned = self._mark_unverified_field_access(
+                        assigned, event_location
+                    )
                 result["errors"].extend(route_errors)
             result["allocated_units"][output_key] = assigned
             if result["road_access"] is None:
