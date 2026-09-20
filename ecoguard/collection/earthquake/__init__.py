@@ -1,0 +1,1 @@
+"""GSI earthquake event collection."""

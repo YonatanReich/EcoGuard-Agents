@@ -37,7 +37,19 @@ function EventCard({ event, onOpen, isSelected }: {
       <span className="event-card__type">{hazard.label}</span>
       <span className="event-card__title">{event.title}</span>
 
-      {event.type === 'air_pollution' ? (
+      {event.type === 'earthquake' ? (
+        <>
+          <span className="event-card__measurement">
+            Magnitude {event.details.magnitude.toFixed(1)} · depth {event.details.depth_km.toFixed(1)} km
+          </span>
+          <span className="event-card__meta">
+            <span>Estimated Impact Area: {event.details.estimated_impact_radius_km} km</span>
+            {event.observed_at && (
+              <time dateTime={event.observed_at}>{formatObservationTime(event.observed_at)}</time>
+            )}
+          </span>
+        </>
+      ) : event.type === 'air_pollution' ? (
         <>
           <span className="event-card__measurement">
             {event.details.pollutant}: {event.details.measured_value} {event.details.unit}

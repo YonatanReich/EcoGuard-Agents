@@ -108,6 +108,37 @@ class FireDetails(EventContract):
     resource_allocation: ResourceAllocationSummary | None = None
 
 
+class EarthquakeTown(EventContract):
+    town_id: str
+    name_he: str
+    name_en: str
+    cbs_code: str | None = None
+
+
+class EarthquakePopulationSummary(EventContract):
+    status: Literal["available", "unavailable"]
+    wording: Literal[
+        "Estimated population geographically located within the impact area"
+    ] = "Estimated population geographically located within the impact area"
+    estimated_population: int | None = Field(default=None, ge=0)
+    intersected_cell_count: int | None = Field(default=None, ge=0)
+    reason: str | None = None
+
+
+class EarthquakeDetails(EventContract):
+    provider_event_id: str
+    magnitude: float
+    depth_km: float = Field(ge=0)
+    estimated_impact_radius_km: float = Field(gt=0)
+    estimated_impact_area: "GeoJsonPolygon"
+    towns: list[EarthquakeTown] = Field(default_factory=list)
+    towns_status: Literal["available", "unavailable"]
+    population_summary: EarthquakePopulationSummary
+    provider: Literal["GSI"] = "GSI"
+    source: str
+    limitations: list[str] = Field(default_factory=list)
+
+
 class AirPollutionBaselineContext(EventContract):
     p95: float
     month: int | None = None
@@ -365,13 +396,24 @@ class FireSharedEvent(CommonSharedEvent):
     details: FireDetails
 
 
+class EarthquakeSharedEvent(CommonSharedEvent):
+    type: Literal["earthquake"] = "earthquake"
+    classification: Literal["emergency"] = "emergency"
+    details: EarthquakeDetails
+
+
 class GenericSharedEvent(CommonSharedEvent):
     type: Literal["flood", "other"]
     details: dict[str, Any]
 
 
 SharedEvent = Annotated[
-    Union[AirPollutionSharedEvent, FireSharedEvent, GenericSharedEvent],
+    Union[
+        AirPollutionSharedEvent,
+        EarthquakeSharedEvent,
+        FireSharedEvent,
+        GenericSharedEvent,
+    ],
     Field(discriminator="type"),
 ]
 

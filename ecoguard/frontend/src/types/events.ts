@@ -1,4 +1,4 @@
-export type HazardKind = 'fire' | 'air_pollution' | 'flood' | 'other'
+export type HazardKind = 'fire' | 'air_pollution' | 'earthquake' | 'flood' | 'other'
 export type EventClassification = 'emergency' | 'advisory'
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
 export type StepStatus = 'success' | 'partial' | 'unavailable' | 'failed' | 'skipped'
@@ -79,6 +79,31 @@ export type FireDetails = {
   response_actions: FireResponseAction[]
   protocol_citations: ProtocolCitation[]
   resource_allocation: ResourceAllocationSummary | null
+}
+
+export type EarthquakeDetails = {
+  provider_event_id: string
+  magnitude: number
+  depth_km: number
+  estimated_impact_radius_km: number
+  estimated_impact_area: GeoJsonPolygon
+  towns: Array<{
+    town_id: string
+    name_he: string
+    name_en: string
+    cbs_code: string | null
+  }>
+  towns_status: 'available' | 'unavailable'
+  population_summary: {
+    status: 'available' | 'unavailable'
+    wording: 'Estimated population geographically located within the impact area'
+    estimated_population: number | null
+    intersected_cell_count: number | null
+    reason: string | null
+  }
+  provider: 'GSI'
+  source: string
+  limitations: string[]
 }
 
 export type GeoJsonPolygon = {
@@ -301,12 +326,18 @@ export type AirPollutionEvent = CommonEvent & {
   details: AirPollutionDetails
 }
 
+export type EarthquakeEvent = CommonEvent & {
+  type: 'earthquake'
+  classification: 'emergency'
+  details: EarthquakeDetails
+}
+
 export type OtherEvent = CommonEvent & {
   type: 'flood' | 'other'
   details: Record<string, unknown>
 }
 
-export type SharedEvent = FireEvent | AirPollutionEvent | OtherEvent
+export type SharedEvent = FireEvent | AirPollutionEvent | EarthquakeEvent | OtherEvent
 
 export type SharedEventFeed = {
   events: SharedEvent[]
