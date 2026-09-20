@@ -766,3 +766,155 @@
     border: 2px dashed #a855f7;
     background: rgba(168, 85, 247, 0.18);
 }
+
+/* --- fire incident card additions -------------------------------------- */
+/* Matched to the existing card vocabulary rather than invented: the grade
+   reads like the pollutant line, evacuation like the official-classification
+   line, so a fire card and an advisory card scan the same way. */
+
+.event-card__grade {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--hazard);
+  margin-top: 0.15rem;
+}
+
+.event-card__evacuation {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #b91c1c;
+  background: rgba(185, 28, 28, 0.08);
+  border-left: 3px solid #b91c1c;
+  padding: 0.2rem 0.45rem;
+  border-radius: 3px;
+  margin-top: 0.25rem;
+}
+
+/* Detection doubt is a caveat, not an alarm — muted so it qualifies the
+   score beside it rather than competing with it. */
+.event-card__detection {
+  font-size: 0.72rem;
+  font-style: italic;
+  opacity: 0.75;
+}
+
+/* --- fire spread on the map -------------------------------------------- */
+
+.fire-spread__origin {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  color: #dc2626;
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.55));
+  pointer-events: auto;
+  cursor: help;
+}
+
+.fire-spread__arrow {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.fire-spread__legend {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(17, 20, 24, 0.82);
+  color: #f3f4f6;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  backdrop-filter: blur(3px);
+  pointer-events: none;
+}
+
+.fire-spread__legend i {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-right: 6px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+
+/* The possible extent is dashed on the map, so its legend key is too —
+   a solid swatch would imply the same confidence as the likely ring. */
+.fire-spread__legend i.dashed {
+  background: transparent;
+  border: 1.5px dashed currentColor;
+}
+
+.fire-spread__settlement {
+  opacity: 0.9;
+}
+
+/* --- fire dispatch and evacuation in the modal -------------------------- */
+
+.event-modal__section--dispatch { border-left: 3px solid #dc2626; padding-left: 0.75rem; }
+
+.event-modal__national {
+  font-size: 0.82rem;
+  background: rgba(220, 38, 38, 0.08);
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem;
+}
+
+.event-modal__stations { list-style: none; margin: 0.4rem 0 0; padding: 0; }
+.event-modal__stations li {
+  display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline;
+  padding: 0.35rem 0; border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+  font-size: 0.85rem;
+}
+.event-modal__stations li:last-child { border-bottom: none; }
+
+.event-modal__request-type {
+  font-size: 0.74rem; padding: 0.1rem 0.4rem; border-radius: 3px;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+/* The parallel out-of-district team is the detail most easily lost when a
+   plan is skimmed, so it gets its own line rather than a suffix. */
+.event-modal__parallel {
+  flex-basis: 100%; font-size: 0.74rem; font-style: italic; color: #b45309;
+}
+
+.event-modal__evacuation { list-style: none; margin: 0.4rem 0 0; padding: 0; }
+.event-modal__evacuation li {
+  display: flex; flex-direction: column; gap: 0.15rem;
+  padding: 0.45rem 0.6rem; margin-bottom: 0.4rem; border-radius: 4px;
+  font-size: 0.85rem; border-left: 3px solid transparent;
+}
+.event-modal__evacuation li[data-priority='immediate'] {
+  background: rgba(185, 28, 28, 0.1); border-left-color: #b91c1c;
+}
+.event-modal__evacuation li[data-priority='prepare'] {
+  background: rgba(217, 119, 6, 0.09); border-left-color: #d97706;
+}
+.event-modal__evacuation li[data-priority='standby'] {
+  background: rgba(100, 116, 139, 0.09); border-left-color: #64748b;
+}
+.event-modal__no-contact { font-style: italic; opacity: 0.7; font-size: 0.78rem; }
+
+.event-modal__sites { list-style: none; margin: 0.4rem 0 0; padding: 0; font-size: 0.83rem; }
+.event-modal__sites li { padding: 0.2rem 0; }
+.event-modal__site-category {
+  display: inline-block; min-width: 5.5rem; font-size: 0.7rem;
+  text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.75;
+}
+.event-modal__sites li[data-category='hazard'] .event-modal__site-category { color: #b91c1c; }
+.event-modal__sites li[data-category='life_safety'] .event-modal__site-category { color: #b45309; }
+
+.event-modal__report {
+  white-space: pre-wrap; font-family: inherit; font-size: 0.82rem;
+  line-height: 1.5; background: rgba(0, 0, 0, 0.03);
+  padding: 0.6rem 0.75rem; border-radius: 4px; margin: 0;
+  max-height: 22rem; overflow-y: auto;
+}

@@ -45,6 +45,14 @@ load_dotenv()
 # grounding quality disappoints, raise `effort` before changing model.
 DEFAULT_MODEL = "claude-sonnet-5"
 
+# Models that reject `thinking` and `output_config.effort` outright. Listed
+# rather than probed because the failure is a 400 at request time, and
+# discovering it by catching one would mean every cheap call pays a round trip
+# to learn what is already known.
+MODELS_WITHOUT_REASONING_CONTROLS = frozenset({
+    "claude-haiku-4-5-20251001",
+})
+
 DEFAULT_MAX_TOKENS = 4096
 DEFAULT_EFFORT = "medium"
 DEFAULT_TIMEOUT_SECONDS = 60.0
@@ -233,6 +241,21 @@ class ClaudeLLMService:
 
         response = None
 
+        # Adaptive thinking and the effort control are Claude 5 family
+        # features. Sending them to Haiku 4.5 is a 400, not a degradation —
+        # "This model does not support the effort parameter" — so a caller who
+        # reaches for the cheap model for a cheap task gets an opaque "invalid
+        # request" instead of a classification. Omitted rather than translated:
+        # there is no Haiku equivalent to map them onto.
+        reasoning = (
+            {}
+            if self.model in MODELS_WITHOUT_REASONING_CONTROLS
+            else {
+                "thinking": {"type": "adaptive"},
+                "output_config": {"effort": self.effort},
+            }
+        )
+
         for _ in range(max_continuations + 1):
             try:
                 response = self.client.messages.parse(
@@ -240,9 +263,8 @@ class ClaudeLLMService:
                     max_tokens=self.max_tokens,
                     system=system_blocks,
                     messages=messages,
-                    thinking={"type": "adaptive"},
-                    output_config={"effort": self.effort},
                     output_format=output_format,
+                    **reasoning,
                     **extra,
                 )
             except Exception as error:

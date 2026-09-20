@@ -11,6 +11,7 @@
  *   - Fire Danger — Fire Weather Index (FWI) from GWIS/EFFIS.
  *   - Wind — animated near-surface wind visualization from Open-Meteo.
  *   - Fire Districts — the seven fire & rescue districts of responsibility.
+ *   - MDA Districts — Magen David Adom regions, from govmap's WMS.
  *
  * Additional layers can be added here later without changing MapView.
  */
@@ -48,6 +49,12 @@ type LayersControlProps = {
   /** Toggle the fire & rescue district outlines. */
   onToggleFireDistricts: () => void
 
+  /** Whether the MDA region overlay is visible. */
+  showMdaDistricts: boolean
+
+  /** Toggle the MDA region overlay. */
+  onToggleMdaDistricts: () => void
+
 }
 
 function LayersControl({
@@ -61,6 +68,8 @@ function LayersControl({
   onToggleWind,
   showFireDistricts,
   onToggleFireDistricts,
+  showMdaDistricts,
+  onToggleMdaDistricts,
 }: LayersControlProps) {
   return (
     <div style={containerStyle}>
@@ -109,6 +118,15 @@ function LayersControl({
           onChange={onToggleFireDistricts}
         />
         <span>🛡 Fire Districts</span>
+      </label>
+
+      <label style={rowStyle}>
+        <input
+          type="checkbox"
+          checked={showMdaDistricts}
+          onChange={onToggleMdaDistricts}
+        />
+        <span>🚑 MDA Districts</span>
       </label>
 
     </div>

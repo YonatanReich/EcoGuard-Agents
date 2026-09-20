@@ -34,12 +34,14 @@ import { normalizeNationalRiskScanResponse, type NationalRiskScan } from '../com
 import AreaSelect from '../components/AreaSelect'
 import LayersControl from '../components/LayersControl'
 import FireDistrictsLayer from '../components/layers/FireDistrictsLayer'
+import MdaDistrictsLayer from '../components/layers/MdaDistrictsLayer'
 import TownSearch from '../components/TownSearch'
 import WhatToSeeControl from '../components/WhatToSeeControl'
 import FireStationsLayer from '../components/layers/FireStationsLayer'
 import PoliceStationsLayer from '../components/layers/PoliceStationsLayer'
 import MdaStationsLayer from '../components/layers/MdaStationsLayer'
 import AirPollutionCorridorLayer from '../components/layers/AirPollutionCorridorLayer'
+import FireSpreadLayer from '../components/layers/FireSpreadLayer'
 import ResourceAllocationLayer from '../components/layers/ResourceAllocationLayer'
 import {
   detectedFireToSharedEvent,
@@ -187,6 +189,13 @@ function Dashboard() {
     && selectedEvent.details.resource_allocation
     ? selectedEvent
     : null
+  // Drawn for the selected fire only. Every open fire at once would overlay
+  // rings across the country and make the one the operator opened the hardest
+  // to read.
+  const spreadEvent = selectedEvent?.type === 'fire'
+    && selectedEvent.details.spread
+    ? selectedEvent
+    : null
 
   /**
    * True while the detection scan is running.
@@ -229,6 +238,11 @@ function Dashboard() {
   const [
     showFireDistricts,
     setShowFireDistricts,
+  ] = useState(false)
+
+  const [
+    showMdaDistricts,
+    setShowMdaDistricts,
   ] = useState(false)
 
   // Fire stations are reference data rather than an environmental overlay, so
@@ -1064,6 +1078,10 @@ function Dashboard() {
               <FireDistrictsLayer />
             )}
 
+            <MdaDistrictsLayer
+              visible={showMdaDistricts}
+            />
+
             <FireStationsLayer
               visible={showFireStations}
               onLoaded={setFireStationCount}
@@ -1095,6 +1113,10 @@ function Dashboard() {
 
             {corridorEvent?.details.transport?.corridor && (
               <AirPollutionCorridorLayer event={corridorEvent} />
+            )}
+
+            {spreadEvent?.details.spread && (
+              <FireSpreadLayer key={spreadEvent.id} event={spreadEvent} />
             )}
 
             {allocationEvent && (
@@ -1153,6 +1175,16 @@ function Dashboard() {
               }
               onToggleFireDistricts={() =>
                 setShowFireDistricts(
+                  (current) =>
+                    !current
+                )
+              }
+
+              showMdaDistricts={
+                showMdaDistricts
+              }
+              onToggleMdaDistricts={() =>
+                setShowMdaDistricts(
                   (current) =>
                     !current
                 )
