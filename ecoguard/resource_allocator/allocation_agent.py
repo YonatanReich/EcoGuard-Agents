@@ -15,7 +15,9 @@ from ecoguard.database.repositories.towns import (
     town_at_location,
 )
 from ecoguard.coordinator import incidents as incident_store
-from ecoguard.analyzers.emergency.flood.risk_scale import flood_operational_risk
+from ecoguard.analyzers.emergency.flood.risk_analysis_schemas import (
+    FloodRiskAssessment,
+)
 from ecoguard.resource_allocator.mapbox_client import MapboxClient, RoutingError
 from ecoguard.resource_allocator.flood_road_targets import FloodRoadTargetAgent
 
@@ -368,6 +370,17 @@ class ResourceAllocationAgent:
         targeting = item.get("flood_targeting")
         if not isinstance(targeting, dict):
             raise ValueError("flood_targeting must be an object")
+        try:
+            risk = FloodRiskAssessment.model_validate(item.get("risk_assessment"))
+        except (TypeError, ValueError, AttributeError) as error:
+            raise ValueError("flood_risk_assessment is required") from error
+        if (
+            risk.event_id != incident_id
+            or risk.metadata.analysis_status not in {"success", "partial"}
+            or risk.risk_score is None
+            or risk.risk_level is None
+        ):
+            raise ValueError("flood_risk_assessment is unavailable")
         ready_sites = [
             site
             for site in targeting.get("allocation_ready_sites") or []
@@ -448,7 +461,10 @@ class ResourceAllocationAgent:
             }
             fallback_reason = "no_verified_flood_response_site"
 
-        risk_score, risk_level = flood_operational_risk(severity)
+        if risk.hydrologic_severity_level != severity:
+            raise ValueError("flood risk severity does not match targeting evidence")
+        risk_score = risk.risk_score
+        risk_level = risk.risk_level
         event_id = (
             f"{incident_id}:flood-road-target"
             if ready_sites
@@ -470,6 +486,7 @@ class ResourceAllocationAgent:
                 "risk_score": risk_score,
                 "risk_level": risk_level,
                 "severity_level": severity,
+                "risk_confidence": risk.confidence,
                 "primary_target_id": primary_target_id,
                 "fallback_reason": fallback_reason,
             },
@@ -1282,6 +1299,7 @@ class ResourceAllocationAgent:
                     "hazard": "flood",
                     "queued_at": result.requested_at,
                     "flood_targeting": targeting,
+                    "risk_assessment": getattr(result, "risk_assessment", None),
                 }
             else:
                 continue

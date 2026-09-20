@@ -8,6 +8,7 @@ from functools import lru_cache
 from typing import Any
 
 from ecoguard.analyzers.emergency.flood.event_analyzer import FloodEventAnalyzer
+from ecoguard.analyzers.emergency.flood.risk_analyzer import FloodRiskAnalyzer
 from ecoguard.response_planner.emergency.adapters import (
     OperationalAnalysisUnavailable,
     build_flood_plan_input,
@@ -28,10 +29,12 @@ class FloodRoadIncidentHandler:
         self,
         *,
         analyzer: FloodEventAnalyzer | None = None,
+        risk_analyzer: FloodRiskAnalyzer | None = None,
         planner: EmergencyResponsePlanner | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
         self._analyzer = analyzer or FloodEventAnalyzer(clock=clock)
+        self._risk_analyzer = risk_analyzer or FloodRiskAnalyzer(clock=clock)
         self._planner = planner or EmergencyResponsePlanner()
         self._clock = clock
 
@@ -69,13 +72,14 @@ class FloodRoadIncidentHandler:
                 preserve_existing_response=True,
             )
 
-        refresh = self._response_refresh_required(analysis)
-        if not refresh:
+        try:
+            risk = self._risk_analyzer.analyze(analysis)
+        except Exception as error:
             return IncidentProcessingResult(
                 incident_id=context.incident_id,
                 hazard=context.hazard,
                 route=context.route,
-                status=("partial" if analysis.status == "unavailable" else "success"),
+                status="partial",
                 requested_at=context.requested_at,
                 completed_at=self._now(),
                 analysis_id=context.analysis_id,
@@ -83,6 +87,57 @@ class FloodRoadIncidentHandler:
                 handler=self.name,
                 analysis_status=analysis.status,
                 analysis_result=analysis,
+                failure_stage="risk_analysis",
+                failure_reason=type(error).__name__,
+                response_refresh_required=False,
+                requires_resource_allocation=False,
+                preserve_existing_response=True,
+            )
+
+        refresh = self._response_refresh_required(analysis)
+        if risk.metadata.analysis_status == "unavailable":
+            return IncidentProcessingResult(
+                incident_id=context.incident_id,
+                hazard=context.hazard,
+                route=context.route,
+                status="partial",
+                requested_at=context.requested_at,
+                completed_at=self._now(),
+                analysis_id=context.analysis_id,
+                coordinator_routing_id=context.coordinator_routing_id,
+                handler=self.name,
+                analysis_status=analysis.status,
+                risk_status=risk.metadata.analysis_status,
+                analysis_result=analysis,
+                risk_assessment=risk,
+                planner_status="skipped",
+                failure_stage="risk_analysis",
+                failure_reason=risk.error or risk.metadata.reason,
+                response_refresh_required=False,
+                requires_resource_allocation=False,
+                preserve_existing_response=True,
+            )
+
+        if not refresh:
+            return IncidentProcessingResult(
+                incident_id=context.incident_id,
+                hazard=context.hazard,
+                route=context.route,
+                status=(
+                    "success"
+                    if analysis.status == "success"
+                    and risk.metadata.analysis_status == "success"
+                    else "partial"
+                ),
+                requested_at=context.requested_at,
+                completed_at=self._now(),
+                analysis_id=context.analysis_id,
+                coordinator_routing_id=context.coordinator_routing_id,
+                handler=self.name,
+                analysis_status=analysis.status,
+                risk_status=risk.metadata.analysis_status,
+                analysis_result=analysis,
+                risk_assessment=risk,
                 planner_status="skipped",
                 response_refresh_required=False,
                 requires_resource_allocation=False,
@@ -90,7 +145,7 @@ class FloodRoadIncidentHandler:
             )
 
         try:
-            plan_input = build_flood_plan_input(analysis)
+            plan_input = build_flood_plan_input(analysis, risk)
             plan = self._planner.plan_response(plan_input)
         except OperationalAnalysisUnavailable as error:
             return IncidentProcessingResult(
@@ -104,7 +159,9 @@ class FloodRoadIncidentHandler:
                 coordinator_routing_id=context.coordinator_routing_id,
                 handler=self.name,
                 analysis_status=analysis.status,
+                risk_status=risk.metadata.analysis_status,
                 analysis_result=analysis,
+                risk_assessment=risk,
                 failure_stage="planning_input",
                 failure_reason=str(error),
                 response_refresh_required=True,
@@ -122,7 +179,9 @@ class FloodRoadIncidentHandler:
                 coordinator_routing_id=context.coordinator_routing_id,
                 handler=self.name,
                 analysis_status=analysis.status,
+                risk_status=risk.metadata.analysis_status,
                 analysis_result=analysis,
+                risk_assessment=risk,
                 failure_stage="planning",
                 failure_reason=type(error).__name__,
                 response_refresh_required=True,
@@ -136,7 +195,9 @@ class FloodRoadIncidentHandler:
             route=context.route,
             status=(
                 "success"
-                if analysis.status == "success" and planner_status == "success"
+                if analysis.status == "success"
+                and risk.metadata.analysis_status == "success"
+                and planner_status == "success"
                 else "partial"
             ),
             requested_at=context.requested_at,
@@ -145,8 +206,10 @@ class FloodRoadIncidentHandler:
             coordinator_routing_id=context.coordinator_routing_id,
             handler=self.name,
             analysis_status=analysis.status,
+            risk_status=risk.metadata.analysis_status,
             planner_status=planner_status,
             analysis_result=analysis,
+            risk_assessment=risk,
             planner_result=plan.model_dump(mode="json"),
             response_refresh_required=True,
             # Deterministic Flood allocation remains available even when the

@@ -5,15 +5,15 @@ from __future__ import annotations
 from ecoguard.shared.schemas import risk_level_for_score
 
 
-FLOOD_OPERATIONAL_RISK_SCORE_BY_SEVERITY: dict[int, float] = {
-    3: 40.0,
-    4: 60.0,
-    5: 80.0,
-    6: 100.0,
+FLOOD_OPERATIONAL_RISK_SCORE_BY_SEVERITY: dict[int, int] = {
+    3: 40,
+    4: 60,
+    5: 80,
+    6: 100,
 }
 
 
-def flood_operational_risk(severity_level: int) -> tuple[float, str]:
+def flood_operational_risk(severity_level: int) -> tuple[int, str]:
     """Return a 0-100 score and the level derived by the existing Fire scale."""
 
     try:

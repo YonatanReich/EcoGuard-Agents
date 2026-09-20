@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import pytest
 
 from ecoguard.analyzers.emergency.flood.event_analyzer import FloodEventAnalyzer
+from ecoguard.analyzers.emergency.flood.risk_analyzer import FloodRiskAnalyzer
 from ecoguard.response_planner.emergency.adapters import (
     OperationalAnalysisUnavailable,
     build_flood_plan_input,
@@ -39,7 +40,8 @@ def test_flood_adapter_preserves_analysis_without_reclassification():
         "signals": [_signal()],
     })
 
-    result = build_flood_plan_input(analysis)
+    risk = FloodRiskAnalyzer(clock=lambda: AT).analyze(analysis)
+    result = build_flood_plan_input(analysis, risk)
 
     assert result.hazard_type == "flood"
     assert result.incident_id == "INC-FLOOD-1"
@@ -48,6 +50,7 @@ def test_flood_adapter_preserves_analysis_without_reclassification():
         "risk_semantics": "detected_event_operational_risk",
         "risk_score": 60.0,
         "risk_level": "high",
+        "confidence": "high",
         "risk_basis": "hydrometric_severity_mapping",
         "hydrologic_severity_level": 4,
         "return_period_years": 20,
@@ -68,4 +71,23 @@ def test_flood_adapter_rejects_unavailable_analysis():
     with pytest.raises(
         OperationalAnalysisUnavailable, match="flood_analysis_unavailable"
     ):
-        build_flood_plan_input(analysis)
+        build_flood_plan_input(
+            analysis,
+            FloodRiskAnalyzer(clock=lambda: AT).analyze(analysis),
+        )
+
+
+def test_flood_adapter_rejects_risk_for_another_incident():
+    analysis = FloodEventAnalyzer(clock=lambda: AT).analyze({
+        "id": "INC-FLOOD-1",
+        "signals": [_signal()],
+    })
+    risk = FloodRiskAnalyzer(clock=lambda: AT).analyze(analysis).model_copy(
+        update={"event_id": "INC-FLOOD-OTHER"}
+    )
+
+    with pytest.raises(
+        OperationalAnalysisUnavailable,
+        match="flood_risk_unavailable",
+    ):
+        build_flood_plan_input(analysis, risk)

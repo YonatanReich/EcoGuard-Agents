@@ -507,10 +507,33 @@ function FloodEventDetails({ event }: { event: FloodEvent }) {
         <dl className="event-modal__facts event-modal__facts--compact">
           <div><dt>Severity</dt><dd>{details.severity_level} / 6</dd></div>
           <div><dt>Threshold</dt><dd>{details.return_period_label}</dd></div>
+          <div>
+            <dt>Operational risk</dt>
+            <dd>
+              {details.risk_level && details.risk_score != null
+                ? `${details.risk_level} (${details.risk_score}/100)`
+                : 'not assessed'}
+            </dd>
+          </div>
+          <div><dt>Risk confidence</dt><dd>{details.risk_confidence ?? 'unavailable'}</dd></div>
           <div><dt>Targeting</dt><dd>{details.targeting_status.replaceAll('_', ' ')}</dd></div>
           <div><dt>Road sites</dt><dd>{details.response_sites.length}</dd></div>
         </dl>
       </section>
+
+      {(details.risk_explanation || (details.risk_primary_drivers?.length ?? 0) > 0) && (
+        <section className="event-modal__section">
+          <h3>Operational risk assessment</h3>
+          {details.risk_explanation && <p>{details.risk_explanation}</p>}
+          {(details.risk_primary_drivers?.length ?? 0) > 0 && (
+            <ul>
+              {details.risk_primary_drivers?.map((driver) => (
+                <li key={driver}>{driver}</li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       <section className="event-modal__section">
         <h3>Hydrometric sources</h3>

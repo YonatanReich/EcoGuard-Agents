@@ -13,3 +13,10 @@ allocation to run again.
 The analyzer does not detect events, infer inundation, plan a response, allocate
 resources, or call a language model. `event_analysis_schemas.py` is its strict
 typed boundary. Runtime integration with `incident_handler.py` is separate.
+
+`risk_analyzer.py` consumes that typed event analysis and assigns operational
+risk only to an already detected active Flood. It never estimates the chance
+that a Flood will start. The assessment uses the shared emergency 0-100 scale,
+with its level derived by the same deterministic helper used by Fire. Its
+strict output contract is `risk_analysis_schemas.py`; downstream planning and
+allocation consume that assessment without recalculating risk.

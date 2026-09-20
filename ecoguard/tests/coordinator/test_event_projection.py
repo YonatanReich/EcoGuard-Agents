@@ -7,6 +7,7 @@ from sqlalchemy import text
 
 from ecoguard.coordinator.dispatcher import IncidentProcessingResult, dispatch_incidents
 from ecoguard.analyzers.emergency.flood.event_analyzer import FloodEventAnalyzer
+from ecoguard.analyzers.emergency.flood.risk_analyzer import FloodRiskAnalyzer
 from ecoguard.coordinator.incidents import signal_as_json
 from ecoguard.coordinator.event_projection import (
     air_pollution_shared_event,
@@ -192,6 +193,7 @@ def test_flood_deescalation_projects_current_band_and_preserves_response():
         ],
     }
     analysis = FloodEventAnalyzer(clock=lambda: later).analyze(incident)
+    risk = FloodRiskAnalyzer(clock=lambda: later).analyze(analysis)
     result = IncidentProcessingResult(
         incident_id=incident["id"],
         hazard="flood",
@@ -200,8 +202,10 @@ def test_flood_deescalation_projects_current_band_and_preserves_response():
         requested_at=later,
         completed_at=later,
         analysis_status=analysis.status,
+        risk_status=risk.metadata.analysis_status,
         planner_status="skipped",
         analysis_result=analysis,
+        risk_assessment=risk,
         response_refresh_required=False,
         requires_resource_allocation=False,
         preserve_existing_response=True,
@@ -211,6 +215,10 @@ def test_flood_deescalation_projects_current_band_and_preserves_response():
 
     assert event.details.severity_level == 4
     assert event.details.return_period_label == "20-year"
+    assert event.details.risk_status == "success"
+    assert event.details.risk_score == 60
+    assert event.details.risk_level == "high"
+    assert event.details.risk_confidence == "high"
     assert event.details.sources[0].station.severity_level == 4
     assert event.details.sources[0].station.precision_m == 75.0
     assert event.details.change_type == "deescalated"

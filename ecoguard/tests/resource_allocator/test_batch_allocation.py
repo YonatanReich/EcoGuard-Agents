@@ -6,6 +6,9 @@ from unittest.mock import Mock
 
 import pytest
 
+from ecoguard.analyzers.emergency.flood.risk_analysis_schemas import (
+    FloodRiskAssessment,
+)
 from ecoguard.resource_allocator.allocation_agent import ResourceAllocationAgent
 from ecoguard.resource_allocator.mapbox_client import RoutingError
 
@@ -389,6 +392,34 @@ def _flood_site(severity, road_class="primary", target_id="target-primary"):
     }
 
 
+def _flood_risk(severity, incident_id="INC-FLOOD-1"):
+    scores = {
+        3: (40, "medium"),
+        4: (60, "high"),
+        5: (80, "critical"),
+        6: (100, "critical"),
+    }
+    score, level = scores[severity]
+    return FloodRiskAssessment(
+        metadata={"timestamp": NOW, "analysis_status": "success"},
+        event_id=incident_id,
+        risk_score=score,
+        risk_level=level,
+        confidence="high",
+        hydrologic_severity_level=severity,
+        return_period_years={3: 10, 4: 20, 5: 50, 6: 100}[severity],
+        alert_level={
+            3: "active",
+            4: "severe",
+            5: "emergency",
+            6: "emergency",
+        }[severity],
+        change_type="initial",
+        primary_drivers=[f"Severity {severity} was observed"],
+        explanation="Detected Flood operational risk derived from current hydrometric severity.",
+    )
+
+
 @pytest.mark.parametrize(
     ("severity", "expected", "risk_score", "risk_level"),
     [
@@ -407,6 +438,7 @@ def test_flood_uses_shared_0_to_100_risk_scale(
             "incident_id": "INC-FLOOD-1",
             "hazard": "flood",
             "queued_at": NOW,
+            "risk_assessment": _flood_risk(severity),
             "flood_targeting": {
                 "allocation_ready_sites": [_flood_site(severity)],
             },
@@ -435,6 +467,7 @@ def test_fire_and_flood_receive_the_same_level_for_the_same_score():
             "incident_id": "INC-FLOOD-1",
             "hazard": "flood",
             "queued_at": NOW,
+            "risk_assessment": _flood_risk(4),
             "flood_targeting": {
                 "allocation_ready_sites": [_flood_site(4)],
             },
@@ -444,6 +477,44 @@ def test_fire_and_flood_receive_the_same_level_for_the_same_score():
 
     assert fire["risk_score"] == flood["risk_score"] == 60.0
     assert fire["risk_level"] == flood["risk_level"] == "high"
+
+
+def test_flood_allocator_rejects_targeting_that_disagrees_with_risk_analyzer():
+    agent = allocation_agent({})
+
+    with pytest.raises(
+        ValueError,
+        match="risk severity does not match targeting evidence",
+    ):
+        agent._prepare_batch_request(
+            {
+                "incident_id": "INC-FLOOD-1",
+                "hazard": "flood",
+                "queued_at": NOW,
+                "risk_assessment": _flood_risk(3),
+                "flood_targeting": {
+                    "allocation_ready_sites": [_flood_site(4)],
+                },
+            },
+            NOW,
+        )
+
+
+def test_flood_allocator_requires_risk_analyzer_output():
+    agent = allocation_agent({})
+
+    with pytest.raises(ValueError, match="flood_risk_assessment is required"):
+        agent._prepare_batch_request(
+            {
+                "incident_id": "INC-FLOOD-1",
+                "hazard": "flood",
+                "queued_at": NOW,
+                "flood_targeting": {
+                    "allocation_ready_sites": [_flood_site(4)],
+                },
+            },
+            NOW,
+        )
 
 
 def test_flood_allocator_selects_the_highest_priority_verified_road():
@@ -456,6 +527,7 @@ def test_flood_allocator_selects_the_highest_priority_verified_road():
             "incident_id": "INC-FLOOD-1",
             "hazard": "flood",
             "queued_at": NOW,
+            "risk_assessment": _flood_risk(4),
             "flood_targeting": {
                 "allocation_ready_sites": [street, motorway],
             },
@@ -478,6 +550,7 @@ def test_flood_allocator_assigns_police_to_gauge_when_no_site_was_verified():
             "incident_id": "INC-FLOOD-1",
             "hazard": "flood",
             "queued_at": NOW,
+            "risk_assessment": _flood_risk(4),
             "flood_targeting": {
                 "allocation_ready_sites": [],
                 "hydrometric_sources": [{
@@ -538,6 +611,7 @@ def test_resource_allocator_discovers_flood_roads_and_assigns_one_police_station
         route="emergency",
         requested_at=NOW,
         planner_result=None,
+        risk_assessment=_flood_risk(3),
         resource_allocation_result=None,
     )
 
@@ -624,6 +698,7 @@ def test_flood_without_road_crossing_assigns_police_and_routes_to_road_access():
         route="emergency",
         requested_at=NOW,
         planner_result=None,
+        risk_assessment=_flood_risk(4, incident["id"]),
         resource_allocation_result=None,
     )
 

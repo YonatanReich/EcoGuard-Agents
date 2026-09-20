@@ -177,6 +177,12 @@ export type FloodResponseSite = {
 export type FloodDetails = {
   severity_level: 3 | 4 | 5 | 6
   return_period_label: string
+  risk_status?: 'success' | 'partial' | 'unavailable' | null
+  risk_score?: number | null
+  risk_level?: 'low' | 'medium' | 'high' | 'critical' | null
+  risk_confidence?: 'low' | 'medium' | 'high' | null
+  risk_primary_drivers?: string[]
+  risk_explanation?: string | null
   sources: FloodSourceContext[]
   response_sites: FloodResponseSite[]
   allocation_ready_site_ids: string[]

@@ -298,6 +298,12 @@ class FloodAdvisory(EventContract):
 class FloodDetails(EventContract):
     severity_level: int = Field(ge=3, le=6)
     return_period_label: str
+    risk_status: Literal["success", "partial", "unavailable"] | None = None
+    risk_score: int | None = Field(default=None, ge=0, le=100)
+    risk_level: Literal["low", "medium", "high", "critical"] | None = None
+    risk_confidence: Literal["low", "medium", "high"] | None = None
+    risk_primary_drivers: list[str] = Field(default_factory=list)
+    risk_explanation: str | None = None
     sources: list[FloodSourceContext] = Field(default_factory=list)
     response_sites: list[FloodResponseSite] = Field(default_factory=list)
     allocation_ready_site_ids: list[str] = Field(default_factory=list)

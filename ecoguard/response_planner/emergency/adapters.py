@@ -9,7 +9,9 @@ from ecoguard.analyzers.emergency.fire.risk_analysis_agent import build_event_id
 from ecoguard.analyzers.emergency.flood.event_analysis_schemas import (
     FloodEventAnalysis,
 )
-from ecoguard.analyzers.emergency.flood.risk_scale import flood_operational_risk
+from ecoguard.analyzers.emergency.flood.risk_analysis_schemas import (
+    FloodRiskAssessment,
+)
 from ecoguard.response_planner.emergency.schemas import EmergencyResponsePlanInput
 
 
@@ -110,23 +112,33 @@ def build_fire_plan_input(
 
 def build_flood_plan_input(
     analysis: FloodEventAnalysis | Mapping[str, Any],
+    risk_assessment: FloodRiskAssessment | Mapping[str, Any],
 ) -> EmergencyResponsePlanInput:
-    """Adapt deterministic Flood analysis without recalculating its severity."""
+    """Adapt event and risk outputs without recalculating either one."""
 
     try:
         validated = FloodEventAnalysis.model_validate(analysis)
     except (TypeError, ValueError, AttributeError) as error:
         raise OperationalAnalysisUnavailable("flood_analysis_unavailable") from error
+    try:
+        risk = FloodRiskAssessment.model_validate(risk_assessment)
+    except (TypeError, ValueError, AttributeError) as error:
+        raise OperationalAnalysisUnavailable("flood_risk_unavailable") from error
 
     state = validated.current_state
     change = validated.change_assessment
     progression = validated.progression_assessment
     if validated.status == "unavailable" or state is None or change is None:
         raise OperationalAnalysisUnavailable("flood_analysis_unavailable")
-    try:
-        risk_score, risk_level = flood_operational_risk(state.severity_level)
-    except ValueError as error:
-        raise OperationalAnalysisUnavailable("flood_analysis_unavailable") from error
+    if (
+        risk.event_id != validated.incident_id
+        or risk.event_type != "flood"
+        or risk.metadata.analysis_status not in {"success", "partial"}
+        or risk.risk_score is None
+        or risk.risk_level is None
+        or risk.hydrologic_severity_level != state.severity_level
+    ):
+        raise OperationalAnalysisUnavailable("flood_risk_unavailable")
 
     primary = next(
         (
@@ -172,6 +184,14 @@ def build_flood_plan_input(
         description.append(
             f"The observed footprint expanded into {len(change.new_cell_ids)} new cell(s)."
         )
+    description.append(
+        f"Operational risk is {risk.risk_score} out of 100 "
+        f"({risk.risk_level}), with {risk.confidence} confidence."
+    )
+    if risk.primary_drivers:
+        description.append(
+            "Primary risk drivers: " + "; ".join(risk.primary_drivers) + "."
+        )
 
     return EmergencyResponsePlanInput(
         hazard_type="flood",
@@ -179,9 +199,10 @@ def build_flood_plan_input(
         location=location,
         event_description=" ".join(description),
         risk_context={
-            "risk_semantics": "detected_event_operational_risk",
-            "risk_score": risk_score,
-            "risk_level": risk_level,
+            "risk_semantics": risk.risk_semantics,
+            "risk_score": risk.risk_score,
+            "risk_level": risk.risk_level,
+            "confidence": risk.confidence,
             "risk_basis": "hydrometric_severity_mapping",
             "hydrologic_severity_level": state.severity_level,
             "return_period_years": state.return_period_years,
@@ -189,8 +210,12 @@ def build_flood_plan_input(
             "change_type": change.change_type,
             "threshold_transition": change.threshold_transition,
         },
-        evidence_gaps=list(validated.evidence_gaps),
-        limitations=list(validated.limitations),
+        evidence_gaps=list(
+            dict.fromkeys([*validated.evidence_gaps, *risk.evidence_gaps])
+        ),
+        limitations=list(
+            dict.fromkeys([*validated.limitations, *risk.limitations])
+        ),
         additional_context={
             "current_hydrologic_state": state.model_dump(mode="json"),
             "progression_assessment": (
@@ -199,6 +224,7 @@ def build_flood_plan_input(
                 else None
             ),
             "change_assessment": change.model_dump(mode="json"),
+            "risk_assessment": risk.model_dump(mode="json"),
         },
     )
 

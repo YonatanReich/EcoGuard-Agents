@@ -114,6 +114,9 @@ def test_initial_flood_analysis_refreshes_plan_and_requests_allocation():
     assert result.status == "success"
     assert result.handler == "flood_emergency_analysis_planning"
     assert result.analysis_status == "success"
+    assert result.risk_status == "success"
+    assert result.risk_assessment.risk_score == 40
+    assert result.risk_assessment.risk_level == "medium"
     assert result.planner_status == "success"
     assert result.analysis_result.change_assessment.change_type == "initial"
     assert result.response_refresh_required is True
@@ -121,6 +124,7 @@ def test_initial_flood_analysis_refreshes_plan_and_requests_allocation():
     assert result.preserve_existing_response is False
     assert len(planner.calls) == 1
     assert planner.calls[0].hazard_type == "flood"
+    assert planner.calls[0].risk_context["risk_score"] == 40
 
 
 def test_escalation_refreshes_the_response_immediately():
@@ -162,6 +166,8 @@ def test_deescalation_preserves_plan_and_allocations_without_planner_call():
     assert result.status == "success"
     assert result.analysis_result.change_assessment.change_type == "deescalated"
     assert result.analysis_result.current_state.severity_level == 4
+    assert result.risk_assessment.risk_score == 60
+    assert result.risk_assessment.risk_level == "high"
     assert result.planner_status == "skipped"
     assert result.response_refresh_required is False
     assert result.requires_resource_allocation is False
@@ -220,6 +226,8 @@ def test_unavailable_analysis_does_not_call_planner_or_allocator():
 
     assert result.status == "partial"
     assert result.analysis_status == "unavailable"
+    assert result.risk_status == "unavailable"
+    assert result.risk_assessment.risk_score is None
     assert result.planner_status == "skipped"
     assert result.requires_resource_allocation is False
     assert result.preserve_existing_response is True

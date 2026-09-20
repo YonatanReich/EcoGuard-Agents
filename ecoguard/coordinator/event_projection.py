@@ -13,6 +13,9 @@ from ecoguard.analyzers.non_emergency.air_pollution.incident_handler import (
 from ecoguard.analyzers.emergency.flood.event_analysis_schemas import (
     FloodEventAnalysis,
 )
+from ecoguard.analyzers.emergency.flood.risk_analysis_schemas import (
+    FloodRiskAssessment,
+)
 from ecoguard.coordinator import incidents as incident_store
 from ecoguard.coordinator.dispatcher import IncidentProcessingResult
 from ecoguard.database.repositories.event_projections import (
@@ -534,6 +537,11 @@ def flood_shared_event(
         if isinstance(result.analysis_result, FloodEventAnalysis)
         else None
     )
+    risk = (
+        result.risk_assessment
+        if isinstance(result.risk_assessment, FloodRiskAssessment)
+        else None
+    )
     targeting = result.resource_allocation_result or {}
     sources = _flood_station_sources(targeting, incident, analysis)
     if not sources:
@@ -640,6 +648,14 @@ def flood_shared_event(
         details=FloodDetails(
             severity_level=severity,
             return_period_label=return_period,
+            risk_status=(risk.metadata.analysis_status if risk is not None else None),
+            risk_score=(risk.risk_score if risk is not None else None),
+            risk_level=(risk.risk_level if risk is not None else None),
+            risk_confidence=(risk.confidence if risk is not None else None),
+            risk_primary_drivers=(
+                list(risk.primary_drivers) if risk is not None else []
+            ),
+            risk_explanation=(risk.explanation if risk is not None else None),
             sources=projected_sources,
             response_sites=sites,
             allocation_ready_site_ids=[site.target_id for site in sites if site.allocation_eligible],
@@ -672,6 +688,7 @@ def flood_shared_event(
                 "A ring around an unmatched station represents location precision, not flood extent.",
                 f"Drawable matched stream geometries: {drawable_streams} of {len(projected_sources)}.",
                 *(analysis.limitations if analysis is not None else []),
+                *(risk.limitations if risk is not None else []),
             ],
         ),
     )
@@ -746,7 +763,8 @@ def default_mapper_registry() -> dict[tuple[str, str], EventMapper]:
 def _retryable(result: IncidentProcessingResult) -> bool:
     return bool(
         result.status == "failed"
-        or result.failure_stage in {"adaptation", "analysis", "planning", "handler"}
+        or result.failure_stage
+        in {"adaptation", "analysis", "risk_analysis", "planning", "handler"}
         or result.analysis_status == "failed"
         or result.planner_status == "failed"
     )
