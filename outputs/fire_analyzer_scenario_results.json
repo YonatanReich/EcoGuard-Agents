@@ -1,0 +1,1676 @@
+{
+  "summary": {
+    "cases": 6,
+    "passed": 6,
+    "checks": 30,
+    "checks_passed": 30
+  },
+  "cases": [
+    {
+      "key": "negev_khamsin",
+      "title": "Wildfire in Negev shrubland under a khamsin",
+      "plain_english": "Satellite picks up a fire in the Lahav shrubland of the northern Negev on a 41 C August afternoon, with a dry 50 km/h east wind. Lahav, Lehavim and Dvir lie to the west of it.",
+      "expected": {
+        "status": "ok",
+        "spreads": true,
+        "heading_roughly": "west",
+        "names_settlements": [
+          "Lehavim",
+          "Rahat"
+        ],
+        "excludes_settlements": [
+          "Lahav"
+        ],
+        "evacuation_nonempty": true,
+        "note": "Continuous shrubland, dry, windy — this must run and reach the downwind towns while leaving the upwind one alone."
+      },
+      "incident": {
+        "id": "INC-20260814-0031",
+        "status": "open",
+        "primary_hazard": "fire",
+        "hazards": [
+          "fire"
+        ],
+        "queues": [
+          "emergency"
+        ],
+        "cells": [
+          "risk-05000m-r0043-c0012"
+        ],
+        "latitude": 31.379,
+        "longitude": 34.85,
+        "precision_m": 375.0,
+        "location_method": "frp_weighted_centroid",
+        "first_seen_at": "2026-08-14 12:50:00+00:00",
+        "last_signal_at": "2026-08-14 13:40:00+00:00",
+        "closed_at": null,
+        "signal_count": 4,
+        "peak_rarity": 1.0,
+        "links": [],
+        "signals": [
+          {
+            "cell_id": "risk-05000m-r0043-c0012",
+            "observed_at": "2026-08-14T13:40:00+00:00",
+            "hazard": "fire",
+            "variable": "frp",
+            "value": 88.4,
+            "unit": "MW",
+            "source": "firms",
+            "rarity": 1.0,
+            "direction": "high",
+            "confidence": 0.9,
+            "severity": null,
+            "evidence": {
+              "hotspot_count": 11,
+              "satellites": [
+                "VIIRS_NOAA20_NRT",
+                "VIIRS_SNPP_NRT",
+                "GOES_NRT"
+              ],
+              "recent_detections": []
+            }
+          }
+        ]
+      },
+      "environment": {
+        "temperature_c": 41.0,
+        "humidity_percent": 11.0,
+        "wind_speed_kmh": 50.0,
+        "wind_direction_deg": 95.0,
+        "slope_deg": 9.1,
+        "slope_max_deg": 17.4,
+        "aspect_deg": 304.2,
+        "built_up_fraction": 0.002,
+        "burnable_fraction": 0.994,
+        "dominant_fuel": "shrubland",
+        "sampled_radius_m": 500.0,
+        "gaps": [
+          "weather_supplied_by_scenario_not_observed"
+        ]
+      },
+      "cover_fractions": {
+        "tree_cover": 0.15,
+        "shrubland": 0.733,
+        "grassland": 0.11,
+        "cropland": 0.001,
+        "built_up": 0.002,
+        "bare_sparse_vegetation": 0.004
+      },
+      "checks": [
+        {
+          "check": "status",
+          "passed": true,
+          "detail": "status=ok, wanted ok"
+        },
+        {
+          "check": "spreads",
+          "passed": true,
+          "detail": "head rate 70.61 m/min"
+        },
+        {
+          "check": "heads roughly west",
+          "passed": true,
+          "detail": "heading=west"
+        },
+        {
+          "check": "names Lehavim",
+          "passed": true,
+          "detail": "exposed=['Beit Kama', 'Dvir', 'Givot Bar', 'Lehavim', 'Mishmar HaNegev', 'Rahat', 'Shoval', 'Tirabin al-Sana']"
+        },
+        {
+          "check": "names Rahat",
+          "passed": true,
+          "detail": "exposed=['Beit Kama', 'Dvir', 'Givot Bar', 'Lehavim', 'Mishmar HaNegev', 'Rahat', 'Shoval', 'Tirabin al-Sana']"
+        },
+        {
+          "check": "does not name Lahav (upwind)",
+          "passed": true,
+          "detail": "exposed=['Beit Kama', 'Dvir', 'Givot Bar', 'Lehavim', 'Mishmar HaNegev', 'Rahat', 'Shoval', 'Tirabin al-Sana']"
+        },
+        {
+          "check": "produces an evacuation list",
+          "passed": true,
+          "detail": "8 entries"
+        },
+        {
+          "check": "produces a textual report",
+          "passed": true,
+          "detail": "4844 characters"
+        }
+      ],
+      "passed": true,
+      "outcome": {
+        "status": "ok",
+        "reason": null,
+        "severity_score": 100,
+        "severity_level": "critical",
+        "settlements_exposed": 8,
+        "evacuation_entries": 8,
+        "people_in_spread": 42963,
+        "population_at_risk": {
+          "burning": 0,
+          "likely": 79041,
+          "possible": 6541
+        },
+        "heading_compass": "west",
+        "head_rate_m_per_min": 70.61
+      },
+      "planner_json": {
+        "hazard_type": "fire",
+        "event_description": "Wildfire incident at open ground, spreading west at 70.61 metres per minute through shrubland. Spread severity critical (100 of 100) over the next 180.0 minutes. Evacuation preparation for Lehavim, Rahat. 42,963 residents inside the forecast fire perimeter. 79,041 residents in settlements on the forecast path. Hazardous sites in the path: concrete plant. Exclusion and hazardous-material considerations apply. Sites whose occupants cannot self-evacuate in the path: hospital. Assisted evacuation and transport required. Requires decisions on unit types to commit, evacuation, road closures, structure protection and crew safety at the fireline.",
+        "incident_id": "INC-20260814-0031",
+        "location": {
+          "latitude": 31.379,
+          "longitude": 34.85
+        },
+        "risk_context": {
+          "risk_score": 100,
+          "risk_level": "critical",
+          "risk_semantics": "fire_spread_forecast",
+          "horizon_minutes": 180.0
+        },
+        "evidence_gaps": [],
+        "limitations": [
+          "Unsuppressed spread: no crew, engine, aircraft or existing containment is modelled.",
+          "Surface fire only: spotting ahead of the front and sustained crown runs are not modelled.",
+          "Barriers finer than the land-cover grid — a road, a firebreak, a wadi — are invisible here.",
+          "Arrival times assume the forecast wind holds for the whole horizon."
+        ],
+        "additional_context": {
+          "analyser": "FireSpreadAnalyzer",
+          "assessed_at": "2026-09-20T10:15:01.853514Z",
+          "origin": {
+            "latitude": 31.379,
+            "longitude": 34.85,
+            "locality": null,
+            "locality_population": null,
+            "authority": null,
+            "authority_phone": null,
+            "fire_district": null,
+            "police_station": null
+          },
+          "fire_behaviour": {
+            "head_ros_m_per_min": 70.61,
+            "back_ros_m_per_min": 1.067,
+            "heading_deg": 274.7,
+            "heading_compass": "west",
+            "length_to_width": 4.13,
+            "effective_wind_kmh": 20.1,
+            "fuel_model": "FM5",
+            "dominant_fuel": "shrubland",
+            "burnable_fraction": 0.994,
+            "dead_fuel_moisture": 0.0242,
+            "live_fuel_moisture": 0.6
+          },
+          "population_at_risk": {
+            "burning": 0,
+            "likely": 79041,
+            "possible": 6541
+          },
+          "population_in_spread": {
+            "people": 42963,
+            "grid_cells": 1776
+          },
+          "detection": {
+            "verdict": "confirmed",
+            "score": 100,
+            "reasons": [
+              {
+                "factor": "independent_instruments",
+                "points": 25,
+                "detail": "3 products agree: VIIRS_NOAA20_NRT, VIIRS_SNPP_NRT, GOES_NRT"
+              },
+              {
+                "factor": "instrument_confidence",
+                "points": 15,
+                "detail": "instrument confidence 0.90"
+              },
+              {
+                "factor": "multiple_pixels",
+                "points": 15,
+                "detail": "11 pixels alight"
+              },
+              {
+                "factor": "radiative_power",
+                "points": 20,
+                "detail": "88.4 MW"
+              },
+              {
+                "factor": "seen_more_than_once",
+                "points": 10,
+                "detail": "4 signals attached to this incident"
+              }
+            ]
+          },
+          "infrastructure_at_risk": [
+            {
+              "name": "concrete plant",
+              "kind": "concrete plant",
+              "category": "hazard",
+              "exposure": "likely",
+              "distance_m": 6537.8
+            },
+            {
+              "name": "concrete plant",
+              "kind": "concrete plant",
+              "category": "hazard",
+              "exposure": "likely",
+              "distance_m": 7015.9
+            },
+            {
+              "name": "concrete plant",
+              "kind": "concrete plant",
+              "category": "hazard",
+              "exposure": "likely",
+              "distance_m": 7422.7
+            },
+            {
+              "name": "concrete plant",
+              "kind": "concrete plant",
+              "category": "hazard",
+              "exposure": "possible",
+              "distance_m": 7205.4
+            },
+            {
+              "name": "hospital",
+              "kind": "hospital",
+              "category": "life_safety",
+              "exposure": "likely",
+              "distance_m": 9041.0
+            },
+            {
+              "name": "One commercial center",
+              "kind": "commercial area",
+              "category": "economic",
+              "exposure": "likely",
+              "distance_m": 3924.6
+            },
+            {
+              "name": "Idan Ha'Negev Industry Park",
+              "kind": "industrial area",
+              "category": "economic",
+              "exposure": "likely",
+              "distance_m": 6050.2
+            },
+            {
+              "name": "المنطقة الصناعية رهط",
+              "kind": "industrial area",
+              "category": "economic",
+              "exposure": "likely",
+              "distance_m": 6989.9
+            },
+            {
+              "name": "industrial area",
+              "kind": "industrial area",
+              "category": "economic",
+              "exposure": "possible",
+              "distance_m": 4112.2
+            },
+            {
+              "name": "industrial area",
+              "kind": "industrial area",
+              "category": "economic",
+              "exposure": "possible",
+              "distance_m": 7063.7
+            },
+            {
+              "name": "retail area",
+              "kind": "retail area",
+              "category": "economic",
+              "exposure": "possible",
+              "distance_m": 7754.7
+            },
+            {
+              "name": "Bet Kama Junction",
+              "kind": "retail area",
+              "category": "economic",
+              "exposure": "possible",
+              "distance_m": 10769.6
+            },
+            {
+              "name": "industrial area",
+              "kind": "industrial area",
+              "category": "economic",
+              "exposure": "possible",
+              "distance_m": 10900.5
+            },
+            {
+              "name": "Avshalom Industrial Park",
+              "kind": "industrial area",
+              "category": "economic",
+              "exposure": "possible",
+              "distance_m": 10952.6
+            },
+            {
+              "name": "industrial area",
+              "kind": "industrial area",
+              "category": "economic",
+              "exposure": "possible",
+              "distance_m": 11141.3
+            },
+            {
+              "name": "industrial area",
+              "kind": "industrial area",
+              "category": "economic",
+              "exposure": "possible",
+              "distance_m": 11175.8
+            },
+            {
+              "name": "industrial area",
+              "kind": "industrial area",
+              "category": "economic",
+              "exposure": "possible",
+              "distance_m": 11528.5
+            },
+            {
+              "name": "industrial area",
+              "kind": "industrial area",
+              "category": "economic",
+              "exposure": "possible",
+              "distance_m": 11986.5
+            },
+            {
+              "name": "industrial area",
+              "kind": "industrial area",
+              "category": "economic",
+              "exposure": "possible",
+              "distance_m": 12417.9
+            },
+            {
+              "name": "industrial area",
+              "kind": "industrial area",
+              "category": "economic",
+              "exposure": "possible",
+              "distance_m": 12519.7
+            }
+          ],
+          "infrastructure_summary": {
+            "counts": {
+              "hazard": 4,
+              "life_safety": 1,
+              "economic": 15
+            },
+            "total": 20,
+            "worst_category": "hazard"
+          },
+          "fire_history": {
+            "fires_within_5km_previous_30d": 0,
+            "fires_within_10km_previous_90d": 0,
+            "fires_within_25km_previous_365d": 0,
+            "days_since_previous_detection_within_10km": null,
+            "persistent": false,
+            "distinct_days": 0,
+            "span_days": 0,
+            "day_share": 0.0,
+            "reason": "never_detected"
+          },
+          "settlements_exposed": [
+            {
+              "name": "Lehavim",
+              "name_he": "להבים",
+              "population": 7686,
+              "exposure": "likely",
+              "arrival_minutes": 70.8,
+              "distance_m": 2519.9,
+              "authority_phone": "08-6257900",
+              "fire_district": "דרום",
+              "police_station": "תחנת רהט"
+            },
+            {
+              "name": "Rahat",
+              "name_he": "רהט",
+              "population": 71355,
+              "exposure": "likely",
+              "arrival_minutes": 80.7,
+              "distance_m": 5528.0,
+              "authority_phone": "08-6257900",
+              "fire_district": "דרום",
+              "police_station": "תחנת רהט"
+            },
+            {
+              "name": "Dvir",
+              "name_he": "דבירה",
+              "population": 1082,
+              "exposure": "possible",
+              "arrival_minutes": null,
+              "distance_m": 3853.8,
+              "authority_phone": "08-6257900",
+              "fire_district": "דרום",
+              "police_station": "תחנת העיירות"
+            },
+            {
+              "name": "Givot Bar",
+              "name_he": "גבעות בר",
+              "population": 1331,
+              "exposure": "possible",
+              "arrival_minutes": null,
+              "distance_m": 8560.4,
+              "authority_phone": "08-6257900",
+              "fire_district": "דרום",
+              "police_station": "תחנת רהט"
+            },
+            {
+              "name": "Tirabin al-Sana",
+              "name_he": "תרבין א-צאנע (יישוב)*",
+              "population": 952,
+              "exposure": "possible",
+              "arrival_minutes": null,
+              "distance_m": 9995.6,
+              "authority_phone": "08-6796120",
+              "fire_district": "דרום",
+              "police_station": "תחנת רהט"
+            },
+            {
+              "name": "Shoval",
+              "name_he": "שובל",
+              "population": 1011,
+              "exposure": "possible",
+              "arrival_minutes": null,
+              "distance_m": 10374.3,
+              "authority_phone": "08-6257900",
+              "fire_district": "דרום",
+              "police_station": "תחנת רהט"
+            },
+            {
+              "name": "Beit Kama",
+              "name_he": "בית קמה",
+              "population": 1069,
+              "exposure": "possible",
+              "arrival_minutes": null,
+              "distance_m": 10635.4,
+              "authority_phone": "08-6257900",
+              "fire_district": "דרום",
+              "police_station": "תחנת רהט"
+            },
+            {
+              "name": "Mishmar HaNegev",
+              "name_he": "משמר הנגב",
+              "population": 1096,
+              "exposure": "possible",
+              "arrival_minutes": null,
+              "distance_m": 12159.8,
+              "authority_phone": "08-6257900",
+              "fire_district": "דרום",
+              "police_station": "תחנת רהט"
+            }
+          ],
+          "evacuation_priority": [
+            {
+              "locality_id": "lehavim",
+              "name": "Lehavim",
+              "name_he": "להבים",
+              "population": 7686,
+              "priority": "prepare",
+              "reason": "on the forecast wind the fire reaches it within the horizon",
+              "arrival_minutes": 70.8,
+              "distance_m": 2519.9,
+              "authority": "בני שמעון",
+              "authority_phone": "08-6257900",
+              "authority_website": "https://bns.org.il/",
+              "fire_district": "דרום",
+              "police_station": "תחנת רהט"
+            },
+            {
+              "locality_id": "rahat",
+              "name": "Rahat",
+              "name_he": "רהט",
+              "population": 71355,
+              "priority": "prepare",
+              "reason": "on the forecast wind the fire reaches it within the horizon",
+              "arrival_minutes": 80.7,
+              "distance_m": 5528.0,
+              "authority": "בני שמעון",
+              "authority_phone": "08-6257900",
+              "authority_website": "https://bns.org.il/",
+              "fire_district": "דרום",
+              "police_station": "תחנת רהט"
+            },
+            {
+              "locality_id": "givot-bar",
+              "name": "Givot Bar",
+              "name_he": "גבעות בר",
+              "population": 1331,
+              "priority": "standby",
+              "reason": "only a wind shift within forecast error brings the fire here",
+              "arrival_minutes": null,
+              "distance_m": 8560.4,
+              "authority": "בני שמעון",
+              "authority_phone": "08-6257900",
+              "authority_website": "https://bns.org.il/",
+              "fire_district": "דרום",
+              "police_station": "תחנת רהט"
+            },
+            {
+              "locality_id": "mishmar-hanegev",
+              "name": "Mishmar HaNegev",
+              "name_he": "משמר הנגב",
+              "population": 1096,
+              "priority": "standby",
+              "reason": "only a wind shift within forecast error brings the fire here",
+              "arrival_minutes": null,
+              "distance_m": 12159.8,
+              "authority": "בני שמעון",
+              "authority_phone": "08-6257900",
+              "authority_website": "https://bns.org.il/",
+              "fire_district": "דרום",
+              "police_station": "תחנת רהט"
+            },
+            {
+              "locality_id": "dvir",
+              "name": "Dvir",
+              "name_he": "דבירה",
+              "population": 1082,
+              "priority": "standby",
+              "reason": "only a wind shift within forecast error brings the fire here",
+              "arrival_minutes": null,
+              "distance_m": 3853.8,
+              "authority": "בני שמעון",
+              "authority_phone": "08-6257900",
+              "authority_website": "https://bns.org.il/",
+              "fire_district": "דרום",
+              "police_station": "תחנת העיירות"
+            },
+            {
+              "locality_id": "beit-kama",
+              "name": "Beit Kama",
+              "name_he": "בית קמה",
+              "population": 1069,
+              "priority": "standby",
+              "reason": "only a wind shift within forecast error brings the fire here",
+              "arrival_minutes": null,
+              "distance_m": 10635.4,
+              "authority": "בני שמעון",
+              "authority_phone": "08-6257900",
+              "authority_website": "https://bns.org.il/",
+              "fire_district": "דרום",
+              "police_station": "תחנת רהט"
+            },
+            {
+              "locality_id": "shoval",
+              "name": "Shoval",
+              "name_he": "שובל",
+              "population": 1011,
+              "priority": "standby",
+              "reason": "only a wind shift within forecast error brings the fire here",
+              "arrival_minutes": null,
+              "distance_m": 10374.3,
+              "authority": "בני שמעון",
+              "authority_phone": "08-6257900",
+              "authority_website": "https://bns.org.il/",
+              "fire_district": "דרום",
+              "police_station": "תחנת רהט"
+            },
+            {
+              "locality_id": "tirabin-al-sana",
+              "name": "Tirabin al-Sana",
+              "name_he": "תרבין א-צאנע (יישוב)*",
+              "population": 952,
+              "priority": "standby",
+              "reason": "only a wind shift within forecast error brings the fire here",
+              "arrival_minutes": null,
+              "distance_m": 9995.6,
+              "authority": "אל קסום",
+              "authority_phone": "08-6796120",
+              "authority_website": "http://www.alqasoum.org.il/he/",
+              "fire_district": "דרום",
+              "police_station": "תחנת רהט"
+            }
+          ],
+          "headline": "Fire burning in open ground, spreading west at about 71 m/min. Unchecked, the head reaches roughly 12.7 km in 3 hours. On the forecast wind it reaches Lehavim (population 7,686), about 71 minutes away, Rahat (population 71,355), about 81 minutes away. If the wind shifts within forecast error it could also reach Dvir, Givot Bar, Tirabin al-Sana, Shoval, Beit Kama, Mishmar HaNegev."
+        }
+      },
+      "report": "DETECTION\nThis is a fire. Detection confidence 100 of 100. For: 3 products agree: VIIRS_NOAA20_NRT, VIIRS_SNPP_NRT, GOES_NRT; instrument confidence 0.90; 11 pixels alight; 88.4 MW; 4 signals attached to this incident.\n\nSITUATION\nFire burning in open ground, running west at about 71 m/min through shrubland. Wind 50 km/h from east, 41 C, 11% humidity.\nGround averages 9 degrees, with faces up to 17 degrees inside the same ground — a fire on one of those runs far faster than the average suggests.\n\nFORECAST SPREAD\nUnchecked, the head reaches roughly 12.7 km west in 3 hours. Two extents are drawn: the likely one on the forecast wind, and a wider possible one covering a wind shift within forecast error.\n\nPEOPLE AT RISK\nInside the forecast spread: 42,963 people, counted off the population grid over the drawn extent.\nWhole-settlement totals, which count every resident of an affected place rather than only those inside the line: 0 in settlements already burning, 79,041 in settlements the forecast reaches, 6,541 in settlements only a wind shift reaches.\n\nSETTLEMENTS IN THE PATH\n- Lehavim (7,686) — on the forecast wind, about 71 minutes away [2.5 km]\n- Rahat (71,355) — on the forecast wind, about 81 minutes away [5.5 km]\n- Dvir (1,082) — reachable only if the wind shifts within forecast error [3.9 km]\n- Givot Bar (1,331) — reachable only if the wind shifts within forecast error [8.6 km]\n- Tirabin al-Sana (952) — reachable only if the wind shifts within forecast error [10.0 km]\n- Shoval (1,011) — reachable only if the wind shifts within forecast error [10.4 km]\n- Beit Kama (1,069) — reachable only if the wind shifts within forecast error [10.6 km]\n- Mishmar HaNegev (1,096) — reachable only if the wind shifts within forecast error [12.2 km]\n\nOTHER SITES IN THE PATH\n- [hazard] concrete plant (concrete plant) — 6.5 km, on the forecast wind\n- [hazard] concrete plant (concrete plant) — 7.0 km, on the forecast wind\n- [hazard] concrete plant (concrete plant) — 7.4 km, on the forecast wind\n- [hazard] concrete plant (concrete plant) — 7.2 km, only if the wind shifts\n- [life safety] hospital (hospital) — 9.0 km, on the forecast wind\n- [economic] One commercial center (commercial area) — 3.9 km, on the forecast wind\n- [economic] Idan Ha'Negev Industry Park (industrial area) — 6.1 km, on the forecast wind\n- [economic] المنطقة الصناعية رهط (industrial area) — 7.0 km, on the forecast wind\n- [economic] industrial area (industrial area) — 4.1 km, only if the wind shifts\n- [economic] industrial area (industrial area) — 7.1 km, only if the wind shifts\n- [economic] retail area (retail area) — 7.8 km, only if the wind shifts\n- [economic] Bet Kama Junction (retail area) — 10.8 km, only if the wind shifts\n  ...and 8 more.\n\nEVACUATION PRIORITY\n- PREPARE: Lehavim, 7,686 people — on the forecast wind the fire reaches it within the horizon.\n    authority 08-6257900; fire district דרום; police תחנת רהט\n- PREPARE: Rahat, 71,355 people — on the forecast wind the fire reaches it within the horizon.\n    authority 08-6257900; fire district דרום; police תחנת רהט\n- STANDBY: Givot Bar, 1,331 people — only a wind shift within forecast error brings the fire here.\n    authority 08-6257900; fire district דרום; police תחנת רהט\n- STANDBY: Mishmar HaNegev, 1,096 people — only a wind shift within forecast error brings the fire here.\n    authority 08-6257900; fire district דרום; police תחנת רהט\n- STANDBY: Dvir, 1,082 people — only a wind shift within forecast error brings the fire here.\n    authority 08-6257900; fire district דרום; police תחנת העיירות\n- STANDBY: Beit Kama, 1,069 people — only a wind shift within forecast error brings the fire here.\n    authority 08-6257900; fire district דרום; police תחנת רהט\n- STANDBY: Shoval, 1,011 people — only a wind shift within forecast error brings the fire here.\n    authority 08-6257900; fire district דרום; police תחנת רהט\n- STANDBY: Tirabin al-Sana, 952 people — only a wind shift within forecast error brings the fire here.\n    authority 08-6796120; fire district דרום; police תחנת רהט\n\nSEVERITY\ncritical — 100 of 100, for the spread over the next 3 hours. This scores how bad the spread is about to be; it is not how likely a fire was to start here, nor how severe the fire already is.\nDriven by: a head rate of 71 m/min; 79,041 people in settlements on the forecast path; a hazardous site in the path (concrete plant); a site whose occupants cannot self-evacuate (hospital).\n\nEVIDENCE GAPS\n- weather supplied by scenario not observed\n\nLIMITS\n- Unsuppressed spread: no crew, engine, aircraft or existing containment is modelled.\n- Surface fire only: spotting ahead of the front and sustained crown runs are not modelled.\n- Barriers finer than the land-cover grid — a road, a firebreak, a wadi — are invisible here.\n- Arrival times assume the forecast wind holds for the whole horizon."
+    },
+    {
+      "key": "petah_tikva_building",
+      "title": "Residential block alight in Petah Tikva",
+      "plain_english": "A fire in a residential building in central Petah Tikva on a muggy July evening. It is a structure fire in a dense city; there is no wildland for it to run through.",
+      "expected": {
+        "status": "any",
+        "spreads": false,
+        "names_origin": "Petah Tikva",
+        "flags_built_up": true,
+        "note": "Must name Petah Tikva and its authority, must flag the built-up share, and must not imply a wildland run through a city."
+      },
+      "incident": {
+        "id": "INC-20260701-0012",
+        "status": "open",
+        "primary_hazard": "fire",
+        "hazards": [
+          "fire"
+        ],
+        "queues": [
+          "emergency"
+        ],
+        "cells": [
+          "risk-05000m-r0059-c0012"
+        ],
+        "latitude": 32.0909,
+        "longitude": 34.8764,
+        "precision_m": 375.0,
+        "location_method": "frp_weighted_centroid",
+        "first_seen_at": "2026-07-01 17:30:00+00:00",
+        "last_signal_at": "2026-07-01 18:20:00+00:00",
+        "closed_at": null,
+        "signal_count": 1,
+        "peak_rarity": 1.0,
+        "links": [],
+        "signals": [
+          {
+            "cell_id": "risk-05000m-r0059-c0012",
+            "observed_at": "2026-07-01T18:20:00+00:00",
+            "hazard": "fire",
+            "variable": "frp",
+            "value": 6.1,
+            "unit": "MW",
+            "source": "firms",
+            "rarity": 1.0,
+            "direction": "high",
+            "confidence": 0.8,
+            "severity": null,
+            "evidence": {
+              "hotspot_count": 1,
+              "satellites": [
+                "VIIRS_NOAA21_NRT"
+              ],
+              "recent_detections": []
+            }
+          }
+        ]
+      },
+      "environment": {
+        "temperature_c": 31.0,
+        "humidity_percent": 58.0,
+        "wind_speed_kmh": 14.0,
+        "wind_direction_deg": 275.0,
+        "slope_deg": 1.5,
+        "slope_max_deg": 3.3,
+        "aspect_deg": 352.4,
+        "built_up_fraction": 0.855,
+        "burnable_fraction": 0.14,
+        "dominant_fuel": "built_up",
+        "sampled_radius_m": 500.0,
+        "gaps": [
+          "weather_supplied_by_scenario_not_observed"
+        ]
+      },
+      "cover_fractions": {
+        "tree_cover": 0.11,
+        "grassland": 0.016,
+        "cropland": 0.014,
+        "built_up": 0.855,
+        "bare_sparse_vegetation": 0.004
+      },
+      "checks": [
+        {
+          "check": "status",
+          "passed": true,
+          "detail": "status=ok (unconstrained)"
+        },
+        {
+          "check": "no significant spread",
+          "passed": true,
+          "detail": "head rate 1.01 m/min"
+        },
+        {
+          "check": "origin is Petah Tikva",
+          "passed": true,
+          "detail": "origin=Petah Tikva"
+        },
+        {
+          "check": "flags the built-up share",
+          "passed": true,
+          "detail": "report mentions built-up cover"
+        },
+        {
+          "check": "produces a textual report",
+          "passed": true,
+          "detail": "2102 characters"
+        }
+      ],
+      "passed": true,
+      "outcome": {
+        "status": "ok",
+        "reason": null,
+        "severity_score": 35,
+        "severity_level": "medium",
+        "settlements_exposed": 1,
+        "evacuation_entries": 1,
+        "people_in_spread": 135,
+        "population_at_risk": {
+          "burning": 264046,
+          "likely": 0,
+          "possible": 0
+        },
+        "heading_compass": "east",
+        "head_rate_m_per_min": 1.01
+      },
+      "planner_json": {
+        "hazard_type": "fire",
+        "event_description": "Wildfire incident at Petah Tikva, spreading east at 1.01 metres per minute through tree cover. Spread severity medium (35 of 100) over the next 180.0 minutes. Fire is inside the built-up area of Petah Tikva. Structures are threatened and life safety is the first problem. Evacuation required immediately for Petah Tikva. 135 residents inside the forecast fire perimeter. Requires decisions on unit types to commit, evacuation, road closures, structure protection and crew safety at the fireline.",
+        "incident_id": "INC-20260701-0012",
+        "location": {
+          "latitude": 32.0909,
+          "longitude": 34.8764
+        },
+        "risk_context": {
+          "risk_score": 35,
+          "risk_level": "medium",
+          "risk_semantics": "fire_spread_forecast",
+          "horizon_minutes": 180.0
+        },
+        "evidence_gaps": [],
+        "limitations": [
+          "Unsuppressed spread: no crew, engine, aircraft or existing containment is modelled.",
+          "Surface fire only: spotting ahead of the front and sustained crown runs are not modelled.",
+          "Barriers finer than the land-cover grid — a road, a firebreak, a wadi — are invisible here.",
+          "Arrival times assume the forecast wind holds for the whole horizon."
+        ],
+        "additional_context": {
+          "analyser": "FireSpreadAnalyzer",
+          "assessed_at": "2026-09-20T10:15:24.334509Z",
+          "origin": {
+            "latitude": 32.0909,
+            "longitude": 34.8764,
+            "locality": "Petah Tikva",
+            "locality_population": 264046,
+            "authority": "פתח תקווה",
+            "authority_phone": "03-9052450",
+            "fire_district": "מרכז",
+            "police_station": "תחנת פתח תקווה"
+          },
+          "fire_behaviour": {
+            "head_ros_m_per_min": 1.01,
+            "back_ros_m_per_min": 0.085,
+            "heading_deg": 95.1,
+            "heading_compass": "east",
+            "length_to_width": 1.87,
+            "effective_wind_kmh": 5.6,
+            "fuel_model": "FM9",
+            "dominant_fuel": "tree_cover",
+            "burnable_fraction": 0.14,
+            "dead_fuel_moisture": 0.0997,
+            "live_fuel_moisture": 0.6
+          },
+          "population_at_risk": {
+            "burning": 264046,
+            "likely": 0,
+            "possible": 0
+          },
+          "population_in_spread": {
+            "people": 135,
+            "grid_cells": 8
+          },
+          "detection": {
+            "verdict": "probable",
+            "score": 55,
+            "reasons": [
+              {
+                "factor": "instrument_confidence",
+                "points": 15,
+                "detail": "instrument confidence 0.80"
+              }
+            ]
+          },
+          "infrastructure_at_risk": [],
+          "infrastructure_summary": {
+            "counts": {
+              "hazard": 0,
+              "life_safety": 0,
+              "economic": 0
+            },
+            "total": 0,
+            "worst_category": null
+          },
+          "fire_history": {
+            "fires_within_5km_previous_30d": 0,
+            "fires_within_10km_previous_90d": 0,
+            "fires_within_25km_previous_365d": 0,
+            "days_since_previous_detection_within_10km": null,
+            "persistent": false,
+            "distinct_days": 0,
+            "span_days": 0,
+            "day_share": 0.0,
+            "reason": "never_detected"
+          },
+          "settlements_exposed": [
+            {
+              "name": "Petah Tikva",
+              "name_he": "פתח תקווה",
+              "population": 264046,
+              "exposure": "burning",
+              "arrival_minutes": null,
+              "distance_m": 1664.5,
+              "authority_phone": "03-9052450",
+              "fire_district": "מרכז",
+              "police_station": "תחנת פתח תקווה"
+            }
+          ],
+          "evacuation_priority": [
+            {
+              "locality_id": "petah-tikva",
+              "name": "Petah Tikva",
+              "name_he": "פתח תקווה",
+              "population": 264046,
+              "priority": "immediate",
+              "reason": "the fire is in the built-up area or reaches it within the hour",
+              "arrival_minutes": null,
+              "distance_m": 1664.5,
+              "authority": "פתח תקווה",
+              "authority_phone": "03-9052450",
+              "authority_website": "https://www.petah-tikva.muni.il/Pages/default.aspx",
+              "fire_district": "מרכז",
+              "police_station": "תחנת פתח תקווה"
+            }
+          ],
+          "headline": "Fire burning in Petah Tikva, spreading east at about 1 m/min. Unchecked, the head reaches roughly 0.2 km in 3 hours. No populated locality lies in the forecast path."
+        }
+      },
+      "report": "DETECTION\nThis is probably a fire. Detection confidence 55 of 100. For: instrument confidence 0.80.\n\nSITUATION\nFire burning in Petah Tikva, running east at about 1 m/min through tree cover. Wind 14 km/h from west, 31 C, 58% humidity.\n86% of this ground is built up. The spread forecast below covers wildland fuel only; fire in the structures themselves behaves differently and is not modelled here.\nGround averages 2 degrees.\n\nFORECAST SPREAD\nUnchecked, the head reaches roughly 0.2 km east in 3 hours. Two extents are drawn: the likely one on the forecast wind, and a wider possible one covering a wind shift within forecast error.\n\nPEOPLE AT RISK\nInside the forecast spread: 135 people, counted off the population grid over the drawn extent.\nWhole-settlement totals, which count every resident of an affected place rather than only those inside the line: 264,046 in settlements already burning, 0 in settlements the forecast reaches, 0 in settlements only a wind shift reaches.\n\nSETTLEMENTS IN THE PATH\n- Petah Tikva (264,046) — fire is inside the built-up area [1.7 km]\n\nOTHER SITES IN THE PATH\nNo mapped hospital, school, industrial or hazardous site lies in the forecast path. This is what the survey holds, not proof that there is nothing there.\n\nEVACUATION PRIORITY\n- IMMEDIATE: Petah Tikva, 264,046 people — the fire is in the built-up area or reaches it within the hour.\n    authority 03-9052450; fire district מרכז; police תחנת פתח תקווה\n\nSEVERITY\nmedium — 35 of 100, for the spread over the next 3 hours. This scores how bad the spread is about to be; it is not how likely a fire was to start here, nor how severe the fire already is.\nDriven by: fire already inside a built-up area.\n\nEVIDENCE GAPS\n- weather supplied by scenario not observed\n\nLIMITS\n- Unsuppressed spread: no crew, engine, aircraft or existing containment is modelled.\n- Surface fire only: spotting ahead of the front and sustained crown runs are not modelled.\n- Barriers finer than the land-cover grid — a road, a firebreak, a wadi — are invisible here.\n- Arrival times assume the forecast wind holds for the whole horizon."
+    },
+    {
+      "key": "carmel_east_wind",
+      "title": "Carmel pine forest, east wind toward Haifa",
+      "plain_english": "The 2010 geometry: fire in the Carmel forest with a hot, dry east wind pushing it downslope toward Beit Oren, Nesher and Haifa.",
+      "expected": {
+        "status": "ok",
+        "spreads": true,
+        "heading_roughly": "west",
+        "names_settlements": [
+          "Beit Oren"
+        ],
+        "large_population_exposed": true,
+        "note": "Dense tree cover, strong wind, a major city within reach."
+      },
+      "incident": {
+        "id": "INC-20260814-0033",
+        "status": "open",
+        "primary_hazard": "fire",
+        "hazards": [
+          "fire"
+        ],
+        "queues": [
+          "emergency"
+        ],
+        "cells": [
+          "risk-05000m-r0073-c0015"
+        ],
+        "latitude": 32.735,
+        "longitude": 35.025,
+        "precision_m": 375.0,
+        "location_method": "frp_weighted_centroid",
+        "first_seen_at": "2026-08-14 12:50:00+00:00",
+        "last_signal_at": "2026-08-14 13:40:00+00:00",
+        "closed_at": null,
+        "signal_count": 9,
+        "peak_rarity": 1.0,
+        "links": [],
+        "signals": [
+          {
+            "cell_id": "risk-05000m-r0073-c0015",
+            "observed_at": "2026-08-14T13:40:00+00:00",
+            "hazard": "fire",
+            "variable": "frp",
+            "value": 142.7,
+            "unit": "MW",
+            "source": "firms",
+            "rarity": 1.0,
+            "direction": "high",
+            "confidence": 0.9,
+            "severity": null,
+            "evidence": {
+              "hotspot_count": 23,
+              "satellites": [
+                "VIIRS_NOAA20_NRT",
+                "VIIRS_NOAA21_NRT",
+                "VIIRS_SNPP_NRT",
+                "MODIS_NRT",
+                "GOES_NRT"
+              ],
+              "recent_detections": []
+            }
+          }
+        ]
+      },
+      "environment": {
+        "temperature_c": 39.0,
+        "humidity_percent": 14.0,
+        "wind_speed_kmh": 45.0,
+        "wind_direction_deg": 100.0,
+        "slope_deg": 9.2,
+        "slope_max_deg": 23.7,
+        "aspect_deg": 238.9,
+        "built_up_fraction": 0.029,
+        "burnable_fraction": 0.958,
+        "dominant_fuel": "tree_cover",
+        "sampled_radius_m": 500.0,
+        "gaps": [
+          "weather_supplied_by_scenario_not_observed"
+        ]
+      },
+      "cover_fractions": {
+        "tree_cover": 0.692,
+        "shrubland": 0.037,
+        "grassland": 0.216,
+        "cropland": 0.012,
+        "built_up": 0.029,
+        "bare_sparse_vegetation": 0.014
+      },
+      "checks": [
+        {
+          "check": "status",
+          "passed": true,
+          "detail": "status=ok, wanted ok"
+        },
+        {
+          "check": "spreads",
+          "passed": true,
+          "detail": "head rate 14.98 m/min"
+        },
+        {
+          "check": "heads roughly west",
+          "passed": true,
+          "detail": "heading=west-northwest"
+        },
+        {
+          "check": "names Beit Oren",
+          "passed": true,
+          "detail": "exposed=['Beit Oren']"
+        },
+        {
+          "check": "produces a textual report",
+          "passed": true,
+          "detail": "2204 characters"
+        }
+      ],
+      "passed": true,
+      "outcome": {
+        "status": "ok",
+        "reason": null,
+        "severity_score": 55,
+        "severity_level": "high",
+        "settlements_exposed": 1,
+        "evacuation_entries": 1,
+        "people_in_spread": 399,
+        "population_at_risk": {
+          "burning": 0,
+          "likely": 526,
+          "possible": 0
+        },
+        "heading_compass": "west-northwest",
+        "head_rate_m_per_min": 14.98
+      },
+      "planner_json": {
+        "hazard_type": "fire",
+        "event_description": "Wildfire incident at open ground, spreading west-northwest at 14.98 metres per minute through tree cover. Spread severity high (55 of 100) over the next 180.0 minutes. Evacuation preparation for Beit Oren. 399 residents inside the forecast fire perimeter. 526 residents in settlements on the forecast path. Requires decisions on unit types to commit, evacuation, road closures, structure protection and crew safety at the fireline.",
+        "incident_id": "INC-20260814-0033",
+        "location": {
+          "latitude": 32.735,
+          "longitude": 35.025
+        },
+        "risk_context": {
+          "risk_score": 55,
+          "risk_level": "high",
+          "risk_semantics": "fire_spread_forecast",
+          "horizon_minutes": 180.0
+        },
+        "evidence_gaps": [],
+        "limitations": [
+          "Unsuppressed spread: no crew, engine, aircraft or existing containment is modelled.",
+          "Surface fire only: spotting ahead of the front and sustained crown runs are not modelled.",
+          "Barriers finer than the land-cover grid — a road, a firebreak, a wadi — are invisible here.",
+          "Arrival times assume the forecast wind holds for the whole horizon."
+        ],
+        "additional_context": {
+          "analyser": "FireSpreadAnalyzer",
+          "assessed_at": "2026-09-20T10:15:38.675018Z",
+          "origin": {
+            "latitude": 32.735,
+            "longitude": 35.025,
+            "locality": null,
+            "locality_population": null,
+            "authority": null,
+            "authority_phone": null,
+            "fire_district": null,
+            "police_station": null
+          },
+          "fire_behaviour": {
+            "head_ros_m_per_min": 14.98,
+            "back_ros_m_per_min": 0.979,
+            "heading_deg": 282.4,
+            "heading_compass": "west-northwest",
+            "length_to_width": 2.08,
+            "effective_wind_kmh": 7.0,
+            "fuel_model": "FM9",
+            "dominant_fuel": "tree_cover",
+            "burnable_fraction": 0.957,
+            "dead_fuel_moisture": 0.0296,
+            "live_fuel_moisture": 0.6
+          },
+          "population_at_risk": {
+            "burning": 0,
+            "likely": 526,
+            "possible": 0
+          },
+          "population_in_spread": {
+            "people": 399,
+            "grid_cells": 71
+          },
+          "detection": {
+            "verdict": "confirmed",
+            "score": 100,
+            "reasons": [
+              {
+                "factor": "independent_instruments",
+                "points": 25,
+                "detail": "5 products agree: VIIRS_NOAA20_NRT, VIIRS_NOAA21_NRT, VIIRS_SNPP_NRT, MODIS_NRT, GOES_NRT"
+              },
+              {
+                "factor": "instrument_confidence",
+                "points": 15,
+                "detail": "instrument confidence 0.90"
+              },
+              {
+                "factor": "multiple_pixels",
+                "points": 15,
+                "detail": "23 pixels alight"
+              },
+              {
+                "factor": "radiative_power",
+                "points": 20,
+                "detail": "142.7 MW"
+              },
+              {
+                "factor": "seen_more_than_once",
+                "points": 10,
+                "detail": "9 signals attached to this incident"
+              }
+            ]
+          },
+          "infrastructure_at_risk": [],
+          "infrastructure_summary": {
+            "counts": {
+              "hazard": 0,
+              "life_safety": 0,
+              "economic": 0
+            },
+            "total": 0,
+            "worst_category": null
+          },
+          "fire_history": {
+            "fires_within_5km_previous_30d": 0,
+            "fires_within_10km_previous_90d": 0,
+            "fires_within_25km_previous_365d": 0,
+            "days_since_previous_detection_within_10km": null,
+            "persistent": false,
+            "distinct_days": 0,
+            "span_days": 0,
+            "day_share": 0.0,
+            "reason": "never_detected"
+          },
+          "settlements_exposed": [
+            {
+              "name": "Beit Oren",
+              "name_he": "בית אורן",
+              "population": 526,
+              "exposure": "likely",
+              "arrival_minutes": 166.4,
+              "distance_m": 1583.0,
+              "authority_phone": "04-8132220",
+              "fire_district": "חוף",
+              "police_station": "תחנת נשר"
+            }
+          ],
+          "evacuation_priority": [
+            {
+              "locality_id": "beit-oren",
+              "name": "Beit Oren",
+              "name_he": "בית אורן",
+              "population": 526,
+              "priority": "prepare",
+              "reason": "on the forecast wind the fire reaches it within the horizon",
+              "arrival_minutes": 166.4,
+              "distance_m": 1583.0,
+              "authority": "חוף הכרמל",
+              "authority_phone": "04-8132220",
+              "authority_website": "https://www.hof-hacarmel.co.il/",
+              "fire_district": "חוף",
+              "police_station": "תחנת נשר"
+            }
+          ],
+          "headline": "Fire burning in open ground, spreading west-northwest at about 15 m/min. Unchecked, the head reaches roughly 2.7 km in 3 hours. On the forecast wind it reaches Beit Oren (population 526), about 166 minutes away."
+        }
+      },
+      "report": "DETECTION\nThis is a fire. Detection confidence 100 of 100. For: 5 products agree: VIIRS_NOAA20_NRT, VIIRS_NOAA21_NRT, VIIRS_SNPP_NRT, MODIS_NRT, GOES_NRT; instrument confidence 0.90; 23 pixels alight; 142.7 MW; 9 signals attached to this incident.\n\nSITUATION\nFire burning in open ground, running west-northwest at about 15 m/min through tree cover. Wind 45 km/h from east, 39 C, 14% humidity.\nGround averages 9 degrees, with faces up to 24 degrees inside the same ground — a fire on one of those runs far faster than the average suggests.\n\nFORECAST SPREAD\nUnchecked, the head reaches roughly 2.7 km west-northwest in 3 hours. Two extents are drawn: the likely one on the forecast wind, and a wider possible one covering a wind shift within forecast error.\n\nPEOPLE AT RISK\nInside the forecast spread: 399 people, counted off the population grid over the drawn extent.\nWhole-settlement totals, which count every resident of an affected place rather than only those inside the line: 0 in settlements already burning, 526 in settlements the forecast reaches, 0 in settlements only a wind shift reaches.\n\nSETTLEMENTS IN THE PATH\n- Beit Oren (526) — on the forecast wind, about 166 minutes away [1.6 km]\n\nOTHER SITES IN THE PATH\nNo mapped hospital, school, industrial or hazardous site lies in the forecast path. This is what the survey holds, not proof that there is nothing there.\n\nEVACUATION PRIORITY\n- PREPARE: Beit Oren, 526 people — on the forecast wind the fire reaches it within the horizon.\n    authority 04-8132220; fire district חוף; police תחנת נשר\n\nSEVERITY\nhigh — 55 of 100, for the spread over the next 3 hours. This scores how bad the spread is about to be; it is not how likely a fire was to start here, nor how severe the fire already is.\nDriven by: a moderate head rate of 15 m/min.\n\nEVIDENCE GAPS\n- weather supplied by scenario not observed\n\nLIMITS\n- Unsuppressed spread: no crew, engine, aircraft or existing containment is modelled.\n- Surface fire only: spotting ahead of the front and sustained crown runs are not modelled.\n- Barriers finer than the land-cover grid — a road, a firebreak, a wadi — are invisible here.\n- Arrival times assume the forecast wind holds for the whole horizon."
+    },
+    {
+      "key": "judean_hills_upslope",
+      "title": "Judean hills, light wind on steep ground",
+      "plain_english": "Fire on a steep wooded slope west of Jerusalem with only a light breeze. With almost no wind, terrain should decide the direction: fire runs uphill.",
+      "expected": {
+        "status": "ok",
+        "spreads": true,
+        "names_settlements": [
+          "Shoresh"
+        ],
+        "note": "Slope is 17 degrees mean, 35 degrees steepest. With a 5 km/h breeze the slope term should dominate the heading."
+      },
+      "incident": {
+        "id": "INC-20260814-0035",
+        "status": "open",
+        "primary_hazard": "fire",
+        "hazards": [
+          "fire"
+        ],
+        "queues": [
+          "emergency"
+        ],
+        "cells": [
+          "risk-05000m-r0052-c0016"
+        ],
+        "latitude": 31.79,
+        "longitude": 35.06,
+        "precision_m": 375.0,
+        "location_method": "frp_weighted_centroid",
+        "first_seen_at": "2026-08-14 12:50:00+00:00",
+        "last_signal_at": "2026-08-14 13:40:00+00:00",
+        "closed_at": null,
+        "signal_count": 2,
+        "peak_rarity": 1.0,
+        "links": [],
+        "signals": [
+          {
+            "cell_id": "risk-05000m-r0052-c0016",
+            "observed_at": "2026-08-14T13:40:00+00:00",
+            "hazard": "fire",
+            "variable": "frp",
+            "value": 31.2,
+            "unit": "MW",
+            "source": "firms",
+            "rarity": 1.0,
+            "direction": "high",
+            "confidence": 0.9,
+            "severity": null,
+            "evidence": {
+              "hotspot_count": 5,
+              "satellites": [
+                "VIIRS_SNPP_NRT",
+                "GOES_NRT"
+              ],
+              "recent_detections": []
+            }
+          }
+        ]
+      },
+      "environment": {
+        "temperature_c": 34.0,
+        "humidity_percent": 28.0,
+        "wind_speed_kmh": 5.0,
+        "wind_direction_deg": 200.0,
+        "slope_deg": 16.9,
+        "slope_max_deg": 35.4,
+        "aspect_deg": 193.9,
+        "built_up_fraction": 0.018,
+        "burnable_fraction": 0.98,
+        "dominant_fuel": "shrubland",
+        "sampled_radius_m": 500.0,
+        "gaps": [
+          "weather_supplied_by_scenario_not_observed"
+        ]
+      },
+      "cover_fractions": {
+        "tree_cover": 0.449,
+        "shrubland": 0.487,
+        "grassland": 0.042,
+        "cropland": 0.003,
+        "built_up": 0.018,
+        "bare_sparse_vegetation": 0.002
+      },
+      "checks": [
+        {
+          "check": "status",
+          "passed": true,
+          "detail": "status=ok, wanted ok"
+        },
+        {
+          "check": "spreads",
+          "passed": true,
+          "detail": "head rate 5.92 m/min"
+        },
+        {
+          "check": "names Shoresh",
+          "passed": true,
+          "detail": "exposed=['Shoresh']"
+        },
+        {
+          "check": "produces a textual report",
+          "passed": true,
+          "detail": "2124 characters"
+        }
+      ],
+      "passed": true,
+      "outcome": {
+        "status": "ok",
+        "reason": null,
+        "severity_score": 35,
+        "severity_level": "medium",
+        "settlements_exposed": 1,
+        "evacuation_entries": 1,
+        "people_in_spread": 2416,
+        "population_at_risk": {
+          "burning": 0,
+          "likely": 1358,
+          "possible": 0
+        },
+        "heading_compass": "north-northeast",
+        "head_rate_m_per_min": 5.92
+      },
+      "planner_json": {
+        "hazard_type": "fire",
+        "event_description": "Wildfire incident at open ground, spreading north-northeast at 5.92 metres per minute through shrubland. Spread severity medium (35 of 100) over the next 180.0 minutes. Evacuation preparation for Shoresh. 2,416 residents inside the forecast fire perimeter. 1,358 residents in settlements on the forecast path. Requires decisions on unit types to commit, evacuation, road closures, structure protection and crew safety at the fireline.",
+        "incident_id": "INC-20260814-0035",
+        "location": {
+          "latitude": 31.79,
+          "longitude": 35.06
+        },
+        "risk_context": {
+          "risk_score": 35,
+          "risk_level": "medium",
+          "risk_semantics": "fire_spread_forecast",
+          "horizon_minutes": 180.0
+        },
+        "evidence_gaps": [],
+        "limitations": [
+          "Unsuppressed spread: no crew, engine, aircraft or existing containment is modelled.",
+          "Surface fire only: spotting ahead of the front and sustained crown runs are not modelled.",
+          "Barriers finer than the land-cover grid — a road, a firebreak, a wadi — are invisible here.",
+          "Arrival times assume the forecast wind holds for the whole horizon."
+        ],
+        "additional_context": {
+          "analyser": "FireSpreadAnalyzer",
+          "assessed_at": "2026-09-20T10:15:54.555942Z",
+          "origin": {
+            "latitude": 31.79,
+            "longitude": 35.06,
+            "locality": null,
+            "locality_population": null,
+            "authority": null,
+            "authority_phone": null,
+            "fire_district": null,
+            "police_station": null
+          },
+          "fire_behaviour": {
+            "head_ros_m_per_min": 5.92,
+            "back_ros_m_per_min": 0.807,
+            "heading_deg": 16.5,
+            "heading_compass": "north-northeast",
+            "length_to_width": 1.54,
+            "effective_wind_kmh": 3.5,
+            "fuel_model": "FM5",
+            "dominant_fuel": "shrubland",
+            "burnable_fraction": 0.981,
+            "dead_fuel_moisture": 0.0533,
+            "live_fuel_moisture": 0.6
+          },
+          "population_at_risk": {
+            "burning": 0,
+            "likely": 1358,
+            "possible": 0
+          },
+          "population_in_spread": {
+            "people": 2416,
+            "grid_cells": 51
+          },
+          "detection": {
+            "verdict": "confirmed",
+            "score": 100,
+            "reasons": [
+              {
+                "factor": "independent_instruments",
+                "points": 25,
+                "detail": "2 products agree: VIIRS_SNPP_NRT, GOES_NRT"
+              },
+              {
+                "factor": "instrument_confidence",
+                "points": 15,
+                "detail": "instrument confidence 0.90"
+              },
+              {
+                "factor": "multiple_pixels",
+                "points": 15,
+                "detail": "5 pixels alight"
+              },
+              {
+                "factor": "radiative_power",
+                "points": 20,
+                "detail": "31.2 MW"
+              },
+              {
+                "factor": "seen_more_than_once",
+                "points": 10,
+                "detail": "2 signals attached to this incident"
+              }
+            ]
+          },
+          "infrastructure_at_risk": [
+            {
+              "name": "retail area",
+              "kind": "retail area",
+              "category": "economic",
+              "exposure": "possible",
+              "distance_m": 876.0
+            },
+            {
+              "name": "retail area",
+              "kind": "retail area",
+              "category": "economic",
+              "exposure": "possible",
+              "distance_m": 1020.8
+            }
+          ],
+          "infrastructure_summary": {
+            "counts": {
+              "hazard": 0,
+              "life_safety": 0,
+              "economic": 2
+            },
+            "total": 2,
+            "worst_category": "economic"
+          },
+          "fire_history": {
+            "fires_within_5km_previous_30d": 0,
+            "fires_within_10km_previous_90d": 0,
+            "fires_within_25km_previous_365d": 0,
+            "days_since_previous_detection_within_10km": null,
+            "persistent": false,
+            "distinct_days": 0,
+            "span_days": 0,
+            "day_share": 0.0,
+            "reason": "never_detected"
+          },
+          "settlements_exposed": [
+            {
+              "name": "Shoresh",
+              "name_he": "שורש",
+              "population": 1358,
+              "exposure": "likely",
+              "arrival_minutes": 131.7,
+              "distance_m": 778.4,
+              "authority_phone": "*8108",
+              "fire_district": "ירושלים",
+              "police_station": "תחנת מטה יהודה"
+            }
+          ],
+          "evacuation_priority": [
+            {
+              "locality_id": "shoresh",
+              "name": "Shoresh",
+              "name_he": "שורש",
+              "population": 1358,
+              "priority": "prepare",
+              "reason": "on the forecast wind the fire reaches it within the horizon",
+              "arrival_minutes": 131.7,
+              "distance_m": 778.4,
+              "authority": "מטה יהודה",
+              "authority_phone": "*8108",
+              "authority_website": "https://www.m-yehuda.org.il",
+              "fire_district": "ירושלים",
+              "police_station": "תחנת מטה יהודה"
+            }
+          ],
+          "headline": "Fire burning in open ground, spreading north-northeast at about 6 m/min. Unchecked, the head reaches roughly 1.1 km in 3 hours. On the forecast wind it reaches Shoresh (population 1,358), about 132 minutes away."
+        }
+      },
+      "report": "DETECTION\nThis is a fire. Detection confidence 100 of 100. For: 2 products agree: VIIRS_SNPP_NRT, GOES_NRT; instrument confidence 0.90; 5 pixels alight; 31.2 MW; 2 signals attached to this incident.\n\nSITUATION\nFire burning in open ground, running north-northeast at about 6 m/min through shrubland. Wind 5 km/h from south-southwest, 34 C, 28% humidity.\nGround averages 17 degrees, with faces up to 35 degrees inside the same ground — a fire on one of those runs far faster than the average suggests.\n\nFORECAST SPREAD\nUnchecked, the head reaches roughly 1.1 km north-northeast in 3 hours. Two extents are drawn: the likely one on the forecast wind, and a wider possible one covering a wind shift within forecast error.\n\nPEOPLE AT RISK\nInside the forecast spread: 2,416 people, counted off the population grid over the drawn extent.\nWhole-settlement totals, which count every resident of an affected place rather than only those inside the line: 0 in settlements already burning, 1,358 in settlements the forecast reaches, 0 in settlements only a wind shift reaches.\n\nSETTLEMENTS IN THE PATH\n- Shoresh (1,358) — on the forecast wind, about 132 minutes away [0.8 km]\n\nOTHER SITES IN THE PATH\n- [economic] retail area (retail area) — 0.9 km, only if the wind shifts\n- [economic] retail area (retail area) — 1.0 km, only if the wind shifts\n\nEVACUATION PRIORITY\n- PREPARE: Shoresh, 1,358 people — on the forecast wind the fire reaches it within the horizon.\n    authority *8108; fire district ירושלים; police תחנת מטה יהודה\n\nSEVERITY\nmedium — 35 of 100, for the spread over the next 3 hours. This scores how bad the spread is about to be; it is not how likely a fire was to start here, nor how severe the fire already is.\n\nEVIDENCE GAPS\n- weather supplied by scenario not observed\n\nLIMITS\n- Unsuppressed spread: no crew, engine, aircraft or existing containment is modelled.\n- Surface fire only: spotting ahead of the front and sustained crown runs are not modelled.\n- Barriers finer than the land-cover grid — a road, a firebreak, a wadi — are invisible here.\n- Arrival times assume the forecast wind holds for the whole horizon."
+    },
+    {
+      "key": "dead_sea_bare",
+      "title": "Detection on the Dead Sea shore, no surface data",
+      "plain_english": "A hotspot on the Dead Sea shore, where the land-cover grid has a genuine hole — the survey maps no vegetation there at all.",
+      "expected": {
+        "status": "stalled_or_skipped",
+        "spreads": false,
+        "unscored": true,
+        "note": "Must degrade honestly: no score, no zero, and a report that says the absence is about the data and not about the fire."
+      },
+      "incident": {
+        "id": "INC-20260814-0037",
+        "status": "open",
+        "primary_hazard": "fire",
+        "hazards": [
+          "fire"
+        ],
+        "queues": [
+          "emergency"
+        ],
+        "cells": [
+          "risk-05000m-r0036-c0023"
+        ],
+        "latitude": 31.0659,
+        "longitude": 35.4359,
+        "precision_m": 1000.0,
+        "location_method": "frp_weighted_centroid",
+        "first_seen_at": "2026-08-14 12:50:00+00:00",
+        "last_signal_at": "2026-08-14 13:40:00+00:00",
+        "closed_at": null,
+        "signal_count": 1,
+        "peak_rarity": 1.0,
+        "links": [],
+        "signals": [
+          {
+            "cell_id": "risk-05000m-r0036-c0023",
+            "observed_at": "2026-08-14T13:40:00+00:00",
+            "hazard": "fire",
+            "variable": "frp",
+            "value": 12.9,
+            "unit": "MW",
+            "source": "firms",
+            "rarity": 1.0,
+            "direction": "high",
+            "confidence": 0.8,
+            "severity": null,
+            "evidence": {
+              "hotspot_count": 2,
+              "satellites": [
+                "MODIS_NRT"
+              ],
+              "recent_detections": []
+            }
+          }
+        ]
+      },
+      "environment": {
+        "temperature_c": 44.0,
+        "humidity_percent": 9.0,
+        "wind_speed_kmh": 22.0,
+        "wind_direction_deg": 180.0,
+        "slope_deg": 0.0,
+        "slope_max_deg": 0.3,
+        "aspect_deg": 9.6,
+        "built_up_fraction": 0.0,
+        "burnable_fraction": 0.001,
+        "dominant_fuel": "permanent_water",
+        "sampled_radius_m": 2500.0,
+        "gaps": [
+          "ground_sampled_from_2500m_away_no_data_at_the_point",
+          "weather_supplied_by_scenario_not_observed"
+        ]
+      },
+      "cover_fractions": {
+        "bare_sparse_vegetation": 0.015,
+        "permanent_water": 0.977,
+        "herbaceous_wetland": 0.007
+      },
+      "checks": [
+        {
+          "check": "status",
+          "passed": true,
+          "detail": "status=stalled"
+        },
+        {
+          "check": "no significant spread",
+          "passed": true,
+          "detail": "head rate 0.0 m/min"
+        },
+        {
+          "check": "unscored, not zero",
+          "passed": true,
+          "detail": "risk_score=None"
+        },
+        {
+          "check": "produces a textual report",
+          "passed": true,
+          "detail": "737 characters"
+        }
+      ],
+      "passed": true,
+      "outcome": {
+        "status": "stalled",
+        "reason": "no_burnable_fuel",
+        "severity_score": null,
+        "severity_level": null,
+        "settlements_exposed": 0,
+        "evacuation_entries": 0,
+        "people_in_spread": null,
+        "population_at_risk": {
+          "burning": 0,
+          "likely": 0,
+          "possible": 0
+        },
+        "heading_compass": null,
+        "head_rate_m_per_min": 0.0
+      },
+      "planner_json": {
+        "refused_by_planner_adapter": "spread_analysis_stalled",
+        "why": "The analysis made no forecast, so there is nothing to plan from. Planning anyway would fabricate a basis for dispatch."
+      },
+      "report": "DETECTION\nThis is probably a fire. Detection confidence 55 of 100. For: instrument confidence 0.80.\n\nSITUATION\nFire reported in open ground. No wildland spread is forecast: there is no continuous wildland fuel at the location. This assesses the ground's ability to carry fire, not the fire itself — a structure or vehicle fire here is unaffected by this finding and may still be serious.\n\nLIMITS\n- Unsuppressed spread: no crew, engine, aircraft or existing containment is modelled.\n- Surface fire only: spotting ahead of the front and sustained crown runs are not modelled.\n- Barriers finer than the land-cover grid — a road, a firebreak, a wadi — are invisible here.\n- Arrival times assume the forecast wind holds for the whole horizon."
+    },
+    {
+      "key": "galilee_winter_wet",
+      "title": "Upper Galilee woodland in January rain",
+      "plain_english": "The same kind of fuel as the Carmel case, in the wet season: 9 C, 95% humidity, saturated fuel. Nothing should carry.",
+      "expected": {
+        "status": "stalled",
+        "spreads": false,
+        "unscored": true,
+        "distinct_reason_from": "dead_sea_bare",
+        "note": "Must stall for wetness, named differently from the no-data case. 'Nothing to burn' and 'too wet to burn' are different facts and are acted on differently."
+      },
+      "incident": {
+        "id": "INC-20260122-0004",
+        "status": "open",
+        "primary_hazard": "fire",
+        "hazards": [
+          "fire"
+        ],
+        "queues": [
+          "emergency"
+        ],
+        "cells": [
+          "risk-05000m-r0082-c0025"
+        ],
+        "latitude": 33.12,
+        "longitude": 35.57,
+        "precision_m": 375.0,
+        "location_method": "frp_weighted_centroid",
+        "first_seen_at": "2026-01-22 08:25:00+00:00",
+        "last_signal_at": "2026-01-22 09:15:00+00:00",
+        "closed_at": null,
+        "signal_count": 1,
+        "peak_rarity": 1.0,
+        "links": [],
+        "signals": [
+          {
+            "cell_id": "risk-05000m-r0082-c0025",
+            "observed_at": "2026-01-22T09:15:00+00:00",
+            "hazard": "fire",
+            "variable": "frp",
+            "value": 4.3,
+            "unit": "MW",
+            "source": "firms",
+            "rarity": 1.0,
+            "direction": "high",
+            "confidence": 0.8,
+            "severity": null,
+            "evidence": {
+              "hotspot_count": 1,
+              "satellites": [
+                "VIIRS_NOAA20_NRT"
+              ],
+              "recent_detections": []
+            }
+          }
+        ]
+      },
+      "environment": {
+        "temperature_c": 9.0,
+        "humidity_percent": 95.0,
+        "wind_speed_kmh": 18.0,
+        "wind_direction_deg": 250.0,
+        "slope_deg": 8.0,
+        "slope_max_deg": 31.0,
+        "aspect_deg": 102.9,
+        "built_up_fraction": 0.189,
+        "burnable_fraction": 0.8,
+        "dominant_fuel": "tree_cover",
+        "sampled_radius_m": 500.0,
+        "gaps": [
+          "weather_supplied_by_scenario_not_observed"
+        ]
+      },
+      "cover_fractions": {
+        "tree_cover": 0.373,
+        "shrubland": 0.13,
+        "grassland": 0.169,
+        "cropland": 0.128,
+        "built_up": 0.189,
+        "bare_sparse_vegetation": 0.011
+      },
+      "checks": [
+        {
+          "check": "status",
+          "passed": true,
+          "detail": "status=stalled, wanted stalled"
+        },
+        {
+          "check": "no significant spread",
+          "passed": true,
+          "detail": "head rate 0.0 m/min"
+        },
+        {
+          "check": "unscored, not zero",
+          "passed": true,
+          "detail": "risk_score=None"
+        },
+        {
+          "check": "produces a textual report",
+          "passed": true,
+          "detail": "744 characters"
+        }
+      ],
+      "passed": true,
+      "outcome": {
+        "status": "stalled",
+        "reason": "fuel_above_moisture_of_extinction",
+        "severity_score": null,
+        "severity_level": null,
+        "settlements_exposed": 0,
+        "evacuation_entries": 0,
+        "people_in_spread": null,
+        "population_at_risk": {
+          "burning": 0,
+          "likely": 0,
+          "possible": 0
+        },
+        "heading_compass": null,
+        "head_rate_m_per_min": 0.0
+      },
+      "planner_json": {
+        "refused_by_planner_adapter": "spread_analysis_stalled",
+        "why": "The analysis made no forecast, so there is nothing to plan from. Planning anyway would fabricate a basis for dispatch."
+      },
+      "report": "DETECTION\nThis is probably a fire. Detection confidence 55 of 100. For: instrument confidence 0.80.\n\nSITUATION\nFire reported in open ground. No wildland spread is forecast: the fuel is too wet to carry fire in the current conditions. This assesses the ground's ability to carry fire, not the fire itself — a structure or vehicle fire here is unaffected by this finding and may still be serious.\n\nLIMITS\n- Unsuppressed spread: no crew, engine, aircraft or existing containment is modelled.\n- Surface fire only: spotting ahead of the front and sustained crown runs are not modelled.\n- Barriers finer than the land-cover grid — a road, a firebreak, a wadi — are invisible here.\n- Arrival times assume the forecast wind holds for the whole horizon."
+    }
+  ]
+}

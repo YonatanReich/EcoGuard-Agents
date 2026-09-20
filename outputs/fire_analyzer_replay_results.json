@@ -1,0 +1,122 @@
+{
+  "fire": {
+    "name": "Upper Galilee, 14 September 2026",
+    "ignition_detected_at": "2026-09-14T09:58:00+00:00",
+    "origin": {
+      "latitude": 33.1021,
+      "longitude": 35.4382
+    },
+    "cell": "risk-05000m-r0081-c0023",
+    "horizon_minutes": 180.0
+  },
+  "inputs": {
+    "weather": {
+      "temperature_c": 32.1,
+      "humidity_percent": 25.0,
+      "wind_speed_kmh": 13.3,
+      "wind_direction_deg": 327.0
+    },
+    "weather_source": "observations, the hour of ignition",
+    "slope_deg": 6.2,
+    "slope_max_deg": 15.0,
+    "dominant_fuel": "grassland",
+    "burnable_fraction": 0.984
+  },
+  "forecast": {
+    "status": "ok",
+    "risk_score": 55,
+    "risk_level": "high",
+    "head_rate_m_per_min": 12.8,
+    "heading_deg": 148.3,
+    "heading_compass": "south-southeast",
+    "head_distance_m": 2304.2
+  },
+  "observed": {
+    "pixels": 9,
+    "furthest_pixel_m": 1704.0,
+    "mean_bearing_deg": 149.1
+  },
+  "score": {
+    "pixels_in_likely": 9,
+    "pixels_in_possible": 9,
+    "containment_likely": 1.0,
+    "containment_possible": 1.0,
+    "bearing_error_deg": 0.8,
+    "head_distance_vs_observed": 1.35
+  },
+  "pixel_detail": [
+    {
+      "observed_at": "2026-09-14T10:34:00+00:00",
+      "latitude": 33.0969,
+      "longitude": 35.44104,
+      "frp": 18.6,
+      "in_likely": true,
+      "in_possible": true
+    },
+    {
+      "observed_at": "2026-09-14T10:53:00+00:00",
+      "latitude": 33.09052,
+      "longitude": 35.45015,
+      "frp": 71.62,
+      "in_likely": true,
+      "in_possible": true
+    },
+    {
+      "observed_at": "2026-09-14T10:53:00+00:00",
+      "latitude": 33.0933,
+      "longitude": 35.44506,
+      "frp": 16.47,
+      "in_likely": true,
+      "in_possible": true
+    },
+    {
+      "observed_at": "2026-09-14T10:53:00+00:00",
+      "latitude": 33.09389,
+      "longitude": 35.44942,
+      "frp": 26.99,
+      "in_likely": true,
+      "in_possible": true
+    },
+    {
+      "observed_at": "2026-09-14T10:53:00+00:00",
+      "latitude": 33.09609,
+      "longitude": 35.44,
+      "frp": 16.47,
+      "in_likely": true,
+      "in_possible": true
+    },
+    {
+      "observed_at": "2026-09-14T10:53:00+00:00",
+      "latitude": 33.09668,
+      "longitude": 35.44432,
+      "frp": 16.47,
+      "in_likely": true,
+      "in_possible": true
+    },
+    {
+      "observed_at": "2026-09-14T11:40:00+00:00",
+      "latitude": 33.09144,
+      "longitude": 35.43995,
+      "frp": 11.52,
+      "in_likely": true,
+      "in_possible": true
+    },
+    {
+      "observed_at": "2026-09-14T11:40:00+00:00",
+      "latitude": 33.09167,
+      "longitude": 35.44673,
+      "frp": 11.52,
+      "in_likely": true,
+      "in_possible": true
+    },
+    {
+      "observed_at": "2026-09-14T11:40:00+00:00",
+      "latitude": 33.09425,
+      "longitude": 35.44371,
+      "frp": 22.57,
+      "in_likely": true,
+      "in_possible": true
+    }
+  ],
+  "report": "DETECTION\nWhether this is a fire has not been assessed: no satellite evidence was carried with the incident. What follows describes how fire would behave here, not that fire is here.\n\nSITUATION\nFire burning in open ground, running south-southeast at about 13 m/min through grassland. Wind 13 km/h from north-northwest, 32 C, 25% humidity.\nGround averages 6 degrees, with faces up to 15 degrees inside the same ground — a fire on one of those runs far faster than the average suggests.\nThis area has burned before: 2 detections within 25 km in the past year, 1 of them within 5 km in the past month; the last within 10 km was 0 days ago.\n\nFORECAST SPREAD\nUnchecked, the head reaches roughly 2.3 km south-southeast in 3 hours. Two extents are drawn: the likely one on the forecast wind, and a wider possible one covering a wind shift within forecast error.\n\nPEOPLE AT RISK\nInside the forecast spread: 0 people, counted off the population grid over the drawn extent.\n\nSETTLEMENTS IN THE PATH\nNo populated locality lies in the forecast path.\n\nOTHER SITES IN THE PATH\nNo mapped hospital, school, industrial or hazardous site lies in the forecast path. This is what the survey holds, not proof that there is nothing there.\n\nEVACUATION PRIORITY\nNo settlement is exposed; no evacuation follows from this forecast.\n\nSEVERITY\nhigh — 55 of 100, for the spread over the next 3 hours. This scores how bad the spread is about to be; it is not how likely a fire was to start here, nor how severe the fire already is.\nDriven by: a moderate head rate of 13 m/min.\n\nEVIDENCE GAPS\n- ground sampled from 2500m away no data at the point\n\nLIMITS\n- Unsuppressed spread: no crew, engine, aircraft or existing containment is modelled.\n- Surface fire only: spotting ahead of the front and sustained crown runs are not modelled.\n- Barriers finer than the land-cover grid — a road, a firebreak, a wadi — are invisible here.\n- Arrival times assume the forecast wind holds for the whole horizon."
+}

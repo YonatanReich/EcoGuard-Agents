@@ -44,6 +44,21 @@ LIKELY = "likely"
 POSSIBLE = "possible"
 EXPOSURE_RANK = {BURNING: 0, LIKELY: 1, POSSIBLE: 2}
 
+# Carried straight through from the locality record onto the exposure line when
+# the source has them. The committed GeoJSON does not; the `towns` table does,
+# and they are the difference between naming a place at risk and being able to
+# ring somebody about it. Passed through rather than looked up again later,
+# because a second lookup by name is how the wrong Beit Shemesh gets called.
+CONTACT_FIELDS = (
+    "place",
+    "authority",
+    "authority_type",
+    "authority_phone",
+    "authority_website",
+    "fire_district",
+    "police_station",
+)
+
 
 @lru_cache(maxsize=4)
 def load_localities(path: str | None = None) -> tuple[dict[str, Any], ...]:
@@ -270,6 +285,78 @@ def _nearest_approach(
                     "arrival_bearing_deg": None, "arrival_distance_m": None}
 
 
+def locality_containing(
+    latitude: float,
+    longitude: float,
+    *,
+    localities: Iterable[Mapping[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    """The settlement a point is inside, independent of any spread forecast.
+
+    Separate from `localities_at_risk` because it has to work when there is no
+    forecast at all. A fire in a block of flats does not spread through
+    wildland fuel, so it produces no rings, so nothing overlaps anything — and
+    the report would open "Fire reported in open ground" about an address in
+    the middle of Petah Tikva. Where a fire is does not depend on whether it is
+    going anywhere.
+
+    The smallest containing outline wins. Municipal boundaries nest — a
+    neighbourhood sits inside a city, which sits inside a regional council —
+    and the most specific one is the name an operator wants and the authority
+    that answers the telephone.
+    """
+    records = list(localities) if localities is not None else list(load_localities())
+    matches = []
+    for record in records:
+        outlines = [
+            _ring_metres(ring, latitude, longitude) for ring in record["rings"]
+        ]
+        if any(
+            outline and point_in_ring((0.0, 0.0), outline) for outline in outlines
+        ):
+            matches.append(record)
+
+    if not matches:
+        return None
+
+    smallest = min(matches, key=lambda record: _outline_area_m2(record["rings"]))
+    return {
+        "locality_id": smallest.get("locality_id"),
+        "name": smallest.get("name"),
+        "name_he": smallest.get("name_he"),
+        "population": smallest.get("population"),
+        **{
+            field: smallest[field]
+            for field in CONTACT_FIELDS
+            if smallest.get(field) is not None
+        },
+    }
+
+
+def _outline_area_m2(rings: Sequence[Sequence[tuple[float, float]]]) -> float:
+    """Rough planar area of a locality's parts, for picking the smallest.
+
+    The shoelace formula on degrees scaled to metres at the outline's own
+    latitude. Only ever used to rank candidates against each other, so the
+    approximation costs nothing — two nested outlines are at the same latitude.
+    """
+    total = 0.0
+    for ring in rings:
+        if len(ring) < 4:
+            continue
+        mean_lat = sum(point[1] for point in ring) / len(ring)
+        lon_scale = LONGITUDE_KM_PER_DEGREE_AT_EQUATOR * math.cos(math.radians(mean_lat))
+        area = 0.0
+        for index in range(len(ring) - 1):
+            x1 = ring[index][0] * lon_scale
+            y1 = ring[index][1] * LATITUDE_KM_PER_DEGREE
+            x2 = ring[index + 1][0] * lon_scale
+            y2 = ring[index + 1][1] * LATITUDE_KM_PER_DEGREE
+            area += x1 * y2 - x2 * y1
+        total += abs(area) / 2.0
+    return total
+
+
 def localities_at_risk(
     latitude: float,
     longitude: float,
@@ -337,6 +424,11 @@ def localities_at_risk(
                 if arrival is None or approach["arrival_bearing_deg"] is None
                 else round(approach["arrival_bearing_deg"], 1)
             ),
+            **{
+                field: record[field]
+                for field in CONTACT_FIELDS
+                if record.get(field) is not None
+            },
         })
 
     at_risk.sort(key=lambda item: (EXPOSURE_RANK[item["exposure"]], item["distance_m"]))

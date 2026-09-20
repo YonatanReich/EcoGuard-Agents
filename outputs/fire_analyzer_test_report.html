@@ -1,0 +1,764 @@
+<style>
+@page { size: A4; margin: 16mm 14mm 18mm; }
+:root { --ink:#16191d; --muted:#5b6470; --rule:#d6dbe1; --accent:#9a3412;
+        --ok:#166534; --bad:#991b1b; --code:#f4f6f8; }
+*{box-sizing:border-box}
+body{font-family:"Charter",Georgia,Cambria,serif;font-size:9.8pt;line-height:1.48;
+     color:var(--ink);margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+h1,h2,h3,th{font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif}
+h1{font-size:20pt;letter-spacing:-.015em;margin:0}
+.masthead{border-bottom:2.5px solid var(--ink);padding-bottom:9px}
+.sub{font-size:9.3pt;color:var(--muted);margin-top:5px;font-family:"Segoe UI",Arial,sans-serif}
+.meta{display:flex;gap:20px;flex-wrap:wrap;font-family:"Segoe UI",Arial,sans-serif;
+      font-size:8.2pt;color:var(--muted);padding:7px 0 0;margin-bottom:16px}
+.meta b{color:var(--ink);font-weight:600}
+.scorecard{border:1px solid var(--rule);border-left:4px solid var(--accent);
+           background:#fbfaf9;padding:11px 14px;margin-bottom:18px}
+.scorecard p{margin:0}
+.scorecard p+p{margin-top:6px}
+h2{font-size:12pt;margin:20px 0 8px;padding-bottom:5px;border-bottom:1px solid var(--rule);
+   font-weight:650;break-after:avoid}
+h2 .pill{float:right;font-size:7.5pt;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+   padding:2.5px 8px;border-radius:3px;position:relative;top:1px}
+.pass{background:#dcfce7;color:var(--ok)} .fail{background:#fee2e2;color:var(--bad)}
+h3{font-size:9.6pt;margin:12px 0 5px;font-weight:650;break-after:avoid;
+   text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+p{margin:0 0 7px}
+code{font-family:"Cascadia Mono",Consolas,monospace;font-size:8.4pt;background:var(--code);
+     padding:1px 4px;border-radius:3px;word-break:break-word}
+pre{background:var(--code);border-left:3px solid var(--rule);padding:8px 10px;
+    font-size:7.7pt;line-height:1.4;margin:0 0 9px;white-space:pre-wrap;word-break:break-word;
+    font-family:"Cascadia Mono",Consolas,monospace}
+pre.report{background:#fffdf7;border-left-color:#d97706;font-size:8.1pt;
+    font-family:"Charter",Georgia,serif;line-height:1.5}
+table{width:100%;border-collapse:collapse;margin:0 0 10px;font-size:8.5pt;break-inside:avoid}
+th,td{text-align:left;padding:4px 7px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-size:7.8pt;text-transform:uppercase;letter-spacing:.05em;
+   border-bottom:1.5px solid var(--ink);font-weight:650}
+td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tick{color:var(--ok);font-weight:700} .cross{color:var(--bad);font-weight:700}
+.case{break-before:page}
+.case:first-of-type{break-before:auto}
+.two{display:flex;gap:14px} .two>div{flex:1;min-width:0}
+footer{margin-top:22px;padding-top:8px;border-top:1px solid var(--rule);
+       font-family:"Segoe UI",Arial,sans-serif;font-size:7.8pt;color:var(--muted)}
+.note{border-left:3px solid var(--rule);padding:3px 0 3px 10px;color:var(--muted);
+      font-size:9pt;margin:0 0 9px}
+.hint{font-size:8.6pt;color:var(--muted)}
+.verdict{font-weight:700;font-size:7.6pt;letter-spacing:.06em;text-transform:uppercase;
+  padding:2px 7px;border-radius:3px;white-space:nowrap}
+.v-aligned{background:#dcfce7;color:var(--ok)}
+.v-partial{background:#fef3c7;color:#92400e}
+.v-gap{background:#fee2e2;color:var(--bad)}
+.big{font-size:15pt;font-weight:700;font-family:"Segoe UI",Arial,sans-serif}
+.kpi{display:flex;gap:10px;margin:0 0 12px}
+.kpi>div{flex:1;border:1px solid var(--rule);border-radius:4px;padding:8px 10px;text-align:center}
+.kpi .lab{font-size:7.6pt;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);
+  font-family:"Segoe UI",Arial,sans-serif;margin-top:3px}
+blockquote{margin:0 0 6px;padding:2px 0 2px 10px;border-left:3px solid var(--rule);
+  color:var(--muted);font-style:italic}
+</style>
+<div class="masthead"><h1>Fire Analyzer &mdash; Scenario Test Report</h1><div class="sub">Six fabricated incidents in coordinator format, assessed against live terrain, settlement and population data</div></div>
+<div class="meta"><span><b>Component</b> FireSpreadAnalyzer</span><span><b>Scenarios</b> 6</span><span><b>Checks</b> 30</span><span><b>Date</b> 19 September 2026</span><span><b>Branch</b> EA-373</span></div>
+<div class="scorecard"><p><b>Result: 6 of 6 scenarios passed, 30 of 30 individual checks.</b></p><p>The incident record and the weather are fabricated. Everything the analyser reasons over is real and read live from the store: land cover and slope from <code>surface_cells</code>, settlement outlines, populations and authority telephone numbers from <code>towns</code>, and residents inside the forecast extent from <code>population_cells</code>. Each scenario therefore asks a real question about real ground under stated conditions.</p><p>Every incident is shaped exactly as <code>coordinator/incidents.py</code> stores one &mdash; same keys, same types, a real grid cell, a signal list in <code>CellSignal</code> form. The analyser is not told they are fabricated.</p></div>
+<h2>Summary</h2><table><thead><tr><th>Scenario</th><th>What it is</th><th class='num'>Severity</th><th class='num'>Settlements</th><th class='num'>People in spread</th><th class='num'>Checks</th></tr></thead><tbody><tr><td><code>negev_khamsin</code></td><td>Wildfire in Negev shrubland under a khamsin</td><td class='num'>critical &middot; 85</td><td class='num'>8</td><td class='num'>42,963</td><td class='num'>8/8</td></tr><tr><td><code>petah_tikva_building</code></td><td>Residential block alight in Petah Tikva</td><td class='num'>medium &middot; 35</td><td class='num'>1</td><td class='num'>135</td><td class='num'>5/5</td></tr><tr><td><code>carmel_east_wind</code></td><td>Carmel pine forest, east wind toward Haifa</td><td class='num'>high &middot; 55</td><td class='num'>1</td><td class='num'>399</td><td class='num'>5/5</td></tr><tr><td><code>judean_hills_upslope</code></td><td>Judean hills, light wind on steep ground</td><td class='num'>medium &middot; 30</td><td class='num'>1</td><td class='num'>2,416</td><td class='num'>4/4</td></tr><tr><td><code>dead_sea_bare</code></td><td>Detection on the Dead Sea shore, no surface data</td><td class='num'>unscored</td><td class='num'>0</td><td class='num'>&mdash;</td><td class='num'>4/4</td></tr><tr><td><code>galilee_winter_wet</code></td><td>Upper Galilee woodland in January rain</td><td class='num'>unscored</td><td class='num'>0</td><td class='num'>&mdash;</td><td class='num'>4/4</td></tr></tbody></table>
+<section class="case"><h2>Wildfire in Negev shrubland under a khamsin<span class="pill pass">Pass</span></h2><p>Satellite picks up a fire in the Lahav shrubland of the northern Negev on a 41 C August afternoon, with a dry 50 km/h east wind. Lahav, Lehavim and Dvir lie to the west of it.</p><p class="note"><b>What this case is testing.</b> Continuous shrubland, dry, windy — this must run and reach the downwind towns while leaving the upwind one alone.</p><h3>The fabricated incident, and the ground it sits on</h3><div class="two"><div><table><tbody><tr><td><code>id</code></td><td>INC-20260814-0031</td></tr><tr><td><code>primary_hazard</code></td><td>fire</td></tr><tr><td><code>queues</code></td><td>emergency</td></tr><tr><td><code>cells</code></td><td>risk-05000m-r0043-c0012</td></tr><tr><td><code>latitude</code></td><td>31.38</td></tr><tr><td><code>longitude</code></td><td>34.85</td></tr><tr><td><code>precision_m</code></td><td>375</td></tr><tr><td><code>location_method</code></td><td>frp_weighted_centroid</td></tr><tr><td><code>last_signal_at</code></td><td>2026-08-14 13:40:00+00:00</td></tr><tr><td><code>signal_count</code></td><td>4</td></tr></tbody></table></div><div><table><tbody><tr><td><code>peak FRP</code></td><td>88.4 MW</td></tr><tr><td><code>hotspots</code></td><td>11</td></tr><tr><td><code>satellites</code></td><td>VIIRS_NOAA20_NRT, VIIRS_SNPP_NRT, GOES_NRT</td></tr><tr><td><code>temperature_c</code></td><td>41</td></tr><tr><td><code>humidity_percent</code></td><td>11</td></tr><tr><td><code>wind_speed_kmh</code></td><td>50</td></tr><tr><td><code>wind_direction_deg</code></td><td>95</td></tr><tr><td><code>slope_deg</code></td><td>9.1</td></tr><tr><td><code>slope_max_deg</code></td><td>17.4</td></tr><tr><td><code>land cover</code></td><td>shrubland 73%, tree_cover 15%, grassland 11%</td></tr><tr><td><code>gaps</code></td><td>weather_supplied_by_scenario_not_observed</td></tr></tbody></table></div></div><h3>Checks</h3><table><thead><tr><th style='width:4%'></th><th style='width:38%'>Expectation</th><th>Observed</th></tr></thead><tbody><tr><td><span class="tick">&#10003;</span></td><td>status</td><td><code>status=ok, wanted ok</code></td></tr><tr><td><span class="tick">&#10003;</span></td><td>spreads</td><td><code>head rate 70.61 m/min</code></td></tr><tr><td><span class="tick">&#10003;</span></td><td>heads roughly west</td><td><code>heading=west</code></td></tr><tr><td><span class="tick">&#10003;</span></td><td>names Lehavim</td><td><code>exposed=[&#x27;Beit Kama&#x27;, &#x27;Dvir&#x27;, &#x27;Givot Bar&#x27;, &#x27;Lehavim&#x27;, &#x27;Mishmar HaNegev&#x27;, &#x27;Rahat&#x27;, &#x27;Shoval&#x27;, &#x27;Tirabin al-Sana&#x27;]</code></td></tr><tr><td><span class="tick">&#10003;</span></td><td>names Rahat</td><td><code>exposed=[&#x27;Beit Kama&#x27;, &#x27;Dvir&#x27;, &#x27;Givot Bar&#x27;, &#x27;Lehavim&#x27;, &#x27;Mishmar HaNegev&#x27;, &#x27;Rahat&#x27;, &#x27;Shoval&#x27;, &#x27;Tirabin al-Sana&#x27;]</code></td></tr><tr><td><span class="tick">&#10003;</span></td><td>does not name Lahav (upwind)</td><td><code>exposed=[&#x27;Beit Kama&#x27;, &#x27;Dvir&#x27;, &#x27;Givot Bar&#x27;, &#x27;Lehavim&#x27;, &#x27;Mishmar HaNegev&#x27;, &#x27;Rahat&#x27;, &#x27;Shoval&#x27;, &#x27;Tirabin al-Sana&#x27;]</code></td></tr><tr><td><span class="tick">&#10003;</span></td><td>produces an evacuation list</td><td><code>8 entries</code></td></tr><tr><td><span class="tick">&#10003;</span></td><td>produces a textual report</td><td><code>3541 characters</code></td></tr></tbody></table><h3>Textual incident report &mdash; what the operator reads</h3><pre class="report">SITUATION
+Fire burning in open ground, running west at about 71 m/min through shrubland. Wind 50 km/h from east, 41 C, 11% humidity.
+Ground averages 9 degrees, with faces up to 17 degrees inside the same ground — a fire on one of those runs far faster than the average suggests.
+
+FORECAST SPREAD
+Unchecked, the head reaches roughly 12.7 km west in 3 hours. Two extents are drawn: the likely one on the forecast wind, and a wider possible one covering a wind shift within forecast error.
+
+PEOPLE AT RISK
+Inside the forecast spread: 42,963 people, counted off the population grid over the drawn extent.
+Whole-settlement totals, which count every resident of an affected place rather than only those inside the line: 0 in settlements already burning, 79,041 in settlements the forecast reaches, 6,541 in settlements only a wind shift reaches.
+
+SETTLEMENTS IN THE PATH
+- Lehavim (7,686) — on the forecast wind, about 71 minutes away [2.5 km]
+- Rahat (71,355) — on the forecast wind, about 81 minutes away [5.5 km]
+- Dvir (1,082) — reachable only if the wind shifts within forecast error [3.9 km]
+- Givot Bar (1,331) — reachable only if the wind shifts within forecast error [8.6 km]
+- Tirabin al-Sana (952) — reachable only if the wind shifts within forecast error [10.0 km]
+- Shoval (1,011) — reachable only if the wind shifts within forecast error [10.4 km]
+- Beit Kama (1,069) — reachable only if the wind shifts within forecast error [10.6 km]
+- Mishmar HaNegev (1,096) — reachable only if the wind shifts within forecast error [12.2 km]
+
+EVACUATION PRIORITY
+- PREPARE: Lehavim, 7,686 people — on the forecast wind the fire reaches it within the horizon.
+    authority 08-6257900; fire district דרום; police תחנת רהט
+- PREPARE: Rahat, 71,355 people — on the forecast wind the fire reaches it within the horizon.
+    authority 08-6257900; fire district דרום; police תחנת רהט
+- STANDBY: Givot Bar, 1,331 people — only a wind shift within forecast error brings the fire here.
+    authority 08-6257900; fire district דרום; police תחנת רהט
+- STANDBY: Mishmar HaNegev, 1,096 people — only a wind shift within forecast error brings the fire here.
+    authority 08-6257900; fire district דרום; police תחנת רהט
+- STANDBY: Dvir, 1,082 people — only a wind shift within forecast error brings the fire here.
+    authority 08-6257900; fire district דרום; police תחנת העיירות
+- STANDBY: Beit Kama, 1,069 people — only a wind shift within forecast error brings the fire here.
+    authority 08-6257900; fire district דרום; police תחנת רהט
+- STANDBY: Shoval, 1,011 people — only a wind shift within forecast error brings the fire here.
+    authority 08-6257900; fire district דרום; police תחנת רהט
+- STANDBY: Tirabin al-Sana, 952 people — only a wind shift within forecast error brings the fire here.
+    authority 08-6796120; fire district דרום; police תחנת רהט
+
+SEVERITY
+critical — 85 of 100, for the spread over the next 3 hours. This scores how bad the spread is about to be; it is not how likely a fire was to start here, nor how severe the fire already is.
+Driven by: a head rate of 71 m/min; 79,041 people in settlements on the forecast path.
+
+EVIDENCE GAPS
+- weather supplied by scenario not observed
+
+LIMITS
+- Unsuppressed spread: no crew, engine, aircraft or existing containment is modelled.
+- Surface fire only: spotting ahead of the front and sustained crown runs are not modelled.
+- Barriers finer than the land-cover grid — a road, a firebreak, a wadi — are invisible here.
+- Arrival times assume the forecast wind holds for the whole horizon.</pre><h3>Planner handoff &mdash; the validated <code>EmergencyResponsePlanInput</code></h3><p class="hint">This is the object <code>EmergencyResponsePlanner</code> validates and serialises into its prompt &mdash; not a shape invented for this report. <code>event_description</code> is what drives BM25 retrieval, which is why it is the planning view rather than the full narrative; the narrative travels in <code>additional_context</code>.</p><pre>{
+ &quot;hazard_type&quot;: &quot;fire&quot;,
+ &quot;event_description&quot;: &quot;Wildfire incident at open ground, spreading west at 70.61 metres per minute through shrubland. Spread severity critical (85 of 100) over the next 180.0 minutes. Evacuation preparation for Lehavim, Rahat. 42,963 residents inside the forecast fire perimeter. 79,041 residents in settlements on the forecast path. Requires decisions on unit types to commit, evacuation, road closures, structure protection and crew safety at the fireline.&quot;,
+ &quot;incident_id&quot;: &quot;INC-20260814-0031&quot;,
+ &quot;location&quot;: {
+  &quot;latitude&quot;: 31.379,
+  &quot;longitude&quot;: 34.85
+ },
+ &quot;risk_context&quot;: {
+  &quot;risk_score&quot;: 85,
+  &quot;risk_level&quot;: &quot;critical&quot;,
+  &quot;risk_semantics&quot;: &quot;fire_spread_forecast&quot;,
+  &quot;horizon_minutes&quot;: 180.0
+ },
+ &quot;evidence_gaps&quot;: [],
+ &quot;limitations&quot;: [
+  &quot;Unsuppressed spread: no crew, engine, aircraft or existing containment is modelled.&quot;,
+  &quot;Surface fire only: spotting ahead of the front and sustained crown runs are not modelled.&quot;,
+  &quot;Barriers finer than the land-cover grid — a road, a firebreak, a wadi — are invisible here.&quot;,
+  &quot;Arrival times assume the forecast wind holds for the whole horizon.&quot;
+ ],
+ &quot;additional_context&quot;: {
+  &quot;analyser&quot;: &quot;FireSpreadAnalyzer&quot;,
+  &quot;assessed_at&quot;: &quot;2026-09-20T09:43:30.514987Z&quot;,
+  &quot;origin&quot;: {
+   &quot;latitude&quot;: 31.379,
+   &quot;longitude&quot;: 34.85,
+   &quot;locality&quot;: null,
+   &quot;locality_population&quot;: null,
+   &quot;authority&quot;: null,
+   &quot;authority_phone&quot;: null,
+   &quot;fire_district&quot;: null,
+   &quot;police_station&quot;: null
+  },
+  &quot;fire_behaviour&quot;: {
+   &quot;head_ros_m_per_min&quot;: 70.61,
+   &quot;back_ros_m_per_min&quot;: 1.067,
+   &quot;heading_deg&quot;: 274.7,
+   &quot;heading_compass&quot;: &quot;west&quot;,
+   &quot;length_to_width&quot;: 4.13,
+   &quot;effective_wind_kmh&quot;: 20.1,
+   &quot;fuel_model&quot;: &quot;FM5&quot;,
+   &quot;dominant_fuel&quot;: &quot;shrubland&quot;,
+   &quot;burnable_fraction&quot;: 0.994,
+   &quot;dead_fuel_moisture&quot;: 0.0242,
+   &quot;live_fuel_moisture&quot;: 0.6
+  },
+  &quot;population_at_risk&quot;: {
+   &quot;burning&quot;: 0,
+   &quot;likely&quot;: 79041,
+   &quot;possible&quot;: 6541
+  },
+  &quot;population_in_spread&quot;: {
+   &quot;people&quot;: 42963,
+   &quot;grid_cells&quot;: 1776
+  },
+  &quot;settlements_exposed&quot;: [
+   {
+    &quot;name&quot;: &quot;Lehavim&quot;,
+    &quot;name_he&quot;: &quot;להבים&quot;,
+    &quot;population&quot;: 7686,
+    &quot;exposure&quot;: &quot;likely&quot;,
+    &quot;arrival_minutes&quot;: 70.8,
+    &quot;distance_m&quot;: 2519.9,
+    &quot;authority_phone&quot;: &quot;08-6257900&quot;,
+    &quot;fire_district&quot;: &quot;דרום&quot;,
+    &quot;police_station&quot;: &quot;תחנת רהט&quot;
+   },
+   {
+    &quot;name&quot;: &quot;Rahat&quot;,
+    &quot;name_he&quot;: &quot;רהט&quot;,
+    &quot;population&quot;: 71355,
+    &quot;exposure&quot;: &quot;likely&quot;,
+    &quot;arrival_minutes&quot;: 80.7,
+    &quot;distance_m&quot;: 5528.0,
+    &quot;authority_phone&quot;: &quot;08-6257900&quot;,
+    &quot;fire_district&quot;: &quot;דרום&quot;,
+    &quot;police_station&quot;: &quot;תחנת רהט&quot;
+   },
+   {
+    &quot;name&quot;: &quot;Dvir&quot;,
+    &quot;name_he&quot;: &quot;דבירה&quot;,
+    &quot;population&quot;: 1082,
+    &quot;exposure&quot;: &quot;possible&quot;,
+    &quot;arrival_minutes&quot;: null,
+    &quot;distance_m&quot;: 3853.8,
+    &quot;authority_phone&quot;: &quot;08-6257900&quot;,
+    &quot;fire_district&quot;: &quot;דרום&quot;,
+    &quot;police_station&quot;: &quot;תחנת העיירות&quot;
+   },
+   {
+    &quot;name&quot;: &quot;Givot Bar&quot;,
+    &quot;name_he&quot;: &quot;גבעות בר&quot;,
+    &quot;population&quot;: 1331,
+    &quot;exposure&quot;: &quot;possible&quot;,
+    &quot;arrival_minutes&quot;: null,
+    &quot;distance_m&quot;: 8560.4,
+    &quot;authority_phone&quot;: &quot;08-6257900&quot;,
+    &quot;fire_district&quot;: &quot;דרום&quot;,
+    &quot;police_station&quot;: &quot;תחנת רהט&quot;
+   },
+   {
+    &quot;name&quot;: &quot;Tirabin al-Sana&quot;,
+    &quot;name_he&quot;: &quot;תרבין א-צאנע (יישוב)*&quot;,
+    &quot;population&quot;: 952,
+    &quot;exposure&quot;: &quot;possible&quot;,
+    &quot;arrival_minutes&quot;: null,
+    &quot;distance_m&quot;: 9995.6,
+    &quot;authority_phone&quot;: &quot;08-6796120&quot;,
+    &quot;fire_district&quot;: &quot;דרום&quot;,
+    &quot;police_station&quot;: &quot;תחנת רהט&quot;
+   },
+   {
+    &quot;name&quot;: &quot;Shoval&quot;,
+    &quot;name_he&quot;: &quot;שובל&quot;,
+    &quot;population&quot;: 1011,
+    &quot;exposure&quot;: &quot;possible&quot;,
+    &quot;arrival_minutes&quot;: null,
+    &quot;distance_m&quot;: 10374.3,
+    &quot;authority_phone&quot;: &quot;08-6257900&quot;,
+    &quot;fire_district&quot;: &quot;דרום&quot;,
+    &quot;police_station&quot;: &quot;תחנת רהט&quot;
+   },
+   {
+    &quot;name&quot;: &quot;Beit Kama&quot;,
+    &quot;name_he&quot;: &quot;בית קמה&quot;,
+    &quot;population&quot;: 1069,
+    &quot;exposure&quot;: &quot;possible&quot;,
+    &quot;arrival_minutes&quot;: null,
+    &quot;distance_m&quot;: 10635.4,
+    &quot;authority_phone&quot;: &quot;08-6257900&quot;,
+    &quot;fire_district&quot;: &quot;דרום&quot;,
+    &quot;police_station&quot;: &quot;תחנת רהט&quot;
+   },
+   {
+    &quot;name&quot;: &quot;Mishmar HaNegev&quot;,
+    &quot;name_he&quot;: &quot;משמר הנגב&quot;,
+    &quot;population&quot;: 1096,
+    &quot;exposure&quot;: &quot;possible&quot;,
+    &quot;arrival_minutes&quot;: null,
+    &quot;distance_m&quot;: 12159.8,
+    &quot;authority_phone&quot;: &quot;08-6257900&quot;,
+    &quot;fire_district&quot;: &quot;דרום&quot;,
+    &quot;police_station&quot;: &quot;תחנת רהט&quot;
+   }
+  ],
+  &quot;evacuation_priority&quot;: [
+   {
+    &quot;locality_id&quot;: &quot;lehavim&quot;,
+    &quot;name&quot;: &quot;Lehavim&quot;,
+    &quot;name_he&quot;: &quot;להבים&quot;,
+    &quot;population&quot;: 7686,
+    &quot;priority&quot;: &quot;prepare&quot;,
+    &quot;reason&quot;: &quot;on the forecast wind the fire reaches it within the horizon&quot;,
+    &quot;arrival_minutes&quot;: 70.8,
+    &quot;distance_m&quot;: 2519.9,
+    &quot;authority&quot;: &quot;בני שמעון&quot;,
+    &quot;authority_phone&quot;: &quot;08-6257900&quot;,
+    &quot;authority_website&quot;: &quot;https://bns.org.il/&quot;,
+    &quot;fire_district&quot;: &quot;דרום&quot;,
+    &quot;police_station&quot;: &quot;תחנת רהט&quot;
+   },
+   {
+    &quot;locality_id&quot;: &quot;rahat&quot;,
+    &quot;name&quot;: &quot;Rahat&quot;,
+    &quot;name_he&quot;: &quot;רהט&quot;,
+    &quot;population&quot;: 71355,
+    &quot;priority&quot;: &quot;prepare&quot;,
+    &quot;reason&quot;: &quot;on the forecast wind the fire reaches it within the horizon&quot;,
+    &quot;arrival_minutes&quot;: 80.7,
+    &quot;distance_m&quot;: 5528.0,
+    &quot;authority&quot;: &quot;בני שמעון&quot;,
+    &quot;authority_phone&quot;: &quot;08-6257900&quot;,
+    &quot;authority_website&quot;: &quot;https://bns.org.il/&quot;,
+    &quot;fire_district&quot;: &quot;דרום&quot;,
+    &quot;police_station&quot;: &quot;תחנת רהט&quot;
+   },
+   {
+    &quot;locality_id&quot;: &quot;givot-bar&quot;,
+    &quot;name&quot;: &quot;Givot Bar&quot;,
+    &quot;name_he&quot;: &quot;גבעות בר&quot;,
+    &quot;population&quot;: 1331,
+    &quot;priority&quot;: &quot;standby&quot;,
+    &quot;reason&quot;: &quot;only a wind shift within forecast error brings the fire here&quot;,
+    &quot;arrival_minutes&quot;: null,
+    &quot;distance_m&quot;: 8560.4,
+    &quot;authority&quot;: &quot;בני שמעון&quot;,
+    &quot;authority_phone&quot;: &quot;08-6257900&quot;,
+    &quot;authority_website&quot;: &quot;https://bns.org.il/&quot;,
+    &quot;fire_district&quot;: &quot;דרום&quot;,
+    &quot;police_station&quot;: &quot;תחנת רהט&quot;
+   },
+   {
+    &quot;locality_id&quot;: &quot;mishmar-hanegev&quot;,
+    &quot;name&quot;: &quot;Mishmar HaNegev&quot;,
+    &quot;name_he&quot;: &quot;משמר הנגב&quot;,
+    &quot;population&quot;: 1096,
+    &quot;priority&quot;: &quot;standby&quot;,
+    &quot;reason&quot;: &quot;only a wind shift within forecast error brings the fire here&quot;,
+    &quot;arrival_minutes&quot;: null,
+    &quot;distance_m&quot;: 12159.8,
+    &quot;authority&quot;: &quot;בני שמעון&quot;,
+    &quot;authority_phone&quot;: &quot;08-6257900&quot;,
+    &quot;authority_website&quot;: &quot;https://bns.org.il/&quot;,
+    &quot;fire_district&quot;: &quot;דרום&quot;,
+    &quot;police_station&quot;: &quot;תחנת רהט&quot;
+   },
+   {
+    &quot;locality_id&quot;: &quot;dvir&quot;,
+    &quot;name&quot;: &quot;Dvir&quot;,
+    &quot;name_he&quot;: &quot;דבירה&quot;,
+    &quot;population&quot;: 1082,
+    &quot;priority&quot;: &quot;standby&quot;,
+    &quot;reason&quot;: &quot;only a wind shift within forecast error brings the fire here&quot;,
+    &quot;arrival_minutes&quot;: null,
+    &quot;distance_m&quot;: 3853.8,
+    &quot;authority&quot;: &quot;בני שמעון&quot;,
+    &quot;authority_phone&quot;: &quot;08-6257900&quot;,
+    &quot;authority_website&quot;: &quot;https://bns.org.il/&quot;,
+    &quot;fire_district&quot;: &quot;דרום&quot;,
+    &quot;police_station&quot;: &quot;תחנת העיירות&quot;
+   },
+   {
+    &quot;locality_id&quot;: &quot;beit-kama&quot;,
+    &quot;name&quot;: &quot;Beit Kama&quot;,
+    &quot;name_he&quot;: &quot;בית קמה&quot;,
+    &quot;population&quot;: 1069,
+    &quot;priority&quot;: &quot;standby&quot;,
+    &quot;reason&quot;: &quot;only a wind shift within forecast error brings the fire here&quot;,
+    &quot;arrival_minutes&quot;: null,
+    &quot;distance_m&quot;: 10635.4,
+    &quot;authority&quot;: &quot;בני שמעון&quot;,
+    &quot;authority_phone&quot;: &quot;08-6257900&quot;,
+    &quot;authority_website&quot;: &quot;https://bns.org.il/&quot;,
+    &quot;fire_district&quot;: &quot;דרום&quot;,
+    &quot;police_station&quot;: &quot;תחנת רהט&quot;
+   },
+   {
+    &quot;locality_id&quot;: &quot;shoval&quot;,
+    &quot;name&quot;: &quot;Shoval&quot;,
+    &quot;name_he&quot;: &quot;שובל&quot;,
+    &quot;population&quot;: 1011,
+    &quot;priority&quot;: &quot;standby&quot;,
+    &quot;reason&quot;: &quot;only a wind shift within forecast error brings the fire here&quot;,
+    &quot;arrival_minutes&quot;: null,
+    &quot;distance_m&quot;: 10374.3,
+    &quot;authority&quot;: &quot;בני שמעון&quot;,
+    &quot;authority_phone&quot;: &quot;08-6257900&quot;,
+    &quot;authority_website&quot;: &quot;https://bns.org.il/&quot;,
+    &quot;fire_district&quot;: &quot;דרום&quot;,
+    &quot;police_station&quot;: &quot;תחנת רהט&quot;
+   },
+   {
+    &quot;locality_id&quot;: &quot;tirabin-al-sana&quot;,
+    &quot;name&quot;: &quot;Tirabin al-Sana&quot;,
+    &quot;name_he&quot;: &quot;תרבין א-צאנע (יישוב)*&quot;,
+    &quot;population&quot;: 952,
+    &quot;priority&quot;: &quot;standby&quot;,
+    &quot;reason&quot;: &quot;only a wind shift within forecast error brings the fire here&quot;,
+    &quot;arrival_minutes&quot;: null,
+    &quot;distance_m&quot;: 9995.6,
+    &quot;authority&quot;: &quot;אל קסום&quot;,
+    &quot;authority_phone&quot;: &quot;08-6796120&quot;,
+    &quot;authority_website&quot;: &quot;http://www.alqasoum.org.il/he/&quot;,
+    &quot;fire_district&quot;: &quot;דרום&quot;,
+    &quot;police_station&quot;: &quot;תחנת רהט&quot;
+   }
+  ],
+  &quot;headline&quot;: &quot;Fire burning in open ground, spreading west at about 71 m/min. Unchecked, the head reaches roughly 12.7 km in 3 hours. On the forecast wind it reaches Lehavim (population 7,686), about 71 minutes away, Rahat (population 71,355), about 81 minutes away. If the wind shifts within forecast error it could also reach Dvir, Givot Bar, Tirabin al-Sana, Shoval, Beit Kama, Mishmar HaNegev.&quot;
+ }
+}</pre></section>
+<section class="case"><h2>Residential block alight in Petah Tikva<span class="pill pass">Pass</span></h2><p>A fire in a residential building in central Petah Tikva on a muggy July evening. It is a structure fire in a dense city; there is no wildland for it to run through.</p><p class="note"><b>What this case is testing.</b> Must name Petah Tikva and its authority, must flag the built-up share, and must not imply a wildland run through a city.</p><h3>The fabricated incident, and the ground it sits on</h3><div class="two"><div><table><tbody><tr><td><code>id</code></td><td>INC-20260701-0012</td></tr><tr><td><code>primary_hazard</code></td><td>fire</td></tr><tr><td><code>queues</code></td><td>emergency</td></tr><tr><td><code>cells</code></td><td>risk-05000m-r0059-c0012</td></tr><tr><td><code>latitude</code></td><td>32.09</td></tr><tr><td><code>longitude</code></td><td>34.88</td></tr><tr><td><code>precision_m</code></td><td>375</td></tr><tr><td><code>location_method</code></td><td>frp_weighted_centroid</td></tr><tr><td><code>last_signal_at</code></td><td>2026-07-01 18:20:00+00:00</td></tr><tr><td><code>signal_count</code></td><td>1</td></tr></tbody></table></div><div><table><tbody><tr><td><code>peak FRP</code></td><td>6.1 MW</td></tr><tr><td><code>hotspots</code></td><td>1</td></tr><tr><td><code>satellites</code></td><td>VIIRS_NOAA21_NRT</td></tr><tr><td><code>temperature_c</code></td><td>31</td></tr><tr><td><code>humidity_percent</code></td><td>58</td></tr><tr><td><code>wind_speed_kmh</code></td><td>14</td></tr><tr><td><code>wind_direction_deg</code></td><td>275</td></tr><tr><td><code>slope_deg</code></td><td>1.5</td></tr><tr><td><code>slope_max_deg</code></td><td>3.3</td></tr><tr><td><code>land cover</code></td><td>built_up 86%, tree_cover 11%</td></tr><tr><td><code>gaps</code></td><td>weather_supplied_by_scenario_not_observed</td></tr></tbody></table></div></div><h3>Checks</h3><table><thead><tr><th style='width:4%'></th><th style='width:38%'>Expectation</th><th>Observed</th></tr></thead><tbody><tr><td><span class="tick">&#10003;</span></td><td>status</td><td><code>status=ok (unconstrained)</code></td></tr><tr><td><span class="tick">&#10003;</span></td><td>no significant spread</td><td><code>head rate 1.01 m/min</code></td></tr><tr><td><span class="tick">&#10003;</span></td><td>origin is Petah Tikva</td><td><code>origin=Petah Tikva</code></td></tr><tr><td><span class="tick">&#10003;</span></td><td>flags the built-up share</td><td><code>report mentions built-up cover</code></td></tr><tr><td><span class="tick">&#10003;</span></td><td>produces a textual report</td><td><code>1822 characters</code></td></tr></tbody></table><h3>Textual incident report &mdash; what the operator reads</h3><pre class="report">SITUATION
+Fire burning in Petah Tikva, running east at about 1 m/min through tree cover. Wind 14 km/h from west, 31 C, 58% humidity.
+86% of this ground is built up. The spread forecast below covers wildland fuel only; fire in the structures themselves behaves differently and is not modelled here.
+Ground averages 2 degrees.
+
+FORECAST SPREAD
+Unchecked, the head reaches roughly 0.2 km east in 3 hours. Two extents are drawn: the likely one on the forecast wind, and a wider possible one covering a wind shift within forecast error.
+
+PEOPLE AT RISK
+Inside the forecast spread: 135 people, counted off the population grid over the drawn extent.
+Whole-settlement totals, which count every resident of an affected place rather than only those inside the line: 264,046 in settlements already burning, 0 in settlements the forecast reaches, 0 in settlements only a wind shift reaches.
+
+SETTLEMENTS IN THE PATH
+- Petah Tikva (264,046) — fire is inside the built-up area [1.7 km]
+
+EVACUATION PRIORITY
+- IMMEDIATE: Petah Tikva, 264,046 people — the fire is in the built-up area or reaches it within the hour.
+    authority 03-9052450; fire district מרכז; police תחנת פתח תקווה
+
+SEVERITY
+medium — 35 of 100, for the spread over the next 3 hours. This scores how bad the spread is about to be; it is not how likely a fire was to start here, nor how severe the fire already is.
+Driven by: fire already inside a built-up area.
+
+EVIDENCE GAPS
+- weather supplied by scenario not observed
+
+LIMITS
+- Unsuppressed spread: no crew, engine, aircraft or existing containment is modelled.
+- Surface fire only: spotting ahead of the front and sustained crown runs are not modelled.
+- Barriers finer than the land-cover grid — a road, a firebreak, a wadi — are invisible here.
+- Arrival times assume the forecast wind holds for the whole horizon.</pre><h3>Planner handoff &mdash; the validated <code>EmergencyResponsePlanInput</code></h3><p class="hint">This is the object <code>EmergencyResponsePlanner</code> validates and serialises into its prompt &mdash; not a shape invented for this report. <code>event_description</code> is what drives BM25 retrieval, which is why it is the planning view rather than the full narrative; the narrative travels in <code>additional_context</code>.</p><pre>{
+ &quot;hazard_type&quot;: &quot;fire&quot;,
+ &quot;event_description&quot;: &quot;Wildfire incident at Petah Tikva, spreading east at 1.01 metres per minute through tree cover. Spread severity medium (35 of 100) over the next 180.0 minutes. Fire is inside the built-up area of Petah Tikva. Structures are threatened and life safety is the first problem. Evacuation required immediately for Petah Tikva. 135 residents inside the forecast fire perimeter. Requires decisions on unit types to commit, evacuation, road closures, structure protection and crew safety at the fireline.&quot;,
+ &quot;incident_id&quot;: &quot;INC-20260701-0012&quot;,
+ &quot;location&quot;: {
+  &quot;latitude&quot;: 32.0909,
+  &quot;longitude&quot;: 34.8764
+ },
+ &quot;risk_context&quot;: {
+  &quot;risk_score&quot;: 35,
+  &quot;risk_level&quot;: &quot;medium&quot;,
+  &quot;risk_semantics&quot;: &quot;fire_spread_forecast&quot;,
+  &quot;horizon_minutes&quot;: 180.0
+ },
+ &quot;evidence_gaps&quot;: [],
+ &quot;limitations&quot;: [
+  &quot;Unsuppressed spread: no crew, engine, aircraft or existing containment is modelled.&quot;,
+  &quot;Surface fire only: spotting ahead of the front and sustained crown runs are not modelled.&quot;,
+  &quot;Barriers finer than the land-cover grid — a road, a firebreak, a wadi — are invisible here.&quot;,
+  &quot;Arrival times assume the forecast wind holds for the whole horizon.&quot;
+ ],
+ &quot;additional_context&quot;: {
+  &quot;analyser&quot;: &quot;FireSpreadAnalyzer&quot;,
+  &quot;assessed_at&quot;: &quot;2026-09-20T09:43:48.545817Z&quot;,
+  &quot;origin&quot;: {
+   &quot;latitude&quot;: 32.0909,
+   &quot;longitude&quot;: 34.8764,
+   &quot;locality&quot;: &quot;Petah Tikva&quot;,
+   &quot;locality_population&quot;: 264046,
+   &quot;authority&quot;: &quot;פתח תקווה&quot;,
+   &quot;authority_phone&quot;: &quot;03-9052450&quot;,
+   &quot;fire_district&quot;: &quot;מרכז&quot;,
+   &quot;police_station&quot;: &quot;תחנת פתח תקווה&quot;
+  },
+  &quot;fire_behaviour&quot;: {
+   &quot;head_ros_m_per_min&quot;: 1.01,
+   &quot;back_ros_m_per_min&quot;: 0.085,
+   &quot;heading_deg&quot;: 95.1,
+   &quot;heading_compass&quot;: &quot;east&quot;,
+   &quot;length_to_width&quot;: 1.87,
+   &quot;effective_wind_kmh&quot;: 5.6,
+   &quot;fuel_model&quot;: &quot;FM9&quot;,
+   &quot;dominant_fuel&quot;: &quot;tree_cover&quot;,
+   &quot;burnable_fraction&quot;: 0.14,
+   &quot;dead_fuel_moisture&quot;: 0.0997,
+   &quot;live_fuel_moisture&quot;: 0.6
+  },
+  &quot;population_at_risk&quot;: {
+   &quot;burning&quot;: 264046,
+   &quot;likely&quot;: 0,
+   &quot;possible&quot;: 0
+  },
+  &quot;population_in_spread&quot;: {
+   &quot;people&quot;: 135,
+   &quot;grid_cells&quot;: 8
+  },
+  &quot;settlements_exposed&quot;: [
+   {
+    &quot;name&quot;: &quot;Petah Tikva&quot;,
+    &quot;name_he&quot;: &quot;פתח תקווה&quot;,
+    &quot;population&quot;: 264046,
+    &quot;exposure&quot;: &quot;burning&quot;,
+    &quot;arrival_minutes&quot;: null,
+    &quot;distance_m&quot;: 1664.5,
+    &quot;authority_phone&quot;: &quot;03-9052450&quot;,
+    &quot;fire_district&quot;: &quot;מרכז&quot;,
+    &quot;police_station&quot;: &quot;תחנת פתח תקווה&quot;
+   }
+  ],
+  &quot;evacuation_priority&quot;: [
+   {
+    &quot;locality_id&quot;: &quot;petah-tikva&quot;,
+    &quot;name&quot;: &quot;Petah Tikva&quot;,
+    &quot;name_he&quot;: &quot;פתח תקווה&quot;,
+    &quot;population&quot;: 264046,
+    &quot;priority&quot;: &quot;immediate&quot;,
+    &quot;reason&quot;: &quot;the fire is in the built-up area or reaches it within the hour&quot;,
+    &quot;arrival_minutes&quot;: null,
+    &quot;distance_m&quot;: 1664.5,
+    &quot;authority&quot;: &quot;פתח תקווה&quot;,
+    &quot;authority_phone&quot;: &quot;03-9052450&quot;,
+    &quot;authority_website&quot;: &quot;https://www.petah-tikva.muni.il/Pages/default.aspx&quot;,
+    &quot;fire_district&quot;: &quot;מרכז&quot;,
+    &quot;police_station&quot;: &quot;תחנת פתח תקווה&quot;
+   }
+  ],
+  &quot;headline&quot;: &quot;Fire burning in Petah Tikva, spreading east at about 1 m/min. Unchecked, the head reaches roughly 0.2 km in 3 hours. No populated locality lies in the forecast path.&quot;
+ }
+}</pre></section>
+<section class="case"><h2>Carmel pine forest, east wind toward Haifa<span class="pill pass">Pass</span></h2><p>The 2010 geometry: fire in the Carmel forest with a hot, dry east wind pushing it downslope toward Beit Oren, Nesher and Haifa.</p><p class="note"><b>What this case is testing.</b> Dense tree cover, strong wind, a major city within reach.</p><h3>The fabricated incident, and the ground it sits on</h3><div class="two"><div><table><tbody><tr><td><code>id</code></td><td>INC-20260814-0033</td></tr><tr><td><code>primary_hazard</code></td><td>fire</td></tr><tr><td><code>queues</code></td><td>emergency</td></tr><tr><td><code>cells</code></td><td>risk-05000m-r0073-c0015</td></tr><tr><td><code>latitude</code></td><td>32.73</td></tr><tr><td><code>longitude</code></td><td>35.02</td></tr><tr><td><code>precision_m</code></td><td>375</td></tr><tr><td><code>location_method</code></td><td>frp_weighted_centroid</td></tr><tr><td><code>last_signal_at</code></td><td>2026-08-14 13:40:00+00:00</td></tr><tr><td><code>signal_count</code></td><td>9</td></tr></tbody></table></div><div><table><tbody><tr><td><code>peak FRP</code></td><td>142.7 MW</td></tr><tr><td><code>hotspots</code></td><td>23</td></tr><tr><td><code>satellites</code></td><td>VIIRS_NOAA20_NRT, VIIRS_NOAA21_NRT, VIIRS_SNPP_NRT, MODIS_NRT, GOES_NRT</td></tr><tr><td><code>temperature_c</code></td><td>39</td></tr><tr><td><code>humidity_percent</code></td><td>14</td></tr><tr><td><code>wind_speed_kmh</code></td><td>45</td></tr><tr><td><code>wind_direction_deg</code></td><td>100</td></tr><tr><td><code>slope_deg</code></td><td>9.2</td></tr><tr><td><code>slope_max_deg</code></td><td>23.7</td></tr><tr><td><code>land cover</code></td><td>tree_cover 69%, grassland 22%</td></tr><tr><td><code>gaps</code></td><td>weather_supplied_by_scenario_not_observed</td></tr></tbody></table></div></div><h3>Checks</h3><table><thead><tr><th style='width:4%'></th><th style='width:38%'>Expectation</th><th>Observed</th></tr></thead><tbody><tr><td><span class="tick">&#10003;</span></td><td>status</td><td><code>status=ok, wanted ok</code></td></tr><tr><td><span class="tick">&#10003;</span></td><td>spreads</td><td><code>head rate 14.98 m/min</code></td></tr><tr><td><span class="tick">&#10003;</span></td><td>heads roughly west</td><td><code>heading=west-northwest</code></td></tr><tr><td><span class="tick">&#10003;</span></td><td>names Beit Oren</td><td><code>exposed=[&#x27;Beit Oren&#x27;]</code></td></tr><tr><td><span class="tick">&#10003;</span></td><td>produces a textual report</td><td><code>1776 characters</code></td></tr></tbody></table><h3>Textual incident report &mdash; what the operator reads</h3><pre class="report">SITUATION
+Fire burning in open ground, running west-northwest at about 15 m/min through tree cover. Wind 45 km/h from east, 39 C, 14% humidity.
+Ground averages 9 degrees, with faces up to 24 degrees inside the same ground — a fire on one of those runs far faster than the average suggests.
+
+FORECAST SPREAD
+Unchecked, the head reaches roughly 2.7 km west-northwest in 3 hours. Two extents are drawn: the likely one on the forecast wind, and a wider possible one covering a wind shift within forecast error.
+
+PEOPLE AT RISK
+Inside the forecast spread: 399 people, counted off the population grid over the drawn extent.
+Whole-settlement totals, which count every resident of an affected place rather than only those inside the line: 0 in settlements already burning, 526 in settlements the forecast reaches, 0 in settlements only a wind shift reaches.
+
+SETTLEMENTS IN THE PATH
+- Beit Oren (526) — on the forecast wind, about 166 minutes away [1.6 km]
+
+EVACUATION PRIORITY
+- PREPARE: Beit Oren, 526 people — on the forecast wind the fire reaches it within the horizon.
+    authority 04-8132220; fire district חוף; police תחנת נשר
+
+SEVERITY
+high — 55 of 100, for the spread over the next 3 hours. This scores how bad the spread is about to be; it is not how likely a fire was to start here, nor how severe the fire already is.
+Driven by: a moderate head rate of 15 m/min.
+
+EVIDENCE GAPS
+- weather supplied by scenario not observed
+
+LIMITS
+- Unsuppressed spread: no crew, engine, aircraft or existing containment is modelled.
+- Surface fire only: spotting ahead of the front and sustained crown runs are not modelled.
+- Barriers finer than the land-cover grid — a road, a firebreak, a wadi — are invisible here.
+- Arrival times assume the forecast wind holds for the whole horizon.</pre><h3>Planner handoff &mdash; the validated <code>EmergencyResponsePlanInput</code></h3><p class="hint">This is the object <code>EmergencyResponsePlanner</code> validates and serialises into its prompt &mdash; not a shape invented for this report. <code>event_description</code> is what drives BM25 retrieval, which is why it is the planning view rather than the full narrative; the narrative travels in <code>additional_context</code>.</p><pre>{
+ &quot;hazard_type&quot;: &quot;fire&quot;,
+ &quot;event_description&quot;: &quot;Wildfire incident at open ground, spreading west-northwest at 14.98 metres per minute through tree cover. Spread severity high (55 of 100) over the next 180.0 minutes. Evacuation preparation for Beit Oren. 399 residents inside the forecast fire perimeter. 526 residents in settlements on the forecast path. Requires decisions on unit types to commit, evacuation, road closures, structure protection and crew safety at the fireline.&quot;,
+ &quot;incident_id&quot;: &quot;INC-20260814-0033&quot;,
+ &quot;location&quot;: {
+  &quot;latitude&quot;: 32.735,
+  &quot;longitude&quot;: 35.025
+ },
+ &quot;risk_context&quot;: {
+  &quot;risk_score&quot;: 55,
+  &quot;risk_level&quot;: &quot;high&quot;,
+  &quot;risk_semantics&quot;: &quot;fire_spread_forecast&quot;,
+  &quot;horizon_minutes&quot;: 180.0
+ },
+ &quot;evidence_gaps&quot;: [],
+ &quot;limitations&quot;: [
+  &quot;Unsuppressed spread: no crew, engine, aircraft or existing containment is modelled.&quot;,
+  &quot;Surface fire only: spotting ahead of the front and sustained crown runs are not modelled.&quot;,
+  &quot;Barriers finer than the land-cover grid — a road, a firebreak, a wadi — are invisible here.&quot;,
+  &quot;Arrival times assume the forecast wind holds for the whole horizon.&quot;
+ ],
+ &quot;additional_context&quot;: {
+  &quot;analyser&quot;: &quot;FireSpreadAnalyzer&quot;,
+  &quot;assessed_at&quot;: &quot;2026-09-20T09:43:59.554784Z&quot;,
+  &quot;origin&quot;: {
+   &quot;latitude&quot;: 32.735,
+   &quot;longitude&quot;: 35.025,
+   &quot;locality&quot;: null,
+   &quot;locality_population&quot;: null,
+   &quot;authority&quot;: null,
+   &quot;authority_phone&quot;: null,
+   &quot;fire_district&quot;: null,
+   &quot;police_station&quot;: null
+  },
+  &quot;fire_behaviour&quot;: {
+   &quot;head_ros_m_per_min&quot;: 14.98,
+   &quot;back_ros_m_per_min&quot;: 0.979,
+   &quot;heading_deg&quot;: 282.4,
+   &quot;heading_compass&quot;: &quot;west-northwest&quot;,
+   &quot;length_to_width&quot;: 2.08,
+   &quot;effective_wind_kmh&quot;: 7.0,
+   &quot;fuel_model&quot;: &quot;FM9&quot;,
+   &quot;dominant_fuel&quot;: &quot;tree_cover&quot;,
+   &quot;burnable_fraction&quot;: 0.957,
+   &quot;dead_fuel_moisture&quot;: 0.0296,
+   &quot;live_fuel_moisture&quot;: 0.6
+  },
+  &quot;population_at_risk&quot;: {
+   &quot;burning&quot;: 0,
+   &quot;likely&quot;: 526,
+   &quot;possible&quot;: 0
+  },
+  &quot;population_in_spread&quot;: {
+   &quot;people&quot;: 399,
+   &quot;grid_cells&quot;: 71
+  },
+  &quot;settlements_exposed&quot;: [
+   {
+    &quot;name&quot;: &quot;Beit Oren&quot;,
+    &quot;name_he&quot;: &quot;בית אורן&quot;,
+    &quot;population&quot;: 526,
+    &quot;exposure&quot;: &quot;likely&quot;,
+    &quot;arrival_minutes&quot;: 166.4,
+    &quot;distance_m&quot;: 1583.0,
+    &quot;authority_phone&quot;: &quot;04-8132220&quot;,
+    &quot;fire_district&quot;: &quot;חוף&quot;,
+    &quot;police_station&quot;: &quot;תחנת נשר&quot;
+   }
+  ],
+  &quot;evacuation_priority&quot;: [
+   {
+    &quot;locality_id&quot;: &quot;beit-oren&quot;,
+    &quot;name&quot;: &quot;Beit Oren&quot;,
+    &quot;name_he&quot;: &quot;בית אורן&quot;,
+    &quot;population&quot;: 526,
+    &quot;priority&quot;: &quot;prepare&quot;,
+    &quot;reason&quot;: &quot;on the forecast wind the fire reaches it within the horizon&quot;,
+    &quot;arrival_minutes&quot;: 166.4,
+    &quot;distance_m&quot;: 1583.0,
+    &quot;authority&quot;: &quot;חוף הכרמל&quot;,
+    &quot;authority_phone&quot;: &quot;04-8132220&quot;,
+    &quot;authority_website&quot;: &quot;https://www.hof-hacarmel.co.il/&quot;,
+    &quot;fire_district&quot;: &quot;חוף&quot;,
+    &quot;police_station&quot;: &quot;תחנת נשר&quot;
+   }
+  ],
+  &quot;headline&quot;: &quot;Fire burning in open ground, spreading west-northwest at about 15 m/min. Unchecked, the head reaches roughly 2.7 km in 3 hours. On the forecast wind it reaches Beit Oren (population 526), about 166 minutes away.&quot;
+ }
+}</pre></section>
+<section class="case"><h2>Judean hills, light wind on steep ground<span class="pill pass">Pass</span></h2><p>Fire on a steep wooded slope west of Jerusalem with only a light breeze. With almost no wind, terrain should decide the direction: fire runs uphill.</p><p class="note"><b>What this case is testing.</b> Slope is 17 degrees mean, 35 degrees steepest. With a 5 km/h breeze the slope term should dominate the heading.</p><h3>The fabricated incident, and the ground it sits on</h3><div class="two"><div><table><tbody><tr><td><code>id</code></td><td>INC-20260814-0035</td></tr><tr><td><code>primary_hazard</code></td><td>fire</td></tr><tr><td><code>queues</code></td><td>emergency</td></tr><tr><td><code>cells</code></td><td>risk-05000m-r0052-c0016</td></tr><tr><td><code>latitude</code></td><td>31.79</td></tr><tr><td><code>longitude</code></td><td>35.06</td></tr><tr><td><code>precision_m</code></td><td>375</td></tr><tr><td><code>location_method</code></td><td>frp_weighted_centroid</td></tr><tr><td><code>last_signal_at</code></td><td>2026-08-14 13:40:00+00:00</td></tr><tr><td><code>signal_count</code></td><td>2</td></tr></tbody></table></div><div><table><tbody><tr><td><code>peak FRP</code></td><td>31.2 MW</td></tr><tr><td><code>hotspots</code></td><td>5</td></tr><tr><td><code>satellites</code></td><td>VIIRS_SNPP_NRT, GOES_NRT</td></tr><tr><td><code>temperature_c</code></td><td>34</td></tr><tr><td><code>humidity_percent</code></td><td>28</td></tr><tr><td><code>wind_speed_kmh</code></td><td>5</td></tr><tr><td><code>wind_direction_deg</code></td><td>200</td></tr><tr><td><code>slope_deg</code></td><td>16.9</td></tr><tr><td><code>slope_max_deg</code></td><td>35.4</td></tr><tr><td><code>land cover</code></td><td>shrubland 49%, tree_cover 45%</td></tr><tr><td><code>gaps</code></td><td>weather_supplied_by_scenario_not_observed</td></tr></tbody></table></div></div><h3>Checks</h3><table><thead><tr><th style='width:4%'></th><th style='width:38%'>Expectation</th><th>Observed</th></tr></thead><tbody><tr><td><span class="tick">&#10003;</span></td><td>status</td><td><code>status=ok, wanted ok</code></td></tr><tr><td><span class="tick">&#10003;</span></td><td>spreads</td><td><code>head rate 5.92 m/min</code></td></tr><tr><td><span class="tick">&#10003;</span></td><td>names Shoresh</td><td><code>exposed=[&#x27;Shoresh&#x27;]</code></td></tr><tr><td><span class="tick">&#10003;</span></td><td>produces a textual report</td><td><code>1753 characters</code></td></tr></tbody></table><h3>Textual incident report &mdash; what the operator reads</h3><pre class="report">SITUATION
+Fire burning in open ground, running north-northeast at about 6 m/min through shrubland. Wind 5 km/h from south-southwest, 34 C, 28% humidity.
+Ground averages 17 degrees, with faces up to 35 degrees inside the same ground — a fire on one of those runs far faster than the average suggests.
+
+FORECAST SPREAD
+Unchecked, the head reaches roughly 1.1 km north-northeast in 3 hours. Two extents are drawn: the likely one on the forecast wind, and a wider possible one covering a wind shift within forecast error.
+
+PEOPLE AT RISK
+Inside the forecast spread: 2,416 people, counted off the population grid over the drawn extent.
+Whole-settlement totals, which count every resident of an affected place rather than only those inside the line: 0 in settlements already burning, 1,358 in settlements the forecast reaches, 0 in settlements only a wind shift reaches.
+
+SETTLEMENTS IN THE PATH
+- Shoresh (1,358) — on the forecast wind, about 132 minutes away [0.8 km]
+
+EVACUATION PRIORITY
+- PREPARE: Shoresh, 1,358 people — on the forecast wind the fire reaches it within the horizon.
+    authority *8108; fire district ירושלים; police תחנת מטה יהודה
+
+SEVERITY
+medium — 30 of 100, for the spread over the next 3 hours. This scores how bad the spread is about to be; it is not how likely a fire was to start here, nor how severe the fire already is.
+
+EVIDENCE GAPS
+- weather supplied by scenario not observed
+
+LIMITS
+- Unsuppressed spread: no crew, engine, aircraft or existing containment is modelled.
+- Surface fire only: spotting ahead of the front and sustained crown runs are not modelled.
+- Barriers finer than the land-cover grid — a road, a firebreak, a wadi — are invisible here.
+- Arrival times assume the forecast wind holds for the whole horizon.</pre><h3>Planner handoff &mdash; the validated <code>EmergencyResponsePlanInput</code></h3><p class="hint">This is the object <code>EmergencyResponsePlanner</code> validates and serialises into its prompt &mdash; not a shape invented for this report. <code>event_description</code> is what drives BM25 retrieval, which is why it is the planning view rather than the full narrative; the narrative travels in <code>additional_context</code>.</p><pre>{
+ &quot;hazard_type&quot;: &quot;fire&quot;,
+ &quot;event_description&quot;: &quot;Wildfire incident at open ground, spreading north-northeast at 5.92 metres per minute through shrubland. Spread severity medium (30 of 100) over the next 180.0 minutes. Evacuation preparation for Shoresh. 2,416 residents inside the forecast fire perimeter. 1,358 residents in settlements on the forecast path. Requires decisions on unit types to commit, evacuation, road closures, structure protection and crew safety at the fireline.&quot;,
+ &quot;incident_id&quot;: &quot;INC-20260814-0035&quot;,
+ &quot;location&quot;: {
+  &quot;latitude&quot;: 31.79,
+  &quot;longitude&quot;: 35.06
+ },
+ &quot;risk_context&quot;: {
+  &quot;risk_score&quot;: 30,
+  &quot;risk_level&quot;: &quot;medium&quot;,
+  &quot;risk_semantics&quot;: &quot;fire_spread_forecast&quot;,
+  &quot;horizon_minutes&quot;: 180.0
+ },
+ &quot;evidence_gaps&quot;: [],
+ &quot;limitations&quot;: [
+  &quot;Unsuppressed spread: no crew, engine, aircraft or existing containment is modelled.&quot;,
+  &quot;Surface fire only: spotting ahead of the front and sustained crown runs are not modelled.&quot;,
+  &quot;Barriers finer than the land-cover grid — a road, a firebreak, a wadi — are invisible here.&quot;,
+  &quot;Arrival times assume the forecast wind holds for the whole horizon.&quot;
+ ],
+ &quot;additional_context&quot;: {
+  &quot;analyser&quot;: &quot;FireSpreadAnalyzer&quot;,
+  &quot;assessed_at&quot;: &quot;2026-09-20T09:44:12.313845Z&quot;,
+  &quot;origin&quot;: {
+   &quot;latitude&quot;: 31.79,
+   &quot;longitude&quot;: 35.06,
+   &quot;locality&quot;: null,
+   &quot;locality_population&quot;: null,
+   &quot;authority&quot;: null,
+   &quot;authority_phone&quot;: null,
+   &quot;fire_district&quot;: null,
+   &quot;police_station&quot;: null
+  },
+  &quot;fire_behaviour&quot;: {
+   &quot;head_ros_m_per_min&quot;: 5.92,
+   &quot;back_ros_m_per_min&quot;: 0.807,
+   &quot;heading_deg&quot;: 16.5,
+   &quot;heading_compass&quot;: &quot;north-northeast&quot;,
+   &quot;length_to_width&quot;: 1.54,
+   &quot;effective_wind_kmh&quot;: 3.5,
+   &quot;fuel_model&quot;: &quot;FM5&quot;,
+   &quot;dominant_fuel&quot;: &quot;shrubland&quot;,
+   &quot;burnable_fraction&quot;: 0.981,
+   &quot;dead_fuel_moisture&quot;: 0.0533,
+   &quot;live_fuel_moisture&quot;: 0.6
+  },
+  &quot;population_at_risk&quot;: {
+   &quot;burning&quot;: 0,
+   &quot;likely&quot;: 1358,
+   &quot;possible&quot;: 0
+  },
+  &quot;population_in_spread&quot;: {
+   &quot;people&quot;: 2416,
+   &quot;grid_cells&quot;: 51
+  },
+  &quot;settlements_exposed&quot;: [
+   {
+    &quot;name&quot;: &quot;Shoresh&quot;,
+    &quot;name_he&quot;: &quot;שורש&quot;,
+    &quot;population&quot;: 1358,
+    &quot;exposure&quot;: &quot;likely&quot;,
+    &quot;arrival_minutes&quot;: 131.7,
+    &quot;distance_m&quot;: 778.4,
+    &quot;authority_phone&quot;: &quot;*8108&quot;,
+    &quot;fire_district&quot;: &quot;ירושלים&quot;,
+    &quot;police_station&quot;: &quot;תחנת מטה יהודה&quot;
+   }
+  ],
+  &quot;evacuation_priority&quot;: [
+   {
+    &quot;locality_id&quot;: &quot;shoresh&quot;,
+    &quot;name&quot;: &quot;Shoresh&quot;,
+    &quot;name_he&quot;: &quot;שורש&quot;,
+    &quot;population&quot;: 1358,
+    &quot;priority&quot;: &quot;prepare&quot;,
+    &quot;reason&quot;: &quot;on the forecast wind the fire reaches it within the horizon&quot;,
+    &quot;arrival_minutes&quot;: 131.7,
+    &quot;distance_m&quot;: 778.4,
+    &quot;authority&quot;: &quot;מטה יהודה&quot;,
+    &quot;authority_phone&quot;: &quot;*8108&quot;,
+    &quot;authority_website&quot;: &quot;https://www.m-yehuda.org.il&quot;,
+    &quot;fire_district&quot;: &quot;ירושלים&quot;,
+    &quot;police_station&quot;: &quot;תחנת מטה יהודה&quot;
+   }
+  ],
+  &quot;headline&quot;: &quot;Fire burning in open ground, spreading north-northeast at about 6 m/min. Unchecked, the head reaches roughly 1.1 km in 3 hours. On the forecast wind it reaches Shoresh (population 1,358), about 132 minutes away.&quot;
+ }
+}</pre></section>
+<section class="case"><h2>Detection on the Dead Sea shore, no surface data<span class="pill pass">Pass</span></h2><p>A hotspot on the Dead Sea shore, where the land-cover grid has a genuine hole — the survey maps no vegetation there at all.</p><p class="note"><b>What this case is testing.</b> Must degrade honestly: no score, no zero, and a report that says the absence is about the data and not about the fire.</p><h3>The fabricated incident, and the ground it sits on</h3><div class="two"><div><table><tbody><tr><td><code>id</code></td><td>INC-20260814-0037</td></tr><tr><td><code>primary_hazard</code></td><td>fire</td></tr><tr><td><code>queues</code></td><td>emergency</td></tr><tr><td><code>cells</code></td><td>risk-05000m-r0036-c0023</td></tr><tr><td><code>latitude</code></td><td>31.07</td></tr><tr><td><code>longitude</code></td><td>35.44</td></tr><tr><td><code>precision_m</code></td><td>1,000</td></tr><tr><td><code>location_method</code></td><td>frp_weighted_centroid</td></tr><tr><td><code>last_signal_at</code></td><td>2026-08-14 13:40:00+00:00</td></tr><tr><td><code>signal_count</code></td><td>1</td></tr></tbody></table></div><div><table><tbody><tr><td><code>peak FRP</code></td><td>12.9 MW</td></tr><tr><td><code>hotspots</code></td><td>2</td></tr><tr><td><code>satellites</code></td><td>MODIS_NRT</td></tr><tr><td><code>temperature_c</code></td><td>44</td></tr><tr><td><code>humidity_percent</code></td><td>9</td></tr><tr><td><code>wind_speed_kmh</code></td><td>22</td></tr><tr><td><code>wind_direction_deg</code></td><td>180</td></tr><tr><td><code>slope_deg</code></td><td>0</td></tr><tr><td><code>slope_max_deg</code></td><td>0.3</td></tr><tr><td><code>land cover</code></td><td>permanent_water 98%</td></tr><tr><td><code>gaps</code></td><td>ground_sampled_from_2500m_away_no_data_at_the_point, weather_supplied_by_scenario_not_observed</td></tr></tbody></table></div></div><h3>Checks</h3><table><thead><tr><th style='width:4%'></th><th style='width:38%'>Expectation</th><th>Observed</th></tr></thead><tbody><tr><td><span class="tick">&#10003;</span></td><td>status</td><td><code>status=stalled</code></td></tr><tr><td><span class="tick">&#10003;</span></td><td>no significant spread</td><td><code>head rate 0.0 m/min</code></td></tr><tr><td><span class="tick">&#10003;</span></td><td>unscored, not zero</td><td><code>risk_score=None</code></td></tr><tr><td><span class="tick">&#10003;</span></td><td>produces a textual report</td><td><code>636 characters</code></td></tr></tbody></table><h3>Textual incident report &mdash; what the operator reads</h3><pre class="report">SITUATION
+Fire reported in open ground. No wildland spread is forecast: there is no continuous wildland fuel at the location. This assesses the ground&#x27;s ability to carry fire, not the fire itself — a structure or vehicle fire here is unaffected by this finding and may still be serious.
+
+LIMITS
+- Unsuppressed spread: no crew, engine, aircraft or existing containment is modelled.
+- Surface fire only: spotting ahead of the front and sustained crown runs are not modelled.
+- Barriers finer than the land-cover grid — a road, a firebreak, a wadi — are invisible here.
+- Arrival times assume the forecast wind holds for the whole horizon.</pre><h3>Planner handoff &mdash; the validated <code>EmergencyResponsePlanInput</code></h3><p class="hint">This is the object <code>EmergencyResponsePlanner</code> validates and serialises into its prompt &mdash; not a shape invented for this report. <code>event_description</code> is what drives BM25 retrieval, which is why it is the planning view rather than the full narrative; the narrative travels in <code>additional_context</code>.</p><pre>{
+ &quot;refused_by_planner_adapter&quot;: &quot;spread_analysis_stalled&quot;,
+ &quot;why&quot;: &quot;The analysis made no forecast, so there is nothing to plan from. Planning anyway would fabricate a basis for dispatch.&quot;
+}</pre></section>
+<section class="case"><h2>Upper Galilee woodland in January rain<span class="pill pass">Pass</span></h2><p>The same kind of fuel as the Carmel case, in the wet season: 9 C, 95% humidity, saturated fuel. Nothing should carry.</p><p class="note"><b>What this case is testing.</b> Must stall for wetness, named differently from the no-data case. &#x27;Nothing to burn&#x27; and &#x27;too wet to burn&#x27; are different facts and are acted on differently.</p><h3>The fabricated incident, and the ground it sits on</h3><div class="two"><div><table><tbody><tr><td><code>id</code></td><td>INC-20260122-0004</td></tr><tr><td><code>primary_hazard</code></td><td>fire</td></tr><tr><td><code>queues</code></td><td>emergency</td></tr><tr><td><code>cells</code></td><td>risk-05000m-r0082-c0025</td></tr><tr><td><code>latitude</code></td><td>33.12</td></tr><tr><td><code>longitude</code></td><td>35.57</td></tr><tr><td><code>precision_m</code></td><td>375</td></tr><tr><td><code>location_method</code></td><td>frp_weighted_centroid</td></tr><tr><td><code>last_signal_at</code></td><td>2026-01-22 09:15:00+00:00</td></tr><tr><td><code>signal_count</code></td><td>1</td></tr></tbody></table></div><div><table><tbody><tr><td><code>peak FRP</code></td><td>4.3 MW</td></tr><tr><td><code>hotspots</code></td><td>1</td></tr><tr><td><code>satellites</code></td><td>VIIRS_NOAA20_NRT</td></tr><tr><td><code>temperature_c</code></td><td>9</td></tr><tr><td><code>humidity_percent</code></td><td>95</td></tr><tr><td><code>wind_speed_kmh</code></td><td>18</td></tr><tr><td><code>wind_direction_deg</code></td><td>250</td></tr><tr><td><code>slope_deg</code></td><td>8</td></tr><tr><td><code>slope_max_deg</code></td><td>31</td></tr><tr><td><code>land cover</code></td><td>tree_cover 37%, built_up 19%, grassland 17%, shrubland 13%, cropland 13%</td></tr><tr><td><code>gaps</code></td><td>weather_supplied_by_scenario_not_observed</td></tr></tbody></table></div></div><h3>Checks</h3><table><thead><tr><th style='width:4%'></th><th style='width:38%'>Expectation</th><th>Observed</th></tr></thead><tbody><tr><td><span class="tick">&#10003;</span></td><td>status</td><td><code>status=stalled, wanted stalled</code></td></tr><tr><td><span class="tick">&#10003;</span></td><td>no significant spread</td><td><code>head rate 0.0 m/min</code></td></tr><tr><td><span class="tick">&#10003;</span></td><td>unscored, not zero</td><td><code>risk_score=None</code></td></tr><tr><td><span class="tick">&#10003;</span></td><td>produces a textual report</td><td><code>643 characters</code></td></tr></tbody></table><h3>Textual incident report &mdash; what the operator reads</h3><pre class="report">SITUATION
+Fire reported in open ground. No wildland spread is forecast: the fuel is too wet to carry fire in the current conditions. This assesses the ground&#x27;s ability to carry fire, not the fire itself — a structure or vehicle fire here is unaffected by this finding and may still be serious.
+
+LIMITS
+- Unsuppressed spread: no crew, engine, aircraft or existing containment is modelled.
+- Surface fire only: spotting ahead of the front and sustained crown runs are not modelled.
+- Barriers finer than the land-cover grid — a road, a firebreak, a wadi — are invisible here.
+- Arrival times assume the forecast wind holds for the whole horizon.</pre><h3>Planner handoff &mdash; the validated <code>EmergencyResponsePlanInput</code></h3><p class="hint">This is the object <code>EmergencyResponsePlanner</code> validates and serialises into its prompt &mdash; not a shape invented for this report. <code>event_description</code> is what drives BM25 retrieval, which is why it is the planning view rather than the full narrative; the narrative travels in <code>additional_context</code>.</p><pre>{
+ &quot;refused_by_planner_adapter&quot;: &quot;spread_analysis_stalled&quot;,
+ &quot;why&quot;: &quot;The analysis made no forecast, so there is nothing to plan from. Planning anyway would fabricate a basis for dispatch.&quot;
+}</pre></section>
+<section class="case"><h2>Historical replay &mdash; forecast against a real fire<span class="pill pass">Validated</span></h2><p><b>Upper Galilee, 14 September 2026.</b> The largest multi-overpass event in the collection window: 36 satellite overpasses across two days, first seen at 09:58 at 4.7 MW, peaking at 109 MW the following midday.</p><p class="note">The forecast is built from the <b>first</b> detection only, with the weather actually recorded for that cell and hour, and the terrain and fuel actually there. No input has seen what happened next. It is then scored against the satellite pixels observed over the following three hours.</p><div class="kpi"><div><div class="big">0.8&deg;</div><div class="lab">Heading error</div></div><div><div class="big">100%</div><div class="lab">Pixels in likely ring</div></div><div><div class="big">1.35&times;</div><div class="lab">Forecast head vs observed</div></div><div><div class="big">9</div><div class="lab">Observed pixels</div></div></div><table><thead><tr><th>Quantity</th><th>Forecast</th><th>Observed</th></tr></thead><tbody><tr><td>Heading</td><td>148.3&deg; (south-southeast)</td><td>149.1&deg; mean pixel bearing</td></tr><tr><td>Head distance in 3 h</td><td>2,304.2 m at 12.8 m/min</td><td>1,704 m to furthest pixel</td></tr><tr><td>Severity</td><td>high &middot; 55</td><td>&mdash;</td></tr></tbody></table><h3>Inputs, none of them hindsight</h3><table><tbody><tr><td>Weather, hour of ignition</td><td>32.1 C, 25% RH, wind 13.3 km/h from 327&deg;</td></tr><tr><td>Ground</td><td>grassland, burnable 0.98, slope 6.2&deg;, steepest 15&deg;</td></tr></tbody></table><p class="note"><b>How much this shows, and how much it does not.</b> A heading error under one degree is the strongest part of the result, because direction is independent of how large the ring was drawn. Containment of 100% is weaker evidence on its own: a ring that is too big contains the truth for the wrong reason, which is why the forecast head is reported against the observed extent beside it. The forecast ran about a third further than the fire did &mdash; the expected direction for a model that states it includes no suppression, against a fire that was being fought. This is <b>one fire, one three-hour window, nine pixels</b>. It is a great deal better than no validation, and it is not a validation campaign.</p></section>
+<section class="case"><h2>Doctrine review</h2><p>The substitute for a fire officer reading these reports, and a weaker thing than that. It compares the output against doctrine that can be cited, which catches a decision input the doctrine names and the analyser does not supply. It cannot catch a number that is plausible and wrong.</p><div class="kpi"><div><div class="big">4</div><div class="lab">Aligned</div></div><div><div class="big">1</div><div class="lab">Partial</div></div><div><div class="big">2</div><div class="lab">Gap</div></div></div><table><thead><tr><th style='width:10%'>Verdict</th><th>Finding</th></tr></thead><tbody><tr><td><span class="verdict v-aligned">aligned</span></td><td><b>Evacuation staging has three levels, not two</b><blockquote>Ready, Set, Go! stages civilian evacuation in three levels: Ready (be aware and begin preparing), Set (prepare to leave, be ready to go at a moment&#x27;s notice), and Go (leave now).</blockquote><p style='margin:0 0 4px'><b>The analyser:</b> Produces exactly three priorities — standby, prepare, immediate — assigned from exposure class and arrival time, sorted worst-first then soonest, each carrying the responsible authority&#x27;s telephone number.</p><p style='margin:0;font-size:8.6pt;color:#5b6470'>The mapping is one-to-one and was arrived at independently; the three-level structure is the established civilian staging model.</p><p style='margin:4px 0 0;font-size:7.8pt;color:#5b6470'>Source: Ready, Set, Go! — International Association of Fire Chiefs, as published by Los Angeles Fire Department</p></td></tr><tr><td><span class="verdict v-aligned">aligned</span></td><td><b>A trigger point prompts reassessment; it does not decide</b><blockquote>Trigger points are predetermined cues that prompt reevaluation of the current and potential situation and its associated risks, rather than serving as decision-makers.</blockquote><p style='margin:0 0 4px'><b>The analyser:</b> States in the evacuation constants that the priorities are read off the forecast rather than out of a protocol, that they are a statement about the fire rather than a lawful order, and that the authority to order an evacuation belongs to the response planner and the incident commander.</p><p style='margin:0;font-size:8.6pt;color:#5b6470'>This is the distinction most easily lost when a system starts printing the word EVACUATE next to a town name, and it is made explicitly in the code and on the page.</p><p style='margin:4px 0 0;font-size:7.8pt;color:#5b6470'>Source: NWCG 6 Minutes for Safety — Proper Use of Trigger Points</p></td></tr><tr><td><span class="verdict v-gap">gap</span></td><td><b>Trigger points must be reevaluated as conditions change</b><blockquote>Trigger points are set against operational or environmental limits and are reevaluated through the operational period as the situation develops.</blockquote><p style='margin:0 0 4px'><b>The analyser:</b> Produces a single assessment for a stated horizon, from the weather of one hour. Nothing re-runs it as the fire develops, and the report carries no expiry.</p><p style='margin:0;font-size:8.6pt;color:#5b6470'>The limits do say arrival times assume the forecast wind holds for the whole horizon, which is honest about the assumption but does not schedule the reassessment doctrine requires. A report three hours old reads exactly like one three minutes old.</p><p style='margin:4px 0 0;font-size:7.8pt;color:#5b6470'>Source: NWCG 6 Minutes for Safety — Proper Use of Trigger Points</p></td></tr><tr><td><span class="verdict v-gap">gap</span></td><td><b>LCES — escape routes and safety zones</b><blockquote>Lookouts, Communications, Escape Routes and Safety Zones must be identified before they are needed and reevaluated through the operational period. A minimum of two escape routes from the work location to a safety zone is required whenever firefighters work near an objective hazard.</blockquote><p style='margin:0 0 4px'><b>The analyser:</b> Supplies the fire&#x27;s heading, rate and forecast extent, which bear on where a crew must not be. It supplies no escape routes and no safety zones, and its own limits state that barriers finer than the land-cover grid — a road, a firebreak, a wadi — are invisible to it.</p><p style='margin:0;font-size:8.6pt;color:#5b6470'>This is the sharpest omission found. The analyser supports the civil side of the incident — who is exposed, who should move — and does not support the firefighter-safety side at all. Road geometry exists in OpenStreetMap and is already used elsewhere in this repository for routing; it is not read here.</p><p style='margin:4px 0 0;font-size:7.8pt;color:#5b6470'>Source: NWCG S-131 Unit 3 — Lookouts, Communications, Escape Routes and Safety Zones (LCES), after Gleason</p></td></tr><tr><td><span class="verdict v-partial">partial</span></td><td><b>The inputs that decide whether a structure is defensible</b><blockquote>Structures are classified not threatened, threatened but defensible, or threatened and non-defensible. Modelling of firefighters&#x27; own assessments found the presence of a safety zone the most important factor, with road proximity, vegetation composition and topography also of high importance.</blockquote><p style='margin:0 0 4px'><b>The analyser:</b> Supplies vegetation composition (nine cover fractions) and topography (mean slope, steepest slope, aspect) for the ground the fire is on. It supplies neither safety-zone presence nor road proximity.</p><p style='margin:0;font-size:8.6pt;color:#5b6470'>Two of the four named factors, and the two it lacks include the one the study ranked most important. The analyser is a useful input to structure triage and cannot perform it.</p><p style='margin:4px 0 0;font-size:7.8pt;color:#5b6470'>Source: USFA/NFA — Structure Triage During Wildland/Urban Interface Fires (Brown), and USFS RMRS modelling of firefighter defensibility assessments</p></td></tr><tr><td><span class="verdict v-aligned">aligned</span></td><td><b>The wildland/urban interface must be visible as such</b><blockquote>Structure triage applies where fire behaviour, construction and adjacent fuels meet — the interface — which has to be recognised before the tactic is chosen.</blockquote><p style='margin:0 0 4px'><b>The analyser:</b> States the built-up share of the ground whenever it reaches a third, and says explicitly that the spread forecast covers wildland fuel only and that fire in the structures themselves behaves differently and is not modelled.</p><p style='margin:0;font-size:8.6pt;color:#5b6470'>Added after the Petah Tikva scenario reported a wildland run through a city without qualification. The threshold is the interface the triage doctrine is written about.</p><p style='margin:4px 0 0;font-size:7.8pt;color:#5b6470'>Source: USFA/NFA — Structure Triage During Wildland/Urban Interface Fires (Brown), and USFS RMRS modelling of firefighter defensibility assessments</p></td></tr><tr><td><span class="verdict v-aligned">aligned</span></td><td><b>Suppression is not modelled, and the output says so</b><blockquote>Doctrine assumes a fire under active suppression with crews, engines and aircraft committed against it.</blockquote><p style='margin:0 0 4px'><b>The analyser:</b> Models unopposed spread and states on every result that no crew, engine, aircraft or existing containment is included.</p><p style='margin:0;font-size:8.6pt;color:#5b6470'>Corroborated by the historical replay: the forecast head ran about a third further than the fire actually did over three hours, which is the direction and rough magnitude an unsuppressed model should over-predict a fire that was being fought.</p><p style='margin:4px 0 0;font-size:7.8pt;color:#5b6470'>Source: NWCG S-131 Unit 3 — Lookouts, Communications, Escape Routes and Safety Zones (LCES), after Gleason</p></td></tr></tbody></table></section>
+<footer>EcoGuard Agents &middot; FireSpreadAnalyzer scenario test &middot; incidents and weather fabricated; terrain, settlements and population read live from the operational store.</footer>
