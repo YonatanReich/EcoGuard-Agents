@@ -38,26 +38,43 @@ release path.
 ## Flood road response sites
 
 `FloodRoadTargetAgent` identifies where a Flood allocation could be sent. It
-does not infer inundation. Until an operational policy source is available, a
-deterministic fallback converts severity into station counts:
+does not infer inundation. Until an operational policy source is available, the
+allocator uses a deterministic fallback of one responsible police station per
+Flood incident, for every supported severity:
 
-| Severity | Fire/rescue stations | Police stations | MDA stations |
-|---:|---:|---:|---:|
-| 3 (Q10) | 1 | 1 | 0 |
-| 4 (Q20) | 2 | 1 | 1 |
-| 5 (Q50) | 3 | 1 | 1 |
-| 6 (Q100) | 4 | 1 | 2 |
+| Severity | Police stations |
+|---:|---:|
+| 3 (Q10) | 1 |
+| 4 (Q20) | 1 |
+| 5 (Q50) | 1 |
+| 6 (Q100) | 1 |
 
-These are station assignments, not vehicle counts. Police is always one
-responsible station per incident; that station owns all retained road-closure
-sites. Fire/rescue and MDA also allocate once per incident, never once per
-crossing.
+This is a station responsibility assignment, not a vehicle count. One police
+station owns all retained road-response sites for the incident. The station may
+also cover other active incidents; the active
+`(incident_id, police_station_id)` pair remains unique so retries are
+idempotent.
 
 The Flood handler preserves the incident snapshot and the scheduler forwards
 processing results without interpreting them. `ResourceAllocationAgent` owns
 the whole allocation operation: it invokes road targeting, verifies candidates,
-selects the most important response site, and reserves the explicit fallback
-quantities. Without a verified site no automatic station allocation occurs.
+selects the highest-priority verified response site, and atomically assigns the
+responsible police station. All other verified sites are retained in
+`covered_response_site_ids`; they do not create additional station
+assignments.
+
+When no verified road site exists, allocation does not stop. The allocator uses
+the highest-severity hydrometric station location as a
+`hydrometric_station_fallback`, assigns one police station, and requests a road
+route toward the gauge. Mapbox's snapped destination is only the last known
+point on the routable road network. The route is therefore marked
+`partial_offroad`, `road_access_verified=false`, and
+`requires_field_access_confirmation=true`. A straight GeoJSON
+`offroad_segment` connects that road point to the gauge for display, but it is
+an unverified geometric estimate: it does not prove that a legal, safe or
+passable field exit exists there. If no hydrometric station location is
+available at all, allocation is skipped with an explicit one-station police
+shortfall.
 
 For a gauge with a confirmed stream match, it unions every `streams` feature
 with the matched `water_source_id`. It never follows `draining_water_id`, so a
