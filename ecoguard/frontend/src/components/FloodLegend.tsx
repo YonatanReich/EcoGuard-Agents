@@ -1,0 +1,100 @@
+import type { CSSProperties } from 'react'
+
+const SEVERITY_LEVELS = [
+  { label: '10-year', color: '#facc15' },
+  { label: '20-year', color: '#f97316' },
+  { label: '50-year', color: '#ef4444' },
+  { label: '100-year', color: '#7f1d1d' },
+]
+
+function FloodLegend({ fireDangerVisible = false }: {
+  fireDangerVisible?: boolean
+}) {
+  return (
+    <div
+      style={{
+        ...containerStyle,
+        left: fireDangerVisible ? 216 : 12,
+      }}
+      aria-label="Flood map legend"
+    >
+      <div style={titleStyle}>Flood response</div>
+
+      {SEVERITY_LEVELS.map((level) => (
+        <div key={level.label} style={rowStyle}>
+          <span
+            style={{
+              ...streamLineStyle,
+              borderColor: level.color,
+              boxShadow: `0 0 0 3px ${level.color}33`,
+            }}
+          />
+          <span style={labelStyle}>Stream warning</span>
+          <span style={rangeStyle}>{level.label}</span>
+        </div>
+      ))}
+
+      <div style={dividerStyle} />
+
+      <div style={rowStyle}>
+        <span style={stationStyle}>≋</span>
+        <span style={labelStyle}>Hydrometric station</span>
+      </div>
+      <div style={rowStyle}>
+        <span style={crossingStyle}>×</span>
+        <span style={labelStyle}>Road response site</span>
+      </div>
+      <div style={rowStyle}>
+        <span style={accessStyle} />
+        <span style={labelStyle}>Verified vehicle access</span>
+      </div>
+      <div style={rowStyle}>
+        <span style={uncertaintyStyle} />
+        <span style={labelStyle}>Station-location uncertainty</span>
+      </div>
+
+      <div style={noteStyle}>Stream line is not an inundation boundary.</div>
+    </div>
+  )
+}
+
+const containerStyle: CSSProperties = {
+  position: 'absolute',
+  bottom: 36,
+  zIndex: 5,
+  minWidth: 198,
+  padding: '10px 12px',
+  borderRadius: 8,
+  background: 'rgba(255, 255, 255, 0.95)',
+  color: '#111827',
+  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
+  fontSize: '0.8rem',
+}
+
+const titleStyle: CSSProperties = { fontWeight: 700, marginBottom: 8 }
+const rowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginTop: 5 }
+const labelStyle: CSSProperties = { flex: 1 }
+const rangeStyle: CSSProperties = { color: '#4b5563', fontSize: '0.72rem' }
+const streamLineStyle: CSSProperties = { width: 22, height: 0, borderTop: '4px solid', flexShrink: 0 }
+const dividerStyle: CSSProperties = { borderTop: '1px solid #d1d5db', margin: '9px 0 4px' }
+const stationStyle: CSSProperties = {
+  display: 'grid', placeItems: 'center', width: 18, height: 18,
+  borderRadius: '50%', background: '#ef4444', color: '#fff', fontWeight: 800,
+}
+const crossingStyle: CSSProperties = {
+  display: 'grid', placeItems: 'center', width: 18, height: 18,
+  borderRadius: 3, background: '#b91c1c', color: '#fff', fontWeight: 900,
+}
+const accessStyle: CSSProperties = {
+  width: 12, height: 12, margin: 3, border: '2px solid #fff',
+  borderRadius: '50%', background: '#38bdf8', boxShadow: '0 0 0 1px #64748b',
+}
+const uncertaintyStyle: CSSProperties = {
+  width: 17, height: 17, border: '2px dashed #f97316', borderRadius: '50%',
+}
+const noteStyle: CSSProperties = {
+  marginTop: 9, paddingTop: 7, borderTop: '1px solid #d1d5db',
+  color: '#4b5563', fontSize: '0.68rem',
+}
+
+export default FloodLegend

@@ -22,6 +22,9 @@ from typing import Any, Iterable
 from sqlalchemy import text
 
 from ecoguard.database.engine import Session
+from ecoguard.database.repositories.resource_allocations import (
+    release_incident_allocations_in_session,
+)
 from ecoguard.shared.signals import CellSignal
 
 OPEN = "open"
@@ -271,14 +274,21 @@ def merge_incidents(
 
 def close_incident(incident_id: str, at: datetime) -> None:
     with Session() as session:
-        session.execute(
-            text(
-                "UPDATE incidents SET status = :closed, closed_at = :at "
-                "WHERE id = :id AND status = :open"
-            ),
-            {"id": incident_id, "closed": CLOSED, "open": OPEN, "at": at},
-        )
-        session.commit()
+        with session.begin():
+            closed_id = session.execute(
+                text(
+                    "UPDATE incidents SET status = :closed, closed_at = :at "
+                    "WHERE id = :id AND status = :open RETURNING id"
+                ),
+                {"id": incident_id, "closed": CLOSED, "open": OPEN, "at": at},
+            ).scalar_one_or_none()
+            if closed_id is not None:
+                release_incident_allocations_in_session(
+                    session,
+                    incident_id,
+                    released_at=at,
+                    reason="incident_closed",
+                )
 
 
 def close_quiet(at: datetime, quiet_period_for) -> list[str]:

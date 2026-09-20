@@ -12,7 +12,9 @@ from ecoguard.shared.events import FireSharedEvent
 
 
 DEMO_INCIDENT_ID = "demo-haifa-fire-allocation"
-DEMO_LOCATION = {"latitude": 32.794, "longitude": 34.9896}
+# The point is intentionally inside the stored Haifa polygon so the frontend
+# demo also exercises the strict point-in-polygon settlement lookup.
+DEMO_LOCATION = {"latitude": 32.80948, "longitude": 35.059823}
 
 
 class DemoAllocationRepository:
@@ -140,6 +142,7 @@ def _allocation_summary(result: dict[str, Any]) -> dict[str, Any]:
         "errors": [
             error for error in result.get("errors", []) if isinstance(error, dict)
         ],
+        "settlement": result.get("settlement"),
     }
 
 

@@ -28,6 +28,7 @@ import FireRiskLayer from '../components/layers/FireRiskLayer'
 import WindParticleLayer from '../components/layers/WindParticleLayer'
 
 import FireDangerLegend from '../components/FireDangerLegend'
+import FloodLegend from '../components/FloodLegend'
 import FireRiskAlert from '../components/FireRiskAlert'
 import { clusterHighRiskCells, type FireRiskCluster } from '../components/fireRiskClusters'
 import { normalizeNationalRiskScanResponse, type NationalRiskScan } from '../components/fireRiskScan'
@@ -44,6 +45,8 @@ import ResourceAllocationLayer from '../components/layers/ResourceAllocationLaye
 import {
   detectedFireToSharedEvent,
   type DetectedEventsResponse,
+  type FireEvent,
+  type FloodEvent,
   type SharedEvent,
   type SharedEventFeed,
 } from '../types/events'
@@ -94,6 +97,8 @@ function Dashboard() {
     useState<SharedEvent[]>([])
   const [airPollutionPreview, setAirPollutionPreview] =
     useState<SharedEvent | null>(null)
+  const [floodPreviewEvents, setFloodPreviewEvents] =
+    useState<SharedEvent[]>([])
 
   const liveEvents = useMemo(() => {
     const merged = new Map<string, SharedEvent>()
@@ -106,10 +111,12 @@ function Dashboard() {
   }, [fireEvents, projectedEvents])
 
   const events = useMemo(
-    () => airPollutionPreview
-      ? [airPollutionPreview, ...liveEvents]
-      : liveEvents,
-    [airPollutionPreview, liveEvents],
+    () => [
+      ...floodPreviewEvents,
+      ...(airPollutionPreview ? [airPollutionPreview] : []),
+      ...liveEvents,
+    ],
+    [airPollutionPreview, floodPreviewEvents, liveEvents],
   )
 
   /** The event whose modal is open, from either a card or a map marker. */
@@ -158,6 +165,22 @@ function Dashboard() {
     }
   }, [])
 
+  useEffect(() => {
+    if (
+      new URLSearchParams(window.location.search).get('floodPreview') !== '1'
+    ) {
+      return
+    }
+
+    let active = true
+    void import('../dev/floodPreview').then(({ floodPreviewEvents: fixtures }) => {
+      if (active) setFloodPreviewEvents(fixtures)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
   /**
    * Split the feed into the two panels.
    *
@@ -183,10 +206,15 @@ function Dashboard() {
   const corridorEvent = selectedEvent?.type === 'air_pollution'
     ? selectedEvent
     : null
-  const allocationEvent = selectedEvent?.type === 'fire'
-    && selectedEvent.details.resource_allocation
-    ? selectedEvent
-    : null
+  const allocationEvents = useMemo(
+    () => events.filter(
+      (event): event is FireEvent | FloodEvent => (
+        (event.type === 'fire' || event.type === 'flood')
+        && event.details.resource_allocation !== null
+      ),
+    ),
+    [events],
+  )
 
   /**
    * True while the detection scan is running.
@@ -222,6 +250,11 @@ function Dashboard() {
   ] = useState(false)
 
   const [
+    showFloodEvents,
+    setShowFloodEvents,
+  ] = useState(true)
+
+  const [
     showWind,
     setShowWind,
   ] = useState(false)
@@ -230,6 +263,13 @@ function Dashboard() {
     showFireDistricts,
     setShowFireDistricts,
   ] = useState(false)
+
+  // Stations and routes belong to one operational overlay. Event markers are
+  // rendered by MapView and remain visible when this layer is switched off.
+  const [
+    showAllocations,
+    setShowAllocations,
+  ] = useState(true)
 
   // Fire stations are reference data rather than an environmental overlay, so
   // they live in the "I want to see" bar above the map, not in LayersControl.
@@ -739,6 +779,7 @@ function Dashboard() {
 
           <MapView
             events={events}
+            showFloodEvents={showFloodEvents}
             onEventClick={selectAndOpenEvent}
             style={{ flex: '1 1 auto', minHeight: 0 }}
           >
@@ -1083,6 +1124,10 @@ function Dashboard() {
               <FireDangerLegend />
             )}
 
+            {showFloodEvents && events.some((event) => event.type === 'flood') && (
+              <FloodLegend fireDangerVisible={showFireDanger} />
+            )}
+
             {(showFireRisk || focusedFireRiskCluster) && (
               <FireRiskLayer
                 scan={nationalRiskScan}
@@ -1097,15 +1142,15 @@ function Dashboard() {
               <AirPollutionCorridorLayer event={corridorEvent} />
             )}
 
-            {allocationEvent && (
+            {showAllocations && allocationEvents.map((event) => (
               <ResourceAllocationLayer
-                key={allocationEvent.id}
-                event={allocationEvent}
+                key={`${event.type}:${event.id}`}
+                event={event}
                 onShowDirections={(stationKey) => (
-                  showStationDirections(allocationEvent, stationKey)
+                  showStationDirections(event, stationKey)
                 )}
               />
-            )}
+            ))}
 
 
             {/* ================================================= */}
@@ -1138,6 +1183,13 @@ function Dashboard() {
                 )
               }
 
+              showFloodEvents={showFloodEvents}
+              onToggleFloodEvents={() =>
+                setShowFloodEvents(
+                  (current) => !current
+                )
+              }
+
               showWind={
                 showWind
               }
@@ -1153,6 +1205,16 @@ function Dashboard() {
               }
               onToggleFireDistricts={() =>
                 setShowFireDistricts(
+                  (current) =>
+                    !current
+                )
+              }
+
+              showAllocations={
+                showAllocations
+              }
+              onToggleAllocations={() =>
+                setShowAllocations(
                   (current) =>
                     !current
                 )
@@ -1210,6 +1272,7 @@ function Dashboard() {
 
       {openEvent && (
         <EventModal
+          key={`${openEvent.type}:${openEvent.id}`}
           event={openEvent}
           directionsStationKey={directionsStationKey}
           onClose={() => {
