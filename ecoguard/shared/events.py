@@ -306,6 +306,11 @@ class FloodDetails(EventContract):
     allocation_target: dict[str, Any] | None = None
     advisories: list[FloodAdvisory] = Field(default_factory=list)
     resource_allocation: ResourceAllocationSummary | None = None
+    response_plan: dict[str, Any] | None = None
+    change_type: str | None = None
+    threshold_transition: str | None = None
+    response_refresh_required: bool | None = None
+    existing_response_preserved: bool = False
     limitations: list[str] = Field(default_factory=list)
 
 

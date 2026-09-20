@@ -41,46 +41,9 @@ resource_allocator = ResourceAllocationAgent()
 
 
 def allocate_resources(processing_results):
-    """Allocate one contended station pool across all eligible fire plans."""
-    requests = []
-    eligible_results = []
+    """Delegate hazard-specific preparation and shared station allocation."""
 
-    for result in processing_results:
-        response_plan = getattr(result, "planner_result", None)
-        if (
-            getattr(result, "hazard", None) != "fire"
-            or getattr(result, "route", None) != "emergency"
-            or not isinstance(response_plan, dict)
-        ):
-            continue
-
-        eligible_results.append(result)
-        requests.append(
-            {
-                "incident_id": result.incident_id,
-                "queued_at": result.requested_at,
-                "response_plan": response_plan,
-            }
-        )
-
-    if not requests:
-        return {}
-
-    # One batch call is essential: the allocator must compare incidents that
-    # compete for the same stations before making any assignment.
-    allocations = resource_allocator.allocate_batch(requests)
-    allocations_by_incident = {
-        allocation["incident_id"]: allocation
-        for allocation in allocations
-        if isinstance(allocation, dict) and allocation.get("incident_id")
-    }
-
-    for result in eligible_results:
-        result.resource_allocation_result = allocations_by_incident.get(
-            result.incident_id
-        )
-
-    return allocations_by_incident
+    return resource_allocator.allocate_processing_results(processing_results)
 
 # Each interval is set by what its source actually publishes, not by a shared
 # default:

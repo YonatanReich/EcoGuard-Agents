@@ -185,6 +185,11 @@ export type FloodDetails = {
   allocation_target: Record<string, unknown> | null
   advisories: Array<{ type: string; action: string; instruction: string; scope: string | null }>
   resource_allocation: ResourceAllocationSummary | null
+  response_plan?: Record<string, unknown> | null
+  change_type?: string | null
+  threshold_transition?: string | null
+  response_refresh_required?: boolean | null
+  existing_response_preserved?: boolean
   limitations: string[]
 }
 

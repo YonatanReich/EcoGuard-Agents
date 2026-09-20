@@ -15,6 +15,7 @@ from ecoguard.database.repositories.towns import (
     town_at_location,
 )
 from ecoguard.coordinator import incidents as incident_store
+from ecoguard.analyzers.emergency.flood.risk_scale import flood_operational_risk
 from ecoguard.resource_allocator.mapbox_client import MapboxClient, RoutingError
 from ecoguard.resource_allocator.flood_road_targets import FloodRoadTargetAgent
 
@@ -63,12 +64,6 @@ FLOOD_STATIONS_REQUIRED_BY_SEVERITY = {
     4: {"police": 1},
     5: {"police": 1},
     6: {"police": 1},
-}
-FLOOD_RISK_BY_SEVERITY = {
-    3: ("low", 40.0),
-    4: ("medium", 60.0),
-    5: ("high", 80.0),
-    6: ("critical", 100.0),
 }
 FLOOD_ROAD_PRIORITY = {
     "motorway": 6,
@@ -453,7 +448,7 @@ class ResourceAllocationAgent:
             }
             fallback_reason = "no_verified_flood_response_site"
 
-        risk_level, risk_score = FLOOD_RISK_BY_SEVERITY[severity]
+        risk_score, risk_level = flood_operational_risk(severity)
         event_id = (
             f"{incident_id}:flood-road-target"
             if ready_sites
@@ -1248,6 +1243,11 @@ class ResourceAllocationAgent:
                 }
                 targeting = None
             elif hazard == "flood":
+                if getattr(result, "requires_resource_allocation", None) is False:
+                    # De-escalation and unchanged observations preserve every
+                    # durable active allocation. They do not recalculate road
+                    # targets or request another station assignment.
+                    continue
                 incident = self.incident_reader(result.incident_id)
                 if not isinstance(incident, dict):
                     result.resource_allocation_result = {

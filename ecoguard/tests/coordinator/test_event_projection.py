@@ -1,10 +1,12 @@
 """Durable SharedEvent projection mapping and orchestration tests."""
 
 from dataclasses import replace
+from datetime import timedelta
 import pytest
 from sqlalchemy import text
 
 from ecoguard.coordinator.dispatcher import IncidentProcessingResult, dispatch_incidents
+from ecoguard.analyzers.emergency.flood.event_analyzer import FloodEventAnalyzer
 from ecoguard.coordinator.incidents import signal_as_json
 from ecoguard.coordinator.event_projection import (
     air_pollution_shared_event,
@@ -154,6 +156,119 @@ def test_flood_result_projects_stream_station_and_distinct_road_locations():
     assert event.details.response_sites[0].road.road_class == "primary"
     assert event.details.response_sites[0].crossing_location.longitude == 35.21
     assert event.details.response_sites[0].allocation_location.longitude == 35.211
+
+
+def test_flood_deescalation_projects_current_band_and_preserves_response():
+    thresholds = [20.0, 35.0, 50.0, 80.0, 120.0, 170.0]
+
+    def signal(observed_at, discharge, severity, previous):
+        return {
+            "cell_id": "31.75:35.20",
+            "observed_at": observed_at.isoformat(),
+            "hazard": "flood",
+            "value": discharge,
+            "confidence": 0.9,
+            "location": {
+                "latitude": 31.75,
+                "longitude": 35.2,
+                "precision_m": 75.0,
+            },
+            "evidence": {
+                "source_station_id": 417,
+                "stream_id": 82,
+                "current_discharge": discharge,
+                "severity_level": severity,
+                "threshold_vector_m3s": thresholds,
+                "recent_discharges_m3s": [previous, discharge],
+            },
+        }
+
+    later = REQUESTED_AT + timedelta(minutes=10)
+    incident = {
+        "id": "INC-FLOOD-DEESCALATED",
+        "signals": [
+            signal(REQUESTED_AT, 125.0, 5, 122.0),
+            signal(later, 85.0, 4, 125.0),
+        ],
+    }
+    analysis = FloodEventAnalyzer(clock=lambda: later).analyze(incident)
+    result = IncidentProcessingResult(
+        incident_id=incident["id"],
+        hazard="flood",
+        route="emergency",
+        status="success",
+        requested_at=later,
+        completed_at=later,
+        analysis_status=analysis.status,
+        planner_status="skipped",
+        analysis_result=analysis,
+        response_refresh_required=False,
+        requires_resource_allocation=False,
+        preserve_existing_response=True,
+    )
+
+    event = flood_shared_event(result, incident)
+
+    assert event.details.severity_level == 4
+    assert event.details.return_period_label == "20-year"
+    assert event.details.sources[0].station.severity_level == 4
+    assert event.details.sources[0].station.precision_m == 75.0
+    assert event.details.change_type == "deescalated"
+    assert event.details.threshold_transition == "Q50_to_Q20"
+    assert event.details.response_refresh_required is False
+    assert event.details.existing_response_preserved is True
+    assert event.details.targeting_status == "preserved_existing_response"
+    assert event.planning_status == "skipped"
+
+    previous_plan = {
+        "incident_id": incident["id"],
+        "hazard_type": "flood",
+        "plan_summary": "Keep the existing road closure and command structure.",
+    }
+    previous_site = {
+        "target_id": "flood-road-existing",
+        "source_station_id": 417,
+        "severity_level": 5,
+        "strategy": "matched_stream",
+        "road": {"name": "Road 1", "road_class": "primary"},
+        "crossing_type": "at_grade",
+        "urban": False,
+        "crossing_location": {"latitude": 31.76, "longitude": 35.21},
+        "allocation_location": {"latitude": 31.761, "longitude": 35.211},
+        "allocation_eligible": True,
+        "local_match_confidence": "high",
+        "mapbox_verification": {
+            "status": "verified",
+            "verified": True,
+            "reason": None,
+            "mapbox_snap_distance_m": 8.0,
+        },
+    }
+    writes = []
+    project_processing_results(
+        [result],
+        incident_reader=lambda _: incident,
+        projection_reader=lambda _: {
+            "last_successful_event_payload": {
+                "details": {
+                    "response_sites": [previous_site],
+                    "allocation_ready_site_ids": ["flood-road-existing"],
+                    "targeting_reason": "existing_target",
+                    "allocation_target": {"latitude": 31.761, "longitude": 35.211},
+                    "advisories": [],
+                    "resource_allocation": None,
+                    "response_plan": previous_plan,
+                }
+            }
+        },
+        writer=lambda record: writes.append(record),
+    )
+
+    projected = writes[0].event_payload
+    assert projected["details"]["severity_level"] == 4
+    assert projected["details"]["response_sites"][0]["target_id"] == "flood-road-existing"
+    assert projected["details"]["response_plan"] == previous_plan
+    assert projected["details"]["existing_response_preserved"] is True
 
 
 def test_planner_failure_has_no_fabricated_recommendations():
