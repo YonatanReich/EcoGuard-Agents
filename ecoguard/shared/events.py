@@ -81,6 +81,7 @@ class AllocatedStation(EventContract):
     distance_km: float | None = Field(default=None, ge=0)
     allocation_status: str
     selection_reason: str
+    timeframe: Literal["immediate", "within_1_hour", "within_6_hours", "ongoing"] | None = None
     response_actions: list[FireResponseAction] = Field(default_factory=list)
     route: AllocationRoute | None = None
 

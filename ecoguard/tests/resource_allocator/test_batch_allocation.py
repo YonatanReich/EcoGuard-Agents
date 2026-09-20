@@ -376,17 +376,6 @@ def test_allocator_attaches_only_frontend_settlement_fields():
     town_reader.assert_called_once_with(latitude=31.0, longitude=35.0)
 
 
-def test_explicit_station_count_overrides_risk_count_but_police_stays_one():
-    plan = {"station_requirements": {"medical_services": 1, "police": 1}}
-
-    assert ResourceAllocationAgent._required_station_count(
-        "high", "medical_services", plan
-    ) == 1
-    assert ResourceAllocationAgent._required_station_count(
-        "critical", "police", plan
-    ) == 1
-
-
 def _flood_site(severity, road_class="primary", target_id="target-primary"):
     return {
         "target_id": target_id,
@@ -428,16 +417,16 @@ def _flood_risk(severity, incident_id="INC-FLOOD-1"):
 
 
 @pytest.mark.parametrize(
-    ("severity", "expected", "risk_score", "risk_level"),
+    ("severity", "risk_score", "risk_level"),
     [
-        (3, {"police": 1}, 40.0, "medium"),
-        (4, {"police": 1}, 60.0, "high"),
-        (5, {"police": 1}, 80.0, "critical"),
-        (6, {"police": 1}, 100.0, "critical"),
+        (3, 40.0, "medium"),
+        (4, 60.0, "high"),
+        (5, 80.0, "critical"),
+        (6, 100.0, "critical"),
     ],
 )
 def test_flood_uses_shared_0_to_100_risk_scale(
-    severity, expected, risk_score, risk_level
+    severity, risk_score, risk_level
 ):
     agent = allocation_agent({})
     prepared = agent._prepare_batch_request(
@@ -453,8 +442,8 @@ def test_flood_uses_shared_0_to_100_risk_scale(
         NOW,
     )
 
-    assert prepared["response_plan"]["station_requirements"] == expected
-    assert prepared["response_plan"]["station_requirements"]["police"] == 1
+    assert prepared["response_plan"]["recommended_units"] == ["police"]
+    assert "station_requirements" not in prepared["response_plan"]
     assert prepared["risk_score"] == risk_score
     assert prepared["risk_level"] == risk_level
     assert prepared["hazard"] == "flood"
@@ -575,7 +564,7 @@ def test_flood_allocator_assigns_police_to_gauge_when_no_site_was_verified():
         NOW,
     )
 
-    assert prepared["response_plan"]["station_requirements"] == {"police": 1}
+    assert prepared["response_plan"]["recommended_units"] == ["police"]
     assert prepared["response_plan"]["location"] == {
         "latitude": 30.735,
         "longitude": 35.235,
@@ -823,16 +812,18 @@ def test_higher_operational_risk_gets_contended_stations_first():
         "medium-incident",
     ]
     assert results[0]["requirements"]["fire_department"] == {
-        "requested": 4,
-        "assigned": 4,
+        "requested": 1,
+        "assigned": 1,
         "shortfall": 0,
     }
     assert results[1]["requirements"]["fire_department"] == {
-        "requested": 2,
-        "assigned": 0,
-        "shortfall": 2,
+        "requested": 1,
+        "assigned": 1,
+        "shortfall": 0,
     }
-    assert results[1]["status"] == "partial"
+    assert results[1]["status"] == "fulfilled"
+    assert results[0]["allocated_units"]["fire_stations"][0]["database_id"] == 1
+    assert results[1]["allocated_units"]["fire_stations"][0]["database_id"] == 2
     assert fire_reader.call_count == 1
 
 
@@ -853,7 +844,12 @@ def test_fire_actions_are_preserved_and_attached_to_responsible_stations():
         {
             "action": "Contain the fire perimeter.",
             "responsible_unit": "fire_department",
-            "timeframe": "immediate",
+            "timeframe": "ongoing",
+        },
+        {
+            "action": "Establish the initial fire command point.",
+            "responsible_unit": "fire_department",
+            "timeframe": "within_1_hour",
         },
         {
             "action": "Restrict access to the incident area.",
@@ -868,11 +864,16 @@ def test_fire_actions_are_preserved_and_attached_to_responsible_stations():
 
     assert result["response_actions"] == plan["response_actions"]
     assert result["allocated_units"]["fire_stations"][0]["response_actions"] == [
-        plan["response_actions"][0]
+        plan["response_actions"][0],
+        plan["response_actions"][1],
     ]
+    assert result["allocated_units"]["fire_stations"][0]["timeframe"] == (
+        "within_1_hour"
+    )
     assert result["allocated_units"]["police_stations"][0]["response_actions"] == [
-        plan["response_actions"][1]
+        plan["response_actions"][2]
     ]
+    assert result["allocated_units"]["police_stations"][0]["timeframe"] == "immediate"
 
 
 def test_flood_successful_planner_actions_drive_station_allocation():
@@ -921,9 +922,12 @@ def test_flood_successful_planner_actions_drive_station_allocation():
         station_result["response_actions"] == [plan["response_actions"][0]]
         for station_result in result["allocated_units"]["fire_stations"]
     )
+    assert len(result["allocated_units"]["fire_stations"]) == 1
+    assert result["allocated_units"]["fire_stations"][0]["timeframe"] == "immediate"
     assert result["allocated_units"]["police_stations"][0]["response_actions"] == [
         plan["response_actions"][1]
     ]
+    assert result["allocated_units"]["police_stations"][0]["timeframe"] == "immediate"
 
 
 def test_concurrent_batches_cannot_claim_the_same_station():

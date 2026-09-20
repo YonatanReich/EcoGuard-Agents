@@ -508,6 +508,7 @@ def _allocation_summary(value: Any) -> ResourceAllocationSummary | None:
                     distance_km=station.get("distance_km"),
                     allocation_status=str(station["allocation_status"]),
                     selection_reason=str(station["selection_reason"]),
+                    timeframe=station.get("timeframe"),
                     response_actions=[
                         FireResponseAction.model_validate(action)
                         for action in station.get("response_actions") or []

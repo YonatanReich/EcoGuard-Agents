@@ -187,6 +187,9 @@ function FireEventDetails({ event }: { event: FireEvent }) {
                   )}
                 </span>
                 {station.address && <span>{station.address}</span>}
+                {station.timeframe && (
+                  <span className="event-modal__timeframe">{station.timeframe}</span>
+                )}
                 {(station.response_actions?.length ?? 0) > 0 && (
                   <ul className="event-modal__station-actions">
                     {station.response_actions?.map((action, index) => (
@@ -641,6 +644,9 @@ function FloodEventDetails({ event }: { event: FloodEvent }) {
                       : ` · Travel time: ${formatDuration(station.route.duration_s)}`
                   )}
                 </span>
+                {station.timeframe && (
+                  <span className="event-modal__timeframe">{station.timeframe}</span>
+                )}
                 {station.route?.requires_field_access_confirmation && (
                   <span className="event-modal__allocation-warning">
                     The straight dashed segment to the target is not a verified access route; its travel time is unknown.

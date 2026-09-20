@@ -61,6 +61,7 @@ export type AllocatedStation = {
   distance_km: number | null
   allocation_status: string
   selection_reason: string
+  timeframe?: 'immediate' | 'within_1_hour' | 'within_6_hours' | 'ongoing' | null
   response_actions?: FireResponseAction[]
   route: AllocationRoute | null
 }

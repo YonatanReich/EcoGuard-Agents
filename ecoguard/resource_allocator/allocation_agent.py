@@ -21,30 +21,7 @@ from ecoguard.analyzers.emergency.flood.risk_analysis_schemas import (
 from ecoguard.resource_allocator.mapbox_client import MapboxClient, RoutingError
 from ecoguard.resource_allocator.flood_road_targets import FloodRoadTargetAgent
 
-# Temporary station counts until an operational source can provide real
-# vehicle quantities. These numbers represent stations, not vehicles.
-STATIONS_REQUIRED_BY_RISK = {
-    "low": {
-        "fire_department": 1,
-        "police": 1,
-        "medical_services": 1,
-    },
-    "medium": {
-        "fire_department": 2,
-        "police": 1,
-        "medical_services": 1,
-    },
-    "high": {
-        "fire_department": 3,
-        "police": 2,
-        "medical_services": 2,
-    },
-    "critical": {
-        "fire_department": 4,
-        "police": 2,
-        "medical_services": 2,
-    },
-}
+RISK_LEVELS = frozenset({"low", "medium", "high", "critical"})
 
 TIMEFRAME_PRIORITY = {
     "ongoing": 0,
@@ -59,14 +36,6 @@ STATION_TYPES = {
     "medical_services": ("mda_station", "mda_stations"),
 }
 
-# Temporary Flood station counts until an operational policy source provides
-# real requirements.  These are station assignments, not vehicle quantities.
-FLOOD_STATIONS_REQUIRED_BY_SEVERITY = {
-    3: {"police": 1},
-    4: {"police": 1},
-    5: {"police": 1},
-    6: {"police": 1},
-}
 FLOOD_ROAD_PRIORITY = {
     "motorway": 6,
     "trunk": 5,
@@ -332,19 +301,6 @@ class ResourceAllocationAgent:
         )
 
     @staticmethod
-    def _required_station_count(risk_level, recommended_unit, response_plan=None):
-        if recommended_unit == "police":
-            # Severity is sent to the responsible station; the station decides
-            # how many internal units it dispatches.
-            return 1
-        explicit = (
-            (response_plan or {}).get("station_requirements") or {}
-        ).get(recommended_unit)
-        if explicit is not None:
-            return explicit
-        return STATIONS_REQUIRED_BY_RISK[risk_level].get(recommended_unit, 1)
-
-    @staticmethod
     def _flood_site_priority(site):
         road = site.get("road") or {}
         verification = site.get("mapbox_verification") or {}
@@ -397,7 +353,7 @@ class ResourceAllocationAgent:
                     max(int(site.get("severity_level") or 3) for site in ready_sites),
                 ),
             )
-            requirements = dict(FLOOD_STATIONS_REQUIRED_BY_SEVERITY[severity])
+            requirements = {"police": 1}
             location = primary["allocation_location"]
             allocation_target = {
                 "target_id": primary.get("target_id"),
@@ -518,7 +474,6 @@ class ResourceAllocationAgent:
                     "fallback_reason": fallback_reason,
                 },
                 "recommended_units": list(requirements),
-                "station_requirements": requirements,
                 "response_actions": [
                     {
                         "action": "Secure access to the identified flood response site.",
@@ -683,7 +638,7 @@ class ResourceAllocationAgent:
             raise ValueError("operational risk score must be between 0 and 100")
 
         risk_level = str(responding_to.get("risk_level") or "").lower()
-        if risk_level not in STATIONS_REQUIRED_BY_RISK:
+        if risk_level not in RISK_LEVELS:
             raise ValueError("operational risk level is unavailable")
 
         recommended_units = list(
@@ -711,24 +666,6 @@ class ResourceAllocationAgent:
             raise ValueError(
                 "each recommended unit must have at least one response action"
             )
-        station_requirements = response_plan.get("station_requirements")
-        if station_requirements is not None:
-            if not isinstance(station_requirements, dict):
-                raise ValueError("station_requirements must be an object")
-            for unit, count in station_requirements.items():
-                if unit not in recommended_units:
-                    raise ValueError(
-                        "station requirement has no matching recommended unit"
-                    )
-                if (
-                    not isinstance(count, int)
-                    or isinstance(count, bool)
-                    or not 1 <= count <= 8
-                ):
-                    raise ValueError("station requirement must be between 1 and 8")
-                if unit == "police" and count != 1:
-                    raise ValueError("police allocation is one station per incident")
-
         metadata = response_plan.get("metadata") or {}
         queued_at = self._utc(
             item.get("queued_at") or metadata.get("timestamp") or now
@@ -1067,9 +1004,10 @@ class ResourceAllocationAgent:
         result["road_access"] = None
 
         for recommended_unit in recommended_units:
-            required_count = self._required_station_count(
-                request["risk_level"], recommended_unit, response_plan
-            )
+            # The planner selects unit types, not fleet sizes. Allocate one
+            # station for every requested type; the station owns its internal
+            # vehicle and crew dispatch decisions.
+            required_count = 1
             mapping = STATION_TYPES.get(recommended_unit)
             if mapping is None:
                 result["unsupported_units"].append(recommended_unit)
@@ -1198,8 +1136,16 @@ class ResourceAllocationAgent:
                 for action in response_plan.get("response_actions") or []
                 if action.get("responsible_unit") == recommended_unit
             ]
+            station_timeframe = max(
+                (
+                    str(action["timeframe"])
+                    for action in assigned_actions
+                ),
+                key=lambda value: TIMEFRAME_PRIORITY[value],
+            )
             for station in assigned:
                 station["response_actions"] = deepcopy(assigned_actions)
+                station["timeframe"] = station_timeframe
             result["allocated_units"][output_key] = assigned
             if result["road_access"] is None:
                 for station in assigned:
