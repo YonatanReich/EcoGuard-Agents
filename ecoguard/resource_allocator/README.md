@@ -29,6 +29,12 @@ reference data. Active claims are always read from and written to PostgreSQL.
 Partial unique indexes prevent concurrent double assignment of fire and MDA
 stations and make a police incident/station pair idempotent.
 
+Closing an incident releases every active allocation in the same database
+transaction. For Fire and MDA this makes the station available again; for
+Police it closes only that incident/station responsibility record. Released
+rows remain as allocation history. Incident merging does not invoke this
+release path.
+
 ## Flood road response sites
 
 `FloodRoadTargetAgent` identifies where a Flood allocation could be sent. It

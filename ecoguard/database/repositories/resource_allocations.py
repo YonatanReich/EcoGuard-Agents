@@ -17,6 +17,54 @@ STATION_COLUMNS = {
 }
 
 
+def release_incident_allocations_in_session(
+    session,
+    incident_id: str,
+    *,
+    released_at: datetime,
+    reason: str,
+) -> list[dict[str, Any]]:
+    """Close every active allocation using the caller's transaction."""
+
+    rows = session.execute(
+        text(
+            """
+            UPDATE resource_allocations
+            SET released_at = :released_at,
+                release_reason = :reason
+            WHERE incident_id = :incident_id
+              AND released_at IS NULL
+            RETURNING id,
+                      incident_id,
+                      CASE
+                        WHEN fire_station_id IS NOT NULL
+                          THEN 'fire_department'
+                        WHEN police_station_id IS NOT NULL
+                          THEN 'police'
+                        ELSE 'medical_services'
+                      END AS recommended_unit,
+                      coalesce(
+                        fire_station_id,
+                        police_station_id,
+                        mda_station_id
+                      ) AS station_id,
+                      allocated_at,
+                      released_at,
+                      release_reason,
+                      distance_km,
+                      risk_score,
+                      risk_level
+            """
+        ),
+        {
+            "incident_id": incident_id,
+            "released_at": released_at,
+            "reason": reason,
+        },
+    ).mappings().all()
+    return [dict(row) for row in rows]
+
+
 class ResourceAllocationRepository:
     """Store active claims and their release history in PostgreSQL."""
 
@@ -162,44 +210,14 @@ class ResourceAllocationRepository:
                 if incident_exists is None:
                     raise ValueError(f"incident does not exist: {incident_id}")
 
-                rows = session.execute(
-                    text(
-                        """
-                        UPDATE resource_allocations
-                        SET released_at = :released_at,
-                            release_reason = :reason
-                        WHERE incident_id = :incident_id
-                          AND released_at IS NULL
-                        RETURNING id,
-                                  incident_id,
-                                  CASE
-                                    WHEN fire_station_id IS NOT NULL
-                                      THEN 'fire_department'
-                                    WHEN police_station_id IS NOT NULL
-                                      THEN 'police'
-                                    ELSE 'medical_services'
-                                  END AS recommended_unit,
-                                  coalesce(
-                                    fire_station_id,
-                                    police_station_id,
-                                    mda_station_id
-                                  ) AS station_id,
-                                  allocated_at,
-                                  released_at,
-                                  release_reason,
-                                  distance_km,
-                                  risk_score,
-                                  risk_level
-                        """
-                    ),
-                    {
-                        "incident_id": incident_id,
-                        "released_at": released_at,
-                        "reason": reason,
-                    },
-                ).mappings().all()
+                rows = release_incident_allocations_in_session(
+                    session,
+                    incident_id,
+                    released_at=released_at,
+                    reason=reason,
+                )
 
-        return [dict(row) for row in rows]
+        return rows
 
     def active_allocations(self) -> list[dict[str, Any]]:
         """Return every currently active station claim."""
