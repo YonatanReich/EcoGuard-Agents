@@ -27,6 +27,19 @@ export type AllocationRoute = {
   distance_m: number | null
   duration_s: number | null
   geometry: GeoJsonLineString | null
+  origin?: {
+    input: { latitude: number; longitude: number }
+    snapped: { latitude: number; longitude: number } | null
+    snap_distance_m: number | null
+    road: string | null
+  }
+  destination?: {
+    input: { latitude: number; longitude: number }
+    snapped: { latitude: number; longitude: number } | null
+    snap_distance_m: number | null
+    road: string | null
+  }
+  offroad_segment?: unknown
   estimated_arrival_at: string | null
   road_access_verified: boolean
   requires_field_access_confirmation: boolean
