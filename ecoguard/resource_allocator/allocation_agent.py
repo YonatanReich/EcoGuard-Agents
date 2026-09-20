@@ -14,6 +14,7 @@ from ecoguard.database.repositories.towns import (
     responsible_police_stations,
     town_at_location,
 )
+from ecoguard.coordinator import incidents as incident_store
 from ecoguard.resource_allocator.mapbox_client import MapboxClient, RoutingError
 from ecoguard.resource_allocator.flood_road_targets import FloodRoadTargetAgent
 
@@ -111,6 +112,7 @@ class ResourceAllocationAgent:
         police_responsibility_reader=None,
         town_reader=None,
         flood_target_agent=None,
+        incident_reader=None,
     ):
         self.station_readers = (
             _default_station_readers()
@@ -128,6 +130,7 @@ class ResourceAllocationAgent:
         self.flood_target_agent = flood_target_agent or FloodRoadTargetAgent(
             mapbox_client=self.routing_client
         )
+        self.incident_reader = incident_reader or incident_store.incident_by_id
         self._station_catalogs = {}
         self._stations_by_key = {}
         self._station_catalog_errors = {}
@@ -1146,12 +1149,7 @@ class ResourceAllocationAgent:
                 }
                 targeting = None
             elif hazard == "flood":
-                allocation_input = getattr(result, "allocation_input", None)
-                incident = (
-                    allocation_input.get("incident")
-                    if isinstance(allocation_input, dict)
-                    else None
-                )
+                incident = self.incident_reader(result.incident_id)
                 if not isinstance(incident, dict):
                     result.resource_allocation_result = {
                         "incident_id": result.incident_id,

@@ -31,10 +31,10 @@ def _dispatch():
     return result
 
 
-def test_handler_preserves_incident_for_the_resource_allocator():
+def test_handler_marks_incident_ready_for_the_resource_allocator():
     result = _dispatch()
 
     assert result.status == "success"
     assert result.handler == "flood_emergency_allocation_handoff"
     assert result.resource_allocation_result is None
-    assert result.allocation_input == {"incident": _incident()}
+    assert not hasattr(result, "allocation_input")

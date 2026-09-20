@@ -12,7 +12,7 @@ from ecoguard.coordinator.dispatcher import (
     IncidentProcessingResult,
 )
 class FloodRoadIncidentHandler:
-    """Preserve the incident snapshot needed by Flood resource allocation."""
+    """Mark a Flood incident ready for deterministic resource allocation."""
 
     name = "flood_emergency_allocation_handoff"
 
@@ -47,7 +47,6 @@ class FloodRoadIncidentHandler:
             analysis_id=context.analysis_id,
             coordinator_routing_id=context.coordinator_routing_id,
             handler=self.name,
-            allocation_input={"incident": dict(incident)},
         )
 
 

@@ -191,6 +191,7 @@ def allocation_agent(
     police_responsibility_reader=None,
     town_reader=None,
     flood_target_agent=None,
+    incident_reader=None,
 ):
     return ResourceAllocationAgent(
         station_readers=station_readers,
@@ -203,6 +204,7 @@ def allocation_agent(
         ),
         town_reader=town_reader or (lambda **_: None),
         flood_target_agent=flood_target_agent or Mock(),
+        incident_reader=incident_reader or (lambda _: None),
     )
 
 
@@ -477,6 +479,9 @@ def test_resource_allocator_discovers_flood_roads_and_assigns_one_police_station
             ),
         },
         flood_target_agent=flood_target_agent,
+        incident_reader=lambda incident_id: (
+            incident if incident_id == "INC-FLOOD-1" else None
+        ),
     )
     incident = {"id": "INC-FLOOD-1", "signals": []}
     result = SimpleNamespace(
@@ -484,7 +489,6 @@ def test_resource_allocator_discovers_flood_roads_and_assigns_one_police_station
         hazard="flood",
         route="emergency",
         requested_at=NOW,
-        allocation_input={"incident": incident},
         planner_result=None,
         resource_allocation_result=None,
     )

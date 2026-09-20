@@ -9,6 +9,7 @@
  * Current layers:
  *   - Rain Radar — live precipitation radar from RainViewer.
  *   - Fire Danger — Fire Weather Index (FWI) from GWIS/EFFIS.
+ *   - Flood Events — active stream warnings and operational road sites.
  *   - Wind — animated near-surface wind visualization from Open-Meteo.
  *   - Fire Districts — the seven fire & rescue districts of responsibility.
  *   - Allocations — assigned stations and their routes to the selected event.
@@ -37,6 +38,12 @@ type LayersControlProps = {
   /** Toggle the national Current Risk grid. */
   onToggleFireRisk: () => void
 
+  /** Whether active Flood event geometry and markers are visible. */
+  showFloodEvents: boolean
+
+  /** Toggle the active Flood event layer. */
+  onToggleFloodEvents: () => void
+
   /** Whether the animated wind layer is currently visible. */
   showWind: boolean
 
@@ -64,6 +71,8 @@ function LayersControl({
   onToggleFireDanger,
   showFireRisk,
   onToggleFireRisk,
+  showFloodEvents,
+  onToggleFloodEvents,
   showWind,
   onToggleWind,
   showFireDistricts,
@@ -118,6 +127,15 @@ function LayersControl({
           onChange={onToggleFireDistricts}
         />
         <span>🛡 Fire Districts</span>
+      </label>
+
+      <label style={rowStyle}>
+        <input
+          type="checkbox"
+          checked={showFloodEvents}
+          onChange={onToggleFloodEvents}
+        />
+        <span>🌊 Flood Events</span>
       </label>
 
       <label style={rowStyle}>

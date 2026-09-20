@@ -216,6 +216,99 @@ class GeoJsonLineString(EventContract):
     coordinates: list[list[float]]
 
 
+class GeoJsonMultiLineString(EventContract):
+    type: Literal["MultiLineString"] = "MultiLineString"
+    coordinates: list[list[list[float]]]
+
+
+class GeographicPoint(EventContract):
+    latitude: float
+    longitude: float
+
+
+class FloodHydrometricStation(EventContract):
+    id: int
+    latitude: float
+    longitude: float
+    precision_m: float = Field(ge=0)
+    severity_level: int = Field(ge=3, le=6)
+    observed_at: AwareDatetime | None = None
+    stream_match: Literal["matched", "unmatched"]
+
+
+class FloodStream(EventContract):
+    stream_id: int | None = None
+    water_source_id: int
+    name: str | None = None
+    match_confidence: str | None = None
+    geometry: GeoJsonLineString | GeoJsonMultiLineString
+    display_semantics: Literal[
+        "warning_context_not_confirmed_inundation"
+    ] = "warning_context_not_confirmed_inundation"
+
+
+class FloodSourceContext(EventContract):
+    station: FloodHydrometricStation
+    strategy: str
+    stream: FloodStream | None = None
+
+
+class FloodRoad(EventContract):
+    segment_id: int | None = None
+    source: str | None = None
+    source_feature_id: str | None = None
+    road_class: str | None = None
+    base_class: str | None = None
+    name: str | None = None
+    ref: str | None = None
+    bridge: bool = False
+    tunnel: bool = False
+    vehicle_access: str | None = None
+
+
+class FloodRoadVerification(EventContract):
+    status: str
+    verified: bool
+    reason: str | None = None
+    mapbox_snap_distance_m: float | None = Field(default=None, ge=0)
+
+
+class FloodResponseSite(EventContract):
+    target_id: str
+    source_station_id: int
+    severity_level: int = Field(ge=3, le=6)
+    strategy: str
+    road: FloodRoad
+    crossing_type: str | None = None
+    urban: bool = False
+    crossing_location: GeographicPoint
+    allocation_location: GeographicPoint | None = None
+    allocation_eligible: bool
+    local_match_confidence: str
+    mapbox_verification: FloodRoadVerification
+
+
+class FloodAdvisory(EventContract):
+    type: str
+    action: str
+    instruction: str
+    scope: str | None = None
+
+
+class FloodDetails(EventContract):
+    severity_level: int = Field(ge=3, le=6)
+    return_period_label: str
+    sources: list[FloodSourceContext] = Field(default_factory=list)
+    response_sites: list[FloodResponseSite] = Field(default_factory=list)
+    allocation_ready_site_ids: list[str] = Field(default_factory=list)
+    targeting_status: str
+    targeting_reason: str | None = None
+    allocation_target: dict[str, Any] | None = None
+    advisories: list[FloodAdvisory] = Field(default_factory=list)
+    resource_allocation: ResourceAllocationSummary | None = None
+    limitations: list[str] = Field(default_factory=list)
+
+
 class TransportTimeEvidence(EventContract):
     status: Literal["estimated", "suppressed", "unavailable"]
     seconds: float | None = None
@@ -377,13 +470,24 @@ class FireSharedEvent(CommonSharedEvent):
     details: FireDetails
 
 
+class FloodSharedEvent(CommonSharedEvent):
+    type: Literal["flood"] = "flood"
+    classification: Literal["emergency"] = "emergency"
+    details: FloodDetails
+
+
 class GenericSharedEvent(CommonSharedEvent):
-    type: Literal["flood", "other"]
+    type: Literal["other"]
     details: dict[str, Any]
 
 
 SharedEvent = Annotated[
-    Union[AirPollutionSharedEvent, FireSharedEvent, GenericSharedEvent],
+    Union[
+        AirPollutionSharedEvent,
+        FireSharedEvent,
+        FloodSharedEvent,
+        GenericSharedEvent,
+    ],
     Field(discriminator="type"),
 ]
 

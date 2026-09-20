@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from 'react'
 import { Layer, Marker, Popup, Source } from 'react-map-gl/mapbox'
-import type { AllocatedStation, FireEvent } from '../../types/events'
+import type { AllocatedStation, FireEvent, FloodEvent } from '../../types/events'
 
 const RESOURCE_STYLE: Record<string, { color: string; label: string }> = {
   fire_department: { color: '#ef4444', label: 'F' },
@@ -25,15 +25,15 @@ function stationKey(station: AllocatedStation) {
   return `${station.recommended_unit}-${station.database_id}`
 }
 
-function formatEta(timestamp: string | null | undefined) {
-  if (!timestamp) return 'לא זמין'
-  const value = new Date(timestamp)
-  if (Number.isNaN(value.getTime())) return timestamp
-  return new Intl.DateTimeFormat('he-IL', {
-    timeZone: 'Asia/Jerusalem',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(value)
+function formatTravelTime(seconds: number | null | undefined) {
+  if (seconds == null) return 'לא זמין'
+  const totalMinutes = Math.max(1, Math.round(seconds / 60))
+  if (totalMinutes < 60) return `${totalMinutes} דקות`
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return minutes === 0
+    ? `${hours} שעות`
+    : `${hours} שעות ו-${minutes} דקות`
 }
 
 function formatStationDistance(distanceKm: number | null) {
@@ -45,7 +45,7 @@ function ResourceAllocationLayer({
   onShowDirections,
   showLegend = false,
 }: {
-  event: FireEvent
+  event: FireEvent | FloodEvent
   onShowDirections: (stationKey: string) => void
   showLegend?: boolean
 }) {
@@ -163,9 +163,17 @@ function ResourceAllocationLayer({
               {selectedStation.name}
             </strong>
             <span>
-              זמן הגעה משוער: {formatEta(selectedStation.route?.estimated_arrival_at)},{' '}
+              {selectedStation.route?.requires_field_access_confirmation
+                ? 'זמן נסיעה עד נקודת הירידה לשטח'
+                : 'זמן נסיעה'}:{' '}
+              {formatTravelTime(selectedStation.route?.duration_s)},{' '}
               {formatStationDistance(selectedStation.distance_km)}
             </span>
+            {selectedStation.route?.requires_field_access_confirmation && (
+              <span className="event-modal__allocation-warning">
+                זמן ההתקדמות מנקודה זו בתוך השטח אינו ידוע
+              </span>
+            )}
             <button
               type="button"
               onClick={() => onShowDirections(stationKey(selectedStation))}

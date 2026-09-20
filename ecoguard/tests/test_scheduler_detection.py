@@ -282,7 +282,6 @@ def test_scheduler_passes_flood_result_unchanged_to_resource_allocator(monkeypat
         route="emergency",
         requested_at=requested_at,
         planner_result=None,
-        allocation_input={"incident": {"id": "INC-FLOOD-1"}},
         resource_allocation_result=None,
     )
 

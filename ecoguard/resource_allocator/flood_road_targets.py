@@ -348,6 +348,7 @@ class FloodRoadTargetAgent:
             "status": "targets_identified",
             "response_sites": [],
             "allocation_ready_sites": [],
+            "hydrometric_sources": [],
             "resource_allocations": [],
             "advisories": [dict(STREAM_ACCESS_ADVISORY)],
             "errors": [],
@@ -376,8 +377,40 @@ class FloodRoadTargetAgent:
                         "message": str(error),
                     }
                 )
+                result["hydrometric_sources"].append(
+                    {
+                        "station": {
+                            "id": station_id,
+                            "latitude": float(state["latitude"]),
+                            "longitude": float(state["longitude"]),
+                            "precision_m": float(state["precision_m"]),
+                            "severity_level": int(state["severity_level"]),
+                            "observed_at": state.get("observed_at"),
+                            "stream_match": "unmatched",
+                        },
+                        "strategy": "spatial_lookup_failed",
+                        "stream": None,
+                    }
+                )
                 continue
             context_by_station[station_id] = (strategy, stream)
+            result["hydrometric_sources"].append(
+                {
+                    "station": {
+                        "id": station_id,
+                        "latitude": float(state["latitude"]),
+                        "longitude": float(state["longitude"]),
+                        "precision_m": float(state["precision_m"]),
+                        "severity_level": int(state["severity_level"]),
+                        "observed_at": state.get("observed_at"),
+                        "stream_match": (
+                            "matched" if stream is not None else "unmatched"
+                        ),
+                    },
+                    "strategy": strategy,
+                    "stream": dict(stream) if stream is not None else None,
+                }
+            )
             for candidate in candidates:
                 if road_is_relevant(candidate, int(state["severity_level"])):
                     raw.append({**candidate, "_state": state})

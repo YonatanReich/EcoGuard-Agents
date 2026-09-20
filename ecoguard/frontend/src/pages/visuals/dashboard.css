@@ -462,6 +462,80 @@
     overflow-wrap: anywhere;
 }
 
+.flood-station-marker,
+.flood-crossing-marker {
+    display: grid;
+    place-items: center;
+    padding: 0;
+    color: #fff;
+    cursor: pointer;
+    box-shadow: 0 3px 10px #0009;
+}
+
+.flood-station-marker {
+    width: 1.8rem;
+    height: 1.8rem;
+    border: 3px solid #fff;
+    border-radius: 50%;
+    background: var(--flood-color, #ef4444);
+    font-size: 1.15rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.flood-crossing-marker {
+    width: 1.35rem;
+    height: 1.35rem;
+    border: 2px solid #fff;
+    border-radius: 0.25rem;
+    background: #b91c1c;
+    font-size: 1.25rem;
+    font-weight: 900;
+    line-height: 0.8;
+}
+
+.flood-crossing-marker--unverified {
+    border-style: dashed;
+    background: #64748b;
+}
+
+.flood-access-marker {
+    display: block;
+    width: 0.85rem;
+    height: 0.85rem;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    background: #38bdf8;
+    box-shadow: 0 2px 8px #0009;
+}
+
+.flood-station-marker:hover,
+.flood-station-marker:focus-visible,
+.flood-crossing-marker:hover,
+.flood-crossing-marker:focus-visible {
+    transform: scale(1.15);
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+}
+
+.flood-target-popup .mapboxgl-popup-content {
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 0.65rem;
+    background: #0f172a;
+    color: #f8fafc;
+}
+
+.flood-target-popup__content {
+    display: grid;
+    gap: 0.25rem;
+    min-width: 12rem;
+}
+
+.flood-target-popup__content span {
+    color: #cbd5e1;
+    font-size: 0.76rem;
+}
+
 .event-modal__facts a {
     color: #7dd3fc;
     text-underline-offset: 2px;

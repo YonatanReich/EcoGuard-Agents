@@ -19,6 +19,20 @@ STREAM_IDENTITY = text(
            (topology.stream_context -> 'stream' ->> 'water_source_id')::bigint
              AS water_source_id,
            topology.stream_context -> 'stream' ->> 'name_he' AS stream_name,
+           (
+             SELECT ST_AsGeoJSON(
+               ST_Multi(
+                 ST_CollectionExtract(
+                   ST_UnaryUnion(ST_Collect(stream.geometry)),
+                   2
+                 )
+               )
+             )::jsonb
+             FROM streams AS stream
+             WHERE stream.water_source_id =
+               (topology.stream_context -> 'stream' ->> 'water_source_id')::bigint
+               AND NOT ST_IsEmpty(stream.geometry)
+           ) AS geometry,
            EXISTS (
              SELECT 1
              FROM streams AS stream
