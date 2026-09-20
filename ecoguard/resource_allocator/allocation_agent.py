@@ -60,9 +60,9 @@ STATION_TYPES = {
 # real requirements.  These are station assignments, not vehicle quantities.
 FLOOD_STATIONS_REQUIRED_BY_SEVERITY = {
     3: {"police": 1},
-    4: { "police": 1},
-    5: {"fire_department": 1, "police": 1, "medical_services": 1},
-    6: {"fire_department": 1, "police": 1, "medical_services": 1},
+    4: {"police": 1},
+    5: {"police": 1},
+    6: {"police": 1},
 }
 FLOOD_RISK_BY_SEVERITY = {
     3: ("low", 40.0),

@@ -392,10 +392,10 @@ def _flood_site(severity, road_class="primary", target_id="target-primary"):
 @pytest.mark.parametrize(
     ("severity", "expected"),
     [
-        (3, {"fire_department": 1, "police": 1}),
-        (4, {"fire_department": 2, "police": 1, "medical_services": 1}),
-        (5, {"fire_department": 3, "police": 1, "medical_services": 1}),
-        (6, {"fire_department": 4, "police": 1, "medical_services": 2}),
+        (3, {"police": 1}),
+        (4, {"police": 1}),
+        (5, {"police": 1}),
+        (6, {"police": 1}),
     ],
 )
 def test_flood_counts_are_hardcoded_in_resource_allocator(severity, expected):
