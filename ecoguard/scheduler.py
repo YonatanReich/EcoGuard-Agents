@@ -32,6 +32,9 @@ from ecoguard.collection.fire.telegram.collector import TelegramCollector
 from ecoguard.collection.shared.open_meteo.forecast import WeatherForecastCollector
 from ecoguard.collection.shared.open_meteo.observations import WeatherCollector
 from ecoguard.resource_allocator.allocation_agent import ResourceAllocationAgent
+from ecoguard.resource_allocator.allocation_agent import (
+    EARTHQUAKE_MINIMUM_RESPONSE_POLICY,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,27 +45,33 @@ resource_allocator = ResourceAllocationAgent()
 
 
 def allocate_resources(processing_results):
-    """Allocate one contended station pool across all eligible fire plans."""
+    """Allocate one contended station pool across eligible emergency plans."""
     requests = []
     eligible_results = []
 
     for result in processing_results:
         response_plan = getattr(result, "planner_result", None)
         if (
-            getattr(result, "hazard", None) != "fire"
+            getattr(result, "hazard", None) not in {"fire", "earthquake"}
             or getattr(result, "route", None) != "emergency"
             or not isinstance(response_plan, dict)
+            or (
+                getattr(result, "hazard", None) == "earthquake"
+                and (response_plan.get("metadata") or {}).get("planning_status")
+                != "success"
+            )
         ):
             continue
 
         eligible_results.append(result)
-        requests.append(
-            {
-                "incident_id": result.incident_id,
-                "queued_at": result.requested_at,
-                "response_plan": response_plan,
-            }
-        )
+        request = {
+            "incident_id": result.incident_id,
+            "queued_at": result.requested_at,
+            "response_plan": response_plan,
+        }
+        if result.hazard == "earthquake":
+            request["allocation_policy"] = EARTHQUAKE_MINIMUM_RESPONSE_POLICY
+        requests.append(request)
 
     if not requests:
         return {}

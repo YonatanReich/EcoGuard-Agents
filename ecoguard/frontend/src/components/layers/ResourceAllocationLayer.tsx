@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from 'react'
 import { Layer, Marker, Popup, Source } from 'react-map-gl/mapbox'
-import type { AllocatedStation, FireEvent } from '../../types/events'
+import type { AllocatedStation, EarthquakeEvent, FireEvent } from '../../types/events'
 
 const RESOURCE_STYLE: Record<string, { color: string; label: string }> = {
   fire_department: { color: '#ef4444', label: 'F' },
@@ -44,7 +44,7 @@ function ResourceAllocationLayer({
   event,
   onShowDirections,
 }: {
-  event: FireEvent
+  event: FireEvent | EarthquakeEvent
   onShowDirections: (stationKey: string) => void
 }) {
   const stations = event.details.resource_allocation?.stations ?? []

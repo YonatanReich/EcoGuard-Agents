@@ -183,7 +183,7 @@ function Dashboard() {
   const corridorEvent = selectedEvent?.type === 'air_pollution'
     ? selectedEvent
     : null
-  const allocationEvent = selectedEvent?.type === 'fire'
+  const allocationEvent = (selectedEvent?.type === 'fire' || selectedEvent?.type === 'earthquake')
     && selectedEvent.details.resource_allocation
     ? selectedEvent
     : null

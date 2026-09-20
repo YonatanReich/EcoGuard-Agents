@@ -251,6 +251,17 @@ def test_scheduler_allocates_all_eligible_fire_plans_in_one_batch(monkeypatch):
         planner_result={"event_id": "PLAN-3"},
         resource_allocation_result=None,
     )
+    earthquake = SimpleNamespace(
+        incident_id="INC-EQ-1",
+        hazard="earthquake",
+        route="emergency",
+        requested_at=requested_at,
+        planner_result={
+            "metadata": {"planning_status": "success"},
+            "hazard_type": "earthquake",
+        },
+        resource_allocation_result=None,
+    )
 
     class RecordingAllocator:
         def __init__(self):
@@ -267,13 +278,13 @@ def test_scheduler_allocates_all_eligible_fire_plans_in_one_batch(monkeypatch):
     monkeypatch.setattr(shared_runtime, "resource_allocator", allocator)
 
     allocations = shared_runtime.allocate_resources(
-        [fire_one, advisory, fire_two]
+        [fire_one, advisory, fire_two, earthquake]
     )
 
     assert len(allocator.calls) == 1
     assert [
         request["incident_id"] for request in allocator.calls[0]
-    ] == ["INC-FIRE-1", "INC-FIRE-2"]
+    ] == ["INC-FIRE-1", "INC-FIRE-2", "INC-EQ-1"]
     assert allocator.calls[0][0]["response_plan"] == {"event_id": "PLAN-1"}
     assert fire_one.resource_allocation_result == {
         "incident_id": "INC-FIRE-1",
@@ -284,7 +295,14 @@ def test_scheduler_allocates_all_eligible_fire_plans_in_one_batch(monkeypatch):
         "status": "allocated",
     }
     assert advisory.resource_allocation_result is None
-    assert set(allocations) == {"INC-FIRE-1", "INC-FIRE-2"}
+    assert allocator.calls[0][2]["allocation_policy"] == (
+        "earthquake_minimum_response_v1"
+    )
+    assert earthquake.resource_allocation_result == {
+        "incident_id": "INC-EQ-1",
+        "status": "allocated",
+    }
+    assert set(allocations) == {"INC-FIRE-1", "INC-FIRE-2", "INC-EQ-1"}
 
 
 def test_scheduler_allocation_failure_does_not_block_projection(monkeypatch):
