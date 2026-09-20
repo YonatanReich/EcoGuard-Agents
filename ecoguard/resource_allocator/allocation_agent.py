@@ -1136,16 +1136,8 @@ class ResourceAllocationAgent:
                 for action in response_plan.get("response_actions") or []
                 if action.get("responsible_unit") == recommended_unit
             ]
-            station_timeframe = max(
-                (
-                    str(action["timeframe"])
-                    for action in assigned_actions
-                ),
-                key=lambda value: TIMEFRAME_PRIORITY[value],
-            )
             for station in assigned:
                 station["response_actions"] = deepcopy(assigned_actions)
-                station["timeframe"] = station_timeframe
             result["allocated_units"][output_key] = assigned
             if result["road_access"] is None:
                 for station in assigned:

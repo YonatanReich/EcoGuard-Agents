@@ -867,13 +867,9 @@ def test_fire_actions_are_preserved_and_attached_to_responsible_stations():
         plan["response_actions"][0],
         plan["response_actions"][1],
     ]
-    assert result["allocated_units"]["fire_stations"][0]["timeframe"] == (
-        "within_1_hour"
-    )
     assert result["allocated_units"]["police_stations"][0]["response_actions"] == [
         plan["response_actions"][2]
     ]
-    assert result["allocated_units"]["police_stations"][0]["timeframe"] == "immediate"
 
 
 def test_flood_successful_planner_actions_drive_station_allocation():
@@ -923,11 +919,9 @@ def test_flood_successful_planner_actions_drive_station_allocation():
         for station_result in result["allocated_units"]["fire_stations"]
     )
     assert len(result["allocated_units"]["fire_stations"]) == 1
-    assert result["allocated_units"]["fire_stations"][0]["timeframe"] == "immediate"
     assert result["allocated_units"]["police_stations"][0]["response_actions"] == [
         plan["response_actions"][1]
     ]
-    assert result["allocated_units"]["police_stations"][0]["timeframe"] == "immediate"
 
 
 def test_concurrent_batches_cannot_claim_the_same_station():

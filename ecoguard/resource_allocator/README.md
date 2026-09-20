@@ -27,8 +27,8 @@ This says *which one*, and how it gets there.
 Each unit type in the successful response plan receives exactly one station.
 Risk level does not multiply station counts, and the allocator ignores any
 quantity hint: staffing and vehicle quantities remain decisions for the
-assigned station. Every station result carries the actions for its unit type
-and the most urgent timeframe among those actions.
+assigned station. Every station result carries the actions for its unit type;
+each action carries its own timeframe.
 
 Station details are cached in each allocator process because they are static
 reference data. Active claims are always read from and written to PostgreSQL.

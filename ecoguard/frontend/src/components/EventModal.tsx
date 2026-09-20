@@ -48,6 +48,12 @@ function formatUnavailableReason(reason: string) {
   return reason.replaceAll('_', ' ')
 }
 
+function formatAllocationError(error: Record<string, unknown>) {
+  const reason = typeof error.reason === 'string' ? formatUnavailableReason(error.reason) : null
+  const message = typeof error.message === 'string' ? error.message : null
+  return [reason, message].filter(Boolean).join(': ') || 'Allocation failed'
+}
+
 function websiteUrl(value: string) {
   return /^https?:\/\//i.test(value) ? value : `https://${value}`
 }
@@ -187,9 +193,6 @@ function FireEventDetails({ event }: { event: FireEvent }) {
                   )}
                 </span>
                 {station.address && <span>{station.address}</span>}
-                {station.timeframe && (
-                  <span className="event-modal__timeframe">{station.timeframe}</span>
-                )}
                 {(station.response_actions?.length ?? 0) > 0 && (
                   <ul className="event-modal__station-actions">
                     {station.response_actions?.map((action, index) => (
@@ -236,6 +239,16 @@ function FireEventDetails({ event }: { event: FireEvent }) {
             <p className="event-modal__allocation-warning">
               The allocation is partial; at least one requested resource is missing.
             </p>
+          )}
+          {details.resource_allocation.errors.length > 0 && (
+            <div className="event-modal__allocation-warning">
+              <strong>Allocation errors</strong>
+              <ul>
+                {details.resource_allocation.errors.map((error, index) => (
+                  <li key={index}>{formatAllocationError(error)}</li>
+                ))}
+              </ul>
+            </div>
           )}
         </section>
       )}
@@ -644,9 +657,6 @@ function FloodEventDetails({ event }: { event: FloodEvent }) {
                       : ` · Travel time: ${formatDuration(station.route.duration_s)}`
                   )}
                 </span>
-                {station.timeframe && (
-                  <span className="event-modal__timeframe">{station.timeframe}</span>
-                )}
                 {station.route?.requires_field_access_confirmation && (
                   <span className="event-modal__allocation-warning">
                     The straight dashed segment to the target is not a verified access route; its travel time is unknown.
@@ -683,6 +693,16 @@ function FloodEventDetails({ event }: { event: FloodEvent }) {
               </li>
             ))}
           </ul>
+          {allocation.errors.length > 0 && (
+            <div className="event-modal__allocation-warning">
+              <strong>Allocation errors</strong>
+              <ul>
+                {allocation.errors.map((error, index) => (
+                  <li key={index}>{formatAllocationError(error)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </section>
       )}
 
