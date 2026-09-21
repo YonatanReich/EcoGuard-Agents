@@ -93,11 +93,15 @@ def default_handler_registry() -> dict[tuple[str, str], IncidentHandler]:
     from ecoguard.analyzers.emergency.flood.incident_handler import (
         configured_flood_road_incident_handler,
     )
+    from ecoguard.analyzers.emergency.fire.incident_handler import (
+        configured_fire_incident_handler,
+    )
 
     return {
         ("air_pollution", "non_emergency"):
             configured_air_pollution_incident_handler(),
         ("earthquake", "emergency"): EarthquakeIncidentHandler(),
+        ("fire", "emergency"): configured_fire_incident_handler(),
         ("flood", "emergency"): configured_flood_road_incident_handler(),
     }
 
