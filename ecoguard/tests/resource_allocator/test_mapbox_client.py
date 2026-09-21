@@ -165,3 +165,97 @@ def test_mapbox_error_does_not_expose_access_token():
         )
 
     assert "test-token" not in str(error.value)
+
+
+def test_tilequery_verifies_local_crossing_and_returns_mapbox_access_point():
+    def handler(request):
+        assert request.url.path.startswith(
+            "/v4/mapbox.mapbox-streets-v8/tilequery/34.8,32.0.json"
+        )
+        assert request.url.params["layers"] == "road"
+        assert request.url.params["geometry"] == "linestring"
+        return httpx.Response(
+            200,
+            json={
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "id": 77,
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": [34.8001, 32.0001],
+                        },
+                        "properties": {
+                            "class": "primary",
+                            "name_he": "כביש 1",
+                            "ref": "1",
+                            "tilequery": {
+                                "distance": 14.0,
+                                "geometry": "linestring",
+                                "layer": "road",
+                            },
+                        },
+                    }
+                ],
+            },
+        )
+
+    result = client_for(handler).verify_road_candidate(
+        {
+            "latitude": 32.0,
+            "longitude": 34.8,
+            "road_class": "primary_link",
+            "road_name": "כביש 1",
+            "road_ref": "1",
+        }
+    )
+
+    assert result["verified"] is True
+    assert result["confidence"] == "high"
+    assert result["mapbox_snap_distance_m"] == 14.0
+    assert result["mapbox_access_location"] == {
+        "latitude": 32.0001,
+        "longitude": 34.8001,
+    }
+
+
+def test_tilequery_rejects_a_conflicting_explicit_road_number():
+    def handler(request):
+        return httpx.Response(
+            200,
+            json={
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "id": 77,
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": [34.8, 32.0],
+                        },
+                        "properties": {
+                            "class": "primary",
+                            "ref": "4",
+                            "tilequery": {
+                                "distance": 0,
+                                "geometry": "linestring",
+                                "layer": "road",
+                            },
+                        },
+                    }
+                ],
+            },
+        )
+
+    result = client_for(handler).verify_road_candidate(
+        {
+            "latitude": 32.0,
+            "longitude": 34.8,
+            "road_class": "primary",
+            "road_ref": "1",
+        }
+    )
+
+    assert result["verified"] is False
+    assert result["reason"] == "compatible_mapbox_road_not_found"

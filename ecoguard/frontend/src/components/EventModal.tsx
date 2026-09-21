@@ -2,8 +2,10 @@ import { useEffect } from 'react'
 import { classify, hazardOf } from './hazards'
 import type {
   AirPollutionEvent,
+  AllocationSettlement,
   EarthquakeEvent,
   FireEvent,
+  FloodEvent,
   SharedEvent,
 } from '../types/events'
 
@@ -47,6 +49,46 @@ function formatUnavailableReason(reason: string) {
   return reason.replaceAll('_', ' ')
 }
 
+function websiteUrl(value: string) {
+  return /^https?:\/\//i.test(value) ? value : `https://${value}`
+}
+
+function EventTownDetails({ town }: { town: AllocationSettlement }) {
+  return (
+    <section className="event-modal__section">
+      <h3>Settlement details</h3>
+      <dl className="event-modal__facts event-modal__facts--compact">
+        {town.population != null && <div><dt>Population</dt><dd>{town.population.toLocaleString()}</dd></div>}
+        {town.households != null && <div><dt>Households</dt><dd>{town.households.toLocaleString()}</dd></div>}
+        {town.authority && <div><dt>Authority</dt><dd>{town.authority}</dd></div>}
+        {town.authority_type && <div><dt>Authority type</dt><dd>{town.authority_type}</dd></div>}
+        {town.authority_phone && (
+          <div>
+            <dt>Phone</dt>
+            <dd>
+              <a href={`tel:${town.authority_phone.replace(/[^0-9+*]/g, '')}`}>
+                {town.authority_phone}
+              </a>
+            </dd>
+          </div>
+        )}
+        {town.authority_address && <div><dt>Address</dt><dd>{town.authority_address}</dd></div>}
+        {town.authority_website && (
+          <div>
+            <dt>Website</dt>
+            <dd>
+              <a href={websiteUrl(town.authority_website)} target="_blank" rel="noreferrer">
+                Open authority website
+              </a>
+            </dd>
+          </div>
+        )}
+        {town.area_km2 != null && <div><dt>Area</dt><dd>{town.area_km2.toFixed(2)} km²</dd></div>}
+      </dl>
+    </section>
+  )
+}
+
 function compactAirPollutionLimitations(limitations: string[]) {
   const unique = new Map<string, string>()
   let hasMonitoringLocationLimitation = false
@@ -81,14 +123,12 @@ function compactAirPollutionLimitations(limitations: string[]) {
 
 function FireEventDetails({ event }: { event: FireEvent }) {
   const details = event.details
-  const assessed = event.analysis_status === 'success' && details.risk_score !== null
+  const assessed = event.analysis_status === 'success' && details.risk_level !== null
 
   return (
     <>
       <dl className="event-modal__facts">
-        <div><dt>Risk</dt><dd>{assessed ? `${details.risk_level} · ${details.risk_score}` : 'not assessed'}</dd></div>
-        <div><dt>Detection confidence</dt><dd>{details.detection_confidence ?? '—'}</dd></div>
-        <div><dt>Fire weather severity</dt><dd>{details.fire_weather_severity ?? '—'}</dd></div>
+        <div><dt>Risk</dt><dd>{assessed ? details.risk_level : 'not assessed'}</dd></div>
       </dl>
 
       {details.explanation && (
@@ -141,14 +181,17 @@ function FireEventDetails({ event }: { event: FireEvent }) {
                 <span>{formatComponentName(station.recommended_unit)}</span>
                 <span>
                   {station.distance_km == null ? 'Distance unavailable' : `${station.distance_km.toFixed(1)} km`}
-                  {station.route?.duration_s != null && ` · ${formatDuration(station.route.duration_s)}`}
+                  {station.route?.duration_s != null && (
+                    station.route.requires_field_access_confirmation
+                      ? ` · Travel time to road-route endpoint: ${formatDuration(station.route.duration_s)}`
+                      : ` · Travel time: ${formatDuration(station.route.duration_s)}`
+                  )}
                 </span>
                 {station.address && <span>{station.address}</span>}
-                {station.route?.estimated_arrival_at && (
-                  <span>ETA {formatTimestamp(station.route.estimated_arrival_at)}</span>
-                )}
                 {station.route?.requires_field_access_confirmation && (
-                  <span className="event-modal__allocation-warning">Field access requires confirmation</span>
+                  <span className="event-modal__allocation-warning">
+                    The straight dashed segment to the target is not a verified access route; its travel time is unknown.
+                  </span>
                 )}
                 {station.route?.steps_he && station.route.steps_he.length > 0 && (
                   <details
@@ -510,6 +553,123 @@ function AirPollutionEventDetails({ event }: { event: AirPollutionEvent }) {
   )
 }
 
+function FloodEventDetails({ event }: { event: FloodEvent }) {
+  const details = event.details
+  const allocation = details.resource_allocation
+
+  return (
+    <>
+      <section className="event-modal__section">
+        <h3>Flood evidence</h3>
+        <dl className="event-modal__facts event-modal__facts--compact">
+          <div><dt>Severity</dt><dd>{details.severity_level} / 6</dd></div>
+          <div><dt>Threshold</dt><dd>{details.return_period_label}</dd></div>
+          <div><dt>Targeting</dt><dd>{details.targeting_status.replaceAll('_', ' ')}</dd></div>
+          <div><dt>Road sites</dt><dd>{details.response_sites.length}</dd></div>
+        </dl>
+      </section>
+
+      <section className="event-modal__section">
+        <h3>Hydrometric sources</h3>
+        <ul className="event-modal__allocations">
+          {details.sources.map((source) => (
+            <li key={source.station.id}>
+              <strong>Station {source.station.id}</strong>
+              <span>Severity {source.station.severity_level}</span>
+              <span>
+                {source.stream
+                  ? `Matched stream: ${source.stream.name ?? source.stream.water_source_id}`
+                  : `No matched stream · location precision ${Math.round(source.station.precision_m)} m`}
+              </span>
+              {source.station.observed_at && <span>Observed {formatTimestamp(source.station.observed_at)}</span>}
+            </li>
+          ))}
+        </ul>
+        <p className="event-modal__semantic-note">
+          A highlighted stream is the specific stream under warning. It is not a measured inundation boundary. A dashed station ring shows location uncertainty only.
+        </p>
+      </section>
+
+      <section className="event-modal__section">
+        <h3>Road response sites</h3>
+        {details.response_sites.length > 0 ? (
+          <ul className="event-modal__allocations">
+            {details.response_sites.map((site) => (
+              <li key={site.target_id}>
+                <strong>{site.road.ref ?? site.road.name ?? site.road.base_class ?? 'Unnamed road'}</strong>
+                <span>{(site.crossing_type ?? 'crossing').replaceAll('_', ' ')} · {site.urban ? 'urban' : 'outside urban boundary'}</span>
+                <span>
+                  Crossing {site.crossing_location.latitude.toFixed(5)}, {site.crossing_location.longitude.toFixed(5)}
+                </span>
+                <span className={site.allocation_eligible ? undefined : 'event-modal__allocation-warning'}>
+                  {site.allocation_eligible ? 'Mapbox vehicle access verified' : 'Vehicle access not verified'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : <p>No relevant road crossing was identified. The stream-access warning remains active.</p>}
+      </section>
+
+      {details.advisories.length > 0 && (
+        <section className="event-modal__section">
+          <h3>Public safety instruction</h3>
+          <ul>{details.advisories.map((advisory) => <li key={advisory.type}>{advisory.instruction}</li>)}</ul>
+        </section>
+      )}
+
+      {allocation && (
+        <section className="event-modal__section">
+          <h3>Resource allocation</h3>
+          <dl className="event-modal__facts event-modal__facts--compact">
+            <div><dt>Allocation</dt><dd>{allocation.status}</dd></div>
+            <div><dt>Routing</dt><dd>{allocation.routing_status.replaceAll('_', ' ')}</dd></div>
+          </dl>
+          <ul className="event-modal__allocations">
+            {allocation.stations.map((station) => (
+              <li key={`${station.recommended_unit}-${station.database_id}`}>
+                <strong>{station.name}</strong>
+                <span>{formatComponentName(station.recommended_unit)}</span>
+                <span>
+                  {station.distance_km == null ? 'Distance unavailable' : `${station.distance_km.toFixed(1)} km`}
+                  {station.route?.duration_s != null && (
+                    station.route.requires_field_access_confirmation
+                      ? ` · Travel time to road-route endpoint: ${formatDuration(station.route.duration_s)}`
+                      : ` · Travel time: ${formatDuration(station.route.duration_s)}`
+                  )}
+                </span>
+                {station.route?.requires_field_access_confirmation && (
+                  <span className="event-modal__allocation-warning">
+                    The straight dashed segment to the target is not a verified access route; its travel time is unknown.
+                  </span>
+                )}
+                {station.route?.steps_he && station.route.steps_he.length > 0 && (
+                  <details
+                    id={`allocation-directions-${station.recommended_unit}-${station.database_id}`}
+                    className="event-modal__directions"
+                    dir="rtl"
+                  >
+                    <summary>הוראות נסיעה</summary>
+                    <ol>
+                      {station.route.steps_he.map((step, index) => (
+                        <li key={`${station.database_id}-flood-step-${index}`}>
+                          <span className="event-modal__direction-instruction">{step.instruction ?? 'המשך במסלול'}</span>
+                          <span className="event-modal__direction-meta">
+                            {step.distance_m != null && formatRouteStepDistance(step.distance_m)}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  </details>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </>
+  )
+}
+
 function EventModal({ event, onClose, directionsStationKey = null }: {
   event: SharedEvent
   onClose: () => void
@@ -572,6 +732,9 @@ function EventModal({ event, onClose, directionsStationKey = null }: {
         </dl>
 
         {event.description && <p className="event-modal__description">{event.description}</p>}
+        {event.type === 'fire' && event.details.resource_allocation?.settlement && (
+          <EventTownDetails town={event.details.resource_allocation.settlement} />
+        )}
         {event.processing?.failure_reason && (
           <section className="event-modal__section event-modal__section--gaps">
             <h3>Latest processing status</h3>
@@ -588,6 +751,7 @@ function EventModal({ event, onClose, directionsStationKey = null }: {
         )}
         {event.type === 'air_pollution' && <AirPollutionEventDetails event={event} />}
         {event.type === 'earthquake' && <EarthquakeEventDetails event={event} />}
+        {event.type === 'flood' && <FloodEventDetails event={event} />}
       </div>
     </div>
   )
