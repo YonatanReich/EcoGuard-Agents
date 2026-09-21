@@ -19,7 +19,7 @@ function EventCard({ event, onOpen, isSelected }: {
 }) {
   const hazard = hazardOf(event)
   const fire = event.type === 'fire' ? event.details : null
-  const assessed = event.analysis_status === 'success' && fire?.risk_score !== null
+  const assessed = event.analysis_status === 'success' && fire?.risk_level != null
   const officialClassification = event.type === 'air_pollution'
     ? event.details.official_pollutant_classification?.classification
     : null
@@ -69,11 +69,25 @@ function EventCard({ event, onOpen, isSelected }: {
             </time>
           </span>
         </>
+      ) : event.type === 'flood' ? (
+        <>
+          <span className="event-card__measurement">
+            Severity {event.details.severity_level} · {event.details.return_period_label}
+          </span>
+          <span className="event-card__station">
+            {event.details.sources.length} hydrometric station(s) ·{' '}
+            {event.details.response_sites.length} road site(s)
+          </span>
+          <span className="event-card__meta">
+            <span>{event.details.targeting_status.replaceAll('_', ' ')}</span>
+            <span>{event.latitude.toFixed(3)}, {event.longitude.toFixed(3)}</span>
+          </span>
+        </>
       ) : (
         <span className="event-card__meta">
           {assessed && fire ? (
             <span className="event-card__score">
-              {fire.risk_level} · {fire.risk_score}
+              {fire.risk_level}
             </span>
           ) : (
             <span className="event-card__score event-card__score--none">

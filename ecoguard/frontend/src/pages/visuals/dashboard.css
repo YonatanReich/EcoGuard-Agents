@@ -459,6 +459,86 @@
 .event-modal__facts dd {
     margin: 0.15rem 0 0;
     font-size: 0.92rem;
+    overflow-wrap: anywhere;
+}
+
+.flood-station-marker,
+.flood-crossing-marker {
+    display: grid;
+    place-items: center;
+    padding: 0;
+    color: #fff;
+    cursor: pointer;
+    box-shadow: 0 3px 10px #0009;
+}
+
+.flood-station-marker {
+    width: 1.8rem;
+    height: 1.8rem;
+    border: 3px solid #fff;
+    border-radius: 50%;
+    background: var(--flood-color, #ef4444);
+    font-size: 1.15rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.flood-crossing-marker {
+    width: 1.35rem;
+    height: 1.35rem;
+    border: 2px solid #fff;
+    border-radius: 0.25rem;
+    background: #b91c1c;
+    font-size: 1.25rem;
+    font-weight: 900;
+    line-height: 0.8;
+}
+
+.flood-crossing-marker--unverified {
+    border-style: dashed;
+    background: #64748b;
+}
+
+.flood-access-marker {
+    display: block;
+    width: 0.85rem;
+    height: 0.85rem;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    background: #38bdf8;
+    box-shadow: 0 2px 8px #0009;
+}
+
+.flood-station-marker:hover,
+.flood-station-marker:focus-visible,
+.flood-crossing-marker:hover,
+.flood-crossing-marker:focus-visible {
+    transform: scale(1.15);
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+}
+
+.flood-target-popup .mapboxgl-popup-content {
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 0.65rem;
+    background: #0f172a;
+    color: #f8fafc;
+}
+
+.flood-target-popup__content {
+    display: grid;
+    gap: 0.25rem;
+    min-width: 12rem;
+}
+
+.flood-target-popup__content span {
+    color: #cbd5e1;
+    font-size: 0.76rem;
+}
+
+.event-modal__facts a {
+    color: #7dd3fc;
+    text-underline-offset: 2px;
 }
 
 .event-modal__facts--compact {
@@ -652,6 +732,146 @@
   color: #f8fafc;
   font-size: 0.75rem;
   box-shadow: 0 4px 14px #0005;
+}
+
+.allocation-simulation-panel button {
+  border: 1px solid #fb923c;
+  border-radius: 0.4rem;
+  background: #f97316;
+  color: #fff;
+  min-width: 0;
+  padding: 0.15rem 0.24rem;
+  font: inherit;
+  font-size: 0.62rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.allocation-simulation-panel button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.allocation-simulation-panel {
+  position: absolute;
+  top: 180px;
+  left: 12px;
+  z-index: 5;
+  display: grid;
+  box-sizing: border-box;
+  gap: 0.2rem;
+  width: 214px;
+  padding: 0.38rem 0.45rem;
+  border: 1px solid rgba(251, 146, 60, 0.65);
+  border-radius: 0.55rem;
+  background: rgba(15, 23, 42, 0.92);
+  color: #f8fafc;
+  font-size: 0.63rem;
+  box-shadow: 0 5px 18px #0007;
+}
+
+.allocation-simulation-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.allocation-simulation-controls,
+.allocation-simulation-vehicles > div {
+  display: grid;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.allocation-simulation-controls {
+  grid-template-columns: auto auto auto minmax(0, 1fr);
+}
+
+.allocation-simulation-speed {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  min-width: 0;
+  color: #cbd5e1;
+}
+
+.allocation-simulation-speed input {
+  min-width: 0;
+  width: 100%;
+  height: 0.75rem;
+  accent-color: #f97316;
+}
+
+.allocation-simulation-speed output {
+  min-width: 1.2rem;
+  color: #fff;
+  text-align: right;
+  font-weight: 700;
+}
+
+.allocation-simulation-vehicles {
+  display: grid;
+  gap: 0;
+  max-height: 7.5rem;
+  overflow-y: auto;
+}
+
+.allocation-simulation-vehicles > div {
+  grid-template-columns: 2.7rem minmax(0, 1fr) auto;
+  gap: 0.2rem;
+  padding: 0.12rem 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.allocation-vehicle-type {
+  overflow: hidden;
+  color: var(--allocation-vehicle-color);
+  font-size: 0.58rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+}
+
+.allocation-simulation-error {
+  color: #fecaca !important;
+  font-weight: 700;
+}
+
+.allocation-simulation-error-detail {
+  max-height: 2.4rem;
+  overflow-y: auto;
+  color: #fecaca;
+  font-size: 0.56rem;
+  line-height: 1.15;
+}
+
+.allocation-vehicle-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #e2e8f0;
+}
+
+.allocation-simulation-model-status {
+  color: #86efac !important;
+  font-size: 0.56rem;
+  white-space: nowrap;
+}
+
+.allocation-vehicle-remaining {
+  color: #cbd5e1;
+  font-size: 0.58rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .allocation-simulation-panel {
+    top: 180px;
+    left: 12px;
+    width: 214px;
+  }
 }
 
 .event-modal__actions li {

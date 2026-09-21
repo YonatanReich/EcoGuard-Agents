@@ -56,7 +56,14 @@ confirmed Q10 pair creates a new incident. Closed incidents remain stored in
 
 ## Current downstream boundary
 
-Flood incidents are persisted and routed to the emergency queue. There is not
-yet a Flood analyzer, response planner or frontend event projector, so dispatch
-currently reports the Flood route as unsupported after the incident itself has
-already been stored successfully.
+Flood incidents are persisted and routed to the emergency queue. The resource
+allocator now has a deterministic road-targeting stage that consumes the
+station and severity evidence stored on the incident. The shared dispatcher
+only preserves the incident as allocation input; `ResourceAllocationAgent`
+invokes road targeting and performs the station reservation. A Flood
+unit-quantity planner and frontend event projector are still separate missing
+runtime stages. Until the operational planner is available, a documented
+deterministic fallback assigns stations by Q10-Q100 severity, with exactly one
+responsible police station per incident. Road destinations, station
+reservations and the stream-access advisory are produced automatically;
+frontend projection is not implemented yet.

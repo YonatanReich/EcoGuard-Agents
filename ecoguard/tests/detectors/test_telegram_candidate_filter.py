@@ -111,3 +111,13 @@ def test_context_terms_do_not_match_inside_longer_words(
     assert result["is_fire_candidate"] is False
     assert result["confidence"] == 0.0
     assert context_term not in result["matched_terms"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["אין שריפה בחיפה", "השריפה כובתה בחיפה", "הושגה שליטה בשריפה בחיפה"],
+)
+def test_negated_or_resolved_fire_is_not_supporting_candidate(text: str):
+    result = detect_fire_candidate(text)
+    assert result["is_fire_candidate"] is False
+    assert result["confidence"] < 0.60

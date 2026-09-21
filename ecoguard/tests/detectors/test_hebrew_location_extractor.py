@@ -79,6 +79,20 @@ def test_dispatch_style_supports_multiword_street(location_cache: Path):
     assert result["street"] == "משה לוי"
 
 
+def test_flood_dispatch_style_uses_the_generalized_event_marker(location_cache: Path):
+    result = extractor.extract_location(
+        "פתח תקווה הרצל הצפה", event_type="flood"
+    )
+
+    assert result["city"] == "פתח תקווה"
+    assert result["street"] == "הרצל"
+
+
+def test_generalized_extractor_rejects_unsupported_event_type(location_cache: Path):
+    with pytest.raises(ValueError, match="fire.*flood"):
+        extractor.extract_location("חיפה", event_type="air_pollution")
+
+
 def test_longest_locality_name_wins(location_cache: Path):
     result = extractor.extract_fire_location("שריפה בבית אלפא")
 
@@ -186,6 +200,16 @@ def test_missing_cache_returns_empty_result(
     monkeypatch.setattr(extractor, "CACHE_PATH", tmp_path / "missing.sqlite3")
 
     assert extractor.extract_fire_location("שריפה בחיפה") == extractor._empty_result()
+
+
+def test_locality_candidates_do_not_require_the_optional_sqlite_cache():
+    assert "מבשרת ציון" in extractor.locality_name_candidates(
+        "שריפת חורש סמוך למבשרת ציון"
+    )
+    assert "חיפה" in extractor.locality_name_candidates("בשל הצפות בחיפה נחסם כביש")
+    assert "ים המלח" not in extractor.locality_name_candidates(
+        "כביש 90 בין נחל דרגות למלונות ים המלח"
+    )
 
 
 @pytest.mark.skipif(not extractor.CACHE_PATH.is_file(), reason="official cache absent")
