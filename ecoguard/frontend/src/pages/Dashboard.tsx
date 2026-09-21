@@ -2,6 +2,13 @@
  * Dashboard page — the main operator view at /dashboard.
  *
  * Responsible for orchestrating the live environmental map.
+ *
+ * The same component serves /demo with `demo` set. Only the event feed
+ * changes: the demo screen reads fabricated incidents from a separate
+ * database so the allocator, the response plans and the modals can be shown
+ * working without waiting for something real to happen. Everything else —
+ * radar, wind, stations, the lake — stays live, because it is reference data
+ * and faking it would only make the demo less honest.
  */
 
 import {
@@ -94,7 +101,7 @@ function formatIsraelTime(
 
 
 
-function Dashboard() {
+function Dashboard({ demo = false }: { demo?: boolean }) {
   const [projectedEvents, setProjectedEvents] =
     useState<SharedEvent[]>([])
   // Held apart from `events` on purpose. A weak event is not a SharedEvent and
@@ -418,7 +425,7 @@ function Dashboard() {
     // An empty list is a valid answer — the pipeline ran and nothing is
     // burning — so this assigns unconditionally rather than only on a truthy
     // list, which would leave stale events on the map after a clean tick.
-    void fetch('/api/events')
+    void fetch(demo ? '/api/demo/events' : '/api/events')
       .then((response) => {
         if (!response.ok) throw new Error('Projected event feed is unavailable')
         return response.json() as Promise<SharedEventFeed>
@@ -427,8 +434,10 @@ function Dashboard() {
       .catch((error) => console.error('Error fetching projected events:', error))
       .finally(() => setIsLoadingEvents(false))
 
-    void loadWeakEvents()
-  }, [])
+    // Unverified reports are an operator decision queue. There is nothing to
+    // decide in a demo, and a confirm click would write to the live store.
+    if (!demo) void loadWeakEvents()
+  }, [demo])
 
   const loadWeakEvents = () =>
     fetch('/api/weak-events')
@@ -719,7 +728,7 @@ function Dashboard() {
           className="logout-button"
           onClick={handleLogout}
         >
-          Log out
+          {demo ? 'Leave demo' : 'Log out'}
         </button>
 
 
@@ -730,8 +739,16 @@ function Dashboard() {
           </h1>
 
           <p className="dashboard__subtitle">
-            Live disaster-risk map of Israel
+            {demo
+              ? 'Demo — fabricated incidents on the live map'
+              : 'Live disaster-risk map of Israel'}
           </p>
+
+          {demo && (
+            <span className="dashboard__demo-badge">
+              Demo data — no incident shown here is real
+            </span>
+          )}
 
         </div>
 

@@ -1,0 +1,43 @@
+# Keeping the build context small. ecoguard/data is ~315MB and most of it is
+# research material the running service never opens.
+venv/
+node_modules/
+.git/
+.claude/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+.env.*
+!.env.example
+
+# The frontend is built and served by Vercel, not by this image.
+ecoguard/frontend/
+
+# Tests and research are not part of the runtime.
+ecoguard/tests/
+ecoguard/research/
+outputs/
+*.txt
+!requirements.txt
+
+# Research-only data. Note what is NOT excluded: data/generated/ml is 160KB and
+# holds fire_prediction_landcover_terrain_model.joblib, which the API loads at
+# import. Excluding it breaks /api/fire-risk.
+ecoguard/data/generated/evaluation/
+
+# 123MB of Copernicus DEM and WorldCover rasters. These are BUILD inputs — the
+# scripts that produce fire_risk_grid.sqlite read them; the running service
+# reads the grid, not the rasters.
+#
+# Caveat: fire_risk_grid.sqlite does not currently exist in this repo, so the
+# raster-backed StaticFeatureStore is the only path that can answer today. If
+# you deploy without either, /api/fire-risk reports unavailable rather than
+# failing. Build the grid and ship it, or drop this line and carry the 123MB.
+ecoguard/data/generated/static_environmental_sources/
+
+# Runtime caches under data/generated (risk snapshot, refresh status, geocode
+# and weather sqlite) are rebuilt on demand.
+#
+# ponytail: they reset on every redeploy, which costs one cold rebuild of the
+# geocode cache. Mount a volume at ecoguard/data/generated if that starts to hurt.

@@ -237,3 +237,29 @@ def test_a_message_with_no_hazard_term_matches_nothing():
     assert hazards_in("טראמפ על איראן: השאלה אם ומתי") == {}
     assert hazards_in("") == {}
     assert hazards_in(None) == {}
+
+
+def test_classify_new_text_reads_from_the_bookmark_not_the_full_window(monkeypatch):
+    """The regression that made the lane re-send a day of messages every tick.
+
+    A message the model judged and found nothing in writes no candidate row, so
+    the row-existence check alone re-offers it until it ages out of the 24 hour
+    window. With a bookmark, the floor is the last successful run instead.
+    """
+    from ecoguard.detectors.text import classifier as module
+
+    bookmark = datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc)
+    seen: dict[str, datetime] = {}
+
+    monkeypatch.setattr(module, "last_success_at", lambda source: bookmark)
+    monkeypatch.setattr(module, "log_start", lambda source: 1)
+    monkeypatch.setattr(module, "log_finish", lambda *a, **k: None)
+    def record(*, since, limit):
+        seen["since"] = since
+        return []
+
+    monkeypatch.setattr(module, "unclassified_text_observations", record)
+
+    module.classify_new_text()
+
+    assert seen["since"] == bookmark

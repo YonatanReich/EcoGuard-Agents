@@ -129,3 +129,31 @@ body {
   color: white;
   transform: scale(1.1);
 }
+
+/* Secondary to the login button: same shape, outlined rather than filled, so
+   it reads as the side door it is. */
+.demo-button{
+  margin-top: 14px;
+  font-size: .95rem;
+  font-weight: 600;
+  font-family: "Plus Jakarta Sans", sans-serif;
+  border-radius: 20px;
+  padding: 0 18px;
+  height: 44px;
+  cursor: pointer;
+  color: white;
+  background: transparent;
+  border: 2px solid rgba(255, 255, 255, .55);
+  animation: fadeInOpacity 0.6s ease 1.15s both;
+  transition: background 0.3s ease, border-color 0.3s ease, transform 0.3s ease;
+}
+
+.demo-button:hover{
+  background: rgba(255, 255, 255, .14);
+  border-color: white;
+  transform: scale(1.06);
+}
+
+.home--leaving .demo-button {
+  animation: slideUpOut 0.4s ease 0.3s both;
+}
