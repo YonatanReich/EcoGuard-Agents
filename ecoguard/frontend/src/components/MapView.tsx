@@ -35,6 +35,7 @@ import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 
 import IsraelMask from './layers/IsraelMask'
+import FloodEventLayer from './layers/FloodEventLayer'
 import { classify, hazardOf } from './hazards'
 
 import type { SharedEvent } from '../types/events'
@@ -168,6 +169,9 @@ type MapViewProps = {
    * open the same modal.
    */
   onEventClick?: (event: SharedEvent) => void
+
+  /** Whether the Flood event overlay is visible. */
+  showFloodEvents?: boolean
 } & Pick<MapProps, 'onLoad'>
 
 
@@ -184,6 +188,7 @@ function MapView({
   initialZoom = 7,
   children,
   onEventClick,
+  showFloodEvents = true,
   ...mapProps
 }: MapViewProps) {
 
@@ -340,7 +345,7 @@ function MapView({
         />
 
 
-        {events.map(
+        {events.filter((event) => event.type !== 'flood').map(
           (event) => {
             const hazard = hazardOf(event)
             const isEmergency =
@@ -395,6 +400,14 @@ function MapView({
             )
           }
         )}
+
+        {showFloodEvents && events.filter((event) => event.type === 'flood').map((event) => (
+          <FloodEventLayer
+            key={event.id}
+            event={event}
+            onEventClick={onEventClick}
+          />
+        ))}
 
 
         {children}

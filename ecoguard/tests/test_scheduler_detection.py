@@ -24,6 +24,13 @@ def _empty_flood_detector(monkeypatch):
         "detect_new",
         lambda: [],
     )
+    from ecoguard.detectors.telegram import evidence
+
+    monkeypatch.setattr(
+        evidence,
+        "enrich_signals_with_telegram",
+        lambda signals: list(signals),
+    )
 
 
 def _fire_signal() -> CellSignal:
@@ -73,6 +80,35 @@ def test_fire_and_air_pollution_share_one_coordinator_batch(monkeypatch):
     shared_runtime.detect_and_coordinate()
 
     assert batches == [[fire, pollution]]
+
+
+def test_telegram_enrichment_occurs_once_immediately_before_coordinator(monkeypatch):
+    from ecoguard import scheduler as shared_runtime
+    from ecoguard.coordinator import agent
+    from ecoguard.detectors.air_pollution import observation_processing
+    from ecoguard.detectors.fire import satellite, weather
+    from ecoguard.detectors.telegram import evidence
+
+    fire = _fire_signal()
+    enriched = CellSignal(**{**fire.__dict__, "evidence": {"telegram_evidence": {}}})
+    calls = []
+    monkeypatch.setattr(satellite, "detect_new", lambda: [fire])
+    monkeypatch.setattr(weather, "detect_new", lambda: [])
+    monkeypatch.setattr(observation_processing, "detect_new", lambda: [])
+    monkeypatch.setattr(
+        evidence,
+        "enrich_signals_with_telegram",
+        lambda signals: calls.append(("enrich", list(signals))) or [enriched],
+    )
+    monkeypatch.setattr(
+        agent,
+        "run",
+        lambda signals: calls.append(("coordinate", list(signals))),
+    )
+
+    shared_runtime.detect_and_coordinate()
+
+    assert calls == [("enrich", [fire]), ("coordinate", [enriched])]
 
 
 def test_air_pollution_failure_does_not_suppress_fire_signals(monkeypatch):
@@ -256,12 +292,9 @@ def test_scheduler_allocates_all_eligible_fire_plans_in_one_batch(monkeypatch):
         def __init__(self):
             self.calls = []
 
-        def allocate_batch(self, requests):
-            self.calls.append(requests)
-            return [
-                {"incident_id": request["incident_id"], "status": "allocated"}
-                for request in requests
-            ]
+        def allocate_processing_results(self, results):
+            self.calls.append(results)
+            return {"delegated": True}
 
     allocator = RecordingAllocator()
     monkeypatch.setattr(shared_runtime, "resource_allocator", allocator)
@@ -271,20 +304,37 @@ def test_scheduler_allocates_all_eligible_fire_plans_in_one_batch(monkeypatch):
     )
 
     assert len(allocator.calls) == 1
-    assert [
-        request["incident_id"] for request in allocator.calls[0]
-    ] == ["INC-FIRE-1", "INC-FIRE-2"]
-    assert allocator.calls[0][0]["response_plan"] == {"event_id": "PLAN-1"}
-    assert fire_one.resource_allocation_result == {
-        "incident_id": "INC-FIRE-1",
-        "status": "allocated",
-    }
-    assert fire_two.resource_allocation_result == {
-        "incident_id": "INC-FIRE-2",
-        "status": "allocated",
-    }
-    assert advisory.resource_allocation_result is None
-    assert set(allocations) == {"INC-FIRE-1", "INC-FIRE-2"}
+    assert allocator.calls[0] == [fire_one, advisory, fire_two]
+    assert allocations == {"delegated": True}
+
+
+def test_scheduler_passes_flood_result_unchanged_to_resource_allocator(monkeypatch):
+    from ecoguard import scheduler as shared_runtime
+
+    requested_at = datetime(2026, 9, 20, 10, 0, tzinfo=timezone.utc)
+    flood = SimpleNamespace(
+        incident_id="INC-FLOOD-1",
+        hazard="flood",
+        route="emergency",
+        requested_at=requested_at,
+        planner_result=None,
+        resource_allocation_result=None,
+    )
+
+    class RecordingAllocator:
+        def __init__(self):
+            self.results = None
+
+        def allocate_processing_results(self, results):
+            self.results = results
+            return {"INC-FLOOD-1": {"status": "fulfilled"}}
+
+    allocator = RecordingAllocator()
+    monkeypatch.setattr(shared_runtime, "resource_allocator", allocator)
+
+    shared_runtime.allocate_resources([flood])
+
+    assert allocator.results == [flood]
 
 
 def test_scheduler_allocation_failure_does_not_block_projection(monkeypatch):

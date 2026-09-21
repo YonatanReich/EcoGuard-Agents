@@ -407,15 +407,14 @@ def build_cases() -> list[dict]:
     )
     cases.append({
         "case_id": "fire-02-telegram-wildfire-large",
-        "title": "Large wildfire reported by Telegram channels, no satellite corroboration",
+        "title": "Legacy synthetic Telegram-only planner input (not operational)",
         "hazard": "fire",
         "probes": ["non-satellite-evidence", "confidence-calibration", "evacuation"],
         "notes": (
-            "The Telegram listener, candidate filter and geocoder exist in the repo but "
-            "are NOT wired into the detection path. This case simulates that future "
-            "integration: report_evidence carries exactly the fields those agents "
-            "already return. The satellite block is truthfully empty rather than "
-            "fabricated, because FIRMS genuinely found nothing here."
+            "This is a legacy planner-evaluation fixture, not a runtime detection case. "
+            "EA-374 forbids Telegram-only evidence from creating an operational event; "
+            "runtime Telegram data may only corroborate an existing structured Fire or "
+            "Flood signal. The fixture is retained only to test downstream uncertainty."
         ),
         "expected_behaviour_notes": (
             "High risk, but confidence should be no better than medium because nothing "

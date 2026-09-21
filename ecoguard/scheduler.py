@@ -27,7 +27,7 @@ from ecoguard.collection.fire.effis.collector import FireWeatherCollector
 from ecoguard.collection.fire.firms.collector import FirmsCollector
 from ecoguard.collection.fire.fwi.collector import FireWeatherIndexCollector
 from ecoguard.collection.fire.gibs.collector import VegetationCollector
-from ecoguard.collection.fire.telegram.collector import TelegramCollector
+from ecoguard.collection.shared.telegram.collector import TelegramCollector
 from ecoguard.collection.shared.open_meteo.forecast import WeatherForecastCollector
 from ecoguard.collection.shared.open_meteo.observations import WeatherCollector
 from ecoguard.resource_allocator.allocation_agent import ResourceAllocationAgent
@@ -255,6 +255,21 @@ def detect_and_coordinate():
         except Exception:
             logger.exception("detector %s failed; continuing without it",
                              detector.__name__)
+
+    # Telegram is evidence for already-produced structured Fire/Flood signals.
+    # The enrichment service is deliberately one-input/one-output and forwards
+    # these original objects unchanged on any failure. It never creates a
+    # signal and therefore cannot reach the Coordinator by itself.
+    try:
+        from ecoguard.detectors.telegram.evidence import enrich_signals_with_telegram
+
+        signals = enrich_signals_with_telegram(signals)
+    except Exception:
+        # Keep this outer guard even though the service is fail-open: an import
+        # or initialization regression must not suppress structured detection.
+        logger.exception(
+            "Telegram evidence integration failed; coordinating structured signals"
+        )
 
     coordination = coordinate(signals)
     if coordination is None:
