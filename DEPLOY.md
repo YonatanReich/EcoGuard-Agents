@@ -40,18 +40,24 @@ already pay for.
    uses it; no build configuration to write.
 2. Paste these into Variables, same values as your local `.env`:
 
-       DATABASE_URL            Neon connection string
+       DATABASE_URL            Neon connection string — the only hard requirement
        DEMO_DATABASE_URL       Neon, demo project
        ANTHROPIC_API_KEY
        ANTHROPIC_WORKSPACE_ID
        NASA_FIRMS_API_KEY
-       TELEGRAM_API_ID
-       TELEGRAM_API_HASH
        NOMINATIM_BASE_URL
        NOMINATIM_USER_AGENT
 
    Do **not** set `ECOGUARD_DEV_ENDPOINTS` — it exposes
    `POST /api/dev/run/{source}`, which runs a collector on demand.
+
+   Do **not** set `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` yet. The session path
+   in `ecoguard/collection/shared/telegram/session.py` is built from
+   `LOCALAPPDATA`, which only exists on Windows, and the authorised session
+   lives on your laptop. With the credentials set, the collector is scheduled
+   and fails every five minutes; without them it is simply not registered. Getting
+   Telegram onto the server needs a string session passed in an environment
+   variable instead of a file.
 
    `PORT` is injected by Railway; the `Dockerfile` already reads it.
 
