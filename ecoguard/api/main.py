@@ -49,7 +49,8 @@ from ecoguard.analyzers.emergency.fire.refresh_orchestrator import CurrentRiskRe
 from ecoguard.analyzers.emergency.fire.national_scan import NationalCurrentRiskScanService
 from ecoguard.api.fire_danger_surface import build_surface as build_fire_danger_surface
 from ecoguard.shared.protocols import ProtocolRetriever
-from ecoguard.api.events import router as events_router
+from ecoguard.api.events import manual_flood_test_enabled, router as events_router
+from ecoguard.api.flood_manual_test import router as flood_manual_test_router
 from ecoguard.api.weak_events import router as weak_events_router
 
 logging.basicConfig(
@@ -65,6 +66,14 @@ async def lifespan(app: FastAPI):
     developer without DATABASE_URL set still gets a working API for the old
     request-scoped endpoints; only collection is missing, and loudly.
     """
+    if manual_flood_test_enabled():
+        logging.warning(
+            "MANUAL FLOOD TEST MODE: background workers are disabled; "
+            "the database will only be read for reference data"
+        )
+        yield
+        return
+
     current_risk_refresh.start()
     collection_scheduler = None
     try:
@@ -84,6 +93,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 app.include_router(events_router)
 app.include_router(weak_events_router)
+app.include_router(flood_manual_test_router)
 
 # Allow the Vite dev server to call the API directly during development.
 # Both localhost and 127.0.0.1 are listed because browsers treat them as

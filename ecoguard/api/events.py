@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -28,6 +29,22 @@ from ecoguard.shared.events import (
 logger = logging.getLogger(__name__)
 router = APIRouter()
 _event_adapter = TypeAdapter(SharedEvent)
+_manual_test_feed = SharedEventFeed(events=[])
+
+
+def manual_flood_test_enabled() -> bool:
+    return os.getenv("ECOGUARD_MANUAL_FLOOD_TEST", "").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+
+
+def set_manual_test_feed(feed: SharedEventFeed) -> None:
+    """Replace the in-memory feed used only in explicit manual-test mode."""
+
+    global _manual_test_feed
+    if not manual_flood_test_enabled():
+        raise RuntimeError("manual Flood test mode is not enabled")
+    _manual_test_feed = feed
 
 
 def read_projected_events(*, limit: int) -> list[dict[str, Any]]:
@@ -162,6 +179,9 @@ def shared_event_feed(rows: Sequence[Mapping[str, Any]]) -> SharedEventFeed:
 def get_shared_events(
     limit: int = Query(default=100, ge=1, le=200),
 ) -> SharedEventFeed:
+
+    if manual_flood_test_enabled():
+        return _manual_test_feed
 
     try:
         return shared_event_feed(read_projected_events(limit=limit))
