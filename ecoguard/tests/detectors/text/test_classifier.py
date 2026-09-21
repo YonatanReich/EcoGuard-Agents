@@ -19,6 +19,7 @@ from ecoguard.detectors.text.classifier import (
     disagreements,
     is_classifiable,
 )
+from ecoguard.detectors.text import classifier as classifier_module
 from ecoguard.detectors.text.keywords import hazards_in, normalise
 
 AT = datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc)
@@ -203,6 +204,61 @@ def test_fallback_rows_are_excluded_from_the_disagreement_count():
     assert disagreements(results)["fire"] == {
         "both": 0, "model_only": 0, "keywords_only": 0
     }
+
+
+def test_runtime_entry_reads_telegram_and_rss_in_one_batch(monkeypatch):
+    messages = [
+        message(1, "שריפה בחיפה", source_id="telegram:-1001"),
+        message(2, "Fire in Haifa", source_id="https://ynet.test/rss"),
+    ]
+    seen = []
+    stored = []
+
+    class RecordingClassifier:
+        def classify(self, batch):
+            seen.extend(batch)
+            return [{
+                "observation_id": item["observation_id"],
+                "source_id": item["source_id"],
+                "observed_at": item["observed_at"],
+                "hazards": ["fire"],
+                "relevant": True,
+                "literal": True,
+                "in_israel": True,
+                "update_type": "new",
+                "location_text": "חיפה",
+                "claim": item["text"],
+                "details": {},
+                "classified_by": "model",
+                "model_version": "test",
+                "keyword_hazards": ["fire"],
+            } for item in batch]
+
+    monkeypatch.setattr(
+        classifier_module, "unclassified_text_observations", lambda **_: messages
+    )
+    monkeypatch.setattr(
+        classifier_module, "store_candidates",
+        lambda results: stored.extend(results) or len(results),
+    )
+    monkeypatch.setattr(
+        classifier_module, "last_success_at", lambda _source: None
+    )
+    monkeypatch.setattr(
+        classifier_module, "log_start", lambda _source: "test-run"
+    )
+    monkeypatch.setattr(
+        classifier_module, "log_finish", lambda *_args, **_kwargs: None
+    )
+
+    result = classifier_module.classify_new_text(classifier=RecordingClassifier())
+
+    assert [item["source_id"] for item in seen] == [
+        "telegram:-1001", "https://ynet.test/rss",
+    ]
+    assert len(stored) == 2
+    assert result["messages"] == 2
+    assert result["candidates"] == 2
 
 
 # --- the keyword net -------------------------------------------------------

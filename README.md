@@ -45,7 +45,7 @@ cp .env.example .env
 | `ANTHROPIC_WORKSPACE_ID` | Anthropic identity-linked API keys only | Omit it for ordinary organisation keys |
 | `IMS_API_TOKEN` | IMS-backed Air Pollution wind evidence | Wind, transport corridor, settlement screening and corridor population remain unavailable |
 | `NASA_FIRMS_API_KEY` | Satellite fire detection | The FIRMS collector is not scheduled and no fire is ever detected |
-| `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` | Raw Telegram Fire/Flood evidence collection | Telegram evidence collection is disabled |
+| `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` | Raw Telegram text collection | Telegram text collection is disabled |
 
 The frontend map additionally needs `VITE_MAPTILER_KEY` in
 `frontend/.env.local` — see the frontend section below.
@@ -409,7 +409,7 @@ of conflicting.
 
 | Source | Every | What it is |
 | :--- | :--- | :--- |
-| `telegram` | 5 min | Raw channel messages for Fire/Flood corroboration. Never an independent detection path. |
+| `telegram` | 5 min | Raw channel messages for the shared text-event pipeline. |
 | `firms` | 30 min | Satellite hotspots from **four** products — NOAA-20, NOAA-21, Suomi-NPP and MODIS. |
 | `weather` | 60 min | Eleven hourly variables, backfilled to whatever is missing. |
 | `weather_forecast` | 6 h | 48 hours of lead time on a ~15 km subgrid, every run kept. |
@@ -417,23 +417,22 @@ of conflicting.
 | `fwi` | 6 h | Our own Canadian FWI system — six numbers, carried day to day. |
 | `vegetation` | 12 h | MODIS NDVI, the 8-day composite. |
 
-### Telegram evidence policy
+### Telegram and RSS text-event policy
 
-Telegram collection stores raw messages in the shared `observations` table. It
-does not classify messages or emit signals. After the structured Fire and Flood
-detectors have emitted `CellSignal` objects, the scheduler checks recent
-Telegram observations and attaches typed `SUPPORTING` or `UNMATCHED` evidence
-immediately before Coordinator input. The service preserves signal count,
-severity, confidence, source, value, rarity, cell and observation time; any
-Telegram failure forwards the original signals unchanged. Air Pollution and
-all non-allowlisted signal sources bypass the service unchanged.
+Telegram and RSS collectors store raw messages in the shared `observations`
+table. A separate three-minute job classifies both source kinds into
+`text_candidates`, then triages those candidates into weak events or
+`CellSignal` objects for the Coordinator. Authority and media reports may emit
+a signal directly; unofficial reports remain weak until an independent report
+or structured incident corroborates them. The previous Telegram evidence
+enricher remains in the repository for compatibility but is not wired into the
+automatic structured Fire/Flood path.
 
 Configured channels are `Israel_Police_100`, `Atanpolice`, `mdaisrael`, and the
-unofficial `fireisrael7777` aggregator. A message can support a signal only when
-its username still resolves to the configured, pinned numeric peer ID and its
-event type, posted time, and resolved cell pass the matching rules. Channel
-authority is source provenance, not verification that the reported event is
-true. Run `python -m ecoguard.collection.shared.telegram.listener --discover`
+unofficial `fireisrael7777` aggregator. Source tiers and allowed hazards come
+from `text_sources`; a classified candidate outside its source's hazard list is
+not admitted to triage. Run
+`python -m ecoguard.collection.shared.telegram.listener --discover`
 to authenticate outside the repository, inspect resolved peer IDs, and pin
 them through the variables documented in `.env.example`.
 

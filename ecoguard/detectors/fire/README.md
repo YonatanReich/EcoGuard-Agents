@@ -23,9 +23,11 @@ Ways a fire becomes a candidate:
   `CellSignal` contract, still calls the providers live rather than reading
   what the collectors stored, and is superseded by `satellite.py`.
 - `telegram_candidate_filter.py` — rule-based scoring reused by the shared
-  Telegram evidence service. It never emits a `CellSignal`.
+  Telegram/RSS text classifier and retained legacy evidence service. It does
+  not emit a `CellSignal` itself.
 - `hebrew_location_extractor.py` — shared Fire/Flood location extraction via an
-  offline gazetteer. A resolved report can only corroborate an existing signal.
+  offline gazetteer. The text-event lane validates its output against the
+  shared towns layer before a report can become a signal.
 
 None of these decide how dangerous the fire is.
 

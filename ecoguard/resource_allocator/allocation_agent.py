@@ -1488,7 +1488,7 @@ class ResourceAllocationAgent:
             allocation = allocations_by_key.get(
                 (result.incident_id, hazard)
             ) or allocations_by_incident.get(result.incident_id)
-            if hazard == "fire":
+            if hazard in {"fire", "earthquake"}:
                 result.resource_allocation_result = allocation
                 continue
             combined = dict(targeting)
