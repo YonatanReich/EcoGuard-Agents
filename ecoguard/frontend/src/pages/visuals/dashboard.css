@@ -529,8 +529,9 @@
     align-items: center;
     justify-content: center;
     padding: 1.5rem;
-    background: rgba(3, 7, 18, 0.72);
-    backdrop-filter: blur(2px);
+    /* A plain dim, no backdrop blur: the map behind keeps animating, and a
+       full-screen blur over it is recomputed every frame. */
+    background: rgba(3, 7, 18, 0.78);
 }
 
 .event-modal {
