@@ -5,6 +5,10 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import text
 
 from ecoguard.database.repositories import weak_events as weak_store
+from ecoguard.database.repositories.observations import upsert_observations
+from ecoguard.database.repositories.text_candidates import store_candidates
+from ecoguard.detectors.text import run as text_run
+from ecoguard.detectors.text import classifier as text_classifier
 from ecoguard.detectors.text.run import (
     _uncertainty_m,
     locate,
@@ -194,5 +198,276 @@ def test_expiry_marks_unconfirmed_and_keeps_the_row(database):
             with database.connect() as connection:
                 connection.execute(
                     text("DELETE FROM weak_events WHERE id = :id"), {"id": weak_id}
+                )
+                connection.commit()
+
+
+# --- runtime lifecycle -----------------------------------------------------
+
+def _runtime_candidate(identifier, *, tier, triaged_at=None, source_id=None):
+    return candidate(
+        id=identifier,
+        observation_id=identifier + 1000,
+        source_id=source_id or f"telegram:-100{identifier}",
+        tier=tier,
+        triaged_at=triaged_at,
+    )
+
+
+def _runtime_report(item):
+    return Report(
+        candidate_id=item["id"], observation_id=item["observation_id"],
+        source_id=item["source_id"], tier=item["tier"], hazard=item["hazard"],
+        observed_at=item["observed_at"], text=item["claim"],
+        origin_key=f"candidate:{item['id']}", latitude=HAIFA[0],
+        longitude=HAIFA[1], precision_m=2000.0,
+        location_text=item["location_text"], claim=item["claim"],
+    )
+
+
+def _wire_runtime(monkeypatch, candidates, open_weak=()):
+    from ecoguard.coordinator import incidents
+
+    monkeypatch.setattr(
+        text_run, "recent_candidates",
+        lambda hazard, **_: candidates if hazard == "fire" else [],
+    )
+    monkeypatch.setattr(
+        text_run, "reports_from_candidates",
+        lambda rows: ([_runtime_report(row) for row in rows], []),
+    )
+    monkeypatch.setattr(text_run.weak_store, "open_weak_events", lambda: list(open_weak))
+    monkeypatch.setattr(text_run.weak_store, "expire_weak_events", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(text_run.weak_store, "save_weak_event", lambda *_args, **_kwargs: "WEAK")
+    monkeypatch.setattr(incidents, "open_incidents", lambda: [])
+
+
+def test_repeated_triage_does_not_send_an_official_candidate_twice(monkeypatch):
+    item = _runtime_candidate(1, tier="media", source_id="https://ynet.test/rss")
+    candidates = [item]
+    coordinated = []
+
+    _wire_runtime(monkeypatch, candidates)
+
+    def mark(ids, *, at=None):
+        for row in candidates:
+            if row["id"] in set(ids):
+                row["triaged_at"] = at
+        return len(ids)
+
+    monkeypatch.setattr(text_run, "mark_candidates_triaged", mark)
+
+    text_run.run_text_triage(at=AT, coordinate=lambda signals: coordinated.append(signals))
+    text_run.run_text_triage(at=AT, coordinate=lambda signals: coordinated.append(signals))
+
+    assert len(coordinated) == 1
+    assert [signal.source for signal in coordinated[0]] == ["https://ynet.test/rss"]
+    assert item["triaged_at"] == AT
+
+
+def test_promoted_open_weak_event_is_resolved_after_coordinator_handoff(monkeypatch):
+    old = _runtime_candidate(1, tier="unofficial", triaged_at=AT - timedelta(minutes=5))
+    official = _runtime_candidate(2, tier="media", source_id="https://ynet.test/rss")
+    candidates = [old, official]
+    open_weak = [{
+        "id": "WEAK-TEST-1", "hazard": "fire", "status": "open",
+        "reports": [{"candidate_id": old["id"]}],
+        "latitude": HAIFA[0], "longitude": HAIFA[1], "precision_m": 2000.0,
+        "last_seen_at": AT, "expires_at": AT + timedelta(hours=1),
+    }]
+    resolved = []
+    marked = []
+
+    _wire_runtime(monkeypatch, candidates, open_weak)
+    monkeypatch.setattr(
+        text_run, "mark_candidates_triaged",
+        lambda ids, **_: marked.extend(ids) or len(ids),
+    )
+    monkeypatch.setattr(
+        text_run.weak_store, "resolve_weak_event",
+        lambda weak_id, **kwargs: resolved.append((weak_id, kwargs)),
+    )
+
+    coordinated = []
+    outcome = text_run.run_text_triage(
+        at=AT, coordinate=lambda signals: coordinated.append(signals)
+    )
+
+    assert outcome["promoted"] == 1
+    assert len(coordinated) == 1
+    assert resolved == [("WEAK-TEST-1", {
+        "status": "promoted", "resolution": "official_report", "at": AT,
+    })]
+    assert official["id"] in marked
+
+
+def test_source_hazard_allowlist_is_enforced_when_candidates_are_stored(database):
+    source = "text_hazard_policy_test"
+    cell_id = "telegram-hazard-policy-test"
+    observation_id = None
+    try:
+        upsert_observations(source, [{
+            "cell_id": cell_id,
+            "observed_at": AT,
+            "payload": {
+                "source_id": "telegram:-1001581748447",
+                "raw_text": "שריפה והצפה",
+            },
+        }])
+        with database.connect() as connection:
+            observation_id = connection.execute(
+                text(
+                    "SELECT id FROM observations "
+                    "WHERE source = :source AND cell_id = :cell_id"
+                ),
+                {"source": source, "cell_id": cell_id},
+            ).scalar_one()
+
+        result = {
+            "observation_id": observation_id,
+            "source_id": "telegram:-1001581748447",
+            "observed_at": AT,
+            "hazards": ["fire", "flood"],
+            "relevant": True,
+            "literal": True,
+            "in_israel": True,
+            "update_type": "new",
+            "location_text": "חיפה",
+            "claim": "שריפה והצפה",
+            "details": {},
+            "classified_by": "model",
+            "model_version": "test",
+            "keyword_hazards": [],
+        }
+        assert store_candidates([result]) == 1
+
+        with database.connect() as connection:
+            hazards = connection.execute(
+                text(
+                    "SELECT hazard FROM text_candidates "
+                    "WHERE observation_id = :observation_id"
+                ),
+                {"observation_id": observation_id},
+            ).scalars().all()
+        assert hazards == ["flood"]
+    finally:
+        if observation_id is not None:
+            with database.connect() as connection:
+                connection.execute(
+                    text("DELETE FROM text_candidates WHERE observation_id = :id"),
+                    {"id": observation_id},
+                )
+                connection.execute(
+                    text("DELETE FROM observations WHERE id = :id"),
+                    {"id": observation_id},
+                )
+                connection.commit()
+
+
+def test_db_backed_telegram_and_y_net_pipeline_hands_off_only_once(database):
+    source_ids = {
+        "telegram": "telegram:-1001411503185",
+        "rss": "https://www.ynet.co.il/Integration/StoryRss1854.xml",
+    }
+    cell_ids = {
+        "telegram": "telegram-text-runtime-integration",
+        "rss": "rss-text-runtime-integration",
+    }
+    observation_ids = []
+
+    class ControlledClassifier:
+        def classify(self, messages):
+            return [{
+                "observation_id": item["observation_id"],
+                "source_id": item["source_id"],
+                "observed_at": item["observed_at"],
+                "hazards": ["fire"],
+                "relevant": True,
+                "literal": True,
+                "in_israel": True,
+                "update_type": "new",
+                "location_text": "חיפה",
+                "claim": "שריפה דווחה בחיפה",
+                "details": {},
+                "classified_by": "model",
+                "model_version": "controlled-test",
+                "keyword_hazards": ["fire"],
+            } for item in messages]
+
+    try:
+        for kind in ("telegram", "rss"):
+            payload = {
+                "source_id": source_ids[kind],
+                "raw_text": "שריפה דווחה בחיפה",
+                "handle": kind,
+                "display_name": kind,
+            }
+            if kind == "telegram":
+                payload.update({"peer_id": -1001411503185, "message_id": 900001})
+            else:
+                payload["item_guid"] = "text-runtime-integration"
+            upsert_observations(kind, [{
+                "cell_id": cell_ids[kind], "observed_at": AT, "payload": payload,
+            }])
+
+        with database.connect() as connection:
+            observation_ids = list(connection.execute(
+                text(
+                    "SELECT id FROM observations "
+                    "WHERE cell_id IN (:telegram, :rss) ORDER BY id"
+                ),
+                cell_ids,
+            ).scalars())
+        assert len(observation_ids) == 2
+
+        classified = text_classifier.classify_new_text(
+            since=datetime.now(timezone.utc) - timedelta(minutes=5),
+            classifier=ControlledClassifier(),
+        )
+        assert classified["messages"] == 2
+        assert classified["candidates"] == 2
+
+        coordinator_calls = []
+        first = text_run.run_text_triage(
+            at=AT, coordinate=lambda signals: coordinator_calls.append(list(signals))
+        )
+        second = text_run.run_text_triage(
+            at=AT, coordinate=lambda signals: coordinator_calls.append(list(signals))
+        )
+
+        assert first["events"] == 1
+        assert first["promoted"] == 1
+        assert second["events"] == 0
+        assert second["promoted"] == 0
+        assert len(coordinator_calls) == 1
+        assert {signal.source for signal in coordinator_calls[0]} == set(source_ids.values())
+        telegram_signal = next(
+            signal for signal in coordinator_calls[0]
+            if signal.source == source_ids["telegram"]
+        )
+        assert telegram_signal.evidence["text_report"]["basis"]["kind"] == (
+            "official_report"
+        )
+
+        with database.connect() as connection:
+            markers = connection.execute(
+                text(
+                    "SELECT triaged_at FROM text_candidates "
+                    "WHERE observation_id = ANY(:ids)"
+                ),
+                {"ids": observation_ids},
+            ).scalars().all()
+        assert len(markers) == 2
+        assert all(marker is not None for marker in markers)
+    finally:
+        if observation_ids:
+            with database.connect() as connection:
+                connection.execute(
+                    text("DELETE FROM text_candidates WHERE observation_id = ANY(:ids)"),
+                    {"ids": observation_ids},
+                )
+                connection.execute(
+                    text("DELETE FROM observations WHERE id = ANY(:ids)"),
+                    {"ids": observation_ids},
                 )
                 connection.commit()

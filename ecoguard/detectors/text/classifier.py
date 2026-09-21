@@ -341,11 +341,9 @@ def classify_new_text(
 ) -> dict[str, Any]:
     """Label every stored message nothing has labelled yet, and store the rows.
 
-    Deliberately not registered on the scheduler yet. Nothing downstream reads
-    `text_candidates` until Phase 3 triage exists, so scheduling it now would
-    spend a model call every few minutes to fill a table with no reader. It is
-    a function so it can be run by hand, and a one-line scheduler entry when
-    triage lands.
+    The scheduler calls this immediately before the text-triage sweep. Keeping
+    the entry point separate makes classification independently testable and
+    lets a model outage leave previously stored candidates available to triage.
     """
     lookback = since or datetime.now(timezone.utc) - DEFAULT_LOOKBACK
     messages = unclassified_text_observations(since=lookback, limit=limit)
