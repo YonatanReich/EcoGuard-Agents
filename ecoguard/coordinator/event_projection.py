@@ -30,6 +30,10 @@ from ecoguard.shared.events import (
     AirPollutionWindEvidence,
     ComponentUnavailableReason,
     CorridorPopulationContext,
+    EarthquakeDetails,
+    EarthquakePopulationSummary,
+    EarthquakeSharedEvent,
+    EarthquakeTown,
     GeoJsonLineString,
     GeoJsonMultiLineString,
     GeoJsonPolygon,
@@ -59,7 +63,7 @@ IncidentReader = Callable[[str], dict[str, Any] | None]
 ProjectionWriter = Callable[[EventProjectionWrite], dict[str, Any] | None]
 EventMapper = Callable[
     [IncidentProcessingResult, Mapping[str, Any]],
-    AirPollutionSharedEvent | FloodSharedEvent,
+    AirPollutionSharedEvent | EarthquakeSharedEvent | FloodSharedEvent,
 ]
 
 
@@ -596,8 +600,61 @@ def flood_shared_event(
 def default_mapper_registry() -> dict[tuple[str, str], EventMapper]:
     return {
         ("air_pollution", "non_emergency"): air_pollution_shared_event,
+        ("earthquake", "emergency"): earthquake_shared_event,
         ("flood", "emergency"): flood_shared_event,
     }
+
+
+def earthquake_shared_event(
+    result: IncidentProcessingResult,
+    incident: Mapping[str, Any],
+) -> EarthquakeSharedEvent:
+    """Project deterministic screening facts without invoking a planner."""
+
+    if result.hazard != "earthquake" or result.route != "emergency":
+        raise ValueError("not_an_earthquake_emergency_result")
+    impact = result.analysis_result
+    if impact is None:
+        raise ValueError("earthquake_impact_missing")
+    towns_available = impact.towns.status.value.startswith("SUCCESS")
+    return EarthquakeSharedEvent(
+        id=str(incident["id"]),
+        title=f"Earthquake M{impact.magnitude:.1f}",
+        description="GSI earthquake with a deterministic Estimated Impact Area.",
+        latitude=impact.latitude,
+        longitude=impact.longitude,
+        observed_at=impact.observed_at,
+        classification="emergency",
+        analysis_status="success",
+        planning_status="skipped",
+        details=EarthquakeDetails(
+            provider_event_id=impact.provider_event_id,
+            magnitude=impact.magnitude,
+            depth_km=impact.depth_km,
+            estimated_impact_radius_km=impact.radius_km,
+            estimated_impact_area=GeoJsonPolygon.model_validate(impact.area),
+            towns=[
+                EarthquakeTown(
+                    town_id=town.town_id,
+                    name_he=town.name_he,
+                    name_en=town.name_en,
+                    cbs_code=town.cbs_code,
+                )
+                for town in impact.towns.towns
+            ],
+            towns_status="available" if towns_available else "unavailable",
+            population_summary=EarthquakePopulationSummary(
+                **impact.population_summary
+            ),
+            provider=impact.provider,
+            source=impact.source,
+            limitations=[
+                "Estimated Impact Area is a screening radius only; it does not "
+                "model soil conditions, shaking intensity, building vulnerability, "
+                "or actual damage."
+            ],
+        ),
+    )
 
 
 def _retryable(result: IncidentProcessingResult) -> bool:
@@ -648,7 +705,10 @@ def project_processing_results(
         successful = bool(
             event is not None
             and analysis_status in {"success", "partial"}
-            and planning_status == "success"
+            and (
+                planning_status == "success"
+                or (result.hazard == "earthquake" and planning_status == "skipped")
+            )
         )
         record = EventProjectionWrite(
             incident_id=result.incident_id,

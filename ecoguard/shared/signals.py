@@ -69,6 +69,7 @@ FIRE_WEATHER = "fire_weather"
 
 FLOOD = "flood"
 AIR_POLLUTION = "air_pollution"
+EARTHQUAKE = "earthquake"
 HEAT = "heat"
 
 # --- which tail is the concerning one --------------------------------------

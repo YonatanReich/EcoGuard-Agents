@@ -3,6 +3,7 @@ import { classify, hazardOf } from './hazards'
 import type {
   AirPollutionEvent,
   AllocationSettlement,
+  EarthquakeEvent,
   FireEvent,
   FloodEvent,
   SharedEvent,
@@ -246,6 +247,62 @@ function FireEventDetails({ event }: { event: FireEvent }) {
           ))}
         </section>
       )}
+    </>
+  )
+}
+
+function EarthquakeEventDetails({ event }: { event: EarthquakeEvent }) {
+  const details = event.details
+  const population = details.population_summary
+  return (
+    <>
+      <section className="event-modal__section">
+        <h3>Earthquake</h3>
+        <dl className="event-modal__facts event-modal__facts--compact">
+          <div><dt>Magnitude</dt><dd>{details.magnitude.toFixed(1)}</dd></div>
+          <div><dt>Depth</dt><dd>{details.depth_km.toFixed(1)} km</dd></div>
+          <div><dt>Impact radius</dt><dd>{details.estimated_impact_radius_km} km</dd></div>
+          <div><dt>Provider</dt><dd>{details.provider}</dd></div>
+        </dl>
+      </section>
+
+      <section className="event-modal__section">
+        <h3>Estimated Impact Area</h3>
+        <p>The semi-transparent map polygon is the deterministic screening area.</p>
+        <p className="event-modal__semantic-note">{details.limitations.join(' ')}</p>
+      </section>
+
+      <section className="event-modal__section">
+        <h3>Towns in the area</h3>
+        {details.towns_status === 'unavailable' ? (
+          <p>Town intersection data is unavailable.</p>
+        ) : details.towns.length === 0 ? (
+          <p>No town geometries intersect the Estimated Impact Area.</p>
+        ) : (
+          <ul className="event-modal__settlements">
+            {details.towns.map((town) => (
+              <li key={town.town_id}>
+                <strong>{town.name_en || town.name_he}</strong>
+                {town.name_he && town.name_en && <span>{town.name_he}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="event-modal__section">
+        <h3>Population</h3>
+        {population.status === 'available' && population.estimated_population != null ? (
+          <>
+            <p className="event-modal__population">
+              {population.estimated_population.toLocaleString()}
+            </p>
+            <p>{population.wording}</p>
+          </>
+        ) : (
+          <p>Estimated population geographically located within the impact area is unavailable.</p>
+        )}
+      </section>
     </>
   )
 }
@@ -693,6 +750,7 @@ function EventModal({ event, onClose, directionsStationKey = null }: {
           <FireEventDetails event={event} />
         )}
         {event.type === 'air_pollution' && <AirPollutionEventDetails event={event} />}
+        {event.type === 'earthquake' && <EarthquakeEventDetails event={event} />}
         {event.type === 'flood' && <FloodEventDetails event={event} />}
       </div>
     </div>

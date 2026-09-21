@@ -22,6 +22,7 @@ from ecoguard.collection.flood.hydrometric_observations import (
     SOURCE as HYDROMETRIC_OBSERVATIONS_SOURCE,
     HydrometricObservationCollector,
 )
+from ecoguard.collection.earthquake.gsi import GsiEarthquakeCollector
 from ecoguard.collection.pollution.collector import AirPollutionCollector
 from ecoguard.collection.fire.effis.collector import FireWeatherCollector
 from ecoguard.collection.fire.firms.collector import FirmsCollector
@@ -136,6 +137,7 @@ INTERVAL_MINUTES = {
     "vegetation": 720,
     "telegram": 5,
     HYDROMETRIC_OBSERVATIONS_SOURCE: 10,
+    "gsi_earthquake": 5,
 }
 
 COLLECTORS = {
@@ -148,6 +150,7 @@ COLLECTORS = {
     "vegetation": VegetationCollector,
     "telegram": TelegramCollector,
     HYDROMETRIC_OBSERVATIONS_SOURCE: HydrometricObservationCollector,
+    "gsi_earthquake": GsiEarthquakeCollector,
 }
 
 # fwi reads the hours the weather collector wrote, so on a cold start it has
@@ -247,9 +250,16 @@ def detect_and_coordinate():
     from ecoguard.detectors.air_pollution import observation_processing
     from ecoguard.detectors.fire import satellite, weather
     from ecoguard.detectors.flood import observation_processing as flood_processing
+    from ecoguard.detectors.earthquake import observation_processing as earthquake_processing
 
     signals = []
-    for detector in (satellite, weather, observation_processing, flood_processing):
+    for detector in (
+        satellite,
+        weather,
+        observation_processing,
+        flood_processing,
+        earthquake_processing,
+    ):
         try:
             signals.extend(detector.detect_new())
         except Exception:

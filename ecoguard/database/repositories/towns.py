@@ -433,3 +433,74 @@ def _as_town(row) -> dict[str, Any]:
         "label": {"latitude": row["label_lat"], "longitude": row["label_lon"]},
         "bbox": [row["min_lon"], row["min_lat"], row["max_lon"], row["max_lat"]],
     }
+
+
+class TownIntersection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    town_id: str
+    name_he: str
+    name_en: str
+    cbs_code: str | None = None
+
+
+class TownIntersectionResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    status: TownLookupStatus
+    towns: list[TownIntersection] = Field(default_factory=list)
+    source: str = "shared_postgis_towns"
+    reason: str | None = None
+
+
+_INTERSECTING_TOWNS_SQL = text(
+    """
+    WITH area AS (
+      SELECT ST_CollectionExtract(
+               ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON(:geojson), 4326)),
+               3
+             ) AS geom
+    )
+    SELECT town_id, name_he, name_en, cbs_code
+    FROM towns, area
+    WHERE ST_Intersects(outline::geometry, area.geom)
+    ORDER BY town_id
+    """
+)
+
+def towns_intersecting(
+    geometry: dict[str, Any], *, session_factory=Session
+) -> TownIntersectionResult:
+    """Return existing town polygons intersecting a supplied GeoJSON polygon."""
+
+    try:
+        with session_factory() as session:
+            if not session.execute(_TOWNS_EXISTS_SQL).scalar_one():
+                return TownIntersectionResult(
+                    status=TownLookupStatus.REFERENCE_DATA_NOT_LOADED,
+                    reason="reference_data_not_loaded",
+                )
+            if not session.execute(_TOWNS_POPULATED_SQL).scalar_one():
+                return TownIntersectionResult(
+                    status=TownLookupStatus.REFERENCE_DATA_NOT_LOADED,
+                    reason="reference_data_not_loaded",
+                )
+            rows = session.execute(
+                _INTERSECTING_TOWNS_SQL,
+                {"geojson": json.dumps(geometry)},
+            ).mappings().all()
+            towns = [TownIntersection.model_validate(dict(row)) for row in rows]
+    except (SQLAlchemyError, ValidationError, TypeError, ValueError):
+        return TownIntersectionResult(
+            status=TownLookupStatus.UNAVAILABLE,
+            reason="town_repository_unavailable",
+        )
+
+    return TownIntersectionResult(
+        status=(
+            TownLookupStatus.SUCCESS_WITH_RESULTS
+            if towns
+            else TownLookupStatus.SUCCESS_EMPTY
+        ),
+        towns=towns,
+    )
