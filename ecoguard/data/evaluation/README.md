@@ -38,7 +38,7 @@ it too.
 | Case | What it probes |
 | --- | --- |
 | `fire-01-apartment-town` | Proportionality in a residential building. Must not reach for wildland tactics. |
-| `fire-02-telegram-wildfire-large` | Non-satellite evidence. Confidence must fall while risk stays high. |
+| `fire-02-telegram-wildfire-large` | Legacy downstream uncertainty fixture; not an operational Telegram-only detection path. |
 | `fire-03-carmel-wui-extreme` | Critical mobilisation, evacuation, safety preconditions. |
 | `fire-04-negev-open-nothing-nearby` | **Over-response.** The correct plan here is minimal. |
 | `fire-05-stale-weak-detection` | Stale evidence, and that gap-filling search must *not* fire. |

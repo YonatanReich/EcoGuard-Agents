@@ -2,7 +2,7 @@
 
 import inspect
 
-from ecoguard.collection.fire.telegram import collector as telegram
+from ecoguard.collection.shared.telegram import collector as telegram
 
 
 def test_no_classification_or_location_extraction_at_collection_time():

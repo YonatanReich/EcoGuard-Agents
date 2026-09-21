@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 CACHE_PATH = (
-    Path(__file__).resolve().parents[1]
+    Path(__file__).resolve().parents[2]
     / "data"
     / "generated"
     / "israel_locations.sqlite3"
@@ -64,9 +64,14 @@ _PROXIMITY_MARKERS = frozenset(("בסמוך", "סמוך", "ליד", "בקרבת"
 _STREET_MARKERS = frozenset(("רחוב", "ברחוב"))
 _NEIGHBORHOOD_MARKERS = frozenset(("שכונת", "בשכונת"))
 _GENERIC_NEIGHBORHOOD_TERMS = frozenset(("מגורים",))
-_FIRE_MARKERS = frozenset(
-    ("שריפה", "שרפה", "שריפת", "בוער", "בוערת", "בוערים", "להבות")
-)
+_EVENT_MARKERS = {
+    "fire": frozenset(
+        ("שריפה", "שרפה", "שריפת", "בוער", "בוערת", "בוערים", "להבות")
+    ),
+    "flood": frozenset(
+        ("הצפה", "הצפות", "מוצף", "מוצפת", "שיטפון", "שיטפונות", "שטפון")
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -114,6 +119,40 @@ def _tokenize(text: str) -> list[_Token]:
         if normalized:
             tokens.append(_Token(normalized, match.start(), match.end()))
     return tokens
+
+
+def locality_name_candidates(text: str | None, *, max_words: int = 4) -> list[str]:
+    """Return conservatively located Hebrew name phrases without using a cache.
+
+    These are lookup candidates, not accepted locations.  The shared towns
+    repository must still validate them against its canonical settlement names.
+    A phrase is considered location-shaped only at the start of the text, after
+    an explicit proximity marker, or when its first word carries a strong
+    Hebrew location prefix (``ב``/``ל``).  This avoids treating arbitrary words
+    in a report as town names.
+    """
+    if text is None or not text.strip():
+        return []
+
+    tokens = _tokenize(text)
+    candidates: list[str] = []
+    for start, token in enumerate(tokens):
+        previous = tokens[start - 1].normalized if start else None
+        first = token.normalized
+        prefixed = len(first) > 1 and first[0] in _STRONG_LOCATION_PREFIXES
+        explicitly_located = start == 0 or prefixed or previous in _PROXIMITY_MARKERS
+        if not explicitly_located:
+            continue
+
+        first = first[1:] if prefixed else first
+        if not first:
+            continue
+        for width in range(min(max_words, len(tokens) - start), 0, -1):
+            words = [first, *(item.normalized for item in tokens[start + 1 : start + width])]
+            candidate = " ".join(words)
+            if candidate not in candidates:
+                candidates.append(candidate)
+    return candidates
 
 
 def _open_cache() -> sqlite3.Connection | None:
@@ -255,8 +294,10 @@ def _original_span(text: str, tokens: list[_Token], start: int, end: int) -> str
     return text[tokens[start].start : tokens[end - 1].end].strip()
 
 
-def extract_fire_location(text: str | None) -> dict:
-    """Extract a cache-validated location without networking or geocoding."""
+def extract_location(text: str | None, *, event_type: str) -> dict:
+    """Extract a cache-validated Fire/Flood location without networking."""
+    if event_type not in _EVENT_MARKERS:
+        raise ValueError("event_type must be 'fire' or 'flood'")
     if text is None or not text.strip():
         return _empty_result()
 
@@ -312,7 +353,7 @@ def extract_fire_location(text: str | None) -> dict:
                 (
                     index
                     for index in range(locality.end_token, len(tokens))
-                    if tokens[index].normalized in _FIRE_MARKERS
+                    if tokens[index].normalized in _EVENT_MARKERS[event_type]
                 ),
                 None,
             )
@@ -369,3 +410,8 @@ def extract_fire_location(text: str | None) -> dict:
         return _empty_result()
     finally:
         connection.close()
+
+
+def extract_fire_location(text: str | None) -> dict:
+    """Backward-compatible Fire location extraction entry point."""
+    return extract_location(text, event_type="fire")
