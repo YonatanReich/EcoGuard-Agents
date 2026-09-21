@@ -7,7 +7,7 @@
  * changes: the demo screen reads fabricated incidents from a separate
  * database so the allocator, the response plans and the modals can be shown
  * working without waiting for something real to happen. Everything else —
- * radar, wind, stations, the lake — stays live, because it is reference data
+ * stations, districts, the lake — stays live, because it is reference data
  * and faking it would only make the demo less honest.
  */
 
@@ -15,34 +15,26 @@ import {
   useState,
   useEffect,
   useMemo,
-  type CSSProperties,
 } from 'react'
 
 import { useNavigate } from 'react-router-dom'
 
 import MapView from '../components/MapView'
 
-import RainRadarLayer, {
-  type RainViewerFrame,
-} from '../components/layers/RainRadarLayer'
 
-import FireDangerLayer from '../components/layers/FireDangerLayer'
 import EventCard from '../components/EventCard'
 import WeakEventCard from '../components/WeakEventCard'
 import EventLegend from '../components/EventLegend'
 import EventModal from '../components/EventModal'
 import { classify } from '../components/hazards'
 import FireRiskLayer from '../components/layers/FireRiskLayer'
-import WindParticleLayer from '../components/layers/WindParticleLayer'
 
-import FireDangerLegend from '../components/FireDangerLegend'
 import FloodLegend from '../components/FloodLegend'
 import FireRiskAlert from '../components/FireRiskAlert'
 import KinneretLevelCard from '../components/KinneretLevelCard'
 import { clusterHighRiskCells, type FireRiskCluster } from '../components/fireRiskClusters'
 import { normalizeNationalRiskScanResponse, type NationalRiskScan } from '../components/fireRiskScan'
 import AreaSelect from '../components/AreaSelect'
-import LayersControl from '../components/LayersControl'
 import FireDistrictsLayer from '../components/layers/FireDistrictsLayer'
 import MdaDistrictsLayer from '../components/layers/MdaDistrictsLayer'
 import TownSearch from '../components/TownSearch'
@@ -63,42 +55,6 @@ import {
 } from '../types/events'
 
 import './visuals/dashboard.css'
-
-
-const WIND_MIN_HOURS = -6
-const WIND_MAX_HOURS = 12
-
-/**
- * Delay between RainViewer animation frames.
- */
-const RAIN_ANIMATION_INTERVAL_MS = 800
-
-
-/**
- * Format a Unix timestamp using Israel local time.
- */
-function formatIsraelTime(
-  timestamp: number | null
-) {
-  if (timestamp === null) {
-    return null
-  }
-
-  return new Intl.DateTimeFormat(
-    'en-GB',
-    {
-      timeZone: 'Asia/Jerusalem',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }
-  ).format(
-    new Date(
-      timestamp * 1000
-    )
-  )
-}
-
 
 
 function Dashboard({ demo = false }: { demo?: boolean }) {
@@ -262,30 +218,10 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
   // Layer visibility
   // =========================================================
 
-  const [
-    showRainRadar,
-    setShowRainRadar,
-  ] = useState(true)
 
-  const [
-    showFireDanger,
-    setShowFireDanger,
-  ] = useState(false)
 
-  const [
-    showFireRisk,
-    setShowFireRisk,
-  ] = useState(false)
 
-  const [
-    showFloodEvents,
-    setShowFloodEvents,
-  ] = useState(true)
 
-  const [
-    showWind,
-    setShowWind,
-  ] = useState(false)
 
   const [
     showFireDistricts,
@@ -296,15 +232,9 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
     showMdaDistricts,
     setShowMdaDistricts,
   ] = useState(false)
-  // Stations and routes belong to one operational overlay. Event markers are
-  // rendered by MapView and remain visible when this layer is switched off.
-  const [
-    showAllocations,
-    setShowAllocations,
-  ] = useState(true)
 
-  // Fire stations are reference data rather than an environmental overlay, so
-  // they live in the "I want to see" bar above the map, not in LayersControl.
+  // Stations and districts are reference data, switched from the "I want to
+  // see" bar above the map. Everything else on the map is always on.
   const [
     showFireStations,
     setShowFireStations,
@@ -343,72 +273,6 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
     useState<FireRiskCluster | null>(null)
   const [dismissedFireRiskSnapshot, setDismissedFireRiskSnapshot] =
     useState<string | null>(null)
-
-
-  // =========================================================
-  // Wind timeline
-  // =========================================================
-
-  /**
-   * Wind time offset relative to the current hour.
-   *
-   * -6 = six hours ago
-   *  0 = current
-   * +12 = twelve-hour forecast
-   */
-  const [
-    windOffsetHours,
-    setWindOffsetHours,
-  ] = useState(0)
-
-
-  /**
-   * Actual timestamp selected by Open-Meteo.
-   */
-  const [
-    windTimestamp,
-    setWindTimestamp,
-  ] = useState<number | null>(null)
-
-
-  // =========================================================
-  // Rain radar timeline
-  // =========================================================
-
-  /**
-   * All historical radar frames returned by RainViewer.
-   */
-  const [
-    rainFrames,
-    setRainFrames,
-  ] = useState<RainViewerFrame[]>([])
-
-
-  /**
-   * Currently selected RainViewer frame.
-   */
-  const [
-    rainFrameIndex,
-    setRainFrameIndex,
-  ] = useState(0)
-
-
-  /**
-   * Timestamp of the radar frame currently shown.
-   */
-  const [
-    rainTimestamp,
-    setRainTimestamp,
-  ] = useState<number | null>(null)
-
-
-  /**
-   * Whether the radar timeline is currently animating.
-   */
-  const [
-    rainPlaying,
-    setRainPlaying,
-  ] = useState(false)
 
 
   const navigate = useNavigate()
@@ -516,53 +380,6 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
 
 
   // =========================================================
-  // Rain radar animation
-  // =========================================================
-
-  /**
-   * Advance through the cached RainViewer frames while Play is active.
-   *
-   * No new metadata request is made here.
-   * RainRadarLayer already holds the RainViewer frame metadata.
-   *
-   * When the animation reaches the latest frame, it loops back
-   * to the oldest frame.
-   */
-  useEffect(() => {
-    if (
-      !rainPlaying ||
-      !showRainRadar ||
-      rainFrames.length < 2
-    ) {
-      return
-    }
-
-    const intervalId =
-      window.setInterval(
-        () => {
-          setRainFrameIndex(
-            (currentIndex) =>
-              (
-                currentIndex + 1
-              ) % rainFrames.length
-          )
-        },
-        RAIN_ANIMATION_INTERVAL_MS
-      )
-
-    return () => {
-      window.clearInterval(
-        intervalId
-      )
-    }
-  }, [
-    rainPlaying,
-    showRainRadar,
-    rainFrames.length,
-  ])
-
-
-  // =========================================================
   // Logout
   // =========================================================
 
@@ -574,142 +391,6 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
       700
     )
   }
-
-  const toggleRainRadar = () => {
-    if (showRainRadar) setRainPlaying(false)
-    setShowRainRadar((current) => !current)
-  }
-
-
-  // =========================================================
-  // Wind display calculations
-  // =========================================================
-
-  const formattedWindTime =
-    formatIsraelTime(
-      windTimestamp
-    )
-
-
-  const windTimeMode =
-    windOffsetHours === 0
-      ? 'Current'
-      : windOffsetHours < 0
-        ? `${Math.abs(
-            windOffsetHours
-          )}h ago`
-        : `Forecast +${windOffsetHours}h`
-
-
-  /**
-   * Slider position:
-   *
-   * -6h  = 0%
-   * Now  = 33.33%
-   * +12h = 100%
-   */
-  const windSliderPositionPercent =
-    (
-      (
-        windOffsetHours -
-        WIND_MIN_HOURS
-      ) /
-      (
-        WIND_MAX_HOURS -
-        WIND_MIN_HOURS
-      )
-    ) * 100
-
-
-  // =========================================================
-  // Rain display calculations
-  // =========================================================
-
-  /**
-   * Called when RainRadarLayer receives RainViewer metadata.
-   *
-   * Automatically select the latest radar observation.
-   */
-  const handleRainFramesChange = (
-    frames: RainViewerFrame[]
-  ) => {
-    setRainFrames(frames)
-
-    if (frames.length > 0) {
-      setRainFrameIndex(
-        frames.length - 1
-      )
-    } else {
-      setRainFrameIndex(0)
-      setRainPlaying(false)
-    }
-  }
-
-
-  const formattedRainTime =
-    formatIsraelTime(
-      rainTimestamp
-    )
-
-
-  const oldestRainTime =
-    rainFrames.length > 0
-      ? formatIsraelTime(
-          rainFrames[0].time
-        )
-      : null
-
-
-  const latestRainTime =
-    rainFrames.length > 0
-      ? formatIsraelTime(
-          rainFrames[
-            rainFrames.length - 1
-          ].time
-        )
-      : null
-
-
-  /**
-   * Percentage position of the selected radar frame.
-   */
-  const rainSliderPositionPercent =
-    rainFrames.length > 1
-      ? (
-          rainFrameIndex /
-          (
-            rainFrames.length - 1
-          )
-        ) * 100
-      : 100
-
-
-  /**
-   * Number of minutes between the selected radar frame
-   * and the newest RainViewer observation.
-   */
-  const rainMinutesAgo =
-    rainFrames.length > 0 &&
-    rainTimestamp !== null
-      ? Math.max(
-          0,
-          Math.round(
-            (
-              rainFrames[
-                rainFrames.length - 1
-              ].time -
-              rainTimestamp
-            ) / 60
-          )
-        )
-      : 0
-
-
-  const rainTimeMode =
-    rainMinutesAgo === 0
-      ? 'Latest'
-      : `${rainMinutesAgo}m ago`
-
 
   return (
     <main
@@ -724,6 +405,25 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
 
       <header className="dashboard__header">
 
+        <div className="dashboard__brand">
+          <svg className="dashboard__leaf" viewBox="0 0 32 32" aria-hidden="true">
+            <path d="M5 27C5 13 13 5 28 4c-1 15-9 23-23 23z" />
+            <path d="M5 27 19 13" className="dashboard__leaf-vein" />
+          </svg>
+          <h1 className="dashboard__title">
+            <span className="dashboard__eco">Eco</span>Guard
+          </h1>
+          {demo ? (
+            <span className="dashboard__status dashboard__status--demo">
+              Demo data — no incident shown here is real
+            </span>
+          ) : (
+            <span className="dashboard__status">Live</span>
+          )}
+        </div>
+
+        <EventLegend />
+
         <button
           className="logout-button"
           onClick={handleLogout}
@@ -731,37 +431,7 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
           {demo ? 'Leave demo' : 'Log out'}
         </button>
 
-
-        <div className="dashboard__header-center">
-
-          <h1 className="dashboard__title">
-            EcoGuard Dashboard
-          </h1>
-
-          <p className="dashboard__subtitle">
-            {demo
-              ? 'Demo — fabricated incidents on the live map'
-              : 'Live disaster-risk map of Israel'}
-          </p>
-
-          {demo && (
-            <span className="dashboard__demo-badge">
-              Demo data — no incident shown here is real
-            </span>
-          )}
-
-        </div>
-
-
-        <div className="dashboard__header-spacer" />
-
       </header>
-
-
-      <EventLegend
-        emergencyCount={emergencyEvents.length}
-        advisoryCount={advisoryEvents.length}
-      />
 
 
       <div className="dashboard__body">
@@ -801,46 +471,72 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
         <main className="dashboard__map">
 
           <WhatToSeeControl
-            toggles={[
+            groups={[
               {
-                id: 'fire-stations',
-                label: 'Fire Stations',
-                swatch: { logo: '/FireDepIsrael.svg', ring: '#dc2626' },
-                checked: showFireStations,
-                onToggle: () =>
-                  setShowFireStations((current) => !current),
-                note: fireStationCount
-                  ? `${fireStationCount.located}/${fireStationCount.total}`
-                  : null,
+                label: 'Stations',
+                toggles: [
+                    {
+                      id: 'fire-stations',
+                      label: 'Fire Stations',
+                      swatch: { logo: '/FireDepIsrael.svg', ring: '#dc2626' },
+                      checked: showFireStations,
+                      onToggle: () =>
+                        setShowFireStations((current) => !current),
+                      note: fireStationCount
+                        ? `${fireStationCount.located}/${fireStationCount.total}`
+                        : null,
+                    },
+                    {
+                      id: 'police-stations',
+                      label: 'Police Stations',
+                      swatch: { logo: '/Emblem_of_Israel_Police_Blue.svg', ring: '#1d4ed8' },
+                      checked: showPoliceStations,
+                      onToggle: () =>
+                        setShowPoliceStations((current) => !current),
+                      note: policeStationCount
+                        ? `${policeStationCount.total}`
+                        : null,
+                    },
+                    {
+                      id: 'mda-stations',
+                      label: 'MDA Stations',
+                      swatch: { logo: '/Mada_logo.svg', ring: '#dc2626' },
+                      checked: showMdaStations,
+                      onToggle: () =>
+                        setShowMdaStations((current) => !current),
+                      note: mdaStationCount
+                        ? `${mdaStationCount.located}/${mdaStationCount.total}`
+                        : null,
+                    },
+                ],
               },
               {
-                id: 'police-stations',
-                label: 'Police Stations',
-                swatch: { logo: '/Emblem_of_Israel_Police_Blue.svg', ring: '#1d4ed8' },
-                checked: showPoliceStations,
-                onToggle: () =>
-                  setShowPoliceStations((current) => !current),
-                note: policeStationCount
-                  ? `${policeStationCount.total}`
-                  : null,
-              },
-              {
-                id: 'mda-stations',
-                label: 'MDA Stations',
-                swatch: { logo: '/Mada_logo.svg', ring: '#dc2626' },
-                checked: showMdaStations,
-                onToggle: () =>
-                  setShowMdaStations((current) => !current),
-                note: mdaStationCount
-                  ? `${mdaStationCount.located}/${mdaStationCount.total}`
-                  : null,
+                label: 'Districts',
+                toggles: [
+                  {
+                    id: 'fire-districts',
+                    label: 'Fire Districts',
+                    swatch: { logo: '/FireDepIsrael.svg', ring: '#dc2626', area: true },
+                    checked: showFireDistricts,
+                    onToggle: () =>
+                      setShowFireDistricts((current) => !current),
+                  },
+                  {
+                    id: 'mda-districts',
+                    label: 'MDA Districts',
+                    swatch: { logo: '/Mada_logo.svg', ring: '#dc2626', area: true },
+                    checked: showMdaDistricts,
+                    onToggle: () =>
+                      setShowMdaDistricts((current) => !current),
+                  },
+                ],
               },
             ]}
           />
 
+
           <MapView
             events={events}
-            showFloodEvents={showFloodEvents}
             onEventClick={selectAndOpenEvent}
             style={{ flex: '1 1 auto', minHeight: 0 }}
           >
@@ -853,313 +549,6 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
                 onViewOnMap={viewHighRiskOnMap}
                 onDismiss={() => setDismissedFireRiskSnapshot(nationalRiskScan.evaluation_time)}
               />
-            )}
-
-            {/* ================================================= */}
-            {/* Rain Radar                                        */}
-            {/* ================================================= */}
-
-            {showRainRadar && (
-              <RainRadarLayer
-                selectedFrameIndex={
-                  rainFrameIndex
-                }
-                onFramesChange={
-                  handleRainFramesChange
-                }
-                onFrameTimeChange={
-                  setRainTimestamp
-                }
-              />
-            )}
-
-
-            {showRainRadar &&
-              rainFrames.length > 0 && (
-                <div
-                  style={{
-                    ...rainTimelineStyle,
-
-                    /**
-                     * If Wind is also visible,
-                     * place the radar timeline above it.
-                     */
-                    bottom:
-                      showWind
-                        ? 165
-                        : 36,
-                  }}
-                >
-
-                  <div
-                    style={
-                      rainTimelineHeaderStyle
-                    }
-                  >
-
-                    <strong>
-                      🌧 Rain Radar
-                    </strong>
-
-
-                    <button
-                      type="button"
-                      style={
-                        rainPlayButtonStyle
-                      }
-                      onClick={() =>
-                        setRainPlaying(
-                          (current) =>
-                            !current
-                        )
-                      }
-                      disabled={
-                        rainFrames.length < 2
-                      }
-                      title={
-                        rainPlaying
-                          ? 'Pause radar animation'
-                          : 'Play radar animation'
-                      }
-                    >
-                      {rainPlaying
-                        ? '⏸ Pause'
-                        : '▶ Play'}
-                    </button>
-
-                  </div>
-
-
-                  <div
-                    style={
-                      rainSliderContainerStyle
-                    }
-                  >
-
-                    {formattedRainTime && (
-                      <div
-                        style={{
-                          ...rainFloatingLabelStyle,
-
-                          left:
-                            `${rainSliderPositionPercent}%`,
-
-                          transform:
-                            `translateX(-${rainSliderPositionPercent}%)`,
-                        }}
-                      >
-                        {rainTimeMode}
-                        {' · '}
-                        {formattedRainTime}
-
-                        <div
-                          style={
-                            rainFloatingArrowStyle
-                          }
-                        >
-                          ▼
-                        </div>
-
-                      </div>
-                    )}
-
-
-                    <input
-                      type="range"
-                      min={0}
-                      max={
-                        Math.max(
-                          rainFrames.length - 1,
-                          0
-                        )
-                      }
-                      step={1}
-                      value={
-                        rainFrameIndex
-                      }
-                      onChange={(event) => {
-                        /**
-                         * Manual timeline interaction stops
-                         * the automatic radar animation.
-                         */
-                        setRainPlaying(false)
-
-                        setRainFrameIndex(
-                          Number(
-                            event.target.value
-                          )
-                        )
-                      }}
-                      style={
-                        rainSliderStyle
-                      }
-                    />
-
-                  </div>
-
-
-                  <div
-                    style={
-                      rainTimelineLabelsStyle
-                    }
-                  >
-
-                    <span>
-                      {oldestRainTime ??
-                        'Oldest'}
-                    </span>
-
-                    <span>
-                      Past radar
-                    </span>
-
-                    <span>
-                      {latestRainTime ??
-                        'Latest'}
-                    </span>
-
-                  </div>
-
-                </div>
-              )}
-
-
-            {/* ================================================= */}
-            {/* Wind                                              */}
-            {/* ================================================= */}
-
-            {showWind && (
-              <WindParticleLayer
-                timeOffsetHours={
-                  windOffsetHours
-                }
-                onTimeChange={
-                  setWindTimestamp
-                }
-              />
-            )}
-
-
-            {showWind && (
-              <div
-                style={
-                  windTimelineStyle
-                }
-              >
-
-                <div
-                  style={
-                    windTimelineTitleStyle
-                  }
-                >
-                  <strong>
-                    💨 Wind
-                  </strong>
-                </div>
-
-
-                <div
-                  style={
-                    windSliderContainerStyle
-                  }
-                >
-
-                  {formattedWindTime && (
-                    <div
-                      style={{
-                        ...windFloatingLabelStyle,
-
-                        left:
-                          `${windSliderPositionPercent}%`,
-
-                        transform:
-                          `translateX(-${windSliderPositionPercent}%)`,
-                      }}
-                    >
-                      {windTimeMode}
-                      {' · '}
-                      {formattedWindTime}
-
-                      <div
-                        style={
-                          windFloatingArrowStyle
-                        }
-                      >
-                        ▼
-                      </div>
-
-                    </div>
-                  )}
-
-
-                  <input
-                    type="range"
-                    min={
-                      WIND_MIN_HOURS
-                    }
-                    max={
-                      WIND_MAX_HOURS
-                    }
-                    step={3}
-                    value={
-                      windOffsetHours
-                    }
-                    onChange={(event) =>
-                      setWindOffsetHours(
-                        Number(
-                          event.target.value
-                        )
-                      )
-                    }
-                    style={
-                      windSliderStyle
-                    }
-                  />
-
-                </div>
-
-
-                <div
-                  style={
-                    windTimelineLabelsStyle
-                  }
-                >
-
-                  <span>
-                    -6h
-                  </span>
-
-                  <span
-                    style={{
-                      position:
-                        'absolute',
-
-                      left:
-                        '33.333%',
-
-                      transform:
-                        'translateX(-50%)',
-                    }}
-                  >
-                    Now
-                  </span>
-
-                  <span>
-                    +12h
-                  </span>
-
-                </div>
-
-              </div>
-            )}
-
-
-            {/* ================================================= */}
-            {/* Fire danger                                       */}
-            {/* ================================================= */}
-
-            {showFireDanger && (
-              <FireDangerLayer />
             )}
 
             {showFireDistricts && (
@@ -1185,19 +574,15 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
               onLoaded={setMdaStationCount}
             />
 
-            {showFireDanger && (
-              <FireDangerLegend />
+            {events.some((event) => event.type === 'flood') && (
+              <FloodLegend />
             )}
 
-            {showFloodEvents && events.some((event) => event.type === 'flood') && (
-              <FloodLegend fireDangerVisible={showFireDanger} />
-            )}
-
-            {(showFireRisk || focusedFireRiskCluster) && (
+            {focusedFireRiskCluster && (
               <FireRiskLayer
                 scan={nationalRiskScan}
                 error={nationalRiskError}
-                visible={showFireRisk}
+                visible={false}
                 focusedCluster={focusedFireRiskCluster}
                 onClearFocusedCluster={() => setFocusedFireRiskCluster(null)}
               />
@@ -1211,94 +596,18 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
               <FireSpreadLayer key={spreadEvent.id} event={spreadEvent} />
             )}
 
-            {showAllocations && allocationEvents.map((event) => (
+            {allocationEvents.map((event) => (
               <ResourceAllocationLayer
                 key={`${event.type}:${event.id}`}
                 event={event}
+                showSimulation={
+                  selectedEvent?.type === event.type && selectedEvent.id === event.id
+                }
                 onShowDirections={(stationKey) => (
                   showStationDirections(event, stationKey)
                 )}
               />
             ))}
-
-
-            {/* ================================================= */}
-            {/* Layer controls                                    */}
-            {/* ================================================= */}
-
-            <LayersControl
-              showRainRadar={
-                showRainRadar
-              }
-              onToggleRainRadar={toggleRainRadar}
-
-              showFireDanger={
-                showFireDanger
-              }
-              onToggleFireDanger={() =>
-                setShowFireDanger(
-                  (current) =>
-                    !current
-                )
-              }
-
-              showFireRisk={
-                showFireRisk
-              }
-              onToggleFireRisk={() =>
-                setShowFireRisk(
-                  (current) =>
-                    !current
-                )
-              }
-
-              showFloodEvents={showFloodEvents}
-              onToggleFloodEvents={() =>
-                setShowFloodEvents(
-                  (current) => !current
-                )
-              }
-
-              showWind={
-                showWind
-              }
-              onToggleWind={() =>
-                setShowWind(
-                  (current) =>
-                    !current
-                )
-              }
-
-              showFireDistricts={
-                showFireDistricts
-              }
-              onToggleFireDistricts={() =>
-                setShowFireDistricts(
-                  (current) =>
-                    !current
-                )
-              }
-
-              showMdaDistricts={
-                showMdaDistricts
-              }
-              onToggleMdaDistricts={() =>
-                setShowMdaDistricts(
-                  (current) =>
-                    !current
-                )
-              }
-              showAllocations={
-                showAllocations
-              }
-              onToggleAllocations={() =>
-                setShowAllocations(
-                  (current) =>
-                    !current
-                )
-              }
-
-            />
 
 
             {/* ================================================= */}
@@ -1390,267 +699,6 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
 
     </main>
   )
-}
-
-
-// ===========================================================
-// Wind timeline styles
-// ===========================================================
-
-const windTimelineStyle: CSSProperties = {
-  position: 'absolute',
-
-  bottom: 36,
-
-  right: 12,
-
-  zIndex: 5,
-
-  width: 300,
-
-  background:
-    'rgba(255, 255, 255, 0.96)',
-
-  color: '#111827',
-
-  padding: '10px 12px',
-
-  borderRadius: 10,
-
-  boxShadow:
-    '0 2px 10px rgba(0, 0, 0, 0.22)',
-}
-
-
-const windTimelineTitleStyle: CSSProperties = {
-  fontSize: '0.82rem',
-
-  marginBottom: 32,
-}
-
-
-const windSliderContainerStyle: CSSProperties = {
-  position: 'relative',
-
-  width: '100%',
-}
-
-
-const windFloatingLabelStyle: CSSProperties = {
-  position: 'absolute',
-
-  bottom: 28,
-
-  whiteSpace: 'nowrap',
-
-  background: '#ffffff',
-
-  color: '#111827',
-
-  padding: '3px 6px',
-
-  borderRadius: 6,
-
-  fontSize: '0.72rem',
-
-  fontWeight: 600,
-
-  boxShadow:
-    '0 1px 4px rgba(0, 0, 0, 0.16)',
-
-  pointerEvents: 'none',
-
-  textAlign: 'center',
-}
-
-
-const windFloatingArrowStyle: CSSProperties = {
-  position: 'absolute',
-
-  left: '50%',
-
-  transform:
-    'translateX(-50%)',
-
-  bottom: -10,
-
-  fontSize: '0.55rem',
-
-  color: '#6b7280',
-}
-
-
-const windSliderStyle: CSSProperties = {
-  width: '100%',
-
-  cursor: 'pointer',
-
-  margin: 0,
-}
-
-
-const windTimelineLabelsStyle: CSSProperties = {
-  position: 'relative',
-
-  display: 'flex',
-
-  justifyContent:
-    'space-between',
-
-  fontSize: '0.7rem',
-
-  color: '#6b7280',
-
-  marginTop: 5,
-}
-
-
-// ===========================================================
-// Rain timeline styles
-// ===========================================================
-
-const rainTimelineStyle: CSSProperties = {
-  position: 'absolute',
-
-  right: 12,
-
-  zIndex: 5,
-
-  width: 300,
-
-  background:
-    'rgba(255, 255, 255, 0.96)',
-
-  color: '#111827',
-
-  padding: '10px 12px',
-
-  borderRadius: 10,
-
-  boxShadow:
-    '0 2px 10px rgba(0, 0, 0, 0.22)',
-
-  transition:
-    'bottom 0.2s ease',
-}
-
-
-const rainTimelineHeaderStyle: CSSProperties = {
-  display: 'flex',
-
-  alignItems: 'center',
-
-  justifyContent:
-    'space-between',
-
-  gap: 10,
-
-  marginBottom: 32,
-
-  fontSize: '0.82rem',
-}
-
-
-const rainPlayButtonStyle: CSSProperties = {
-  border:
-    '1px solid #d1d5db',
-
-  background:
-    '#ffffff',
-
-  color:
-    '#111827',
-
-  padding:
-    '4px 8px',
-
-  borderRadius:
-    6,
-
-  fontSize:
-    '0.72rem',
-
-  fontWeight:
-    600,
-
-  cursor:
-    'pointer',
-}
-
-
-const rainSliderContainerStyle: CSSProperties = {
-  position: 'relative',
-
-  width: '100%',
-}
-
-
-const rainFloatingLabelStyle: CSSProperties = {
-  position: 'absolute',
-
-  bottom: 28,
-
-  whiteSpace: 'nowrap',
-
-  background: '#ffffff',
-
-  color: '#111827',
-
-  padding: '3px 6px',
-
-  borderRadius: 6,
-
-  fontSize: '0.72rem',
-
-  fontWeight: 600,
-
-  boxShadow:
-    '0 1px 4px rgba(0, 0, 0, 0.16)',
-
-  pointerEvents: 'none',
-
-  textAlign: 'center',
-}
-
-
-const rainFloatingArrowStyle: CSSProperties = {
-  position: 'absolute',
-
-  left: '50%',
-
-  transform:
-    'translateX(-50%)',
-
-  bottom: -10,
-
-  fontSize: '0.55rem',
-
-  color: '#6b7280',
-}
-
-
-const rainSliderStyle: CSSProperties = {
-  width: '100%',
-
-  cursor: 'pointer',
-
-  margin: 0,
-}
-
-
-const rainTimelineLabelsStyle: CSSProperties = {
-  display: 'flex',
-
-  alignItems: 'center',
-
-  justifyContent:
-    'space-between',
-
-  fontSize: '0.7rem',
-
-  color: '#6b7280',
-
-  marginTop: 5,
 }
 
 

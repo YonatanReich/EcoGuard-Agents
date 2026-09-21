@@ -48,10 +48,17 @@ function ResourceAllocationLayer({
   event,
   onShowDirections,
   showLegend = false,
+  showSimulation = false,
 }: {
   event: FireEvent | EarthquakeEvent | FloodEvent
   onShowDirections: (stationKey: string) => void
   showLegend?: boolean
+  /**
+   * Mount the 3D vehicle simulation for this event. Only one may run at a
+   * time: the Three.js layer has a single map layer id and its panel a single
+   * position, so the dashboard passes true for the selected event alone.
+   */
+  showSimulation?: boolean
 }) {
   const stations = event.details.resource_allocation?.stations ?? NO_ALLOCATED_STATIONS
   // Every event owns separate Mapbox source/layer IDs, allowing all active
@@ -241,7 +248,7 @@ function ResourceAllocationLayer({
         </div>
       )}
 
-      {simulationResources.length > 0 && (
+      {showSimulation && simulationResources.length > 0 && (
         <AllocationVehicleSimulation vehicles={simulationResources} />
       )}
     </>

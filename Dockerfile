@@ -18,12 +18,18 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# rasterio's wheel bundles GDAL but links libexpat from the system, and the
+# slim image does not ship it: without this the API dies at import with
+# "libexpat.so.1: cannot open shared object file".
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libexpat1 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Requirements first so a code change does not reinstall scipy.
 #
 # No build toolchain here on purpose: numpy, scipy, scikit-learn, rasterio and
-# psycopg[binary] all publish manylinux wheels, and rasterio's bundles its own
-# GDAL. If a future pin has no wheel, add build-essential to this layer rather
-# than to the final image.
+# psycopg[binary] all publish manylinux wheels. If a future pin has no wheel,
+# add build-essential to this layer rather than to the final image.
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
