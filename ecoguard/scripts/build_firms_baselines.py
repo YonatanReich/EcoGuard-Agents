@@ -47,6 +47,7 @@ from sqlalchemy import text
 from ecoguard.collection.fire.firms.client import FirmsDataAgent, FirmsProviderError
 from ecoguard.collection.fire.firms.collector import _service_area_box
 from ecoguard.database.engine import Session
+from ecoguard.detectors.fire import signature
 from ecoguard.shared.cells import cell_for, service_area_cells
 
 # FIRMS refuses anything larger: the area endpoint answers "Invalid day range.
@@ -174,8 +175,15 @@ def stored_detections() -> dict[str, set]:
     return days
 
 
-def tally(hotspots) -> tuple[dict[str, set], dict[str, int], dict[str, float]]:
-    """Per cell: which days it lit, how many detections, and its hottest pixel."""
+def tally(hotspots) -> tuple[dict[str, set], dict[str, int], dict[str, float], dict[str, dict]]:
+    """Per cell: which days it lit, how many detections, its hottest pixel, and
+    the signature fitted from its own overpasses.
+
+    The signature is free here and nowhere else. This function already holds a
+    year of every pixel the country produced; counting days throws all of it
+    away but the date. Fitting the profile in the same pass costs no request
+    and no second script - see detectors/fire/signature.py for what it buys.
+    """
     days: dict[str, set] = defaultdict(set)
     counts: dict[str, int] = defaultdict(int)
     peak: dict[str, float] = {}
@@ -190,11 +198,82 @@ def tally(hotspots) -> tuple[dict[str, set], dict[str, int], dict[str, float]]:
         if frp is not None:
             peak[cell_id] = max(peak.get(cell_id, 0.0), float(frp))
 
-    return days, counts, peak
+    # Cut the history the way the live collector cuts it - one cell, one
+    # overpass - so the fitted pixel count means what it will mean at scoring
+    # time rather than a year's pixels in one number.
+    samples: dict[str, list] = defaultdict(list)
+    for (cell_id, moment), pixels in signature.overpasses(hotspots).items():
+        features = signature.features_of(pixels, moment)
+        if features is not None:
+            samples[cell_id].append(features)
+
+    profiles = {
+        cell_id: profile
+        for cell_id, cell_samples in samples.items()
+        if (profile := signature.fit(cell_samples)) is not None
+    }
+
+    return days, counts, peak, profiles
 
 
-def store(days, counts, peak, days_observed: int, window_start: date, window_end: date) -> int:
+# The signature columns, in one place so the row builder and the INSERT cannot
+# drift apart. A cell with too few overpasses gets NULL across all of them,
+# which is the honest answer and stays distinguishable from a fitted profile
+# that happens to read low.
+SIGNATURE_FIELDS = (
+    "signature_samples", "hour_mean", "hour_concentration",
+    "log_frp_mean", "log_frp_sd", "pixels_mean", "pixels_sd",
+    "scatter_mean_m", "scatter_sd_m",
+)
+
+
+def signature_columns_exist() -> bool:
+    """Whether this database has had the signature migration applied.
+
+    The rate columns and the signature columns are independent answers to
+    independent questions, and a database that has only the first must still
+    be able to rebuild it. Tying the two together would mean a schema lag
+    blocks the repair of an unrelated table.
+    """
+    with Session() as session:
+        found = session.execute(
+            text(
+                "SELECT count(*) FROM information_schema.columns "
+                "WHERE table_name = 'firms_baselines' "
+                "AND column_name = 'signature_samples'"
+            )
+        ).scalar()
+    return bool(found)
+
+
+def _signature_row(profile: dict | None) -> dict:
+    """A fitted profile as columns, or all-NULL when there was none."""
+    if profile is None:
+        return dict.fromkeys(SIGNATURE_FIELDS)
+    return {
+        "signature_samples": profile["samples"],
+        "hour_mean": profile["hour_mean"],
+        "hour_concentration": profile["hour_concentration"],
+        "log_frp_mean": profile["log_frp_mean"],
+        "log_frp_sd": profile["log_frp_sd"],
+        "pixels_mean": profile["pixels_mean"],
+        "pixels_sd": profile["pixels_sd"],
+        "scatter_mean_m": profile["scatter_mean_m"],
+        "scatter_sd_m": profile["scatter_sd_m"],
+    }
+
+
+def store(days, counts, peak, profiles, days_observed: int,
+          window_start: date, window_end: date) -> int:
     """One row per service-area cell, zeros included."""
+    # A database without the signature migration still gets its rate baseline
+    # rebuilt; it just does not get the profiles. Better a table that suppresses
+    # industrial sources without the finer judgement than no table at all.
+    with_signatures = signature_columns_exist()
+    if not with_signatures:
+        print("  signature columns absent; writing rate baseline only "
+              "(run: alembic upgrade firms_signatures)", file=sys.stderr)
+
     rows = [
         {
             "cell_id": cell.cell_id,
@@ -204,22 +283,23 @@ def store(days, counts, peak, days_observed: int, window_start: date, window_end
             "peak_frp_mw": peak.get(cell.cell_id),
             "window_start": window_start,
             "window_end": window_end,
+            **(_signature_row(profiles.get(cell.cell_id)) if with_signatures else {}),
         }
         for cell in service_area_cells()
     ]
+
+    columns = ("cell_id", "days_observed", "detection_days", "detections",
+               "peak_frp_mw", "window_start", "window_end",
+               *(SIGNATURE_FIELDS if with_signatures else ()))
 
     with Session() as session:
         session.execute(text("DELETE FROM firms_baselines"))
         session.execute(
             text(
-                """
-                INSERT INTO firms_baselines
-                  (cell_id, days_observed, detection_days, detections,
-                   peak_frp_mw, window_start, window_end)
-                VALUES
-                  (:cell_id, :days_observed, :detection_days, :detections,
-                   :peak_frp_mw, :window_start, :window_end)
-                """
+                "INSERT INTO firms_baselines ({}) VALUES ({})".format(
+                    ", ".join(columns),
+                    ", ".join(f":{name}" for name in columns),
+                )
             ),
             rows,
         )
@@ -276,7 +356,7 @@ def build(days: int = DEFAULT_DAYS, agent: FirmsDataAgent | None = None) -> dict
             "The existing baseline has been left untouched."
         )
 
-    days_lit, counts, peak = tally(all_hotspots)
+    days_lit, counts, peak, profiles = tally(all_hotspots)
 
     # Merge what the collector already stored. A day either source saw is a day
     # the cell lit, so the union is the honest answer.
@@ -287,7 +367,7 @@ def build(days: int = DEFAULT_DAYS, agent: FirmsDataAgent | None = None) -> dict
         merged_from_store += len(days_lit[cell_id]) - before
 
     written = store(
-        days_lit, counts, peak, days,
+        days_lit, counts, peak, profiles, days,
         today - timedelta(days=days - 1), today,
     )
 
@@ -299,6 +379,7 @@ def build(days: int = DEFAULT_DAYS, agent: FirmsDataAgent | None = None) -> dict
         "days_observed": days,
         "gaps": gaps,
         "days_added_from_store": merged_from_store,
+        "cells_profiled": len(profiles),
     }
 
 

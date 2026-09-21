@@ -18,8 +18,14 @@ from ecoguard.coordinator import incidents as incident_store
 from ecoguard.resource_allocator.mapbox_client import MapboxClient, RoutingError
 from ecoguard.resource_allocator.flood_road_targets import FloodRoadTargetAgent
 
-# Temporary station counts until an operational source can provide real
-# vehicle quantities. These numbers represent stations, not vehicles.
+# Fallback station counts, used only when the planner supplies none. These
+# numbers represent stations, not vehicles, and they are a placeholder: the
+# authority's own dispatch guidance table lives in the שלהבת CAD system and is
+# not available to us.
+#
+# The fire planner now derives counts from an event grade tied to a published
+# threshold and passes them on the request, so for fire this table is the
+# path taken when planning failed rather than the normal one.
 STATIONS_REQUIRED_BY_RISK = {
     "low": {
         "fire_department": 1,
@@ -342,6 +348,19 @@ class ResourceAllocationAgent:
     def _required_station_count(
         risk_level, recommended_unit, response_plan=None, allocation_policy=None
     ):
+        """How many stations to commit for one unit type.
+
+        The planner's figure wins where it supplies one. It derives team counts
+        from an event grade anchored to a published threshold — ten teams is a
+        national criterion in 201.02.003 §2.1.5 — whereas the table below is a
+        placeholder, as its own comment says.
+
+        The deeper reason is not which number is better. Two components
+        deriving the same quantity by different logic will disagree about some
+        fire eventually, and nothing here would notice: both answers are
+        well-formed. So one of them has to be authoritative, and it is the one
+        that can cite where its number came from.
+        """
         if allocation_policy == EARTHQUAKE_MINIMUM_RESPONSE_POLICY:
             # EcoGuard product policy, not an official dispatch quantity.
             return 1
@@ -349,6 +368,10 @@ class ResourceAllocationAgent:
             # Severity is sent to the responsible station; the station decides
             # how many internal units it dispatches.
             return 1
+        if response_plan:
+            teams = response_plan.get("teams_required")
+            if recommended_unit == "fire_department" and isinstance(teams, int):
+                return max(1, teams)
         explicit = (
             (response_plan or {}).get("station_requirements") or {}
         ).get(recommended_unit)

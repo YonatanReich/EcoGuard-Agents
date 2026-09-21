@@ -105,6 +105,253 @@ def build_fire_plan_input(
         raise OperationalAnalysisUnavailable("risk_analysis_unavailable") from error
 
 
+# The spread analyser's own severity scale, declared here so a reader of the
+# planner input can never mistake it for the other two. `estimated_fire_risk`
+# is 0-1 and is about ignition; `detected_event_operational_risk` is 0-100 and
+# is about how bad an existing fire is; this is 0-100 and is about how bad its
+# *spread* is about to be over a stated horizon.
+FIRE_SPREAD_SEMANTICS = "fire_spread_forecast"
+
+# EmergencyResponsePlanInput caps these, and a value over the cap fails
+# validation rather than truncating. Bounded here so a fire with forty exposed
+# settlements produces a shorter list instead of no plan at all.
+MAX_EVIDENCE_GAPS = 16
+MAX_LIMITATIONS = 24
+MAX_DESCRIPTION = 6000
+
+
+def build_fire_spread_plan_input(
+    analysis: Mapping[str, Any],
+) -> EmergencyResponsePlanInput:
+    """Adapt a `spread_analyzer` result into the shared planning contract.
+
+    Separate from `build_fire_plan_input`, which adapts the *other* fire path:
+    a live point query whose evidence is a `DetectedFireEvent` and whose score
+    is operational risk. That adapter rejects anything not carrying
+    `detected_event_operational_risk`, and correctly so — the two scores mean
+    different things and silently swapping one for the other is exactly the
+    confusion the `risk_semantics` field exists to prevent.
+
+    So this does not dress a spread forecast up as a detection. It targets
+    `EmergencyResponsePlanInput` directly, which is what the shared planner
+    actually consumes and which its own docstring calls analyzer-agnostic.
+
+    Raises:
+        OperationalAnalysisUnavailable: when the analysis made no assessment.
+            A plan built on a forecast that did not happen is the fabrication
+            the planner's hard gate exists to prevent, and a stalled fire is
+            not a quiet one — it is a fire this analyser has nothing to say
+            about, which is a different thing and not a basis for planning.
+    """
+    result = _mapping(analysis)
+    if result.get("risk_semantics") != FIRE_SPREAD_SEMANTICS:
+        raise OperationalAnalysisUnavailable("not_a_fire_spread_forecast")
+    if result.get("status") != "ok":
+        raise OperationalAnalysisUnavailable(
+            f"spread_analysis_{result.get('status') or 'missing'}"
+        )
+    if not isinstance(result.get("risk_score"), int) or isinstance(
+        result.get("risk_score"), bool
+    ):
+        raise OperationalAnalysisUnavailable("spread_analysis_unscored")
+
+    origin = _mapping(result.get("origin"))
+    report = result.get("report")
+    if not isinstance(report, str) or not report.strip():
+        raise OperationalAnalysisUnavailable("spread_analysis_has_no_report")
+
+    # `event_description` drives BM25 retrieval, so what goes in it decides
+    # which doctrine the planner gets to cite.
+    #
+    # The full report was the obvious thing to put here and it retrieves badly.
+    # It is dense with weather and fuel vocabulary — humidity, wind, moisture,
+    # danger — so on a four-document corpus it matches the Fire Weather Index
+    # classification document almost every time, and the planner ends up citing
+    # band definitions when it needed engagement and triage doctrine. Measured,
+    # not guessed: 15 of 16 retrieved chunks across four scenarios were FWI.
+    #
+    # So the description is the planning view — what is burning, what it
+    # threatens, who has to move — and the full narrative travels in
+    # additional_context, which is serialised into the same prompt. Nothing is
+    # lost to the model; only the retrieval query changes.
+    description = _planning_description(result, origin)[:MAX_DESCRIPTION]
+
+    location = None
+    if origin.get("latitude") is not None and origin.get("longitude") is not None:
+        location = {
+            "latitude": float(origin["latitude"]),
+            "longitude": float(origin["longitude"]),
+        }
+
+    evacuation = list(result.get("evacuation") or ())
+    exposure = list(result.get("exposure") or ())
+
+    try:
+        return EmergencyResponsePlanInput(
+            incident_id=result.get("incident_id"),
+            hazard_type="fire",
+            location=location,
+            event_description=description,
+            risk_context={
+                "risk_score": result.get("risk_score"),
+                "risk_level": result.get("risk_level"),
+                "risk_semantics": FIRE_SPREAD_SEMANTICS,
+                "horizon_minutes": result.get("horizon_minutes"),
+            },
+            evidence_gaps=[
+                str(item) for item in (result.get("evidence_gaps") or ())
+            ][:MAX_EVIDENCE_GAPS],
+            limitations=[
+                str(item) for item in (result.get("limits") or ())
+            ][:MAX_LIMITATIONS],
+            additional_context={
+                "analyser": result.get("agent"),
+                "assessed_at": result.get("assessed_at"),
+                "origin": dict(origin),
+                "fire_behaviour": dict(_mapping(result.get("behaviour"))),
+                "population_at_risk": dict(_mapping(result.get("population_at_risk"))),
+                "population_in_spread": (
+                    dict(_mapping(result.get("population_in_spread")))
+                    if result.get("population_in_spread") else None
+                ),
+                # Trimmed of geometry. The planner decides unit types and
+                # actions; it does not draw maps, and 72 vertices per ring
+                # through a context window buys nothing.
+                # Whether this is a fire at all, and on what evidence. The
+                # planner has to know it is planning against a doubtful
+                # detection; a full response to a hot factory roof is the
+                # expensive half of this system's failure modes.
+                "detection": dict(_mapping(result.get("detection"))),
+                "infrastructure_at_risk": [
+                    {
+                        key: item.get(key) for key in (
+                            "name", "kind", "category", "exposure", "distance_m",
+                        )
+                    }
+                    for item in result.get("infrastructure_at_risk") or ()
+                ],
+                "infrastructure_summary": dict(
+                    _mapping(result.get("infrastructure_summary"))
+                ),
+                "fire_history": (
+                    dict(_mapping(result.get("fire_history")))
+                    if result.get("fire_history") else None
+                ),
+                "settlements_exposed": [
+                    {
+                        key: item.get(key) for key in (
+                            "name", "name_he", "population", "exposure",
+                            "arrival_minutes", "distance_m", "authority_phone",
+                            "fire_district", "police_station",
+                        )
+                    }
+                    for item in exposure
+                ],
+                "evacuation_priority": evacuation,
+                "headline": result.get("headline"),
+            },
+        )
+    except (TypeError, ValueError) as error:
+        raise OperationalAnalysisUnavailable("spread_analysis_unadaptable") from error
+
+
+def _planning_description(
+    result: Mapping[str, Any], origin: Mapping[str, Any]
+) -> str:
+    """The incident stated as a planning problem rather than as a forecast.
+
+    Deliberately in the vocabulary of response — evacuation, structures
+    threatened, access, life safety — because that is what has to match the
+    doctrine an action plan cites. The meteorology that produced these numbers
+    is in the full report and in `fire_behaviour`; repeating it here only
+    competes with the operative facts for retrieval weight.
+    """
+    behaviour = _mapping(result.get("behaviour"))
+    totals = _mapping(result.get("population_at_risk"))
+    exposure = list(result.get("exposure") or ())
+    evacuation = list(result.get("evacuation") or ())
+    where = origin.get("locality") or "open ground"
+
+    parts = [
+        f"Wildfire incident at {where}, spreading "
+        f"{behaviour.get('heading_compass') or 'unknown direction'} at "
+        f"{behaviour.get('head_ros_m_per_min')} metres per minute through "
+        f"{str(behaviour.get('dominant_fuel') or 'mixed fuel').replace('_', ' ')}.",
+        f"Spread severity {result.get('risk_level')} "
+        f"({result.get('risk_score')} of 100) over the next "
+        f"{result.get('horizon_minutes')} minutes.",
+    ]
+
+    burning = [item for item in exposure if item.get("exposure") == "burning"]
+    if burning:
+        parts.append(
+            "Fire is inside the built-up area of "
+            + ", ".join(str(item.get("name")) for item in burning)
+            + ". Structures are threatened and life safety is the first problem."
+        )
+
+    immediate = [item for item in evacuation if item.get("priority") == "immediate"]
+    prepare = [item for item in evacuation if item.get("priority") == "prepare"]
+    if immediate:
+        parts.append(
+            "Evacuation required immediately for "
+            + ", ".join(str(item.get("name")) for item in immediate)
+            + "."
+        )
+    if prepare:
+        parts.append(
+            "Evacuation preparation for "
+            + ", ".join(str(item.get("name")) for item in prepare)
+            + "."
+        )
+
+    population = _mapping(result.get("population_in_spread")).get("people")
+    if population is not None:
+        parts.append(f"{population:,} residents inside the forecast fire perimeter.")
+    if totals.get("likely"):
+        parts.append(
+            f"{totals['likely']:,} residents in settlements on the forecast path."
+        )
+
+    summary = _mapping(result.get("infrastructure_summary"))
+    counts = _mapping(summary.get("counts"))
+    if counts.get("hazard"):
+        hazards = [
+            str(item.get("kind"))
+            for item in result.get("infrastructure_at_risk") or ()
+            if item.get("category") == "hazard"
+        ]
+        parts.append(
+            "Hazardous sites in the path: "
+            + ", ".join(dict.fromkeys(hazards))
+            + ". Exclusion and hazardous-material considerations apply."
+        )
+    if counts.get("life_safety"):
+        sites = [
+            str(item.get("kind"))
+            for item in result.get("infrastructure_at_risk") or ()
+            if item.get("category") == "life_safety"
+        ]
+        parts.append(
+            "Sites whose occupants cannot self-evacuate in the path: "
+            + ", ".join(dict.fromkeys(sites))
+            + ". Assisted evacuation and transport required."
+        )
+
+    detection = _mapping(result.get("detection"))
+    if detection.get("verdict") in {"possible", "doubtful"}:
+        parts.append(
+            f"Detection is only {detection['verdict']} "
+            f"({detection.get('score')} of 100) — confirm on scene before "
+            "committing a full response."
+        )
+
+    parts.append(
+        "Requires decisions on unit types to commit, evacuation, road closures, "
+        "structure protection and crew safety at the fireline."
+    )
+    return " ".join(parts)
+
 def build_earthquake_plan_input(
     impact: EarthquakeImpact,
     *,

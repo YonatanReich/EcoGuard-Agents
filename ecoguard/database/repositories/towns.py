@@ -435,6 +435,159 @@ def _as_town(row) -> dict[str, Any]:
     }
 
 
+def towns_with_outlines_near(
+    *, latitude: float, longitude: float, radius_m: float
+) -> tuple[dict[str, Any], ...]:
+    """Settlements near a point, as the record shape fire exposure testing reads.
+
+    The fire spread analyser tests its rings against locality outlines, and its
+    own module defaults to a six-feature committed fixture. This is the
+    national set, and it carries the three things that make an exposure line
+    actionable rather than merely informative: the local authority's telephone
+    number, the fire district, and the responsible police station.
+
+    `rings` matches `exposure.load_localities` exactly — outer rings only, one
+    entry per part, points as (longitude, latitude). Holes are dropped for the
+    reason migration 0014 gives: a hole in a town outline is a park or a
+    quarry, and a fire in one of those is still a fire in the town.
+    """
+    with Session() as session:
+        rows = session.execute(
+            text("""
+                SELECT town_id, name_he, name_en, population, place,
+                       fire_district, authority, authority_type,
+                       authority_phone, authority_website, police_station,
+                       label_lat, label_lon,
+                       ST_Area(outline) / 1e6 AS outline_km2,
+                       ST_AsGeoJSON(outline::geometry) AS outline
+                FROM towns
+                WHERE ST_DWithin(outline, ST_SetSRID(
+                          ST_MakePoint(:longitude, :latitude), 4326)::geography, :radius_m)
+            """),
+            {"latitude": latitude, "longitude": longitude, "radius_m": radius_m},
+        ).mappings().all()
+
+    records = []
+    for row in rows:
+        # Some rows carry their regional council's whole area as their own
+        # outline. Fourteen villages around Petah Tikva each hold the same
+        # 277 km2 polygon, so a fire anywhere inside it was reported as burning
+        # in all fourteen and their populations summed. The polygon says
+        # nothing about where any of those villages actually is.
+        #
+        # Their own label point does. So a shared outline is replaced by a
+        # nominal circle around that point: a coarse footprint in the right
+        # place, instead of a precise-looking one in the wrong place.
+        if _is_jurisdiction(row):
+            record = _nominal_footprint(row)
+            if record is not None:
+                records.append(record)
+            continue
+
+        geometry = json.loads(row["outline"]) if row["outline"] else {}
+        kind = geometry.get("type")
+        coordinates = geometry.get("coordinates") or []
+        if kind == "Polygon":
+            parts = [coordinates]
+        elif kind == "MultiPolygon":
+            parts = coordinates
+        else:
+            continue
+
+        rings = tuple(
+            tuple(tuple(point) for point in part[0])
+            for part in parts
+            if part and len(part[0]) >= 4
+        )
+        if not rings:
+            continue
+
+        records.append({
+            "locality_id": row["town_id"],
+            # English where there is one, Hebrew otherwise. An operator reading
+            # a mixed list wants one column of names, and a blank is worse than
+            # the other language.
+            "name": row["name_en"] or row["name_he"],
+            "name_he": row["name_he"],
+            "population": row["population"],
+            "place": row["place"],
+            "authority": row["authority"],
+            "authority_type": row["authority_type"],
+            "authority_phone": row["authority_phone"],
+            "authority_website": row["authority_website"],
+            "fire_district": row["fire_district"],
+            "police_station": row["police_station"],
+            "rings": rings,
+        })
+    return tuple(records)
+
+
+# How wide to draw a settlement that has no outline of its own. Most Israeli
+# moshavim and kibbutzim sit inside a few hundred metres; 400 m is a footprint
+# that neither vanishes nor swallows its neighbours. It is an approximation and
+# is labelled as one on every record that uses it.
+NOMINAL_FOOTPRINT_M = 400.0
+
+# Above this, an outline is its authority's jurisdiction rather than the
+# settlement's own extent. Sized from the data, not guessed: village and hamlet
+# outlines run 0.52 km2 at the median and 3.74 km2 at the 95th percentile, and
+# then jump straight to 277 km2. Fifteen sits in that gap — four times the 95th
+# percentile — so it catches the 28 rows carrying a council polygon and no
+# genuine village. Towns and cities are capped far higher because a real city
+# is legitimately large; none in the table approaches its cap.
+JURISDICTION_KM2 = {"village": 15.0, "hamlet": 15.0, "town": 150.0, "city": 300.0}
+DEFAULT_JURISDICTION_KM2 = 150.0
+
+
+def _is_jurisdiction(row) -> bool:
+    """Whether this row's outline describes an authority rather than a place."""
+    area = row["outline_km2"]
+    if area is None:
+        return False
+    cap = JURISDICTION_KM2.get(row["place"] or "", DEFAULT_JURISDICTION_KM2)
+    return float(area) > cap
+
+
+def _nominal_footprint(row) -> dict[str, Any] | None:
+    """A settlement whose outline belongs to its regional council, as a circle.
+
+    Drawn around the town's own label point, which is the only position in the
+    row that is actually about this town. `outline_basis` records that this is
+    a nominal footprint so nothing downstream reports it as a surveyed
+    boundary.
+    """
+    latitude, longitude = row["label_lat"], row["label_lon"]
+    if latitude is None or longitude is None:
+        return None
+
+    import math
+
+    lat_step = NOMINAL_FOOTPRINT_M / 111_320.0
+    lon_step = lat_step / max(math.cos(math.radians(float(latitude))), 1e-6)
+    ring = tuple(
+        (
+            float(longitude) + lon_step * math.sin(math.radians(angle)),
+            float(latitude) + lat_step * math.cos(math.radians(angle)),
+        )
+        for angle in range(0, 360, 30)
+    )
+
+    return {
+        "locality_id": row["town_id"],
+        "name": row["name_en"] or row["name_he"],
+        "name_he": row["name_he"],
+        "population": row["population"],
+        "place": row["place"],
+        "authority": row["authority"],
+        "authority_type": row["authority_type"],
+        "authority_phone": row["authority_phone"],
+        "authority_website": row["authority_website"],
+        "fire_district": row["fire_district"],
+        "police_station": row["police_station"],
+        "outline_basis": "nominal_circle_around_label_point",
+        "rings": (ring + (ring[0],),),
+    }
+
 class TownIntersection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
