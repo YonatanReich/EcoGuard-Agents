@@ -8,6 +8,7 @@ from ecoguard.coordinator.dispatcher import IncidentProcessingResult, dispatch_i
 from ecoguard.coordinator.incidents import signal_as_json
 from ecoguard.coordinator.event_projection import (
     air_pollution_shared_event,
+    flood_shared_event,
     project_processing_results,
 )
 from ecoguard.detectors.air_pollution.cell_signal_adapter import (
@@ -71,6 +72,88 @@ def test_successful_result_maps_to_frontend_shared_event_contract():
     assert any("not health severity" in item for item in event.details.limitations)
     assert any("not a confirmed emission source" in item for item in event.details.limitations)
     assert any("not confirmed affected or exposed" in item for item in event.details.limitations)
+
+
+def test_flood_result_projects_stream_station_and_distinct_road_locations():
+    result = IncidentProcessingResult(
+        incident_id="INC-FLOOD-1",
+        hazard="flood",
+        route="emergency",
+        status="success",
+        requested_at=REQUESTED_AT,
+        completed_at=REQUESTED_AT,
+        resource_allocation_result={
+            "status": "targets_identified",
+            "hydrometric_sources": [{
+                "station": {
+                    "id": 50,
+                    "latitude": 31.1,
+                    "longitude": 35.2,
+                    "precision_m": 12.0,
+                    "severity_level": 5,
+                    "observed_at": REQUESTED_AT.isoformat(),
+                    "stream_match": "matched",
+                },
+                "strategy": "matched_stream",
+                "stream": {
+                    "stream_id": 7,
+                    "water_source_id": 70,
+                    "stream_name": "Test stream",
+                    "match_confidence": "high",
+                    "geometry": {
+                        "type": "MultiLineString",
+                        "coordinates": [[[35.1, 31.0], [35.3, 31.2]]],
+                    },
+                },
+            }],
+            "response_sites": [{
+                "target_id": "flood-road-1",
+                "source_station_id": 50,
+                "severity_level": 5,
+                "strategy": "matched_stream",
+                "road": {
+                    "segment_id": 3,
+                    "source": "mapbox",
+                    "source_feature_id": "road-3",
+                    "class": "primary",
+                    "base_class": "primary",
+                    "name": "Road 1",
+                    "ref": "1",
+                    "bridge": False,
+                    "tunnel": False,
+                    "vehicle_access": "yes",
+                },
+                "crossing_type": "at_grade",
+                "urban": False,
+                "crossing_location": {"latitude": 31.11, "longitude": 35.21},
+                "allocation_location": {"latitude": 31.111, "longitude": 35.211},
+                "allocation_eligible": True,
+                "local_match_confidence": "high",
+                "mapbox_verification": {
+                    "status": "verified",
+                    "verified": True,
+                    "reason": None,
+                    "mapbox_snap_distance_m": 8.0,
+                },
+            }],
+            "advisories": [{
+                "type": "stream_access_warning",
+                "action": "warn_and_restrict_stream_access",
+                "scope": "affected_stream",
+                "instruction": "Close the stream to visitors.",
+            }],
+        },
+    )
+
+    event = flood_shared_event(result, {"id": "INC-FLOOD-1", "signals": []})
+
+    assert event.type == "flood"
+    assert event.details.severity_level == 5
+    assert event.details.sources[0].stream.water_source_id == 70
+    assert event.details.sources[0].stream.geometry.type == "MultiLineString"
+    assert event.details.response_sites[0].road.road_class == "primary"
+    assert event.details.response_sites[0].crossing_location.longitude == 35.21
+    assert event.details.response_sites[0].allocation_location.longitude == 35.211
 
 
 def test_planner_failure_has_no_fabricated_recommendations():

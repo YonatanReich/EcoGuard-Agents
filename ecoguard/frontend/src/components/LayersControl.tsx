@@ -9,9 +9,11 @@
  * Current layers:
  *   - Rain Radar — live precipitation radar from RainViewer.
  *   - Fire Danger — Fire Weather Index (FWI) from GWIS/EFFIS.
+ *   - Flood Events — active stream warnings and operational road sites.
  *   - Wind — animated near-surface wind visualization from Open-Meteo.
  *   - Fire Districts — the seven fire & rescue districts of responsibility.
  *   - MDA Districts — Magen David Adom regions, from govmap's WMS.
+ *   - Allocations — assigned stations and their routes to the selected event.
  *
  * Additional layers can be added here later without changing MapView.
  */
@@ -37,6 +39,12 @@ type LayersControlProps = {
   /** Toggle the national Current Risk grid. */
   onToggleFireRisk: () => void
 
+  /** Whether active Flood event geometry and markers are visible. */
+  showFloodEvents: boolean
+
+  /** Toggle the active Flood event layer. */
+  onToggleFloodEvents: () => void
+
   /** Whether the animated wind layer is currently visible. */
   showWind: boolean
 
@@ -54,6 +62,11 @@ type LayersControlProps = {
 
   /** Toggle the MDA region overlay. */
   onToggleMdaDistricts: () => void
+  /** Whether assigned stations and their routes are visible. */
+  showAllocations: boolean
+
+  /** Toggle assigned stations and their routes as one operational layer. */
+  onToggleAllocations: () => void
 
 }
 
@@ -64,12 +77,16 @@ function LayersControl({
   onToggleFireDanger,
   showFireRisk,
   onToggleFireRisk,
+  showFloodEvents,
+  onToggleFloodEvents,
   showWind,
   onToggleWind,
   showFireDistricts,
   onToggleFireDistricts,
   showMdaDistricts,
   onToggleMdaDistricts,
+  showAllocations,
+  onToggleAllocations,
 }: LayersControlProps) {
   return (
     <div style={containerStyle}>
@@ -127,6 +144,24 @@ function LayersControl({
           onChange={onToggleMdaDistricts}
         />
         <span>🚑 MDA Districts</span>
+      </label>
+
+      <label style={rowStyle}>
+        <input
+          type="checkbox"
+          checked={showFloodEvents}
+          onChange={onToggleFloodEvents}
+        />
+        <span>🌊 Flood Events</span>
+      </label>
+
+      <label style={rowStyle}>
+        <input
+          type="checkbox"
+          checked={showAllocations}
+          onChange={onToggleAllocations}
+        />
+        <span>🚨 Allocations</span>
       </label>
 
     </div>

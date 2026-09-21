@@ -18,15 +18,23 @@ import os
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from ecoguard import retention
+from ecoguard.collection.flood.hydrometric_observations import (
+    SOURCE as HYDROMETRIC_OBSERVATIONS_SOURCE,
+    HydrometricObservationCollector,
+)
+from ecoguard.collection.earthquake.gsi import GsiEarthquakeCollector
 from ecoguard.collection.pollution.collector import AirPollutionCollector
 from ecoguard.collection.fire.effis.collector import FireWeatherCollector
 from ecoguard.collection.fire.firms.collector import FirmsCollector
 from ecoguard.collection.fire.fwi.collector import FireWeatherIndexCollector
 from ecoguard.collection.fire.gibs.collector import VegetationCollector
-from ecoguard.collection.fire.telegram.collector import TelegramCollector
+from ecoguard.collection.shared.telegram.collector import TelegramCollector
 from ecoguard.collection.shared.open_meteo.forecast import WeatherForecastCollector
 from ecoguard.collection.shared.open_meteo.observations import WeatherCollector
 from ecoguard.resource_allocator.allocation_agent import ResourceAllocationAgent
+from ecoguard.resource_allocator.allocation_agent import (
+    EARTHQUAKE_MINIMUM_RESPONSE_POLICY,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,27 +45,33 @@ resource_allocator = ResourceAllocationAgent()
 
 
 def allocate_resources(processing_results):
-    """Allocate one contended station pool across all eligible fire plans."""
+    """Allocate one contended station pool across eligible emergency plans."""
     requests = []
     eligible_results = []
 
     for result in processing_results:
         response_plan = getattr(result, "planner_result", None)
         if (
-            getattr(result, "hazard", None) != "fire"
+            getattr(result, "hazard", None) not in {"fire", "earthquake"}
             or getattr(result, "route", None) != "emergency"
             or not isinstance(response_plan, dict)
+            or (
+                getattr(result, "hazard", None) == "earthquake"
+                and (response_plan.get("metadata") or {}).get("planning_status")
+                != "success"
+            )
         ):
             continue
 
         eligible_results.append(result)
-        requests.append(
-            {
-                "incident_id": result.incident_id,
-                "queued_at": result.requested_at,
-                "response_plan": response_plan,
-            }
-        )
+        request = {
+            "incident_id": result.incident_id,
+            "queued_at": result.requested_at,
+            "response_plan": response_plan,
+        }
+        if result.hazard == "earthquake":
+            request["allocation_policy"] = EARTHQUAKE_MINIMUM_RESPONSE_POLICY
+        requests.append(request)
 
     if not requests:
         return {}
@@ -97,6 +111,9 @@ def allocate_resources(processing_results):
 #                 the new raster promptly whenever it lands.
 #   telegram      The only low-latency source, and the only one where a message
 #                 can be minutes old and still matter.
+#   hydrometric   The Water Authority publishes ten-minute readings through a
+#                 rolling window. Polling on that same cadence avoids duplicate
+#                 upstream requests without delaying newly published data.
 #
 #   weather_forecast
 #                 Open-Meteo refreshes its runs a few times a day, and a
@@ -128,6 +145,8 @@ INTERVAL_MINUTES = {
     "fwi": 360,
     "vegetation": 720,
     "telegram": 5,
+    HYDROMETRIC_OBSERVATIONS_SOURCE: 10,
+    "gsi_earthquake": 5,
 }
 
 COLLECTORS = {
@@ -139,6 +158,8 @@ COLLECTORS = {
     "fwi": FireWeatherIndexCollector,
     "vegetation": VegetationCollector,
     "telegram": TelegramCollector,
+    HYDROMETRIC_OBSERVATIONS_SOURCE: HydrometricObservationCollector,
+    "gsi_earthquake": GsiEarthquakeCollector,
 }
 
 # fwi reads the hours the weather collector wrote, so on a cold start it has
@@ -209,11 +230,11 @@ scheduler.add_job(
 def detect_and_coordinate():
     """Sweep stored observations for shared hazard signals and coordinate once.
 
-    The two detectors intentionally emit separate hazard streams. Satellite
-    hotspots emit ``fire`` signals for emergency routing; weather anomalies
-    emit ``fire_weather`` signals for separate non-emergency advisories. The
-    Coordinator currently has no FIRE-to-FIRE_WEATHER corroboration or
-    association rule, so batching them does not merge one into the other.
+    The detectors intentionally emit separate hazard streams. Satellite
+    hotspots emit ``fire`` signals for emergency routing, weather anomalies
+    emit ``fire_weather`` signals for separate non-emergency advisories, and
+    hydrometric observations emit ``flood`` signals. Batching them does not
+    merge one hazard into another.
 
     The satellite comes first in the list for readability only — the
     Coordinator sorts by observation time. FIRMS *sees* fires; the weather
@@ -226,11 +247,9 @@ def detect_and_coordinate():
     losing the whole run because the weather sweep hit a bad row would be a
     worse one.
 
-    Each detector reads what has arrived since its own last successful run
-    rather than what falls inside a fixed window, so a tick that never happened
-    — a hang, a restart, a deploy — costs latency and nothing else. A window
-    would have dropped everything older than itself and said nothing about it,
-    which for a fire detector is the one unacceptable failure.
+    Each detector reads what has arrived since its own last successful run.
+    Flood additionally loads a bounded hydrometric history to verify that a
+    new reading has the required consecutive predecessor.
 
     Imported inside the function so a failure to import the coordinator cannot
     take the collection timers down with it — the collectors are useful on
@@ -239,14 +258,37 @@ def detect_and_coordinate():
     from ecoguard.coordinator.agent import run as coordinate
     from ecoguard.detectors.air_pollution import observation_processing
     from ecoguard.detectors.fire import satellite, weather
+    from ecoguard.detectors.flood import observation_processing as flood_processing
+    from ecoguard.detectors.earthquake import observation_processing as earthquake_processing
 
     signals = []
-    for detector in (satellite, weather, observation_processing):
+    for detector in (
+        satellite,
+        weather,
+        observation_processing,
+        flood_processing,
+        earthquake_processing,
+    ):
         try:
             signals.extend(detector.detect_new())
         except Exception:
             logger.exception("detector %s failed; continuing without it",
                              detector.__name__)
+
+    # Telegram is evidence for already-produced structured Fire/Flood signals.
+    # The enrichment service is deliberately one-input/one-output and forwards
+    # these original objects unchanged on any failure. It never creates a
+    # signal and therefore cannot reach the Coordinator by itself.
+    try:
+        from ecoguard.detectors.telegram.evidence import enrich_signals_with_telegram
+
+        signals = enrich_signals_with_telegram(signals)
+    except Exception:
+        # Keep this outer guard even though the service is fail-open: an import
+        # or initialization regression must not suppress structured detection.
+        logger.exception(
+            "Telegram evidence integration failed; coordinating structured signals"
+        )
 
     coordination = coordinate(signals)
     if coordination is None:

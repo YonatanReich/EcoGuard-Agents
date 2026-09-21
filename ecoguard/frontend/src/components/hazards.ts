@@ -24,6 +24,12 @@ export const HAZARDS: Record<HazardKind, HazardStyle> = {
     color: '#a855f7',
     halo: 'rgba(168, 85, 247, 0.45)',
   },
+  earthquake: {
+    kind: 'earthquake',
+    label: 'Earthquake',
+    color: '#dc2626',
+    halo: 'rgba(220, 38, 38, 0.4)',
+  },
   flood: {
     kind: 'flood',
     label: 'Flood',

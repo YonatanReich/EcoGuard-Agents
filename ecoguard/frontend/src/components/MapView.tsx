@@ -26,6 +26,7 @@ import Map, {
   FullscreenControl,
   GeolocateControl,
   Marker,
+  Layer,
   type MapProps,
   Source,
 } from 'react-map-gl/mapbox'
@@ -35,6 +36,7 @@ import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 
 import IsraelMask from './layers/IsraelMask'
+import FloodEventLayer from './layers/FloodEventLayer'
 import { classify, hazardOf } from './hazards'
 
 import type { SharedEvent } from '../types/events'
@@ -168,6 +170,9 @@ type MapViewProps = {
    * open the same modal.
    */
   onEventClick?: (event: SharedEvent) => void
+
+  /** Whether the Flood event overlay is visible. */
+  showFloodEvents?: boolean
 } & Pick<MapProps, 'onLoad'>
 
 
@@ -184,6 +189,7 @@ function MapView({
   initialZoom = 7,
   children,
   onEventClick,
+  showFloodEvents = true,
   ...mapProps
 }: MapViewProps) {
 
@@ -339,8 +345,41 @@ function MapView({
           unit="metric"
         />
 
+        <Source
+          id="earthquake-impact-areas"
+          type="geojson"
+          data={{
+            type: 'FeatureCollection',
+            features: events
+              .filter((event) => event.type === 'earthquake')
+              .map((event) => ({
+                type: 'Feature' as const,
+                geometry: event.details.estimated_impact_area,
+                properties: { eventId: event.id },
+              })),
+          }}
+        >
+          <Layer
+            id="earthquake-impact-area-fill"
+            type="fill"
+            paint={{
+              'fill-color': '#dc2626',
+              'fill-opacity': 0.18,
+            }}
+          />
+          <Layer
+            id="earthquake-impact-area-outline"
+            type="line"
+            paint={{
+              'line-color': '#dc2626',
+              'line-width': 2,
+              'line-opacity': 0.75,
+            }}
+          />
+        </Source>
 
-        {events.map(
+
+        {events.filter((event) => event.type !== 'flood').map(
           (event) => {
             const hazard = hazardOf(event)
             const isEmergency =
@@ -395,6 +434,14 @@ function MapView({
             )
           }
         )}
+
+        {showFloodEvents && events.filter((event) => event.type === 'flood').map((event) => (
+          <FloodEventLayer
+            key={event.id}
+            event={event}
+            onEventClick={onEventClick}
+          />
+        ))}
 
 
         {children}

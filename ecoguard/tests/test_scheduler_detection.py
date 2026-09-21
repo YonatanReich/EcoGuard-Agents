@@ -3,7 +3,34 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from ecoguard.shared.signals import AIR_POLLUTION, FIRE, HIGH, CellSignal
+import pytest
+
+from ecoguard.shared.signals import (
+    AIR_POLLUTION,
+    FIRE,
+    FLOOD,
+    HIGH,
+    CellSignal,
+)
+
+
+@pytest.fixture(autouse=True)
+def _empty_flood_detector(monkeypatch):
+    """Keep scheduler tests isolated unless they explicitly provide a batch."""
+    from ecoguard.detectors.flood import observation_processing
+
+    monkeypatch.setattr(
+        observation_processing,
+        "detect_new",
+        lambda: [],
+    )
+    from ecoguard.detectors.telegram import evidence
+
+    monkeypatch.setattr(
+        evidence,
+        "enrich_signals_with_telegram",
+        lambda signals: list(signals),
+    )
 
 
 def _fire_signal() -> CellSignal:
@@ -55,6 +82,35 @@ def test_fire_and_air_pollution_share_one_coordinator_batch(monkeypatch):
     assert batches == [[fire, pollution]]
 
 
+def test_telegram_enrichment_occurs_once_immediately_before_coordinator(monkeypatch):
+    from ecoguard import scheduler as shared_runtime
+    from ecoguard.coordinator import agent
+    from ecoguard.detectors.air_pollution import observation_processing
+    from ecoguard.detectors.fire import satellite, weather
+    from ecoguard.detectors.telegram import evidence
+
+    fire = _fire_signal()
+    enriched = CellSignal(**{**fire.__dict__, "evidence": {"telegram_evidence": {}}})
+    calls = []
+    monkeypatch.setattr(satellite, "detect_new", lambda: [fire])
+    monkeypatch.setattr(weather, "detect_new", lambda: [])
+    monkeypatch.setattr(observation_processing, "detect_new", lambda: [])
+    monkeypatch.setattr(
+        evidence,
+        "enrich_signals_with_telegram",
+        lambda signals: calls.append(("enrich", list(signals))) or [enriched],
+    )
+    monkeypatch.setattr(
+        agent,
+        "run",
+        lambda signals: calls.append(("coordinate", list(signals))),
+    )
+
+    shared_runtime.detect_and_coordinate()
+
+    assert calls == [("enrich", [fire]), ("coordinate", [enriched])]
+
+
 def test_air_pollution_failure_does_not_suppress_fire_signals(monkeypatch):
     from ecoguard import scheduler as shared_runtime
     from ecoguard.coordinator import agent
@@ -86,6 +142,57 @@ def test_shared_detection_job_is_registered_exactly_once():
     assert jobs[0].trigger.interval.total_seconds() == 30 * 60
     assert jobs[0].max_instances == 1
     assert jobs[0].coalesce is True
+
+
+def test_flood_collection_runs_every_ten_minutes_without_a_dedicated_detector_job():
+    from ecoguard.collection.flood.hydrometric_observations import SOURCE
+    from ecoguard.scheduler import scheduler
+
+    collector = scheduler.get_job(f"collect_{SOURCE}")
+    assert collector is not None
+    assert collector.trigger.interval.total_seconds() == 10 * 60
+    assert scheduler.get_job("detect_flood_and_coordinate") is None
+
+
+def test_flood_signal_uses_the_same_coordinator_batch(monkeypatch):
+    from ecoguard import scheduler as shared_runtime
+    from ecoguard.coordinator import agent, dispatcher, event_projection
+    from ecoguard.detectors.air_pollution import observation_processing as air
+    from ecoguard.detectors.fire import satellite, weather
+    from ecoguard.detectors.flood import observation_processing
+
+    at = datetime(2026, 9, 16, 10, 0, tzinfo=timezone.utc)
+    signal = CellSignal(
+        cell_id="ISR-001-003",
+        observed_at=at,
+        hazard=FLOOD,
+        variable="discharge",
+        value=35.0,
+        unit="m3/s",
+        source="water_authority_hydrometric_observations",
+        rarity=None,
+        direction=HIGH,
+    )
+    received = []
+    monkeypatch.setattr(satellite, "detect_new", lambda: [])
+    monkeypatch.setattr(weather, "detect_new", lambda: [])
+    monkeypatch.setattr(air, "detect_new", lambda: [])
+    monkeypatch.setattr(
+        observation_processing,
+        "detect_new",
+        lambda: [signal],
+    )
+    monkeypatch.setattr(
+        agent,
+        "run",
+        lambda signals: received.extend(signals) or agent.CoordinationResult(),
+    )
+    monkeypatch.setattr(dispatcher, "dispatch_touched", lambda identifiers: [])
+    monkeypatch.setattr(event_projection, "project_processing_results", lambda _: None)
+
+    shared_runtime.detect_and_coordinate()
+
+    assert received == [signal]
 
 
 def test_scheduler_dispatches_only_coordinator_touched_incidents(monkeypatch):
@@ -180,29 +287,37 @@ def test_scheduler_allocates_all_eligible_fire_plans_in_one_batch(monkeypatch):
         planner_result={"event_id": "PLAN-3"},
         resource_allocation_result=None,
     )
+    earthquake = SimpleNamespace(
+        incident_id="INC-EQ-1",
+        hazard="earthquake",
+        route="emergency",
+        requested_at=requested_at,
+        planner_result={
+            "metadata": {"planning_status": "success"},
+            "hazard_type": "earthquake",
+        },
+        resource_allocation_result=None,
+    )
 
     class RecordingAllocator:
         def __init__(self):
             self.calls = []
 
-        def allocate_batch(self, requests):
-            self.calls.append(requests)
-            return [
-                {"incident_id": request["incident_id"], "status": "allocated"}
-                for request in requests
-            ]
+        def allocate_processing_results(self, results):
+            self.calls.append(results)
+            return {"delegated": True}
 
     allocator = RecordingAllocator()
     monkeypatch.setattr(shared_runtime, "resource_allocator", allocator)
 
     allocations = shared_runtime.allocate_resources(
-        [fire_one, advisory, fire_two]
+        [fire_one, advisory, fire_two, earthquake]
     )
 
     assert len(allocator.calls) == 1
     assert [
         request["incident_id"] for request in allocator.calls[0]
-    ] == ["INC-FIRE-1", "INC-FIRE-2"]
+    ] == ["INC-FIRE-1", "INC-FIRE-2", "INC-EQ-1"]
     assert allocator.calls[0][0]["response_plan"] == {"event_id": "PLAN-1"}
     assert fire_one.resource_allocation_result == {
         "incident_id": "INC-FIRE-1",
@@ -213,7 +328,43 @@ def test_scheduler_allocates_all_eligible_fire_plans_in_one_batch(monkeypatch):
         "status": "allocated",
     }
     assert advisory.resource_allocation_result is None
-    assert set(allocations) == {"INC-FIRE-1", "INC-FIRE-2"}
+    assert allocator.calls[0][2]["allocation_policy"] == (
+        "earthquake_minimum_response_v1"
+    )
+    assert earthquake.resource_allocation_result == {
+        "incident_id": "INC-EQ-1",
+        "status": "allocated",
+    }
+    assert set(allocations) == {"INC-FIRE-1", "INC-FIRE-2", "INC-EQ-1"}
+
+
+def test_scheduler_passes_flood_result_unchanged_to_resource_allocator(monkeypatch):
+    from ecoguard import scheduler as shared_runtime
+
+    requested_at = datetime(2026, 9, 20, 10, 0, tzinfo=timezone.utc)
+    flood = SimpleNamespace(
+        incident_id="INC-FLOOD-1",
+        hazard="flood",
+        route="emergency",
+        requested_at=requested_at,
+        planner_result=None,
+        resource_allocation_result=None,
+    )
+
+    class RecordingAllocator:
+        def __init__(self):
+            self.results = None
+
+        def allocate_processing_results(self, results):
+            self.results = results
+            return {"INC-FLOOD-1": {"status": "fulfilled"}}
+
+    allocator = RecordingAllocator()
+    monkeypatch.setattr(shared_runtime, "resource_allocator", allocator)
+
+    shared_runtime.allocate_resources([flood])
+
+    assert allocator.results == [flood]
 
 
 def test_scheduler_allocation_failure_does_not_block_projection(monkeypatch):

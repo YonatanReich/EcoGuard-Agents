@@ -69,6 +69,7 @@ FIRE_WEATHER = "fire_weather"
 
 FLOOD = "flood"
 AIR_POLLUTION = "air_pollution"
+EARTHQUAKE = "earthquake"
 HEAT = "heat"
 
 # --- which tail is the concerning one --------------------------------------
@@ -108,6 +109,7 @@ CONCERNING_DIRECTION: dict[tuple[str, str], str] = {
     (FLOOD, "precipitation"): HIGH,
     (FLOOD, "soil_moisture_0_to_7cm"): HIGH,
     (FLOOD, "water_level"): HIGH,
+    (FLOOD, "discharge"): HIGH,
     (AIR_POLLUTION, "pm25"): HIGH,
     (AIR_POLLUTION, "pm10"): HIGH,
     (AIR_POLLUTION, "ozone"): HIGH,
@@ -271,8 +273,8 @@ class CellSignal:
 
     # Where the thing actually is, with the precision of that fix. None when
     # the detector has no point and the cell is all it knows — which is a real
-    # state for a Telegram report naming no street, and must stay
-    # distinguishable from a confident fix at the cell centre.
+    # state for a coarse structured observation and must stay distinguishable
+    # from a confident fix at the cell centre.
     location: "CellLocation | None" = None
 
     # How much the reading itself can be trusted, before asking what it means.

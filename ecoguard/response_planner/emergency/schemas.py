@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ecoguard.shared.schemas import ProtocolCitation, Timeframe, UnitId
 
-HazardType = Literal["fire", "flood"]
+HazardType = Literal["fire", "flood", "earthquake"]
 PlanningStatus = Literal["success", "failed", "skipped"]
 
 

@@ -83,6 +83,17 @@ class AllocatedStation(EventContract):
     route: AllocationRoute | None = None
 
 
+class AllocationSettlement(EventContract):
+    population: int | None = Field(default=None, ge=0)
+    households: int | None = Field(default=None, ge=0)
+    authority: str | None = None
+    authority_type: str | None = None
+    authority_phone: str | None = None
+    authority_address: str | None = None
+    authority_website: str | None = None
+    area_km2: float | None = Field(default=None, ge=0)
+
+
 class ResourceAllocationSummary(EventContract):
     status: str
     routing_status: str
@@ -90,6 +101,14 @@ class ResourceAllocationSummary(EventContract):
     shortages: dict[str, int] = Field(default_factory=dict)
     stations: list[AllocatedStation] = Field(default_factory=list)
     errors: list[dict[str, Any]] = Field(default_factory=list)
+    settlement: AllocationSettlement | None = None
+
+
+class EarthquakeResourceAllocationSummary(ResourceAllocationSummary):
+    unsupported_units: list[str] = Field(default_factory=list)
+    allocation_policy: Literal["earthquake_minimum_response_v1"]
+    allocation_basis: Literal["protocol_recommended_units"]
+    quantity_source: Literal["ecoguard_minimum_response_policy"]
 
 
 class FireSpreadRing(EventContract):
@@ -225,6 +244,43 @@ class FireDetails(EventContract):
     limits: list[str] = Field(default_factory=list)
 
 
+class EarthquakeTown(EventContract):
+    town_id: str
+    name_he: str
+    name_en: str
+    cbs_code: str | None = None
+
+
+class EarthquakePopulationSummary(EventContract):
+    status: Literal["available", "unavailable"]
+    wording: Literal[
+        "Estimated population geographically located within the impact area"
+    ] = "Estimated population geographically located within the impact area"
+    estimated_population: int | None = Field(default=None, ge=0)
+    intersected_cell_count: int | None = Field(default=None, ge=0)
+    reason: str | None = None
+
+
+class EarthquakeDetails(EventContract):
+    provider_event_id: str
+    magnitude: float
+    depth_km: float = Field(ge=0)
+    estimated_impact_radius_km: float = Field(gt=0)
+    estimated_impact_area: "GeoJsonPolygon"
+    towns: list[EarthquakeTown] = Field(default_factory=list)
+    towns_status: Literal["available", "unavailable"]
+    population_summary: EarthquakePopulationSummary
+    provider: Literal["GSI"] = "GSI"
+    source: str
+    plan_summary: str | None = None
+    recommended_units: list[str] = Field(default_factory=list)
+    response_actions: list[FireResponseAction] = Field(default_factory=list)
+    protocol_citations: list[ProtocolCitation] = Field(default_factory=list)
+    evidence_gaps: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+    resource_allocation: EarthquakeResourceAllocationSummary | None = None
+
+
 class AirPollutionBaselineContext(EventContract):
     p95: float
     month: int | None = None
@@ -319,6 +375,99 @@ class GeoJsonPolygon(EventContract):
 class GeoJsonLineString(EventContract):
     type: Literal["LineString"] = "LineString"
     coordinates: list[list[float]]
+
+
+class GeoJsonMultiLineString(EventContract):
+    type: Literal["MultiLineString"] = "MultiLineString"
+    coordinates: list[list[list[float]]]
+
+
+class GeographicPoint(EventContract):
+    latitude: float
+    longitude: float
+
+
+class FloodHydrometricStation(EventContract):
+    id: int
+    latitude: float
+    longitude: float
+    precision_m: float = Field(ge=0)
+    severity_level: int = Field(ge=3, le=6)
+    observed_at: AwareDatetime | None = None
+    stream_match: Literal["matched", "unmatched"]
+
+
+class FloodStream(EventContract):
+    stream_id: int | None = None
+    water_source_id: int
+    name: str | None = None
+    match_confidence: str | None = None
+    geometry: GeoJsonLineString | GeoJsonMultiLineString
+    display_semantics: Literal[
+        "warning_context_not_confirmed_inundation"
+    ] = "warning_context_not_confirmed_inundation"
+
+
+class FloodSourceContext(EventContract):
+    station: FloodHydrometricStation
+    strategy: str
+    stream: FloodStream | None = None
+
+
+class FloodRoad(EventContract):
+    segment_id: int | None = None
+    source: str | None = None
+    source_feature_id: str | None = None
+    road_class: str | None = None
+    base_class: str | None = None
+    name: str | None = None
+    ref: str | None = None
+    bridge: bool = False
+    tunnel: bool = False
+    vehicle_access: str | None = None
+
+
+class FloodRoadVerification(EventContract):
+    status: str
+    verified: bool
+    reason: str | None = None
+    mapbox_snap_distance_m: float | None = Field(default=None, ge=0)
+
+
+class FloodResponseSite(EventContract):
+    target_id: str
+    source_station_id: int
+    severity_level: int = Field(ge=3, le=6)
+    strategy: str
+    road: FloodRoad
+    crossing_type: str | None = None
+    urban: bool = False
+    crossing_location: GeographicPoint
+    allocation_location: GeographicPoint | None = None
+    allocation_eligible: bool
+    local_match_confidence: str
+    mapbox_verification: FloodRoadVerification
+
+
+class FloodAdvisory(EventContract):
+    type: str
+    action: str
+    instruction: str
+    scope: str | None = None
+
+
+class FloodDetails(EventContract):
+    severity_level: int = Field(ge=3, le=6)
+    return_period_label: str
+    sources: list[FloodSourceContext] = Field(default_factory=list)
+    response_sites: list[FloodResponseSite] = Field(default_factory=list)
+    allocation_ready_site_ids: list[str] = Field(default_factory=list)
+    targeting_status: str
+    targeting_reason: str | None = None
+    allocation_target: dict[str, Any] | None = None
+    advisories: list[FloodAdvisory] = Field(default_factory=list)
+    resource_allocation: ResourceAllocationSummary | None = None
+    limitations: list[str] = Field(default_factory=list)
 
 
 class TransportTimeEvidence(EventContract):
@@ -482,13 +631,31 @@ class FireSharedEvent(CommonSharedEvent):
     details: FireDetails
 
 
+class EarthquakeSharedEvent(CommonSharedEvent):
+    type: Literal["earthquake"] = "earthquake"
+    classification: Literal["emergency"] = "emergency"
+    details: EarthquakeDetails
+
+
+class FloodSharedEvent(CommonSharedEvent):
+    type: Literal["flood"] = "flood"
+    classification: Literal["emergency"] = "emergency"
+    details: FloodDetails
+
+
 class GenericSharedEvent(CommonSharedEvent):
-    type: Literal["flood", "other"]
+    type: Literal["other"]
     details: dict[str, Any]
 
 
 SharedEvent = Annotated[
-    Union[AirPollutionSharedEvent, FireSharedEvent, GenericSharedEvent],
+    Union[
+        AirPollutionSharedEvent,
+        EarthquakeSharedEvent,
+        FireSharedEvent,
+        FloodSharedEvent,
+        GenericSharedEvent,
+    ],
     Field(discriminator="type"),
 ]
 

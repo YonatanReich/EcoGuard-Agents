@@ -1,7 +1,69 @@
-# detectors/flood/
+# Flood detector
 
-Empty. Flood candidate detection lands here (EA-278 / EA-287).
+The flood detector follows the same runtime flow and output contract as the
+other EcoGuard detectors:
 
-Read hydrometric and weather data from `ecoguard/collection/`; do not collect
-it here. Produce a candidate event with evidence and no risk score — scoring is
-`analyzers/emergency/flood/`.
+```text
+collector -> observations -> detect_new() -> list[CellSignal] -> Coordinator
+```
+
+The shared `incidents` table is the only event lifecycle store. There is no
+Flood-specific worker, cursor table, candidate table or scheduler job.
+
+## Collection and eligibility
+
+The Water Authority collector runs every ten minutes, matching the provider's
+publication cadence. It writes directly to the shared `observations` stream
+and includes only stations classified as `complete_thresholds`.
+
+Stations whose threshold vector is six `999` sentinels are classified as
+`missing_thresholds`. They remain in the station catalog, but their measurements
+are not stored, evaluated or allowed to open an incident.
+
+## Severity and alert threshold
+
+Discharge is compared with the official Q2, Q5, Q10, Q20, Q50 and Q100 values:
+
+| Severity | Discharge | Operational state |
+|---:|---|---|
+| 0 | below Q2 | none |
+| 1 | Q2 to below Q5 | none |
+| 2 | Q5 to below Q10 | monitoring only |
+| 3 | Q10 to below Q20 | active alert |
+| 4 | Q20 to below Q50 | severe alert |
+| 5 | Q50 to below Q100 | emergency |
+| 6 | Q100 or higher | emergency |
+
+Q10 is the first level allowed to emit a flood signal. Two valid consecutive
+readings at or above Q10, no more than 30 minutes apart, are required. Every
+later qualifying pair emits another ordinary `CellSignal` and keeps the shared
+incident active.
+
+Each signal includes `station_id`, optional `stream_id`, timestamp, current
+discharge, severity, alert level, the threshold vector and the two readings
+used in the decision.
+
+## Scheduling and event closure
+
+Flood detection runs in the same shared thirty-minute detection batch as Fire
+and Air Pollution. It uses the same successful-run bookmark pattern as the
+other detectors and returns a plain `list[CellSignal]`.
+
+The Coordinator applies its existing quiet-period lifecycle rule. A Flood
+incident closes after three hours without a new qualifying signal. A later
+confirmed Q10 pair creates a new incident. Closed incidents remain stored in
+`incidents`; they are not physically deleted.
+
+## Current downstream boundary
+
+Flood incidents are persisted and routed to the emergency queue. The resource
+allocator now has a deterministic road-targeting stage that consumes the
+station and severity evidence stored on the incident. The shared dispatcher
+only preserves the incident as allocation input; `ResourceAllocationAgent`
+invokes road targeting and performs the station reservation. A Flood
+unit-quantity planner and frontend event projector are still separate missing
+runtime stages. Until the operational planner is available, a documented
+deterministic fallback assigns stations by Q10-Q100 severity, with exactly one
+responsible police station per incident. Road destinations, station
+reservations and the stream-access advisory are produced automatically;
+frontend projection is not implemented yet.

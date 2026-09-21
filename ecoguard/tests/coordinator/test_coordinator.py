@@ -14,13 +14,20 @@ upwind, and nothing else about the two cases differs.
 """
 
 from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock, Mock
 
 import pytest
 from sqlalchemy import text
 
 from ecoguard.coordinator import incidents as store
 from ecoguard.coordinator.agent import coordinate
-from ecoguard.coordinator.matching import best_match, has_gone_quiet, matches
+from ecoguard.coordinator.matching import (
+    best_match,
+    has_gone_quiet,
+    matches,
+    quiet_period_for,
+)
+
 from ecoguard.coordinator.packaging import (
     angular_gap,
     bearing_between,
@@ -38,13 +45,61 @@ from ecoguard.shared.cells import service_area_cells
 from ecoguard.shared.signals import (
     AIR_POLLUTION,
     FIRE,
+    FLOOD,
     HIGH,
     VIIRS_PIXEL_M,
     CellLocation,
     CellSignal,
 )
 
+
+def test_flood_quiet_period_is_three_hours():
+    assert quiet_period_for(FLOOD) == timedelta(hours=3)
+
 WHEN = datetime(2026, 9, 14, 12, 0, tzinfo=timezone.utc)
+
+
+def test_closing_incident_releases_its_allocations_in_the_same_transaction(
+    monkeypatch,
+):
+    session = MagicMock()
+    session.execute.return_value.scalar_one_or_none.return_value = "INC-1"
+    session_context = MagicMock()
+    session_context.__enter__.return_value = session
+    release = Mock()
+    monkeypatch.setattr(store, "Session", lambda: session_context)
+    monkeypatch.setattr(
+        store,
+        "release_incident_allocations_in_session",
+        release,
+    )
+
+    store.close_incident("INC-1", WHEN)
+
+    release.assert_called_once_with(
+        session,
+        "INC-1",
+        released_at=WHEN,
+        reason="incident_closed",
+    )
+
+
+def test_closing_an_already_closed_incident_does_not_release_again(monkeypatch):
+    session = MagicMock()
+    session.execute.return_value.scalar_one_or_none.return_value = None
+    session_context = MagicMock()
+    session_context.__enter__.return_value = session
+    release = Mock()
+    monkeypatch.setattr(store, "Session", lambda: session_context)
+    monkeypatch.setattr(
+        store,
+        "release_incident_allocations_in_session",
+        release,
+    )
+
+    store.close_incident("INC-1", WHEN)
+
+    release.assert_not_called()
 
 
 def _signal(cell_id, *, at=WHEN, hazard=FIRE, variable="frp", value=9.11,

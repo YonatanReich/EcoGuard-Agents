@@ -45,7 +45,7 @@ cp .env.example .env
 | `ANTHROPIC_WORKSPACE_ID` | Anthropic identity-linked API keys only | Omit it for ordinary organisation keys |
 | `IMS_API_TOKEN` | IMS-backed Air Pollution wind evidence | Wind, transport corridor, settlement screening and corridor population remain unavailable |
 | `NASA_FIRMS_API_KEY` | Satellite fire detection | `/api/detected-events` cannot detect anything |
-| `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` | Telegram fire intelligence listener | That standalone script cannot run |
+| `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` | Raw Telegram Fire/Flood evidence collection | Telegram evidence collection is disabled |
 
 The frontend map additionally needs `VITE_MAPTILER_KEY` in
 `frontend/.env.local` — see the frontend section below.
@@ -371,13 +371,13 @@ ecoguard/collection/
   shared/
     open_meteo/              weather + forecast — every hazard reads these
       client.py  observations.py  forecast.py
+    telegram/                Fire/Flood supporting reports  listener.py collector.py
   fire/
     firms/                   satellite hotspots    client.py  collector.py
     effis/                   published FWI band    danger.py  collector.py
     fwi/                     our own FWI system    index.py   collector.py
     gibs/                    MODIS NDVI                       collector.py
-    telegram/                ground reports        listener.py collector.py
-  flood/                     empty — EA-278 / EA-287 land here
+  flood/                     Water Authority hydrology catalogs and observations
   pollution/                 empty — EA-307 lands here
 ```
 
@@ -403,13 +403,33 @@ of conflicting.
 
 | Source | Every | What it is |
 | :--- | :--- | :--- |
-| `telegram` | 5 min | Raw channel messages, unclassified. The only sub-hour detection path. |
+| `telegram` | 5 min | Raw channel messages for Fire/Flood corroboration. Never an independent detection path. |
 | `firms` | 30 min | Satellite hotspots from **four** products — NOAA-20, NOAA-21, Suomi-NPP and MODIS. |
 | `weather` | 60 min | Eleven hourly variables, backfilled to whatever is missing. |
 | `weather_forecast` | 6 h | 48 hours of lead time on a ~15 km subgrid, every run kept. |
 | `fire_weather` | 6 h | The EFFIS FWI danger band, as published. |
 | `fwi` | 6 h | Our own Canadian FWI system — six numbers, carried day to day. |
 | `vegetation` | 12 h | MODIS NDVI, the 8-day composite. |
+
+### Telegram evidence policy
+
+Telegram collection stores raw messages in the shared `observations` table. It
+does not classify messages or emit signals. After the structured Fire and Flood
+detectors have emitted `CellSignal` objects, the scheduler checks recent
+Telegram observations and attaches typed `SUPPORTING` or `UNMATCHED` evidence
+immediately before Coordinator input. The service preserves signal count,
+severity, confidence, source, value, rarity, cell and observation time; any
+Telegram failure forwards the original signals unchanged. Air Pollution and
+all non-allowlisted signal sources bypass the service unchanged.
+
+Configured channels are `Israel_Police_100`, `Atanpolice`, `mdaisrael`, and the
+unofficial `fireisrael7777` aggregator. A message can support a signal only when
+its username still resolves to the configured, pinned numeric peer ID and its
+event type, posted time, and resolved cell pass the matching rules. Channel
+authority is source provenance, not verification that the reported event is
+true. Run `python -m ecoguard.collection.shared.telegram.listener --discover`
+to authenticate outside the repository, inspect resolved peer IDs, and pin
+them through the variables documented in `.env.example`.
 
 ### Why FIRMS asks four satellites
 

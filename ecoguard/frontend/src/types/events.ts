@@ -1,4 +1,4 @@
-export type HazardKind = 'fire' | 'air_pollution' | 'flood' | 'other'
+export type HazardKind = 'fire' | 'air_pollution' | 'earthquake' | 'flood' | 'other'
 export type EventClassification = 'emergency' | 'advisory'
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
 export type StepStatus = 'success' | 'partial' | 'unavailable' | 'failed' | 'skipped'
@@ -27,6 +27,17 @@ export type AllocationRoute = {
   distance_m: number | null
   duration_s: number | null
   geometry: GeoJsonLineString | null
+  destination?: {
+    input_location?: GeographicPoint
+    snapped_location?: GeographicPoint
+    snap_distance_m?: number | null
+    road_name?: string | null
+  } | null
+  offroad_segment?: {
+    distance_m: number
+    geometry: GeoJsonLineString
+    access_verified: boolean
+  } | null
   estimated_arrival_at: string | null
   road_access_verified: boolean
   requires_field_access_confirmation: boolean
@@ -52,6 +63,17 @@ export type AllocatedStation = {
   route: AllocationRoute | null
 }
 
+export type AllocationSettlement = {
+  population: number | null
+  households: number | null
+  authority: string | null
+  authority_type: string | null
+  authority_phone: string | null
+  authority_address: string | null
+  authority_website: string | null
+  area_km2: number | null
+}
+
 export type ResourceAllocationSummary = {
   status: string
   routing_status: string
@@ -63,6 +85,14 @@ export type ResourceAllocationSummary = {
   shortages: Record<string, number>
   stations: AllocatedStation[]
   errors: Array<Record<string, unknown>>
+  settlement: AllocationSettlement | null
+}
+
+export type EarthquakeResourceAllocationSummary = ResourceAllocationSummary & {
+  unsupported_units: string[]
+  allocation_policy: 'earthquake_minimum_response_v1'
+  allocation_basis: 'protocol_recommended_units'
+  quantity_source: 'ecoguard_minimum_response_policy'
 }
 
 export type FireSpread = {
@@ -166,6 +196,37 @@ export type FireDetails = {
   limits: string[]
 }
 
+export type EarthquakeDetails = {
+  provider_event_id: string
+  magnitude: number
+  depth_km: number
+  estimated_impact_radius_km: number
+  estimated_impact_area: GeoJsonPolygon
+  towns: Array<{
+    town_id: string
+    name_he: string
+    name_en: string
+    cbs_code: string | null
+  }>
+  towns_status: 'available' | 'unavailable'
+  population_summary: {
+    status: 'available' | 'unavailable'
+    wording: 'Estimated population geographically located within the impact area'
+    estimated_population: number | null
+    intersected_cell_count: number | null
+    reason: string | null
+  }
+  provider: 'GSI'
+  source: string
+  plan_summary: string | null
+  recommended_units: string[]
+  response_actions: FireResponseAction[]
+  protocol_citations: ProtocolCitation[]
+  evidence_gaps: string[]
+  limitations: string[]
+  resource_allocation: EarthquakeResourceAllocationSummary | null
+}
+
 export type GeoJsonPolygon = {
   type: 'Polygon'
   coordinates: number[][][]
@@ -174,6 +235,80 @@ export type GeoJsonPolygon = {
 export type GeoJsonLineString = {
   type: 'LineString'
   coordinates: number[][]
+}
+
+export type GeoJsonMultiLineString = {
+  type: 'MultiLineString'
+  coordinates: number[][][]
+}
+
+export type GeographicPoint = {
+  latitude: number
+  longitude: number
+}
+
+export type FloodSourceContext = {
+  station: GeographicPoint & {
+    id: number
+    precision_m: number
+    severity_level: 3 | 4 | 5 | 6
+    observed_at: string | null
+    stream_match: 'matched' | 'unmatched'
+  }
+  strategy: string
+  stream: {
+    stream_id: number | null
+    water_source_id: number
+    name: string | null
+    match_confidence: string | null
+    geometry: GeoJsonLineString | GeoJsonMultiLineString
+    display_semantics: 'warning_context_not_confirmed_inundation'
+  } | null
+}
+
+export type FloodResponseSite = {
+  target_id: string
+  source_station_id: number
+  severity_level: 3 | 4 | 5 | 6
+  strategy: string
+  road: {
+    segment_id: number | null
+    source: string | null
+    source_feature_id: string | null
+    road_class: string | null
+    base_class: string | null
+    name: string | null
+    ref: string | null
+    bridge: boolean
+    tunnel: boolean
+    vehicle_access: string | null
+  }
+  crossing_type: string | null
+  urban: boolean
+  crossing_location: GeographicPoint
+  allocation_location: GeographicPoint | null
+  allocation_eligible: boolean
+  local_match_confidence: string
+  mapbox_verification: {
+    status: string
+    verified: boolean
+    reason: string | null
+    mapbox_snap_distance_m: number | null
+  }
+}
+
+export type FloodDetails = {
+  severity_level: 3 | 4 | 5 | 6
+  return_period_label: string
+  sources: FloodSourceContext[]
+  response_sites: FloodResponseSite[]
+  allocation_ready_site_ids: string[]
+  targeting_status: string
+  targeting_reason: string | null
+  allocation_target: Record<string, unknown> | null
+  advisories: Array<{ type: string; action: string; instruction: string; scope: string | null }>
+  resource_allocation: ResourceAllocationSummary | null
+  limitations: string[]
 }
 
 export type AirPollutionBaselineContext = {
@@ -386,12 +521,29 @@ export type AirPollutionEvent = CommonEvent & {
   details: AirPollutionDetails
 }
 
+export type EarthquakeEvent = CommonEvent & {
+  type: 'earthquake'
+  classification: 'emergency'
+  details: EarthquakeDetails
+}
+
+export type FloodEvent = CommonEvent & {
+  type: 'flood'
+  classification: 'emergency'
+  details: FloodDetails
+}
+
 export type OtherEvent = CommonEvent & {
-  type: 'flood' | 'other'
+  type: 'other'
   details: Record<string, unknown>
 }
 
-export type SharedEvent = FireEvent | AirPollutionEvent | OtherEvent
+export type SharedEvent =
+  | FireEvent
+  | AirPollutionEvent
+  | EarthquakeEvent
+  | FloodEvent
+  | OtherEvent
 
 export type SharedEventFeed = {
   events: SharedEvent[]

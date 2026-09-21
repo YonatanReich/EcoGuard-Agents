@@ -19,7 +19,7 @@ function EventCard({ event, onOpen, isSelected }: {
 }) {
   const hazard = hazardOf(event)
   const fire = event.type === 'fire' ? event.details : null
-  const assessed = event.analysis_status === 'success' && fire?.risk_score !== null
+  const assessed = event.analysis_status === 'success' && fire?.risk_level != null
   const officialClassification = event.type === 'air_pollution'
     ? event.details.official_pollutant_classification?.classification
     : null
@@ -37,7 +37,19 @@ function EventCard({ event, onOpen, isSelected }: {
       <span className="event-card__type">{hazard.label}</span>
       <span className="event-card__title">{event.title}</span>
 
-      {event.type === 'air_pollution' ? (
+      {event.type === 'earthquake' ? (
+        <>
+          <span className="event-card__measurement">
+            Magnitude {event.details.magnitude.toFixed(1)} · depth {event.details.depth_km.toFixed(1)} km
+          </span>
+          <span className="event-card__meta">
+            <span>Estimated Impact Area: {event.details.estimated_impact_radius_km} km</span>
+            {event.observed_at && (
+              <time dateTime={event.observed_at}>{formatObservationTime(event.observed_at)}</time>
+            )}
+          </span>
+        </>
+      ) : event.type === 'air_pollution' ? (
         <>
           <span className="event-card__measurement">
             {event.details.pollutant}: {event.details.measured_value} {event.details.unit}
@@ -55,6 +67,20 @@ function EventCard({ event, onOpen, isSelected }: {
             <time dateTime={event.details.observation_timestamp}>
               {formatObservationTime(event.details.observation_timestamp)}
             </time>
+          </span>
+        </>
+      ) : event.type === 'flood' ? (
+        <>
+          <span className="event-card__measurement">
+            Severity {event.details.severity_level} · {event.details.return_period_label}
+          </span>
+          <span className="event-card__station">
+            {event.details.sources.length} hydrometric station(s) ·{' '}
+            {event.details.response_sites.length} road site(s)
+          </span>
+          <span className="event-card__meta">
+            <span>{event.details.targeting_status.replaceAll('_', ' ')}</span>
+            <span>{event.latitude.toFixed(3)}, {event.longitude.toFixed(3)}</span>
           </span>
         </>
       ) : (

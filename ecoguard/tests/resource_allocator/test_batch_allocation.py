@@ -1,11 +1,15 @@
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 
 from ecoguard.resource_allocator.allocation_agent import ResourceAllocationAgent
+from ecoguard.resource_allocator.allocation_agent import (
+    EARTHQUAKE_MINIMUM_RESPONSE_POLICY,
+)
 from ecoguard.resource_allocator.mapbox_client import RoutingError
 
 
@@ -94,6 +98,8 @@ class FakeRoutingClient:
 class FailingRoutingClient(FakeRoutingClient):
     def travel_metrics(self, stations, event_location):
         raise RoutingError("Mapbox is unavailable")
+
+
 class InMemoryAllocationRepository:
     """Test double with the same atomic claim semantics as PostgreSQL."""
 
@@ -112,6 +118,9 @@ class InMemoryAllocationRepository:
         risk_score,
         risk_level,
         allocated_at,
+        allocation_policy=None,
+        allocation_basis=None,
+        quantity_source=None,
     ):
         with self._lock:
             active = [
@@ -125,14 +134,19 @@ class InMemoryAllocationRepository:
                 (row["recommended_unit"], row["station_id"])
                 for row in self._rows
                 if row["released_at"] is None
+                and row["recommended_unit"] != "police"
             }
+            active_station_ids = {row["station_id"] for row in active}
 
             for candidate in candidates:
                 if len(active) >= required_count:
                     break
                 station_id = candidate["database_id"]
                 resource_key = (recommended_unit, station_id)
-                if resource_key in occupied:
+                if (
+                    station_id in active_station_ids
+                    or resource_key in occupied
+                ):
                     continue
 
                 row = {
@@ -146,10 +160,14 @@ class InMemoryAllocationRepository:
                     "distance_km": candidate["distance_km"],
                     "risk_score": risk_score,
                     "risk_level": risk_level,
+                    "allocation_policy": allocation_policy,
+                    "allocation_basis": allocation_basis,
+                    "quantity_source": quantity_source,
                 }
                 self._next_id += 1
                 self._rows.append(row)
                 active.append(row)
+                active_station_ids.add(station_id)
                 occupied.add(resource_key)
 
             return [row.copy() for row in active]
@@ -179,6 +197,10 @@ def allocation_agent(
     station_readers,
     routing_client=None,
     allocation_repository=None,
+    police_responsibility_reader=None,
+    town_reader=None,
+    flood_target_agent=None,
+    incident_reader=None,
 ):
     return ResourceAllocationAgent(
         station_readers=station_readers,
@@ -186,6 +208,12 @@ def allocation_agent(
         allocation_repository=(
             allocation_repository or InMemoryAllocationRepository()
         ),
+        police_responsibility_reader=(
+            police_responsibility_reader or (lambda **_: None)
+        ),
+        town_reader=town_reader or (lambda **_: None),
+        flood_target_agent=flood_target_agent or Mock(),
+        incident_reader=incident_reader or (lambda _: None),
     )
 
 
@@ -197,6 +225,7 @@ def station(
     precision=None,
     district="test-district",
     station_id=None,
+    kind=None,
 ):
     properties = {
         "database_id": database_id,
@@ -206,6 +235,8 @@ def station(
     }
     if precision is not None:
         properties["precision"] = precision
+    if kind is not None:
+        properties["kind"] = kind
     return {
         "type": "Feature",
         "geometry": {
@@ -258,6 +289,16 @@ def allocation_request(incident_id, plan):
     }
 
 
+def earthquake_allocation_request(incident_id, *, units):
+    plan = response_plan(incident_id, units=units)
+    plan["hazard_type"] = "earthquake"
+    plan["responding_to"] = None
+    return {
+        **allocation_request(incident_id, plan),
+        "allocation_policy": EARTHQUAKE_MINIMUM_RESPONSE_POLICY,
+    }
+
+
 @pytest.mark.parametrize("latitude", [float("nan"), float("inf"), 91, True])
 def test_invalid_coordinates_are_rejected(latitude):
     with pytest.raises(ValueError):
@@ -301,6 +342,288 @@ def test_coordinator_incident_id_owns_allocation_and_release():
         now=NOW,
     )
     assert fire_reader.call_count == 1
+
+
+def test_allocator_attaches_only_frontend_settlement_fields():
+    town_reader = Mock(return_value={
+        "town_id": "test-town",
+        "name_he": "עיר בדיקה",
+        "population": 12_000,
+        "households": 4_200,
+        "authority": "רשות בדיקה",
+        "authority_type": "עירייה",
+        "authority_phone": "03-0000000",
+        "authority_address": "רחוב בדיקה 1",
+        "authority_website": "https://example.test",
+        "area_km2": 8.5,
+        "police_station": "must not be exposed",
+    })
+    agent = allocation_agent(
+        {
+            "fire_department": lambda: catalog(
+                station(1, "Fire station", 31.01, 35.0)
+            )
+        },
+        town_reader=town_reader,
+    )
+
+    result = agent.allocate_batch(
+        [allocation_request("incident-1", response_plan("event-1"))],
+        now=NOW,
+    )[0]
+
+    assert result["settlement"] == {
+        "population": 12_000,
+        "households": 4_200,
+        "authority": "רשות בדיקה",
+        "authority_type": "עירייה",
+        "authority_phone": "03-0000000",
+        "authority_address": "רחוב בדיקה 1",
+        "authority_website": "https://example.test",
+        "area_km2": 8.5,
+    }
+    town_reader.assert_called_once_with(latitude=31.0, longitude=35.0)
+
+
+def test_explicit_station_count_overrides_risk_count_but_police_stays_one():
+    plan = {"station_requirements": {"medical_services": 1, "police": 1}}
+
+    assert ResourceAllocationAgent._required_station_count(
+        "high", "medical_services", plan
+    ) == 1
+    assert ResourceAllocationAgent._required_station_count(
+        "critical", "police", plan
+    ) == 1
+
+
+def _flood_site(severity, road_class="primary", target_id="target-primary"):
+    return {
+        "target_id": target_id,
+        "severity_level": severity,
+        "urban": True,
+        "road": {"base_class": road_class, "ref": "4"},
+        "mapbox_verification": {"mapbox_snap_distance_m": 4.0},
+        "allocation_location": {"latitude": 32.0, "longitude": 34.8},
+        "allocation_eligible": True,
+    }
+
+
+@pytest.mark.parametrize(
+    ("severity", "expected"),
+    [
+        (3, {"police": 1}),
+        (4, {"police": 1}),
+        (5, {"police": 1}),
+        (6, {"police": 1}),
+    ],
+)
+def test_flood_counts_are_hardcoded_in_resource_allocator(severity, expected):
+    agent = allocation_agent({})
+    prepared = agent._prepare_batch_request(
+        {
+            "incident_id": "INC-FLOOD-1",
+            "hazard": "flood",
+            "queued_at": NOW,
+            "flood_targeting": {
+                "allocation_ready_sites": [_flood_site(severity)],
+            },
+        },
+        NOW,
+    )
+
+    assert prepared["response_plan"]["station_requirements"] == expected
+    assert prepared["response_plan"]["station_requirements"]["police"] == 1
+    assert prepared["hazard"] == "flood"
+
+
+def test_flood_allocator_selects_the_highest_priority_verified_road():
+    agent = allocation_agent({})
+    street = _flood_site(4, "street", "street-target")
+    motorway = _flood_site(4, "motorway", "motorway-target")
+
+    prepared = agent._prepare_batch_request(
+        {
+            "incident_id": "INC-FLOOD-1",
+            "hazard": "flood",
+            "queued_at": NOW,
+            "flood_targeting": {
+                "allocation_ready_sites": [street, motorway],
+            },
+        },
+        NOW,
+    )
+
+    assert prepared["allocation_target"]["target_id"] == "motorway-target"
+    assert prepared["allocation_target"]["covered_response_site_ids"] == [
+        "street-target",
+        "motorway-target",
+    ]
+
+
+def test_flood_allocator_assigns_police_to_gauge_when_no_site_was_verified():
+    agent = allocation_agent({})
+
+    prepared = agent._prepare_batch_request(
+        {
+            "incident_id": "INC-FLOOD-1",
+            "hazard": "flood",
+            "queued_at": NOW,
+            "flood_targeting": {
+                "allocation_ready_sites": [],
+                "hydrometric_sources": [{
+                    "station": {
+                        "id": 50,
+                        "latitude": 30.735,
+                        "longitude": 35.235,
+                        "severity_level": 4,
+                    },
+                    "strategy": "station_buffer_primary",
+                    "stream": None,
+                }],
+            },
+        },
+        NOW,
+    )
+
+    assert prepared["response_plan"]["station_requirements"] == {"police": 1}
+    assert prepared["response_plan"]["location"] == {
+        "latitude": 30.735,
+        "longitude": 35.235,
+    }
+    assert prepared["allocation_target"]["target_type"] == (
+        "hydrometric_station_fallback"
+    )
+    assert prepared["allocation_target"]["requires_road_access_resolution"] is True
+
+
+def test_resource_allocator_discovers_flood_roads_and_assigns_one_police_station():
+    targeting = {
+        "incident_id": "INC-FLOOD-1",
+        "status": "targets_identified",
+        "response_sites": [_flood_site(3)],
+        "allocation_ready_sites": [_flood_site(3)],
+        "resource_allocations": [],
+        "advisories": [],
+    }
+    flood_target_agent = Mock()
+    flood_target_agent.identify.return_value = targeting
+    agent = allocation_agent(
+        {
+            "fire_department": lambda: catalog(
+                station(1, "Fire station", 32.01, 34.8)
+            ),
+            "police": lambda: catalog(
+                station(2, "Police station", 32.02, 34.8, kind="station")
+            ),
+        },
+        flood_target_agent=flood_target_agent,
+        incident_reader=lambda incident_id: (
+            incident if incident_id == "INC-FLOOD-1" else None
+        ),
+    )
+    incident = {"id": "INC-FLOOD-1", "signals": []}
+    result = SimpleNamespace(
+        incident_id="INC-FLOOD-1",
+        hazard="flood",
+        route="emergency",
+        requested_at=NOW,
+        planner_result=None,
+        resource_allocation_result=None,
+    )
+
+    allocations = agent.allocate_processing_results([result])
+
+    flood_target_agent.identify.assert_called_once_with(incident)
+    station_allocation = result.resource_allocation_result["station_allocation"]
+    assert station_allocation["requirements"]["police"] == {
+        "requested": 1,
+        "assigned": 1,
+        "shortfall": 0,
+    }
+    assert len(station_allocation["allocated_units"]["police_stations"]) == 1
+    assert allocations["INC-FLOOD-1"] is station_allocation
+
+
+def test_flood_without_road_crossing_assigns_police_and_routes_to_road_access():
+    targeting = {
+        "incident_id": "INC-FLOOD-NO-ROAD",
+        "status": "no_road_targets",
+        "response_sites": [],
+        "allocation_ready_sites": [],
+        "hydrometric_sources": [{
+            "station": {
+                "id": 70,
+                "latitude": 30.735,
+                "longitude": 35.235,
+                "severity_level": 4,
+            },
+            "strategy": "station_buffer_primary",
+            "stream": None,
+        }],
+        "resource_allocations": [],
+        "advisories": [],
+    }
+    flood_target_agent = Mock()
+    flood_target_agent.identify.return_value = targeting
+    routing_client = FakeRoutingClient(snap_distance_m=175)
+    incident = {"id": "INC-FLOOD-NO-ROAD", "signals": []}
+    agent = allocation_agent(
+        {
+            "police": lambda: catalog(
+                station(2, "Police station", 30.75, 35.22, kind="station")
+            ),
+        },
+        routing_client=routing_client,
+        flood_target_agent=flood_target_agent,
+        incident_reader=lambda incident_id: (
+            incident if incident_id == incident["id"] else None
+        ),
+    )
+    result = SimpleNamespace(
+        incident_id=incident["id"],
+        hazard="flood",
+        route="emergency",
+        requested_at=NOW,
+        planner_result=None,
+        resource_allocation_result=None,
+    )
+
+    agent.allocate_processing_results([result])
+
+    allocation = result.resource_allocation_result["station_allocation"]
+    assigned = allocation["allocated_units"]["police_stations"]
+    assert allocation["requirements"]["police"] == {
+        "requested": 1,
+        "assigned": 1,
+        "shortfall": 0,
+    }
+    assert len(assigned) == 1
+    assert assigned[0]["route"]["status"] == "partial_offroad"
+    assert assigned[0]["route"]["duration_s"] is not None
+    assert assigned[0]["route"]["requires_field_access_confirmation"] is True
+    assert assigned[0]["route"]["offroad_segment"]["access_verified"] is False
+    assert assigned[0]["route"]["offroad_segment"]["distance_m"] == 175
+    assert result.resource_allocation_result["allocation_target"]["target_type"] == (
+        "hydrometric_station_fallback"
+    )
+
+
+def test_allocator_returns_no_settlement_outside_every_town_polygon():
+    agent = allocation_agent(
+        {
+            "fire_department": lambda: catalog(
+                station(1, "Fire station", 31.01, 35.0)
+            )
+        },
+        town_reader=lambda **_: None,
+    )
+
+    result = agent.allocate_batch(
+        [allocation_request("incident-1", response_plan("event-1"))],
+        now=NOW,
+    )[0]
+
+    assert result["settlement"] is None
 
 
 def test_batch_uses_fire_police_and_mda_db_catalogs_including_coarse_points():
@@ -349,6 +672,69 @@ def test_batch_uses_fire_police_and_mda_db_catalogs_including_coarse_points():
     )
     assert result["status"] == "fulfilled"
     assert all(reader.call_count == 1 for reader in readers.values())
+
+
+def test_earthquake_policy_requests_one_supported_station_without_risk_values():
+    readers = {
+        "fire_department": Mock(return_value=catalog(
+            station(1, "Fire one", 31.01, 35.0),
+            station(2, "Fire two", 31.02, 35.0),
+        )),
+        "police": Mock(return_value=catalog(
+            station(3, "Police", 31.03, 35.0),
+        )),
+        "medical_services": Mock(return_value=catalog(
+            station(4, "MDA", 31.04, 35.0),
+        )),
+    }
+    agent = allocation_agent(readers)
+    result = agent.allocate_batch([
+        earthquake_allocation_request(
+            "INC-EQ-1",
+            units=[
+                "fire_department",
+                "police",
+                "medical_services",
+                "home_front_command",
+            ],
+        )
+    ], now=NOW)[0]
+
+    assert result["allocation_policy"] == "earthquake_minimum_response_v1"
+    assert result["allocation_basis"] == "protocol_recommended_units"
+    assert result["quantity_source"] == "ecoguard_minimum_response_policy"
+    assert result["risk_score"] is None
+    assert result["risk_level"] is None
+    assert all(
+        requirement["requested"] == 1
+        for requirement in result["requirements"].values()
+    )
+    assert len(result["allocated_units"]["fire_stations"]) == 1
+    assert len(result["allocated_units"]["police_stations"]) == 1
+    assert len(result["allocated_units"]["mda_stations"]) == 1
+    assert result["unsupported_units"] == ["home_front_command"]
+    fire_station = result["allocated_units"]["fire_stations"][0]
+    assert fire_station["risk_score"] is None
+    assert fire_station["risk_level"] is None
+    assert fire_station["route"]["geometry"]["type"] == "LineString"
+    assert fire_station["route"]["estimated_arrival_at"] is not None
+
+
+def test_earthquake_policy_does_not_create_eta_when_routing_is_unavailable():
+    agent = allocation_agent(
+        {"fire_department": lambda: catalog(
+            station(1, "Fire", 31.01, 35.0),
+        )},
+        routing_client=FailingRoutingClient(),
+    )
+    result = agent.allocate_batch([
+        earthquake_allocation_request("INC-EQ-1", units=["fire_department"])
+    ], now=NOW)[0]
+
+    assigned = result["allocated_units"]["fire_stations"][0]
+    assert assigned["selection_reason"] == "straight_line_fallback"
+    assert assigned["route"]["estimated_arrival_at"] is None
+    assert result["routing_status"] == "unavailable"
 
 
 def test_higher_operational_risk_gets_contended_stations_first():
@@ -446,6 +832,144 @@ def test_busy_nearest_station_falls_back_to_next_available_station():
 
     assert first["allocated_units"]["fire_stations"][0]["name"] == "Nearest"
     assert second["allocated_units"]["fire_stations"][0]["name"] == "Farther"
+
+
+def test_police_allocation_uses_only_the_event_towns_responsible_stations():
+    routing = FakeRoutingClient()
+    agent = allocation_agent(
+        {
+            "police": lambda: catalog(
+                station(1, "Closer but not responsible", 31.001, 35.0, kind="station"),
+                station(2, "Responsible", 31.02, 35.0, kind="station"),
+            )
+        },
+        routing_client=routing,
+        police_responsibility_reader=lambda **_: {
+            "town_id": "test-town",
+            "town_name": "Test town",
+            "police_station_ids": [2],
+        },
+    )
+
+    result = agent.allocate_batch(
+        [
+            allocation_request(
+                "incident-1",
+                response_plan(
+                    "event-1",
+                    risk_score=90,
+                    risk_level="critical",
+                    units=["police"],
+                ),
+            )
+        ],
+        now=NOW,
+    )[0]
+
+    assigned = result["allocated_units"]["police_stations"]
+    assert [item["database_id"] for item in assigned] == [2]
+    assert assigned[0]["selection_reason"] == "responsible_for_area"
+    assert assigned[0]["allocation_scope"] == "station"
+    assert assigned[0]["severity"] == "critical"
+    assert assigned[0]["available_for_ecoguard"] is True
+    assert result["severity"] == "critical"
+    assert result["allocation_scope"] == "station"
+    assert result["requirements"]["police"] == {
+        "requested": 1,
+        "assigned": 1,
+        "shortfall": 0,
+    }
+    assert routing.metric_calls == [["Responsible"]]
+
+
+def test_multiple_responsible_police_stations_are_ranked_by_travel_time():
+    routing = FakeRoutingClient(
+        durations_by_name={"Near but slow": 500, "Far but fast": 100}
+    )
+    agent = allocation_agent(
+        {
+            "police": lambda: catalog(
+                station(1, "Near but slow", 31.001, 35.0, kind="station"),
+                station(2, "Far but fast", 31.02, 35.0, kind="station"),
+            )
+        },
+        routing_client=routing,
+        police_responsibility_reader=lambda **_: {
+            "town_id": "test-town",
+            "town_name": "Test town",
+            "police_station_ids": [1, 2],
+        },
+    )
+
+    result = agent.allocate_batch(
+        [allocation_request("incident-1", response_plan("event-1", units=["police"]))],
+        now=NOW,
+    )[0]
+
+    assigned = result["allocated_units"]["police_stations"][0]
+    assert assigned["database_id"] == 2
+    assert assigned["selection_reason"] == "nearest_responsible_station"
+
+
+def test_police_fallback_uses_nearest_full_station_when_town_has_no_mapping():
+    agent = allocation_agent(
+        {
+            "police": lambda: catalog(
+                station(1, "Nearby region", 31.001, 35.0, kind="region"),
+                station(2, "Nearest full station", 31.01, 35.0, kind="station"),
+                station(3, "Far full station", 31.02, 35.0, kind="station"),
+            )
+        },
+        police_responsibility_reader=lambda **_: {
+            "town_id": "unmapped-town",
+            "town_name": "Unmapped town",
+            "police_station_ids": [],
+        },
+    )
+
+    result = agent.allocate_batch(
+        [allocation_request("incident-1", response_plan("event-1", units=["police"]))],
+        now=NOW,
+    )[0]
+
+    assigned = result["allocated_units"]["police_stations"][0]
+    assert assigned["database_id"] == 2
+    assert assigned["selection_reason"] == "nearest_police_station_fallback"
+    assert result["police_responsibility"]["reason"] == (
+        "town_has_no_mapped_police_station"
+    )
+
+
+def test_police_station_can_receive_multiple_incidents_but_retries_are_idempotent():
+    repository = InMemoryAllocationRepository()
+    agent = allocation_agent(
+        {
+            "police": lambda: catalog(
+                station(1, "Responsible", 31.01, 35.0, kind="station")
+            )
+        },
+        allocation_repository=repository,
+        police_responsibility_reader=lambda **_: {
+            "town_id": "test-town",
+            "town_name": "Test town",
+            "police_station_ids": [1],
+        },
+    )
+    first_request = allocation_request(
+        "incident-a", response_plan("event-a", units=["police"])
+    )
+    second_request = allocation_request(
+        "incident-b", response_plan("event-b", units=["police"])
+    )
+
+    first = agent.allocate_batch([first_request], now=NOW)[0]
+    second = agent.allocate_batch([second_request], now=NOW)[0]
+    retry = agent.allocate_batch([first_request], now=NOW)[0]
+
+    assert first["requirements"]["police"]["assigned"] == 1
+    assert second["requirements"]["police"]["assigned"] == 1
+    assert retry["requirements"]["police"]["assigned"] == 1
+    assert len(repository.active_allocations()) == 2
 
 
 def test_repeated_allocation_for_same_incident_is_idempotent():

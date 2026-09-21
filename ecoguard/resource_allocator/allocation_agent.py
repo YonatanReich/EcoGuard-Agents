@@ -1,4 +1,4 @@
-"""Select and reserve nearby stations requested by fire response plans."""
+"""Select and reserve nearby stations for emergency response requests."""
 
 import math
 from copy import deepcopy
@@ -10,7 +10,13 @@ from ecoguard.database.repositories.police_stations import police_stations_geojs
 from ecoguard.database.repositories.resource_allocations import (
     ResourceAllocationRepository,
 )
+from ecoguard.database.repositories.towns import (
+    responsible_police_stations,
+    town_at_location,
+)
+from ecoguard.coordinator import incidents as incident_store
 from ecoguard.resource_allocator.mapbox_client import MapboxClient, RoutingError
+from ecoguard.resource_allocator.flood_road_targets import FloodRoadTargetAgent
 
 # Fallback station counts, used only when the planner supplies none. These
 # numbers represent stations, not vehicles, and they are a placeholder: the
@@ -43,6 +49,10 @@ STATIONS_REQUIRED_BY_RISK = {
     },
 }
 
+EARTHQUAKE_MINIMUM_RESPONSE_POLICY = "earthquake_minimum_response_v1"
+EARTHQUAKE_ALLOCATION_BASIS = "protocol_recommended_units"
+EARTHQUAKE_QUANTITY_SOURCE = "ecoguard_minimum_response_policy"
+
 TIMEFRAME_PRIORITY = {
     "ongoing": 0,
     "within_6_hours": 1,
@@ -55,6 +65,41 @@ STATION_TYPES = {
     "police": ("police_station", "police_stations"),
     "medical_services": ("mda_station", "mda_stations"),
 }
+
+# Temporary Flood station counts until an operational policy source provides
+# real requirements.  These are station assignments, not vehicle quantities.
+FLOOD_STATIONS_REQUIRED_BY_SEVERITY = {
+    3: {"police": 1},
+    4: {"police": 1},
+    5: {"police": 1},
+    6: {"police": 1},
+}
+FLOOD_RISK_BY_SEVERITY = {
+    3: ("low", 40.0),
+    4: ("medium", 60.0),
+    5: ("high", 80.0),
+    6: ("critical", 100.0),
+}
+FLOOD_ROAD_PRIORITY = {
+    "motorway": 6,
+    "trunk": 5,
+    "primary": 4,
+    "secondary": 3,
+    "tertiary": 2,
+    "street": 1,
+    "street_limited": 1,
+}
+
+SETTLEMENT_FIELDS = (
+    "population",
+    "households",
+    "authority",
+    "authority_type",
+    "authority_phone",
+    "authority_address",
+    "authority_website",
+    "area_km2",
+)
 
 
 def _default_station_readers():
@@ -74,6 +119,10 @@ class ResourceAllocationAgent:
         station_readers=None,
         routing_client=None,
         allocation_repository=None,
+        police_responsibility_reader=None,
+        town_reader=None,
+        flood_target_agent=None,
+        incident_reader=None,
     ):
         self.station_readers = (
             _default_station_readers()
@@ -84,6 +133,14 @@ class ResourceAllocationAgent:
         self.allocation_repository = (
             allocation_repository or ResourceAllocationRepository()
         )
+        self.police_responsibility_reader = (
+            police_responsibility_reader or responsible_police_stations
+        )
+        self.town_reader = town_reader or town_at_location
+        self.flood_target_agent = flood_target_agent or FloodRoadTargetAgent(
+            mapbox_client=self.routing_client
+        )
+        self.incident_reader = incident_reader or incident_store.incident_by_id
         self._station_catalogs = {}
         self._stations_by_key = {}
         self._station_catalog_errors = {}
@@ -174,6 +231,11 @@ class ResourceAllocationAgent:
         recommended_unit,
     ):
         """Exclude stations currently claimed by another incident in the DB."""
+        if recommended_unit == "police":
+            # A police allocation assigns the responsible station, not one of
+            # its vehicles. The station may receive several incidents.
+            return candidates
+
         occupied = {
             allocation["station_id"]
             for allocation in self.allocation_repository.active_allocations()
@@ -191,6 +253,7 @@ class ResourceAllocationAgent:
         stations,
         event_location,
         required_count,
+        selection_reason="shortest_road_travel_time",
     ):
         """Search nearby batches until enough road-reachable stations exist."""
         batch_size = getattr(self.routing_client, "matrix_max_sources", 9)
@@ -218,7 +281,7 @@ class ResourceAllocationAgent:
                     continue
                 candidate = station.copy()
                 candidate["_routing_metric"] = metric
-                candidate["selection_reason"] = "shortest_road_travel_time"
+                candidate["selection_reason"] = selection_reason
                 ranked.append(candidate)
 
             if len(ranked) >= required_count:
@@ -282,7 +345,9 @@ class ResourceAllocationAgent:
         )
 
     @staticmethod
-    def _required_station_count(risk_level, recommended_unit, response_plan=None):
+    def _required_station_count(
+        risk_level, recommended_unit, response_plan=None, allocation_policy=None
+    ):
         """How many stations to commit for one unit type.
 
         The planner's figure wins where it supplies one. It derives team counts
@@ -296,16 +361,264 @@ class ResourceAllocationAgent:
         well-formed. So one of them has to be authoritative, and it is the one
         that can cite where its number came from.
         """
+        if allocation_policy == EARTHQUAKE_MINIMUM_RESPONSE_POLICY:
+            # EcoGuard product policy, not an official dispatch quantity.
+            return 1
+        if recommended_unit == "police":
+            # Severity is sent to the responsible station; the station decides
+            # how many internal units it dispatches.
+            return 1
         if response_plan:
             teams = response_plan.get("teams_required")
             if recommended_unit == "fire_department" and isinstance(teams, int):
                 return max(1, teams)
+        explicit = (
+            (response_plan or {}).get("station_requirements") or {}
+        ).get(recommended_unit)
+        if explicit is not None:
+            return explicit
         return STATIONS_REQUIRED_BY_RISK[risk_level].get(recommended_unit, 1)
+
+    @staticmethod
+    def _flood_site_priority(site):
+        road = site.get("road") or {}
+        verification = site.get("mapbox_verification") or {}
+        snap_distance = verification.get("mapbox_snap_distance_m")
+        return (
+            int(site.get("severity_level") or 0),
+            FLOOD_ROAD_PRIORITY.get(str(road.get("base_class") or ""), 0),
+            int(site.get("urban") is True),
+            (
+                -float(snap_distance)
+                if isinstance(snap_distance, (int, float))
+                else -math.inf
+            ),
+            str(site.get("target_id") or ""),
+        )
+
+    def _prepare_flood_batch_request(self, item, now):
+        """Convert Flood targets, or its gauge fallback, to a station request."""
+
+        incident_id = str(item.get("incident_id") or "").strip()
+        if not incident_id:
+            raise ValueError("incident_id is required")
+        targeting = item.get("flood_targeting")
+        if not isinstance(targeting, dict):
+            raise ValueError("flood_targeting must be an object")
+        ready_sites = [
+            site
+            for site in targeting.get("allocation_ready_sites") or []
+            if isinstance(site, dict)
+            and site.get("allocation_eligible") is True
+            and isinstance(site.get("allocation_location"), dict)
+        ]
+        if ready_sites:
+            primary = max(ready_sites, key=self._flood_site_priority)
+            severity = max(
+                3,
+                min(
+                    6,
+                    max(int(site.get("severity_level") or 3) for site in ready_sites),
+                ),
+            )
+            requirements = dict(FLOOD_STATIONS_REQUIRED_BY_SEVERITY[severity])
+            location = primary["allocation_location"]
+            allocation_target = {
+                "target_id": primary.get("target_id"),
+                "target_type": "verified_road_site",
+                "road": dict(primary.get("road") or {}),
+                "allocation_location": dict(location),
+                "covered_response_site_ids": [
+                    site.get("target_id") for site in ready_sites
+                ],
+            }
+            primary_target_id = primary.get("target_id")
+            fallback_reason = None
+        else:
+            sources = [
+                source
+                for source in targeting.get("hydrometric_sources") or []
+                if isinstance(source, dict)
+                and isinstance(source.get("station"), dict)
+            ]
+            if not sources:
+                return {
+                    "terminal": {
+                        "incident_id": incident_id,
+                        "event_id": f"{incident_id}:flood-station-fallback",
+                        "hazard": "flood",
+                        "status": "skipped",
+                        "reason": "hydrometric_station_location_unavailable",
+                        "allocated_units": {},
+                        "requirements": {"police": {
+                            "requested": 1,
+                            "assigned": 0,
+                            "shortfall": 1,
+                        }},
+                        "shortages": {"police_station": 1},
+                        "unsupported_units": [],
+                        "errors": [],
+                        "allocation_target": None,
+                    }
+                }
+            primary_source = max(
+                sources,
+                key=lambda source: int(
+                    (source.get("station") or {}).get("severity_level") or 3
+                ),
+            )
+            station = primary_source["station"]
+            severity = max(3, min(6, int(station.get("severity_level") or 3)))
+            requirements = {"police": 1}
+            location = {
+                "latitude": float(station["latitude"]),
+                "longitude": float(station["longitude"]),
+            }
+            primary_target_id = f"hydrometric-station-{station.get('id')}"
+            allocation_target = {
+                "target_id": primary_target_id,
+                "target_type": "hydrometric_station_fallback",
+                "source_station_id": station.get("id"),
+                "allocation_location": dict(location),
+                "covered_response_site_ids": [],
+                "requires_road_access_resolution": True,
+            }
+            fallback_reason = "no_verified_flood_response_site"
+
+        risk_level, risk_score = FLOOD_RISK_BY_SEVERITY[severity]
+        event_id = (
+            f"{incident_id}:flood-road-target"
+            if ready_sites
+            else f"{incident_id}:flood-station-fallback"
+        )
+        response_plan = {
+            "metadata": {
+                "planning_status": "success",
+                "timestamp": self._utc(item.get("queued_at") or now).isoformat(),
+                "agent": "deterministic_flood_station_fallback",
+            },
+            "event_id": event_id,
+            "location": {
+                "latitude": float(location["latitude"]),
+                "longitude": float(location["longitude"]),
+            },
+            "responding_to": {
+                "risk_semantics": "detected_event_operational_risk",
+                "risk_score": risk_score,
+                "risk_level": risk_level,
+                "severity_level": severity,
+                "primary_target_id": primary_target_id,
+                "fallback_reason": fallback_reason,
+            },
+            "recommended_units": list(requirements),
+            "station_requirements": requirements,
+            "response_actions": [
+                {"timeframe": "immediate", "responsible_unit": unit}
+                for unit in requirements
+            ],
+        }
+        prepared = self._prepare_batch_request(
+            {
+                "incident_id": incident_id,
+                "hazard": "prepared_flood",
+                "queued_at": item.get("queued_at"),
+                "response_plan": response_plan,
+            },
+            now,
+        )
+        prepared["hazard"] = "flood"
+        prepared["allocation_target"] = allocation_target
+        return prepared
+
+    def _police_candidates_for_event(self, stations, event_location):
+        """Prefer the event town's responsible police stations."""
+
+        fallback = [
+            station
+            for station in stations
+            if (station.get("kind") or "station") == "station"
+        ]
+        try:
+            responsibility = self.police_responsibility_reader(
+                latitude=event_location["latitude"],
+                longitude=event_location["longitude"],
+            )
+        except Exception as error:
+            return (
+                fallback,
+                {
+                    "status": "fallback",
+                    "reason": "responsibility_lookup_unavailable",
+                    "town_id": None,
+                    "town_name": None,
+                    "responsible_station_ids": [],
+                },
+                str(error),
+            )
+
+        if responsibility is not None:
+            responsible_ids = set(
+                responsibility.get("police_station_ids") or []
+            )
+            responsible = [
+                station
+                for station in stations
+                if station["database_id"] in responsible_ids
+            ]
+            if responsible:
+                selection_reason = (
+                    "responsible_for_area"
+                    if len(responsible) == 1
+                    else "nearest_responsible_station"
+                )
+                return (
+                    responsible,
+                    {
+                        "status": "matched",
+                        "reason": selection_reason,
+                        "town_id": responsibility.get("town_id"),
+                        "town_name": responsibility.get("town_name"),
+                        "responsible_station_ids": sorted(responsible_ids),
+                    },
+                    None,
+                )
+
+            fallback_reason = (
+                "town_has_no_mapped_police_station"
+                if not responsible_ids
+                else "responsible_station_not_in_catalog"
+            )
+            return (
+                fallback,
+                {
+                    "status": "fallback",
+                    "reason": fallback_reason,
+                    "town_id": responsibility.get("town_id"),
+                    "town_name": responsibility.get("town_name"),
+                    "responsible_station_ids": sorted(responsible_ids),
+                },
+                None,
+            )
+
+        return (
+            fallback,
+            {
+                "status": "fallback",
+                "reason": "event_outside_town",
+                "town_id": None,
+                "town_name": None,
+                "responsible_station_ids": [],
+            },
+            None,
+        )
 
     def _prepare_batch_request(self, item, now):
         """Validate one Planner response before allocation starts."""
         if not isinstance(item, dict):
             raise ValueError("allocation request must be an object")
+
+        if item.get("hazard") == "flood":
+            return self._prepare_flood_batch_request(item, now)
 
         # The Coordinator wrapper adds its canonical incident identity and
         # queue time without changing the Planner response.
@@ -345,6 +658,30 @@ class ResourceAllocationAgent:
                 }
             }
 
+        allocation_policy = item.get("allocation_policy")
+        if allocation_policy is not None:
+            if allocation_policy != EARTHQUAKE_MINIMUM_RESPONSE_POLICY:
+                raise ValueError("unsupported allocation policy")
+            if response_plan.get("hazard_type") != "earthquake":
+                raise ValueError("earthquake allocation policy requires an earthquake plan")
+            metadata = response_plan.get("metadata") or {}
+            queued_at = self._utc(
+                item.get("queued_at") or metadata.get("timestamp") or now
+            )
+            return {
+                "incident_id": incident_id,
+                "response_plan": response_plan,
+                "risk_score": None,
+                "risk_level": None,
+                "queued_at": queued_at,
+                "allocation_time": now,
+                "urgency": self._urgency(response_plan),
+                "effective_priority": None,
+                "allocation_policy": EARTHQUAKE_MINIMUM_RESPONSE_POLICY,
+                "allocation_basis": EARTHQUAKE_ALLOCATION_BASIS,
+                "quantity_source": EARTHQUAKE_QUANTITY_SOURCE,
+            }
+
         responding_to = response_plan.get("responding_to") or {}
         if responding_to.get("risk_semantics") != "detected_event_operational_risk":
             raise ValueError("response plan does not contain operational risk")
@@ -362,6 +699,27 @@ class ResourceAllocationAgent:
         if risk_level not in STATIONS_REQUIRED_BY_RISK:
             raise ValueError("operational risk level is unavailable")
 
+        recommended_units = list(
+            dict.fromkeys(response_plan.get("recommended_units") or [])
+        )
+        station_requirements = response_plan.get("station_requirements")
+        if station_requirements is not None:
+            if not isinstance(station_requirements, dict):
+                raise ValueError("station_requirements must be an object")
+            for unit, count in station_requirements.items():
+                if unit not in recommended_units:
+                    raise ValueError(
+                        "station requirement has no matching recommended unit"
+                    )
+                if (
+                    not isinstance(count, int)
+                    or isinstance(count, bool)
+                    or not 1 <= count <= 8
+                ):
+                    raise ValueError("station requirement must be between 1 and 8")
+                if unit == "police" and count != 1:
+                    raise ValueError("police allocation is one station per incident")
+
         metadata = response_plan.get("metadata") or {}
         queued_at = self._utc(
             item.get("queued_at") or metadata.get("timestamp") or now
@@ -371,6 +729,7 @@ class ResourceAllocationAgent:
 
         return {
             "incident_id": incident_id,
+            "hazard": str(item.get("hazard") or "fire"),
             "response_plan": response_plan,
             "risk_score": float(risk_score),
             "risk_level": risk_level,
@@ -379,11 +738,26 @@ class ResourceAllocationAgent:
             "urgency": self._urgency(response_plan),
             # Aging adds one point every five minutes so old requests progress.
             "effective_priority": float(risk_score) + aging_bonus,
+            "allocation_policy": None,
+            "allocation_basis": None,
+            "quantity_source": None,
         }
 
     @staticmethod
     def _priority_key(request):
+        if request.get("allocation_policy") == EARTHQUAKE_MINIMUM_RESPONSE_POLICY:
+            # Policy-driven requests do not receive a fabricated risk score.
+            # They follow Fire requests in a mixed batch, then sort by action
+            # urgency, queue time and incident id. Fire-to-Fire ordering below
+            # is unchanged.
+            return (
+                1,
+                -request["urgency"],
+                request["queued_at"],
+                request["incident_id"],
+            )
         return (
+            0,
             -request["effective_priority"],
             -request["risk_score"],
             -request["urgency"],
@@ -456,17 +830,28 @@ class ResourceAllocationAgent:
             **station,
             "database_id": allocation["station_id"],
             "recommended_unit": allocation["recommended_unit"],
+            "allocation_scope": "station",
             "resource_key": station_key,
             "allocation_id": allocation.get("id"),
             "assigned_incident_id": allocation["incident_id"],
             "distance_km": allocation["distance_km"],
             "risk_score": allocation.get("risk_score"),
             "risk_level": allocation.get("risk_level"),
+            "severity": allocation.get("risk_level"),
             "allocation_status": status,
-            "available_for_ecoguard": status == "released",
+            "available_for_ecoguard": (
+                allocation["recommended_unit"] == "police"
+                or status == "released"
+            ),
             "real_world_availability": "unknown",
             "selection_reason": "nearest_available_station",
         }
+        if allocation.get("allocation_policy") is not None:
+            result.update({
+                "allocation_policy": allocation["allocation_policy"],
+                "allocation_basis": allocation.get("allocation_basis"),
+                "quantity_source": allocation.get("quantity_source"),
+            })
         for field in ("allocated_at", "released_at"):
             value = allocation.get(field)
             result[field] = (
@@ -485,16 +870,28 @@ class ResourceAllocationAgent:
         risk_score,
         risk_level,
         allocated_at,
+        allocation_policy=None,
+        allocation_basis=None,
+        quantity_source=None,
     ):
         """Atomically claim stations through the shared DB repository."""
+        claim = {
+            "incident_id": incident_id,
+            "recommended_unit": recommended_unit,
+            "candidates": candidates,
+            "required_count": required_count,
+            "risk_score": risk_score,
+            "risk_level": risk_level,
+            "allocated_at": allocated_at,
+        }
+        if allocation_policy is not None:
+            claim.update({
+                "allocation_policy": allocation_policy,
+                "allocation_basis": allocation_basis,
+                "quantity_source": quantity_source,
+            })
         allocations = self.allocation_repository.claim_stations(
-            incident_id=incident_id,
-            recommended_unit=recommended_unit,
-            candidates=candidates,
-            required_count=required_count,
-            risk_score=risk_score,
-            risk_level=risk_level,
-            allocated_at=allocated_at,
+            **claim,
         )
         return [self._allocation_view(allocation) for allocation in allocations]
 
@@ -580,6 +977,55 @@ class ResourceAllocationAgent:
 
         return sorted(enriched, key=self._allocation_sort_key), errors
 
+    def _mark_unverified_field_access(self, stations, event_location):
+        """Preserve the routed road leg and add an explicitly unverified gap."""
+
+        marked = []
+        for original in stations:
+            station = deepcopy(original)
+            route = station.get("route")
+            if not isinstance(route, dict):
+                marked.append(station)
+                continue
+            route["road_access_verified"] = False
+            route["requires_field_access_confirmation"] = True
+            if route.get("status") != "unavailable":
+                route["status"] = "partial_offroad"
+            destination = route.get("destination") or {}
+            snapped = destination.get("snapped_location")
+            if isinstance(snapped, dict):
+                try:
+                    snap_lat = float(snapped["latitude"])
+                    snap_lon = float(snapped["longitude"])
+                    target_lat = float(event_location["latitude"])
+                    target_lon = float(event_location["longitude"])
+                except (KeyError, TypeError, ValueError):
+                    pass
+                else:
+                    reported_distance = destination.get("snap_distance_m")
+                    distance_m = (
+                        float(reported_distance)
+                        if isinstance(reported_distance, (int, float))
+                        and not isinstance(reported_distance, bool)
+                        else self._haversine_distance(
+                            snap_lat, snap_lon, target_lat, target_lon
+                        ) * 1000
+                    )
+                    route["offroad_segment"] = {
+                        "distance_m": max(0.0, distance_m),
+                        "geometry": {
+                            "type": "LineString",
+                            "coordinates": [
+                                [snap_lon, snap_lat],
+                                [target_lon, target_lat],
+                            ],
+                        },
+                        "access_verified": False,
+                    }
+            station["route"] = route
+            marked.append(station)
+        return marked
+
     @staticmethod
     def _allocation_sort_key(station):
         route = station.get("route") or {}
@@ -604,18 +1050,42 @@ class ResourceAllocationAgent:
         result = {
             "incident_id": request["incident_id"],
             "event_id": response_plan.get("event_id"),
+            "hazard": request.get("hazard"),
             "status": "fulfilled",
             "risk_score": request["risk_score"],
             "risk_level": request["risk_level"],
+            "severity": request["risk_level"],
             "effective_priority": request["effective_priority"],
             "queued_at": request["queued_at"].isoformat(),
             "allocation_needed": bool(recommended_units),
+            "allocation_scope": "station",
             "allocated_units": {},
             "requirements": {},
             "shortages": {},
             "unsupported_units": [],
             "errors": [],
         }
+        if request.get("allocation_policy") is not None:
+            result.update({
+                "allocation_policy": request["allocation_policy"],
+                "allocation_basis": request["allocation_basis"],
+                "quantity_source": request["quantity_source"],
+                "priority_basis": "fire_before_policy_then_action_timeframe_queued_at",
+            })
+        if request.get("allocation_target") is not None:
+            result["allocation_target"] = request["allocation_target"]
+
+        # Settlement context is resolved once per incident by the allocator,
+        # using the same event coordinates that drive station selection.
+        try:
+            town = self.town_reader(latitude=event_lat, longitude=event_lon)
+        except Exception:
+            town = None
+        result["settlement"] = (
+            {field: town.get(field) for field in SETTLEMENT_FIELDS}
+            if isinstance(town, dict)
+            else None
+        )
 
         if not recommended_units:
             result["reason"] = "no_resources_required"
@@ -625,7 +1095,10 @@ class ResourceAllocationAgent:
 
         for recommended_unit in recommended_units:
             required_count = self._required_station_count(
-                request["risk_level"], recommended_unit, response_plan
+                request["risk_level"],
+                recommended_unit,
+                response_plan,
+                request.get("allocation_policy"),
             )
             mapping = STATION_TYPES.get(recommended_unit)
             if mapping is None:
@@ -641,6 +1114,28 @@ class ResourceAllocationAgent:
             unit_routing_failure = None
             catalog_error = self._station_catalog_errors.get(recommended_unit)
             stations = self._station_catalogs.get(recommended_unit, [])
+            selection_reason = "shortest_road_travel_time"
+            if recommended_unit == "police":
+                stations, responsibility, responsibility_error = (
+                    self._police_candidates_for_event(
+                        stations,
+                        event_location,
+                    )
+                )
+                result["police_responsibility"] = responsibility
+                selection_reason = (
+                    responsibility["reason"]
+                    if responsibility["status"] == "matched"
+                    else "nearest_police_station_fallback"
+                )
+                if responsibility_error is not None:
+                    result["errors"].append(
+                        {
+                            "station_type": station_type,
+                            "reason": "police_responsibility_lookup_failed",
+                            "message": responsibility_error,
+                        }
+                    )
             # Every located station is eligible, including coarse points.
             candidates = self._rank_stations(
                 stations,
@@ -657,6 +1152,7 @@ class ResourceAllocationAgent:
                     candidates,
                     event_location,
                     required_count,
+                    selection_reason,
                 )
                 if result["road_access"] is None and road_access is not None:
                     result["road_access"] = road_access
@@ -674,7 +1170,12 @@ class ResourceAllocationAgent:
                         **candidate,
                         "distance_km": candidate["straight_line_distance_km"],
                         "_routing_metric": None,
-                        "selection_reason": "straight_line_fallback",
+                        "selection_reason": (
+                            "straight_line_fallback"
+                            if selection_reason
+                            == "shortest_road_travel_time"
+                            else f"{selection_reason}_straight_line_fallback"
+                        ),
                     }
                     for candidate in candidates
                 ]
@@ -696,6 +1197,9 @@ class ResourceAllocationAgent:
                     request["risk_score"],
                     request["risk_level"],
                     request["allocation_time"],
+                    request.get("allocation_policy"),
+                    request.get("allocation_basis"),
+                    request.get("quantity_source"),
                 )
             except Exception as error:
                 assigned = []
@@ -714,6 +1218,13 @@ class ResourceAllocationAgent:
                     request["allocation_time"],
                     unit_routing_failure,
                 )
+                if (
+                    (request.get("allocation_target") or {}).get("target_type")
+                    == "hydrometric_station_fallback"
+                ):
+                    assigned = self._mark_unverified_field_access(
+                        assigned, event_location
+                    )
                 result["errors"].extend(route_errors)
             result["allocated_units"][output_key] = assigned
             if result["road_access"] is None:
@@ -811,6 +1322,112 @@ class ResourceAllocationAgent:
         prepared.sort(key=self._priority_key)
         allocated = [self._allocate_batch_request(item) for item in prepared]
         return [*allocated, *terminal_results]
+
+    def allocate_processing_results(self, processing_results):
+        """Build and allocate every eligible emergency request in one batch.
+
+        Hazard-specific preparation belongs here.  In particular, Flood road
+        discovery and Mapbox verification happen inside resource allocation,
+        while the scheduler remains a generic orchestration boundary.
+        """
+
+        requests = []
+        bindings = []
+        for result in processing_results or []:
+            hazard = getattr(result, "hazard", None)
+            if getattr(result, "route", None) != "emergency":
+                continue
+
+            if hazard == "fire":
+                response_plan = getattr(result, "planner_result", None)
+                if not isinstance(response_plan, dict):
+                    continue
+                request = {
+                    "incident_id": result.incident_id,
+                    "hazard": "fire",
+                    "queued_at": result.requested_at,
+                    "response_plan": response_plan,
+                }
+                targeting = None
+            elif hazard == "flood":
+                incident = self.incident_reader(result.incident_id)
+                if not isinstance(incident, dict):
+                    result.resource_allocation_result = {
+                        "incident_id": result.incident_id,
+                        "hazard": "flood",
+                        "status": "failed",
+                        "reason": "flood_incident_input_unavailable",
+                        "response_sites": [],
+                        "allocation_ready_sites": [],
+                        "resource_allocations": {},
+                        "errors": [],
+                    }
+                    continue
+                try:
+                    targeting = self.flood_target_agent.identify(incident)
+                except Exception as error:
+                    targeting = {
+                        "incident_id": result.incident_id,
+                        "hazard": "flood",
+                        "status": "failed",
+                        "reason": "flood_road_targeting_failed",
+                        "response_sites": [],
+                        "allocation_ready_sites": [],
+                        "resource_allocations": {},
+                        "errors": [str(error)],
+                    }
+                    result.resource_allocation_result = targeting
+                    continue
+                result.resource_allocation_result = targeting
+                request = {
+                    "incident_id": result.incident_id,
+                    "hazard": "flood",
+                    "queued_at": result.requested_at,
+                    "flood_targeting": targeting,
+                }
+            else:
+                continue
+
+            requests.append(request)
+            bindings.append((result, hazard, targeting))
+
+        if not requests:
+            return {}
+
+        allocations = self.allocate_batch(requests)
+        allocations_by_key = {
+            (allocation.get("incident_id"), allocation.get("hazard")): allocation
+            for allocation in allocations
+            if isinstance(allocation, dict) and allocation.get("incident_id")
+        }
+        allocations_by_incident = {
+            allocation["incident_id"]: allocation
+            for allocation in allocations
+            if isinstance(allocation, dict) and allocation.get("incident_id")
+        }
+
+        for result, hazard, targeting in bindings:
+            allocation = allocations_by_key.get(
+                (result.incident_id, hazard)
+            ) or allocations_by_incident.get(result.incident_id)
+            if hazard == "fire":
+                result.resource_allocation_result = allocation
+                continue
+            combined = dict(targeting)
+            combined["station_allocation"] = allocation
+            combined["resource_allocations"] = (
+                allocation.get("allocated_units", {})
+                if isinstance(allocation, dict)
+                else {}
+            )
+            combined["allocation_target"] = (
+                allocation.get("allocation_target")
+                if isinstance(allocation, dict)
+                else None
+            )
+            result.resource_allocation_result = combined
+
+        return allocations_by_incident
 
     def release_incident(
         self,

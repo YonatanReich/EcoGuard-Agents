@@ -57,6 +57,7 @@ RETENTION_DAYS: dict[str, int | None] = {
     "weather_forecast": 30,
     "fire_weather": 400,
     "vegetation": 400,
+    "water_authority_hydrometric_observations": 30,
     "fwi": None,
     "firms": None,
     "telegram": None,
