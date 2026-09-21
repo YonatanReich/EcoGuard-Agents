@@ -14,9 +14,10 @@ __pycache__/
 # The frontend is built and served by Vercel, not by this image.
 ecoguard/frontend/
 
-# Tests and research are not part of the runtime.
+# Tests are not part of the runtime. ecoguard/research/ is NOT excluded: the
+# fire risk agent, feature builder and static feature store import from it at
+# module load, so leaving it out stops the API from importing at all.
 ecoguard/tests/
-ecoguard/research/
 outputs/
 *.txt
 !requirements.txt
