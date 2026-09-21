@@ -1,6 +1,10 @@
-import { useState, type CSSProperties } from 'react'
+import { useMemo, useState, type CSSProperties } from 'react'
 import { Layer, Marker, Popup, Source } from 'react-map-gl/mapbox'
 import type { AllocatedStation, FireEvent, FloodEvent } from '../../types/events'
+import { resourceAllocationSimulation } from '../../utils/resourceAllocationSimulation'
+import AllocationVehicleSimulation from './AllocationVehicleSimulation'
+
+const NO_ALLOCATED_STATIONS: readonly AllocatedStation[] = Object.freeze([])
 
 const RESOURCE_STYLE: Record<string, { color: string; label: string }> = {
   fire_department: { color: '#ef4444', label: 'F' },
@@ -49,11 +53,15 @@ function ResourceAllocationLayer({
   onShowDirections: (stationKey: string) => void
   showLegend?: boolean
 }) {
-  const stations = event.details.resource_allocation?.stations ?? []
+  const stations = event.details.resource_allocation?.stations ?? NO_ALLOCATED_STATIONS
   // Every event owns separate Mapbox source/layer IDs, allowing all active
   // allocation routes to be rendered at the same time.
   const layerSuffix = event.id.replace(/[^a-zA-Z0-9_-]/g, '_')
   const [selectedStationKey, setSelectedStationKey] = useState<string | null>(null)
+  const simulationResources = useMemo(
+    () => resourceAllocationSimulation(stations),
+    [stations],
+  )
   const selectedStation = stations.find(
     (station) => stationKey(station) === selectedStationKey,
   ) ?? null
@@ -231,6 +239,10 @@ function ResourceAllocationLayer({
         <div className="allocation-route-legend">
           Assigned stations and fastest routes
         </div>
+      )}
+
+      {simulationResources.length > 0 && (
+        <AllocationVehicleSimulation vehicles={simulationResources} />
       )}
     </>
   )
