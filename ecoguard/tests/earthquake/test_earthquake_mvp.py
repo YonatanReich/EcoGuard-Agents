@@ -203,8 +203,21 @@ def test_impact_reuses_same_polygon_for_towns_and_population():
         population_query=population_query,
     )
 
-    assert received[0] is received[1]
-    assert impact.radius_km == 25.0
+    # The towns lookup and the summary population must describe the same area,
+    # or the two numbers on the event card are about different places. They are
+    # the first and last queries: the ones between them are the per-band
+    # population counts, each over its own nested intensity ring.
+    assert received[0] is received[-1]
+    assert len(received) > 2, "the intensity bands should each be counted"
+    # Was 25.0 from the magnitude-only table. The intensity equation puts
+    # the MMI IV ring for this event at 24.68 km -- close enough to be a
+    # quiet check that the invented band was not wildly off for a moderate
+    # shallow earthquake, which is where it was least wrong.
+    assert impact.radius_km == pytest.approx(24.68, abs=0.01)
+    assert impact.max_mmi == 5.1
+    # Nothing here reaches MMI VI, so nobody is at damaging intensity. A
+    # counted zero, not an unreadable one.
+    assert impact.population_at_damaging_intensity == 0
     assert impact.population_summary == {
         "status": "available",
         "estimated_population": 1235,
@@ -227,11 +240,14 @@ def test_impact_reuses_same_polygon_for_towns_and_population():
     # It is derived, not invented: M4.6 sets the band, the counted population
     # inside the impact area moves it, and the basis records which of the two
     # were available.
+    # Severity now reads the people at damaging intensity, not everyone who
+    # felt it. This event shakes 1,235 people at MMI IV-V and nobody at VI or
+    # above, so the magnitude band is adjusted down rather than up.
     assert planner_input.risk_context == {
         "risk_semantics": "detected_event_operational_risk",
-        "risk_score": 50,
-        "risk_level": "high",
-        "population_at_risk": 1235,
+        "risk_score": 40,
+        "risk_level": "medium",
+        "population_at_risk": 0,
         "basis": "magnitude_and_population",
     }
     assert planner_input.additional_context["magnitude"] == 4.6
@@ -326,6 +342,7 @@ def test_earthquake_handler_invokes_and_preserves_successful_planner(monkeypatch
             status=TownLookupStatus.SUCCESS_EMPTY,
             towns=[],
         ),
+        population_at_damaging_intensity=1235,
         population_summary={
             "status": "unavailable",
             "estimated_population": None,
@@ -392,6 +409,7 @@ def test_earthquake_projection_exposes_plan_allocation_route_and_policy(monkeypa
             status=TownLookupStatus.SUCCESS_EMPTY,
             towns=[],
         ),
+        population_at_damaging_intensity=1235,
         population_summary={
             "status": "unavailable",
             "estimated_population": None,

@@ -67,6 +67,12 @@ INTENSITY_BANDS: tuple[tuple[int, str], ...] = (
 # circle this module replaced.
 MIN_REPORTED_MMI = 4
 
+# The weakest intensity still worth drawing an outline around. Nothing at
+# this level breaks, so it is never an actionable band -- but a magnitude
+# 3.8 at 15 km produces no band at IV anywhere, and an operator still needs
+# to see where it was felt. Used only as the fallback extent.
+FELT_MMI = 3
+
 
 def mmi_at(magnitude: float, hypocentral_distance_km: float) -> float:
     """Modified Mercalli Intensity at one hypocentral distance.
@@ -141,7 +147,7 @@ def epicentral_radius_for_mmi(
 
 
 def intensity_rings(
-    magnitude: float, depth_km: float
+    magnitude: float, depth_km: float, *, min_mmi: int = MIN_REPORTED_MMI
 ) -> list[dict[str, float | int | str]]:
     """Every band this earthquake actually produces, strongest first.
 
@@ -151,7 +157,7 @@ def intensity_rings(
     """
     rings: list[dict[str, float | int | str]] = []
     for level, name in sorted(INTENSITY_BANDS, reverse=True):
-        if level < MIN_REPORTED_MMI:
+        if level < min_mmi:
             continue
         radius = epicentral_radius_for_mmi(magnitude, depth_km, level)
         if radius is None or radius <= 0:
@@ -166,6 +172,7 @@ def intensity_rings(
 
 
 __all__ = [
+    "FELT_MMI",
     "INTENSITY_BANDS",
     "MIN_REPORTED_MMI",
     "epicentral_radius_for_mmi",

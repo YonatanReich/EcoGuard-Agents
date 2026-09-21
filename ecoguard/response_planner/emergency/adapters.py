@@ -397,16 +397,17 @@ def build_earthquake_plan_input(
             str(population.get("reason") or "Population intersection data is unavailable.")
         )
 
-    # A counted zero and an uncountable population are different facts, and
-    # the scale treats them differently: only a reading that succeeded is
-    # passed on. Absence of a count narrows the basis to magnitude rather
-    # than being scored as nobody at risk.
-    counted = population.get("estimated_population")
-    population_at_risk = (
-        int(counted)
-        if population.get("status") == "available" and isinstance(counted, (int, float))
-        else None
-    )
+    # People where shaking is actually damaging, not everyone who felt it.
+    # The impact area now runs out to MMI IV, which for a magnitude 6.2 near
+    # Tiberias is 149 km and 7.8 million people -- scoring severity on that
+    # would put every moderate earthquake at the top of the scale. The number
+    # that belongs here is the 862 thousand inside MMI VI and above.
+    #
+    # A counted zero and an uncountable population stay different facts: only
+    # a reading that succeeded is passed on, and absence narrows the basis to
+    # magnitude rather than being scored as nobody at risk.
+    counted = impact.population_at_damaging_intensity
+    population_at_risk = int(counted) if isinstance(counted, (int, float)) else None
     risk_score, risk_level = earthquake_operational_risk(
         impact.magnitude, population_at_risk=population_at_risk
     )
