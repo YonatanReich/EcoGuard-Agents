@@ -16,6 +16,7 @@ from ecoguard.database.repositories.event_projections import (
     EventProjectionWrite,
     upsert_event_projection,
 )
+from ecoguard.coordinator.fire_event_projection import fire_shared_event
 from ecoguard.shared.events import (
     AirPollutionAdditionalVerification,
     AirPollutionBaselineContext,
@@ -33,6 +34,7 @@ from ecoguard.shared.events import (
     EarthquakeDetails,
     EarthquakePopulationSummary,
     EarthquakeSharedEvent,
+    FireSharedEvent,
     EarthquakeTown,
     GeoJsonLineString,
     GeoJsonMultiLineString,
@@ -63,7 +65,10 @@ IncidentReader = Callable[[str], dict[str, Any] | None]
 ProjectionWriter = Callable[[EventProjectionWrite], dict[str, Any] | None]
 EventMapper = Callable[
     [IncidentProcessingResult, Mapping[str, Any]],
-    AirPollutionSharedEvent | EarthquakeSharedEvent | FloodSharedEvent,
+    AirPollutionSharedEvent
+    | EarthquakeSharedEvent
+    | FireSharedEvent
+    | FloodSharedEvent,
 ]
 
 
@@ -600,9 +605,34 @@ def flood_shared_event(
 def default_mapper_registry() -> dict[tuple[str, str], EventMapper]:
     return {
         ("air_pollution", "non_emergency"): air_pollution_shared_event,
+        ("fire", "emergency"): fire_incident_shared_event,
         ("earthquake", "emergency"): earthquake_shared_event,
         ("flood", "emergency"): flood_shared_event,
     }
+
+
+def fire_incident_shared_event(
+    result: IncidentProcessingResult,
+    incident: Mapping[str, Any],
+) -> FireSharedEvent:
+    """Project an analysed fire onto the operator's map.
+
+    The plan is passed through as-is and may be absent. `fire_shared_event`
+    treats it as optional deliberately: an analysed fire whose planning failed
+    is still a fire worth showing, and gating the map on a model call would
+    make it depend on the least reliable step in the chain.
+    """
+
+    if result.hazard != "fire" or result.route != "emergency":
+        raise ValueError("not_a_fire_emergency_result")
+    analysis = result.analysis_result
+    if not analysis:
+        raise ValueError("fire_analysis_missing")
+    return fire_shared_event(
+        analysis,
+        result.planner_result,
+        incident_id=str(incident.get("id") or result.incident_id),
+    )
 
 
 def earthquake_shared_event(
