@@ -1138,3 +1138,162 @@
   padding: 0.6rem 0.75rem; border-radius: 4px; margin: 0;
   max-height: 22rem; overflow-y: auto;
 }
+
+/* ---------------------------------------------------------------------------
+   Weak events — reports nobody has corroborated.
+
+   The visual language is deliberately unlike .event-card: dashed rather than
+   solid, hollow rather than filled, hazard colour retained so the kind is
+   still readable at a glance. An operator scanning the panel must be able to
+   tell "this is happening" from "somebody said this is happening" without
+   reading a word, because the two call for different actions and only one of
+   them sends a vehicle.
+   --------------------------------------------------------------------------- */
+
+.weak-event-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    width: 100%;
+    padding: 0.6rem 0.7rem;
+    border: 1px dashed var(--hazard, #94a3b8);
+    border-left: 4px dashed var(--hazard, #94a3b8);
+    border-radius: 8px;
+    /* No fill. The solid card is filled; this one is not, and the difference
+       reads before any text does. */
+    background: transparent;
+    color: inherit;
+    font: inherit;
+}
+
+.weak-event-card__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.weak-event-card__type {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--hazard, #94a3b8);
+}
+
+.weak-event-card__badge {
+    padding: 0.1rem 0.4rem;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    opacity: 0.85;
+}
+
+.weak-event-card__title {
+    font-weight: 600;
+}
+
+.weak-event-card__claim {
+    margin: 0;
+    font-size: 0.85rem;
+    opacity: 0.85;
+}
+
+.weak-event-card__sources h4,
+.weak-event-card__confirm h4 {
+    margin: 0.3rem 0 0.15rem;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    opacity: 0.6;
+}
+
+.weak-event-card__sources ul,
+.weak-event-card__confirm ul {
+    margin: 0;
+    padding-left: 1rem;
+    font-size: 0.8rem;
+}
+
+.weak-event-card__sources span {
+    opacity: 0.6;
+}
+
+.weak-event-card__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-top: 0.3rem;
+}
+
+.weak-event-card__expiry {
+    font-size: 0.75rem;
+    opacity: 0.7;
+}
+
+.weak-event-card__actions {
+    display: flex;
+    gap: 0.35rem;
+}
+
+.weak-event-card__actions button {
+    padding: 0.25rem 0.55rem;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    color: inherit;
+    font: inherit;
+    font-size: 0.78rem;
+    cursor: pointer;
+}
+
+.weak-event-card__actions button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.weak-event-card__dismiss {
+    opacity: 0.8;
+}
+
+.weak-event-card__error {
+    margin: 0.2rem 0 0;
+    font-size: 0.78rem;
+    color: #fca5a5;
+}
+
+/* The map marker. Hollow ring, dashed, same hazard colour — the marker
+   equivalent of the card's border. */
+.weak-event-marker {
+    width: 18px;
+    height: 18px;
+    border: 2px dashed var(--hazard, #94a3b8);
+    border-radius: 50%;
+    background: transparent;
+    box-sizing: border-box;
+    cursor: pointer;
+}
+
+.panel__operator {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    opacity: 0.7;
+}
+
+.panel__operator input {
+    flex: 1;
+    padding: 0.2rem 0.4rem;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.05);
+    color: inherit;
+    font: inherit;
+    font-size: 0.8rem;
+    text-transform: none;
+    letter-spacing: normal;
+}

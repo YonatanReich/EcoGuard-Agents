@@ -13,6 +13,10 @@ from ecoguard.analyzers.emergency.flood.risk_analysis_schemas import (
     FloodRiskAssessment,
 )
 from ecoguard.analyzers.emergency.earthquake.impact import EarthquakeImpact, LIMITATION
+from ecoguard.analyzers.emergency.earthquake.risk_scale import (
+    RISK_SEMANTICS as EARTHQUAKE_RISK_SEMANTICS,
+    earthquake_operational_risk,
+)
 from ecoguard.response_planner.emergency.schemas import EmergencyResponsePlanInput
 
 
@@ -393,12 +397,40 @@ def build_earthquake_plan_input(
             str(population.get("reason") or "Population intersection data is unavailable.")
         )
 
+    # People where shaking is actually damaging, not everyone who felt it.
+    # The impact area now runs out to MMI IV, which for a magnitude 6.2 near
+    # Tiberias is 149 km and 7.8 million people -- scoring severity on that
+    # would put every moderate earthquake at the top of the scale. The number
+    # that belongs here is the 862 thousand inside MMI VI and above.
+    #
+    # A counted zero and an uncountable population stay different facts: only
+    # a reading that succeeded is passed on, and absence narrows the basis to
+    # magnitude rather than being scored as nobody at risk.
+    counted = impact.population_at_damaging_intensity
+    population_at_risk = int(counted) if isinstance(counted, (int, float)) else None
+    risk_score, risk_level = earthquake_operational_risk(
+        impact.magnitude, population_at_risk=population_at_risk
+    )
+
     return EmergencyResponsePlanInput(
         incident_id=incident_id,
         hazard_type="earthquake",
         location={"latitude": impact.latitude, "longitude": impact.longitude},
         event_description=" ".join(description_parts),
-        risk_context=None,
+        # Carried on the same key Fire and Flood use, so the allocator
+        # reads one comparable number per hazard and needs no earthquake
+        # special case to rank it.
+        risk_context={
+            "risk_semantics": EARTHQUAKE_RISK_SEMANTICS,
+            "risk_score": risk_score,
+            "risk_level": risk_level,
+            "population_at_risk": population_at_risk,
+            "basis": (
+                "magnitude_and_population"
+                if population_at_risk is not None
+                else "magnitude_only"
+            ),
+        },
         evidence_gaps=evidence_gaps,
         limitations=[LIMITATION],
         additional_context={

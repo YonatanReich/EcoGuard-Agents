@@ -44,7 +44,7 @@ cp .env.example .env
 | `ANTHROPIC_API_KEY` | Risk analysis and response planning | Events are detected but not assessed; status reports `missing credentials` |
 | `ANTHROPIC_WORKSPACE_ID` | Anthropic identity-linked API keys only | Omit it for ordinary organisation keys |
 | `IMS_API_TOKEN` | IMS-backed Air Pollution wind evidence | Wind, transport corridor, settlement screening and corridor population remain unavailable |
-| `NASA_FIRMS_API_KEY` | Satellite fire detection | `/api/detected-events` cannot detect anything |
+| `NASA_FIRMS_API_KEY` | Satellite fire detection | The FIRMS collector is not scheduled and no fire is ever detected |
 | `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` | Raw Telegram Fire/Flood evidence collection | Telegram evidence collection is disabled |
 
 The frontend map additionally needs `VITE_MAPTILER_KEY` in
@@ -142,6 +142,12 @@ See [`docs/weather_collection.md`](docs/weather_collection.md) for the collectio
 
 ### 2. Detect, Assess and Plan for Fire Events
 `GET /api/detected-events`
+
+> **Legacy.** A point query, not the dashboard feed. It scans one coordinate
+> live on every request and knows nothing about incidents, deduplication,
+> spread or exposure. The dashboard reads `/api/events`, which serves the
+> scheduled national pipeline. This endpoint remains for
+> `scripts/run_demo_server.py` and direct calls.
 
 #### Description
 Runs the full crisis pipeline for one coordinate: `FireDetectionAgent` looks for

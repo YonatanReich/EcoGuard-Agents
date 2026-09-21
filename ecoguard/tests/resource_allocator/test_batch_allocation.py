@@ -9,6 +9,7 @@ import pytest
 from ecoguard.analyzers.emergency.flood.risk_analysis_schemas import (
     FloodRiskAssessment,
 )
+from ecoguard.shared.schemas import risk_level_for_score
 from ecoguard.resource_allocator.allocation_agent import ResourceAllocationAgent
 from ecoguard.resource_allocator.allocation_agent import (
     EARTHQUAKE_MINIMUM_RESPONSE_POLICY,
@@ -299,10 +300,18 @@ def allocation_request(incident_id, plan):
     }
 
 
-def earthquake_allocation_request(incident_id, *, units):
+def earthquake_allocation_request(incident_id, *, units, risk_score=60):
     plan = response_plan(incident_id, units=units)
     plan["hazard_type"] = "earthquake"
-    plan["responding_to"] = None
+    # This was None until earthquake gained a score on the shared scale. The
+    # policy still fixes how many stations go -- one per unit type -- but the
+    # queue position now comes from the same 0-100 number Fire and Flood
+    # carry, so a large earthquake no longer sorts behind every brush fire.
+    plan["responding_to"] = {
+        "risk_semantics": "detected_event_operational_risk",
+        "risk_score": risk_score,
+        "risk_level": risk_level_for_score(risk_score),
+    }
     return {
         **allocation_request(incident_id, plan),
         "allocation_policy": EARTHQUAKE_MINIMUM_RESPONSE_POLICY,
@@ -803,7 +812,7 @@ def test_batch_uses_fire_police_and_mda_db_catalogs_including_coarse_points():
     assert all(reader.call_count == 1 for reader in readers.values())
 
 
-def test_earthquake_policy_requests_one_supported_station_without_risk_values():
+def test_earthquake_policy_requests_one_station_per_supported_unit_type():
     readers = {
         "fire_department": Mock(return_value=catalog(
             station(1, "Fire one", 31.01, 35.0),
@@ -832,8 +841,11 @@ def test_earthquake_policy_requests_one_supported_station_without_risk_values():
     assert result["allocation_policy"] == "earthquake_minimum_response_v1"
     assert result["allocation_basis"] == "protocol_recommended_units"
     assert result["quantity_source"] == "ecoguard_minimum_response_policy"
-    assert result["risk_score"] is None
-    assert result["risk_level"] is None
+    # These asserted None while earthquake carried no operational risk. The
+    # policy governs the quantity -- one station per unit type, below -- and
+    # no longer governs the queue position, which is now the shared score.
+    assert result["risk_score"] == 60.0
+    assert result["risk_level"] == "high"
     assert all(
         requirement["requested"] == 1
         for requirement in result["requirements"].values()
@@ -843,8 +855,8 @@ def test_earthquake_policy_requests_one_supported_station_without_risk_values():
     assert len(result["allocated_units"]["mda_stations"]) == 1
     assert result["unsupported_units"] == ["home_front_command"]
     fire_station = result["allocated_units"]["fire_stations"][0]
-    assert fire_station["risk_score"] is None
-    assert fire_station["risk_level"] is None
+    assert fire_station["risk_score"] == 60.0
+    assert fire_station["risk_level"] == "high"
     assert fire_station["route"]["geometry"]["type"] == "LineString"
     assert fire_station["route"]["estimated_arrival_at"] is not None
 

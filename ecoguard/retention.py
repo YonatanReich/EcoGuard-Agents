@@ -61,6 +61,10 @@ RETENTION_DAYS: dict[str, int | None] = {
     "fwi": None,
     "firms": None,
     "telegram": None,
+    # One row a day, and the advisory's trend is fitted over the history. A
+    # retention window here would quietly shorten the longest trend the
+    # system can ever report.
+    "kinneret_level": None,
 }
 
 

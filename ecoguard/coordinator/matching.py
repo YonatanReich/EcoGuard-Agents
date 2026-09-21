@@ -46,6 +46,17 @@ QUIET_PERIOD: dict[str, timedelta] = {
     # — the same weather system reported as a fresh event daily.
     "fire_weather": timedelta(hours=24),
     "flood": timedelta(hours=3),
+    # An earthquake is instantaneous; what persists is its aftershock
+    # sequence, and that is what this period is really about. Aftershock rates
+    # decay roughly as 1/t (Omori), so the hours after a mainshock carry most
+    # of the sequence and a day later it is sparse. At the six-hour default a
+    # quiet evening closes the incident while responders are still deployed,
+    # and the next aftershock opens a second incident for the same earthquake.
+    #
+    # Merging is the right error here, unlike everywhere else in this table: a
+    # second shock in the same cell a day later usually is the same sequence,
+    # and treating it as one event keeps the response attached to it.
+    "earthquake": timedelta(hours=24),
     "air_pollution": timedelta(hours=18),
     "heat": timedelta(hours=24),
 }

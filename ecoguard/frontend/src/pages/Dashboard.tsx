@@ -21,6 +21,7 @@ import RainRadarLayer, {
 
 import FireDangerLayer from '../components/layers/FireDangerLayer'
 import EventCard from '../components/EventCard'
+import WeakEventCard from '../components/WeakEventCard'
 import EventLegend from '../components/EventLegend'
 import EventModal from '../components/EventModal'
 import { classify } from '../components/hazards'
@@ -30,6 +31,7 @@ import WindParticleLayer from '../components/layers/WindParticleLayer'
 import FireDangerLegend from '../components/FireDangerLegend'
 import FloodLegend from '../components/FloodLegend'
 import FireRiskAlert from '../components/FireRiskAlert'
+import KinneretLevelCard from '../components/KinneretLevelCard'
 import { clusterHighRiskCells, type FireRiskCluster } from '../components/fireRiskClusters'
 import { normalizeNationalRiskScanResponse, type NationalRiskScan } from '../components/fireRiskScan'
 import AreaSelect from '../components/AreaSelect'
@@ -44,9 +46,8 @@ import MdaStationsLayer from '../components/layers/MdaStationsLayer'
 import AirPollutionCorridorLayer from '../components/layers/AirPollutionCorridorLayer'
 import FireSpreadLayer from '../components/layers/FireSpreadLayer'
 import ResourceAllocationLayer from '../components/layers/ResourceAllocationLayer'
+import type { WeakEvent, WeakEventFeed } from '../types/weakEvents'
 import {
-  detectedFireToSharedEvent,
-  type DetectedEventsResponse,
   type FireEvent,
   type EarthquakeEvent,
   type FloodEvent,
@@ -94,24 +95,34 @@ function formatIsraelTime(
 
 
 function Dashboard() {
-  const [fireEvents, setFireEvents] =
-    useState<SharedEvent[]>([])
   const [projectedEvents, setProjectedEvents] =
     useState<SharedEvent[]>([])
+  // Held apart from `events` on purpose. A weak event is not a SharedEvent and
+  // must never reach the code that assumes something is actually happening.
+  const [weakEvents, setWeakEvents] = useState<WeakEvent[]>([])
+  // Who is on shift. There is no auth in this application, and inventing one
+  // to satisfy "recorded with the operator's id" would be a far larger change
+  // than the requirement asks for. A name the operator types once, kept in
+  // this browser, attributes the decision honestly — and the API stores
+  // whatever it is told, so a real identity later replaces this and nothing
+  // downstream changes.
+  const [operatorName, setOperatorName] = useState<string>(() => {
+    try {
+      return window.localStorage.getItem('ecoguard.operator') ?? ''
+    } catch {
+      return ''
+    }
+  })
   const [airPollutionPreview, setAirPollutionPreview] =
     useState<SharedEvent | null>(null)
   const [floodPreviewEvents, setFloodPreviewEvents] =
     useState<SharedEvent[]>([])
 
-  const liveEvents = useMemo(() => {
-    const merged = new Map<string, SharedEvent>()
-    for (const event of projectedEvents) merged.set(`${event.type}:${event.id}`, event)
-    for (const event of fireEvents) {
-      const key = `${event.type}:${event.id}`
-      if (!merged.has(key)) merged.set(key, event)
-    }
-    return [...merged.values()]
-  }, [fireEvents, projectedEvents])
+  // One feed, one id scheme. The legacy /api/detected-events point query used
+  // to be merged in here, and because its ids are hotspot hashes rather than
+  // incident ids, a fire seen by both paths rendered as two cards — the legacy
+  // one with no detection verdict, spread or exposure.
+  const liveEvents = projectedEvents
 
   const events = useMemo(
     () => [
@@ -404,37 +415,51 @@ function Dashboard() {
     // No setIsLoadingEvents(true) here: the state already initializes to true
     // and this effect runs once on mount, so setting it again would only
     // trigger a cascading render.
-    const fireRequest = fetch('/api/detected-events')
-      .then((response) => {
-        if (!response.ok) throw new Error('Fire event feed is unavailable')
-        return response.json() as Promise<DetectedEventsResponse>
-      })
-      .then((data) => {
-        // An empty list is a valid answer — it means the scan ran and found
-        // nothing — so this assigns unconditionally rather than only on a
-        // truthy list. Guarding on `if (data.events)` would leave stale events
-        // on the map after a clean scan.
-        const nextEvents = (data.events ?? []).map(detectedFireToSharedEvent)
-        setFireEvents(nextEvents)
-      })
-      .catch((error) =>
-        console.error(
-          'Error fetching Fire events:',
-          error
-        )
-      )
-
-    const projectedRequest = fetch('/api/events')
+    // An empty list is a valid answer — the pipeline ran and nothing is
+    // burning — so this assigns unconditionally rather than only on a truthy
+    // list, which would leave stale events on the map after a clean tick.
+    void fetch('/api/events')
       .then((response) => {
         if (!response.ok) throw new Error('Projected event feed is unavailable')
         return response.json() as Promise<SharedEventFeed>
       })
       .then((data) => setProjectedEvents(data.events ?? []))
       .catch((error) => console.error('Error fetching projected events:', error))
+      .finally(() => setIsLoadingEvents(false))
 
-    void Promise.allSettled([fireRequest, projectedRequest])
-      .then(() => setIsLoadingEvents(false))
+    void loadWeakEvents()
   }, [])
+
+  const loadWeakEvents = () =>
+    fetch('/api/weak-events')
+      .then((response) => {
+        if (!response.ok) throw new Error('Weak event feed is unavailable')
+        return response.json() as Promise<WeakEventFeed>
+      })
+      .then((data) => setWeakEvents(data.weak_events ?? []))
+      .catch((error) => console.error('Error fetching weak events:', error))
+
+  const rememberOperator = (name: string) => {
+    setOperatorName(name)
+    try {
+      window.localStorage.setItem('ecoguard.operator', name)
+    } catch {
+      // A browser with site data blocked still works; the name just does not
+      // survive a reload.
+    }
+  }
+
+  const decideWeakEvent = async (id: string, decision: 'confirm' | 'dismiss') => {
+    const response = await fetch(`/api/weak-events/${id}/${decision}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ operator: operatorName }),
+    })
+    if (!response.ok) throw new Error('Decision was not recorded')
+    // Drop it locally rather than waiting for the refetch: the operator just
+    // acted on it and a card that lingers invites a second click.
+    setWeakEvents((current) => current.filter((weak) => weak.id !== id))
+  }
 
   useEffect(() => {
     let active = true
@@ -732,6 +757,11 @@ function Dashboard() {
           </div>
 
           <div className="panel__list">
+            {/* Standing on its own above the feed: the lake is a continuous
+                state, not an event that starts and ends, so it is always
+                shown rather than appearing when something crosses a line. */}
+            <KinneretLevelCard />
+
             {isLoadingEvents && advisoryEvents.length === 0 ? (
               <p className="panel__empty">Scanning…</p>
             ) : advisoryEvents.length === 0 ? (
@@ -1295,6 +1325,34 @@ function Dashboard() {
               ))
             )}
           </div>
+
+          {weakEvents.length > 0 && (
+            <div className="panel__section">
+              <div className="panel__header">
+                Unverified reports
+                <span className="panel__count">{weakEvents.length}</span>
+              </div>
+              <label className="panel__operator">
+                Operator
+                <input
+                  type="text"
+                  value={operatorName}
+                  placeholder="your name"
+                  onChange={(event) => rememberOperator(event.target.value)}
+                />
+              </label>
+              <div className="panel__list">
+                {weakEvents.map((weakEvent) => (
+                  <WeakEventCard
+                    key={weakEvent.id}
+                    weakEvent={weakEvent}
+                    operator={operatorName}
+                    onDecide={decideWeakEvent}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
         </aside>
 

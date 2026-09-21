@@ -20,6 +20,23 @@ from ecoguard.shared.protocols import ProtocolRetriever, verify_citations
 AGENT_NAME = "EmergencyResponsePlanner"
 DEFAULT_TOP_K = 5
 
+# ponytail: one retry, no judge. The grounding check below is already a
+# deterministic pass/fail against the retrieved text, so a second sample is
+# the whole fix; a model scoring its own plan would be a weaker signal for
+# twice the calls. Raise this only if logged `attempts` show a third try
+# recovering plans.
+MAX_PLAN_ATTEMPTS = 2
+
+UNGROUNDED_RETRY_NOTE = """
+
+# Correction
+
+Your previous plan was rejected. A protocol citation or an action referenced
+a chunk_id that was not supplied above, or quoted text that does not appear
+in that chunk. Copy chunk ids and quotations character-for-character from the
+excerpts in this message, and cite only excerpts that appear here.
+"""
+
 EMERGENCY_PLANNING_SYSTEM_PROMPT = """\
 You are EcoGuard's emergency response planning component. You receive an
 emergency incident that has already been detected and analyzed. Produce
@@ -125,37 +142,59 @@ class EmergencyResponsePlanner:
             if self.prompt_builder is not None
             else self.build_prompt(validated, chunks)
         )
-        try:
-            raw_proposal = self.llm_service.parse_structured(
-                system_blocks=system_blocks,
-                user_text=user_text,
-                output_format=self.proposal_model,
-            )
-            payload = (
-                raw_proposal.model_dump(mode="json")
-                if hasattr(raw_proposal, "model_dump")
-                else raw_proposal
-            )
-            payload = EmergencyPlanProposal.model_validate(payload).model_dump(
-                mode="json"
-            )
-        except ClaudeProviderError as error:
-            return self._empty(validated, status="failed", error=str(error))
-        except (ValidationError, TypeError, AttributeError):
-            return self._empty(validated, status="failed", error="malformed_response")
+        dropped = 0
+        for attempt in range(MAX_PLAN_ATTEMPTS):
+            try:
+                raw_proposal = self.llm_service.parse_structured(
+                    system_blocks=system_blocks,
+                    user_text=user_text,
+                    output_format=self.proposal_model,
+                )
+                payload = (
+                    raw_proposal.model_dump(mode="json")
+                    if hasattr(raw_proposal, "model_dump")
+                    else raw_proposal
+                )
+                payload = EmergencyPlanProposal.model_validate(payload).model_dump(
+                    mode="json"
+                )
+            except ClaudeProviderError as error:
+                return self._empty(validated, status="failed", error=str(error))
+            except (ValidationError, TypeError, AttributeError):
+                return self._empty(
+                    validated, status="failed", error="malformed_response"
+                )
 
+            plan, dropped = self._verified_plan(validated, payload, chunks, attempt)
+            if plan is not None:
+                return plan
+
+            # Name the failure in the retry rather than resampling blind. The
+            # cached system prefix is untouched, so caching still applies.
+            user_text += UNGROUNDED_RETRY_NOTE
+
+        return self._empty(
+            validated,
+            status="failed",
+            error="ungrounded_response",
+            unverified_citation_count=dropped,
+        )
+
+    def _verified_plan(
+        self,
+        validated: EmergencyResponsePlanInput,
+        payload: dict,
+        chunks: list[dict],
+        attempt: int,
+    ) -> tuple[EmergencyResponsePlan | None, int]:
+        """Return the grounded plan, or None when a citation or action fails."""
         citations, dropped = verify_citations(
             payload.get("protocol_citations") or [], chunks
         )
         # A partially fabricated citation set is still an ungrounded response;
         # silently retaining its valid half hides that the model invented evidence.
         if dropped or not citations:
-            return self._empty(
-                validated,
-                status="failed",
-                error="ungrounded_response",
-                unverified_citation_count=dropped,
-            )
+            return None, dropped
 
         verified_ids = {citation["chunk_id"] for citation in citations}
         actions = []
@@ -163,36 +202,38 @@ class EmergencyResponsePlanner:
             action = dict(raw_action)
             supporting = action.get("supporting_protocol_chunk_ids")
             if not supporting or not set(supporting).issubset(verified_ids):
-                return self._empty(
-                    validated, status="failed", error="ungrounded_response"
-                )
+                return None, dropped
             actions.append(action)
 
-        return EmergencyResponsePlan(
-            metadata={
-                "timestamp": self._timestamp(),
-                "agent": AGENT_NAME,
-                "planning_status": "success",
-                "model": getattr(self.llm_service, "model", None),
-                "reason": None,
-            },
-            incident_id=validated.incident_id,
-            hazard_type=validated.hazard_type,
-            location=validated.location,
-            responding_to=validated.risk_context,
-            plan_summary=payload["plan_summary"],
-            recommended_units=payload["recommended_units"],
-            response_actions=actions,
-            assumptions=payload.get("assumptions") or [],
-            evidence_gaps=validated.evidence_gaps,
-            limitations=validated.limitations,
-            grounding={
-                "retriever": "bm25",
-                "retrieved_chunk_ids": [chunk["chunk_id"] for chunk in chunks],
-                "citations": citations,
-                "unverified_citation_count": dropped,
-            },
-            error=None,
+        return (
+            EmergencyResponsePlan(
+                metadata={
+                    "timestamp": self._timestamp(),
+                    "agent": AGENT_NAME,
+                    "planning_status": "success",
+                    "model": getattr(self.llm_service, "model", None),
+                    "reason": None,
+                },
+                incident_id=validated.incident_id,
+                hazard_type=validated.hazard_type,
+                location=validated.location,
+                responding_to=validated.risk_context,
+                plan_summary=payload["plan_summary"],
+                recommended_units=payload["recommended_units"],
+                response_actions=actions,
+                assumptions=payload.get("assumptions") or [],
+                evidence_gaps=validated.evidence_gaps,
+                limitations=validated.limitations,
+                grounding={
+                    "retriever": "bm25",
+                    "retrieved_chunk_ids": [chunk["chunk_id"] for chunk in chunks],
+                    "citations": citations,
+                    "unverified_citation_count": dropped,
+                    "attempts": attempt + 1,
+                },
+                error=None,
+            ),
+            dropped,
         )
 
     def _scoped_retriever(self, hazard: str) -> tuple[object, str | None]:
@@ -356,5 +397,6 @@ class EmergencyResponsePlanner:
 __all__ = [
     "AGENT_NAME",
     "EMERGENCY_PLANNING_SYSTEM_PROMPT",
+    "MAX_PLAN_ATTEMPTS",
     "EmergencyResponsePlanner",
 ]

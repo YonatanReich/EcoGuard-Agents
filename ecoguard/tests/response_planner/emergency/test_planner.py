@@ -2,7 +2,11 @@ from pathlib import Path
 
 import pytest
 
-from ecoguard.response_planner.emergency.planner import EmergencyResponsePlanner
+from ecoguard.response_planner.emergency.planner import (
+    MAX_PLAN_ATTEMPTS,
+    UNGROUNDED_RETRY_NOTE,
+    EmergencyResponsePlanner,
+)
 from ecoguard.response_planner.emergency.schemas import (
     EmergencyPlanProposal,
     EmergencyResponsePlanInput,
@@ -49,9 +53,11 @@ class FakeLLM:
 
     def parse_structured(self, **kwargs):
         self.calls.append(kwargs)
-        if isinstance(self.result, Exception):
-            raise self.result
-        return self.result
+        # A list is a scripted sequence, one entry per attempt.
+        result = self.result.pop(0) if isinstance(self.result, list) else self.result
+        if isinstance(result, Exception):
+            raise result
+        return result
 
 
 def analyzed(hazard="fire", **overrides):
@@ -287,6 +293,30 @@ def test_invalid_citation_or_action_evidence_fails_closed(failure):
     assert result.error == "ungrounded_response"
     assert result.recommended_units == []
     assert result.response_actions == []
+    # Retried once, then gave up rather than looping.
+    assert len(llm.calls) == MAX_PLAN_ATTEMPTS
+
+
+def test_ungrounded_first_attempt_is_retried_and_recovered():
+    retriever = FakeRetriever("fire")
+    chunk_id = retriever.chunks[0]["chunk_id"]
+    ungrounded = proposal(chunk_id).model_dump()
+    ungrounded["protocol_citations"][0]["chunk_id"] = "invented#chunk#0"
+    llm = FakeLLM(
+        [EmergencyPlanProposal(**ungrounded), proposal(chunk_id)]
+    )
+    service = EmergencyResponsePlanner(llm_service=llm, retriever=retriever)
+
+    result = service.plan_response(analyzed())
+
+    assert result.metadata.planning_status == "success"
+    assert result.grounding.attempts == 2
+    assert result.response_actions
+    assert len(llm.calls) == 2
+    # The retry names the failure instead of resampling blind, and does so
+    # without disturbing the cached system prefix.
+    assert UNGROUNDED_RETRY_NOTE in llm.calls[1]["user_text"]
+    assert llm.calls[0]["system_blocks"] == llm.calls[1]["system_blocks"]
 
 
 def test_missing_optional_context_is_not_fabricated():

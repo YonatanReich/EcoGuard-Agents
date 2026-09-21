@@ -1,0 +1,8 @@
+{
+  "status": "failed",
+  "scan_updated": false,
+  "error": "NationalRiskScanError",
+  "started_at_utc": "2026-09-21T17:45:38.823364Z",
+  "completed_at_utc": "2026-09-21T17:45:38.823629Z",
+  "cadence_minutes": 180
+}
