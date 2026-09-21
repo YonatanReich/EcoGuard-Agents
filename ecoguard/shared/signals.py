@@ -69,6 +69,7 @@ FIRE_WEATHER = "fire_weather"
 
 FLOOD = "flood"
 AIR_POLLUTION = "air_pollution"
+EARTHQUAKE = "earthquake"
 HEAT = "heat"
 
 # --- which tail is the concerning one --------------------------------------
@@ -272,8 +273,8 @@ class CellSignal:
 
     # Where the thing actually is, with the precision of that fix. None when
     # the detector has no point and the cell is all it knows — which is a real
-    # state for a Telegram report naming no street, and must stay
-    # distinguishable from a confident fix at the cell centre.
+    # state for a coarse structured observation and must stay distinguishable
+    # from a confident fix at the cell centre.
     location: "CellLocation | None" = None
 
     # How much the reading itself can be trusted, before asking what it means.

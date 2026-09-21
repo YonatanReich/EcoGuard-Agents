@@ -26,6 +26,7 @@ import Map, {
   FullscreenControl,
   GeolocateControl,
   Marker,
+  Layer,
   type MapProps,
   Source,
 } from 'react-map-gl/mapbox'
@@ -343,6 +344,39 @@ function MapView({
           position="bottom-left"
           unit="metric"
         />
+
+        <Source
+          id="earthquake-impact-areas"
+          type="geojson"
+          data={{
+            type: 'FeatureCollection',
+            features: events
+              .filter((event) => event.type === 'earthquake')
+              .map((event) => ({
+                type: 'Feature' as const,
+                geometry: event.details.estimated_impact_area,
+                properties: { eventId: event.id },
+              })),
+          }}
+        >
+          <Layer
+            id="earthquake-impact-area-fill"
+            type="fill"
+            paint={{
+              'fill-color': '#dc2626',
+              'fill-opacity': 0.18,
+            }}
+          />
+          <Layer
+            id="earthquake-impact-area-outline"
+            type="line"
+            paint={{
+              'line-color': '#dc2626',
+              'line-width': 2,
+              'line-opacity': 0.75,
+            }}
+          />
+        </Source>
 
 
         {events.filter((event) => event.type !== 'flood').map(

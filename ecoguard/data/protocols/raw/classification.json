@@ -1,0 +1,597 @@
+{
+  "ops/00.pdf": {
+    "index": 0,
+    "function": "tactical",
+    "hazard": "rescue",
+    "confidence": "high",
+    "reason": "Door forcing and building breach techniques for rescue operations and victim extrication."
+  },
+  "ops/01.pdf": {
+    "index": 1,
+    "function": "tactical",
+    "hazard": "vehicle",
+    "confidence": "high",
+    "reason": "Operational response procedures for hybrid and electric vehicle incidents with safety protocols."
+  },
+  "ops/02.pdf": {
+    "index": 2,
+    "function": "tactical",
+    "hazard": "structural",
+    "confidence": "high",
+    "reason": "Firefighting response procedures for solar photovoltaic system fires in buildings."
+  },
+  "ops/03.pdf": {
+    "index": 3,
+    "function": "administrative",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Equipment maintenance and operation procedures for large smoke ejector fans."
+  },
+  "ops/04.pdf": {
+    "index": 4,
+    "function": "command",
+    "hazard": "wildland",
+    "confidence": "high",
+    "reason": "Prohibition and authorization criteria for open-fire restrictions and burn permits."
+  },
+  "ops/05.pdf": {
+    "index": 5,
+    "function": "escalation",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Criteria for national-level events triggering higher command involvement and inter-agency coordination."
+  },
+  "ops/06.pdf": {
+    "index": 6,
+    "function": "administrative",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Equipment maintenance procedures tracking operational vehicle readiness status and reporting."
+  },
+  "ops/07.pdf": {
+    "index": 7,
+    "function": "administrative",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Training and qualification procedures for incident commanders assigned to emergency operations centers."
+  },
+  "ops/08.pdf": {
+    "index": 8,
+    "function": "interface",
+    "hazard": "wildland",
+    "confidence": "high",
+    "reason": "Coordination procedures between fire service and KKL for open-area fire response and responsibility."
+  },
+  "ops/09.pdf": {
+    "index": 9,
+    "function": "command",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Incident command transfer procedures between commanders and control centers during ongoing events."
+  },
+  "ops/10.pdf": {
+    "index": 10,
+    "function": "command",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Deployment and operational procedures for rapid response motorcycle units and personnel."
+  },
+  "ops/11.pdf": {
+    "index": 11,
+    "function": "tactical",
+    "hazard": "rescue",
+    "confidence": "high",
+    "reason": "Operation procedures for heavy vehicle extrication equipment during accident and collapse rescue."
+  },
+  "ops/12.pdf": {
+    "index": 12,
+    "function": "tactical",
+    "hazard": "aerial",
+    "confidence": "high",
+    "reason": "Operating procedures for unmanned aerial vehicles (drones) in firefighting operations."
+  },
+  "ops/13.pdf": {
+    "index": 13,
+    "function": "tactical",
+    "hazard": "wildland",
+    "confidence": "high",
+    "reason": "Procedures for deploying firefighting aircraft in wildland fire suppression operations."
+  },
+  "ops/14.pdf": {
+    "index": 14,
+    "function": "command",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "District-level emergency operations center management and incident command structure."
+  },
+  "ops/15.pdf": {
+    "index": 15,
+    "function": "tactical",
+    "hazard": "rescue",
+    "confidence": "high",
+    "reason": "Operating procedures for robotic rescue equipment in operational incidents."
+  },
+  "ops/16.pdf": {
+    "index": 16,
+    "function": "command",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Emergency operational placement of personnel in emergency command assignments."
+  },
+  "ops/17.pdf": {
+    "index": 17,
+    "function": "investigation",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Operational investigation procedures for learning and improvement from incidents."
+  },
+  "ops/18.pdf": {
+    "index": 18,
+    "function": "command",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Scene clearance and operational event closure procedures and handover process."
+  },
+  "ops/19.pdf": {
+    "index": 19,
+    "function": "interface",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Procedures for coordinating assistance between Fire and Rescue and military bases."
+  },
+  "ops/20.pdf": {
+    "index": 20,
+    "function": "command",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Situation report sign-off procedures for incident command alignment."
+  },
+  "ops/21.pdf": {
+    "index": 21,
+    "function": "administrative",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Identifying and managing critical external services supporting operational continuity."
+  },
+  "ops/22.pdf": {
+    "index": 22,
+    "function": "command",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Management decision topics for commissioner and operations chief during emergencies."
+  },
+  "ops/23.pdf": {
+    "index": 23,
+    "function": "command",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Managing assembly and evaluation areas for personnel and resources during incidents."
+  },
+  "ops/24.pdf": {
+    "index": 24,
+    "function": "dispatch",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Regulations for emergency vehicle operation during calls, traffic rules for red-light passage during dispatch."
+  },
+  "ops/25.pdf": {
+    "index": 25,
+    "function": "command",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Staging points for force deployment by incident type and operational readiness level."
+  },
+  "ops/26.pdf": {
+    "index": 26,
+    "function": "tactical",
+    "hazard": "rescue",
+    "confidence": "high",
+    "reason": "Procedures for search and extraction operations in buildings, assessment and response principles."
+  },
+  "ops/27.pdf": {
+    "index": 27,
+    "function": "command",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Command chains and reporting lines for normal and emergency operations in dispatch centers."
+  },
+  "ops/28.pdf": {
+    "index": 28,
+    "function": "interface",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "International assistance procedures for wildfire and emergency scenarios, coordination requirements."
+  },
+  "ops/29.pdf": {
+    "index": 29,
+    "function": "command",
+    "hazard": "aerial",
+    "confidence": "high",
+    "reason": "Role definition for aerial liaison officer managing coordination between ground and firefighting aircraft."
+  },
+  "ops/30.pdf": {
+    "index": 30,
+    "function": "administrative",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Operational tablet system usage procedures for command and control of fire service operations."
+  },
+  "ops/31.pdf": {
+    "index": 31,
+    "function": "administrative",
+    "hazard": "aerial",
+    "confidence": "high",
+    "reason": "Fitness maintenance requirements and procedures for aerial firefighting volunteer unit personnel."
+  },
+  "ops/32.pdf": {
+    "index": 32,
+    "function": "command",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Alternative station criteria and procedures when primary station is damaged or access blocked."
+  },
+  "ops/33.pdf": {
+    "index": 33,
+    "function": "tactical",
+    "hazard": "wildland",
+    "confidence": "medium",
+    "reason": "Operating principles for Leviathan water truck; strategic water supply and foam equipment management."
+  },
+  "ops/34.pdf": {
+    "index": 34,
+    "function": "tactical",
+    "hazard": "rescue",
+    "confidence": "high",
+    "reason": "Guiding principles for operations at disaster collapse sites and debris management."
+  },
+  "ops/35.pdf": {
+    "index": 35,
+    "function": "escalation",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Protocol for firefighter in distress events; criteria and response procedures for life-threatening situations."
+  },
+  "ops/36.pdf": {
+    "index": 36,
+    "function": "command",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Defines roles and responsibilities of subordinate team commander at incident scene during emergency operations."
+  },
+  "ops/37.pdf": {
+    "index": 37,
+    "function": "command",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Establishes commander duties, situational control, and coordination between different operational components."
+  },
+  "ops/38.pdf": {
+    "index": 38,
+    "function": "tactical",
+    "hazard": "structural",
+    "confidence": "high",
+    "reason": "Provides guidelines for firefighting operations in high-rise and complex buildings."
+  },
+  "ops/39.pdf": {
+    "index": 39,
+    "function": "tactical",
+    "hazard": "structural",
+    "confidence": "high",
+    "reason": "Establishes principles and methods for firefighting in underground and below-ground structures."
+  },
+  "ops/40.pdf": {
+    "index": 40,
+    "function": "tactical",
+    "hazard": "hazmat",
+    "confidence": "high",
+    "reason": "Covers hazmat incident response doctrine including monitoring and firefighting with hazardous materials."
+  },
+  "ops/41.pdf": {
+    "index": 41,
+    "function": "tactical",
+    "hazard": "hazmat",
+    "confidence": "high",
+    "reason": "Describes operational concept for hazmat incident response including detection and management."
+  },
+  "control/00.pdf": {
+    "index": 42,
+    "function": "administrative",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Establishes procedures for periodic testing and maintenance of satellite telephone communication systems."
+  },
+  "control/01.pdf": {
+    "index": 43,
+    "function": "command",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Defines role and responsibilities of shift commander in national dispatch center."
+  },
+  "control/02.pdf": {
+    "index": 44,
+    "function": "administrative",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Prescribes periodic technological system testing procedures for national dispatch center operations."
+  },
+  "control/03.pdf": {
+    "index": 45,
+    "function": "interface",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Establishes procedures for coordination and receipt of meteorological service reports and forecasts."
+  },
+  "control/04.pdf": {
+    "index": 46,
+    "function": "administrative",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Describes daily communication system checks for unified radio network across all units."
+  },
+  "control/05.pdf": {
+    "index": 47,
+    "function": "investigation",
+    "hazard": "all",
+    "confidence": "medium",
+    "reason": "Establishes procedures for district control audits and review of operational compliance with guidelines."
+  },
+  "control/06.pdf": {
+    "index": 48,
+    "function": "administrative",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Procedure for reporting injured firefighters; administrative casualty reporting to commissioner level."
+  },
+  "control/07.pdf": {
+    "index": 49,
+    "function": "dispatch",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Defines reporting procedures and methods for operational events; dispatch communication protocols."
+  },
+  "control/08.pdf": {
+    "index": 50,
+    "function": "command",
+    "hazard": "aerial",
+    "confidence": "high",
+    "reason": "Aerial unit command, planning and control of firefighting aircraft operations."
+  },
+  "control/09.pdf": {
+    "index": 51,
+    "function": "interface",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Coordination between MDA and fire service for emergency event transfers via dispatch systems."
+  },
+  "control/10.pdf": {
+    "index": 52,
+    "function": "dispatch",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Procedure for telephone reporting of operational events to senior command."
+  },
+  "control/11.pdf": {
+    "index": 53,
+    "function": "interface",
+    "hazard": "wildland",
+    "confidence": "high",
+    "reason": "Coordination with IDF helicopters for Lahav unit deployment in extreme fire incidents."
+  },
+  "control/12.pdf": {
+    "index": 54,
+    "function": "interface",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Procedure for requesting assistance from Civil Defense (PIKUD OREFF) in emergencies."
+  },
+  "control/13.pdf": {
+    "index": 55,
+    "function": "dispatch",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Activation and deployment of national fire academy reserve teams for major incidents."
+  },
+  "control/14.pdf": {
+    "index": 56,
+    "function": "command",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Central operations room management procedure; incident command center activation protocols."
+  },
+  "control/15.pdf": {
+    "index": 57,
+    "function": "command",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Commissioner's command vehicle operation; forward command post for field operations."
+  },
+  "control/16.pdf": {
+    "index": 58,
+    "function": "dispatch",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Deployment procedures for Lahav unit in specific geographic zone; response escalation."
+  },
+  "control/17.pdf": {
+    "index": 59,
+    "function": "dispatch",
+    "hazard": "rescue",
+    "confidence": "high",
+    "reason": "Lahav unit deployment procedure; specialized rescue, extrication and hazmat capabilities."
+  },
+  "control/18.pdf": {
+    "index": 60,
+    "function": "interface",
+    "hazard": "aerial",
+    "confidence": "high",
+    "reason": "Procedure for operating Israeli Air Force firefighting units; coordination between Fire Authority and Air Force."
+  },
+  "control/19.pdf": {
+    "index": 61,
+    "function": "interface",
+    "hazard": "vehicle",
+    "confidence": "high",
+    "reason": "Procedure for operating airport authority firefighting units; coordination between Fire Authority and airport authority."
+  },
+  "control/20.pdf": {
+    "index": 62,
+    "function": "command",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Procedure for deploying mechanical engineering equipment (צמ\"ה) during incidents; approval hierarchy and operational framework."
+  },
+  "control/21.pdf": {
+    "index": 63,
+    "function": "administrative",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Procedure for operating MCC radio communication system; technical infrastructure for command center operations."
+  },
+  "control/22.pdf": {
+    "index": 64,
+    "function": "administrative",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Procedure for operating Nitztan communication system; radio network administration and message handling."
+  },
+  "control/23.pdf": {
+    "index": 65,
+    "function": "command",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Procedure for operating national information center; information flow and coordination during emergencies."
+  },
+  "control/24.pdf": {
+    "index": 66,
+    "function": "administrative",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Procedure for weekly coordination calls between national and district command centers; administrative briefing structure."
+  },
+  "control/25.pdf": {
+    "index": 67,
+    "function": "administrative",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Procedure for national command center staffing and shift scheduling; internal workforce management."
+  },
+  "control/26.pdf": {
+    "index": 68,
+    "function": "dispatch",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Procedure for inter-district mutual aid as initial operational response; resource allocation between districts."
+  },
+  "control/27.pdf": {
+    "index": 69,
+    "function": "command",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Procedure for distress button activation on radios; emergency location and communication protocol."
+  },
+  "control/28.pdf": {
+    "index": 70,
+    "function": "dispatch",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Procedure for deaf and hearing-impaired emergency calls via text messaging; alternative call handling system."
+  },
+  "control/29.pdf": {
+    "index": 71,
+    "function": "interface",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Procedure for using police Masront messaging system; information sharing with police for emergency response."
+  },
+  "control/30.pdf": {
+    "index": 72,
+    "function": "interface",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Coordination protocol with Israel Meteorological Service for weather intelligence and wildfire/hazmat incident support."
+  },
+  "control/31.pdf": {
+    "index": 73,
+    "function": "interface",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Coordination protocol with Ministry of Health for incidents in healthcare facilities requiring fire/rescue/hazmat response."
+  },
+  "control/32.pdf": {
+    "index": 74,
+    "function": "interface",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Coordination protocol with Ministry of Education regarding incidents during outdoor activities and school trips."
+  },
+  "control/33.pdf": {
+    "index": 75,
+    "function": "interface",
+    "hazard": "vehicle",
+    "confidence": "high",
+    "reason": "Coordination protocol with Ministry of Transport for aircraft accident investigation and response."
+  },
+  "control/34.pdf": {
+    "index": 76,
+    "function": "interface",
+    "hazard": "vehicle",
+    "confidence": "high",
+    "reason": "Coordination protocol with Israeli Railways for fire and rescue incidents on rail infrastructure."
+  },
+  "control/35.pdf": {
+    "index": 77,
+    "function": "interface",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Coordination protocol with IDF for fire, rescue, and hazmat incidents at military bases and units."
+  },
+  "control/36.pdf": {
+    "index": 78,
+    "function": "command",
+    "hazard": "wildland",
+    "confidence": "high",
+    "reason": "Decision process and procedures for implementing bonfire prohibition orders during extreme fire conditions."
+  },
+  "control/37.pdf": {
+    "index": 79,
+    "function": "interface",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Coordination protocol with Traffic Police for incidents on inter-city roads and vehicle accidents."
+  },
+  "control/38.pdf": {
+    "index": 80,
+    "function": "dispatch",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Procedures for national command response to rocket alerts and force protection during security events."
+  },
+  "control/39.pdf": {
+    "index": 81,
+    "function": "dispatch",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Call handling procedures for 102 emergency lines received at national command center."
+  },
+  "control/40.pdf": {
+    "index": 82,
+    "function": "administrative",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Daily situational report generation and dissemination to senior command regarding organizational readiness."
+  },
+  "control/41.pdf": {
+    "index": 83,
+    "function": "investigation",
+    "hazard": "all",
+    "confidence": "high",
+    "reason": "Procedures for conducting initial investigations and distributing inquiry findings for managed incidents."
+  },
+  "wui/00.pdf": {
+    "index": 84,
+    "function": "tactical",
+    "hazard": "wildland",
+    "confidence": "high",
+    "reason": "Guiding principles for protecting settlements adjacent to forest from wildfire: protection plans, responsible parties, equipment caches."
+  }
+}

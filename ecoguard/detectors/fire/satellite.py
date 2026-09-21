@@ -35,6 +35,21 @@ The bar is therefore the persistence question stated plainly: a cell that lights
 on more than one day in twenty is somebody's industry, and anything quieter than
 that is worth a look.
 
+Why the rate is not the whole answer
+------------------------------------
+Because a persistent cell is still a place, and places burn. Over a year that
+bar suppresses 17 cells out of 1,174 — and then never looks at them again. The
+worst lights on 71% of days. Somewhere inside it is ground that can catch, and
+a fire there could not be reported at all.
+
+So the rate no longer decides alone. `signature.py` fits each cell's own
+history — what hour it usually lights, at what power, across how many pixels,
+how far they scatter — and a detection is only suppressed when the cell is
+persistent *and* this overpass is what that cell normally does. The steel works
+at 1.2 MW on one pixel at 23:10 stays out of the queue; 60 MW across nine
+pixels at 14:00 in the same cell does not, and the signal carries which axis
+broke so the decision can be argued with.
+
 What travels downstream
 -----------------------
 The coordinator dedupes these against each other and against the weather sweep,
@@ -65,8 +80,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from ecoguard.database.engine import Session
+from ecoguard.detectors.fire import signature
 from ecoguard.database.repositories.collector_runs import (
     last_success_at,
     log_finish,
@@ -118,6 +135,22 @@ STALE_AFTER = timedelta(days=1)
 # REPORTING_RARITY.
 PERSISTENT_SHARE = 0.05
 RARITY_BAR = 1.0 - PERSISTENT_SHARE
+
+# ...but a persistent cell is a place, and places burn. Measured over a year,
+# this bar suppresses 17 cells out of 1,174 and then never looks at them again;
+# the worst of them lights on 71% of days. A fire there could not be reported
+# at all, which is the failure repositories/fire_history.py describes and had
+# no way to fix: "a flare stack that also catches the brush around it is
+# exactly the case where the record is misleading and the fire is real".
+#
+# So the rate no longer decides alone. It says the cell is a standing source;
+# `signature.novelty` then says whether *this* detection is what that source
+# normally does. Suppression needs both.
+#
+# 0.35 on that scale is roughly two standard deviations above the cell's own
+# normal on its most departed axis. Under it the night shift stays quiet; over
+# it the same cell reports, and the evidence says which axis broke and why.
+NOVELTY_BAR = 0.35
 
 # FIRMS reports confidence on three different scales and never says which:
 #
@@ -206,6 +239,55 @@ def detection_rates() -> dict[str, tuple[int, int]]:
             text("SELECT cell_id, detection_days, days_observed FROM firms_baselines")
         ).all()
     return {row[0]: (row[1], row[2]) for row in rows}
+
+
+def signature_profiles() -> dict[str, dict[str, Any]]:
+    """Per cell: what it normally does, for the cells with enough history.
+
+    A cell missing from this mapping has no fitted profile. That is not the
+    same as a profile saying it is quiet, and the suppression rule below keeps
+    the two apart.
+
+    A database that has not run the signature migration yet answers with an
+    empty mapping rather than raising. The detector then behaves exactly as it
+    did before this existed — rate-only suppression — which is worse but is
+    still a working fire detector. A schema lag must not be able to stop fires
+    being seen.
+    """
+    try:
+        with Session() as session:
+            rows = session.execute(
+                text(
+                    """
+                    SELECT cell_id, signature_samples, hour_mean, hour_concentration,
+                           log_frp_mean, log_frp_sd, pixels_mean, pixels_sd,
+                           scatter_mean_m, scatter_sd_m
+                    FROM firms_baselines
+                    WHERE signature_samples IS NOT NULL
+                    """
+                )
+            ).mappings().all()
+    except SQLAlchemyError:
+        logger.warning(
+            "firms: firms_baselines has no signature columns - falling back to "
+            "rate-only suppression, which cannot report a fire in a persistent "
+            "cell. Run: alembic upgrade firms_signatures"
+        )
+        return {}
+    return {
+        row["cell_id"]: {
+            "samples": row["signature_samples"],
+            "hour_mean": row["hour_mean"],
+            "hour_concentration": row["hour_concentration"],
+            "log_frp_mean": row["log_frp_mean"],
+            "log_frp_sd": row["log_frp_sd"],
+            "pixels_mean": row["pixels_mean"],
+            "pixels_sd": row["pixels_sd"],
+            "scatter_mean_m": row["scatter_mean_m"],
+            "scatter_sd_m": row["scatter_sd_m"],
+        }
+        for row in rows
+    }
 
 
 def arrivals_since(since: datetime | None, at: datetime) -> list[dict[str, Any]]:
@@ -373,6 +455,53 @@ def detect(at: datetime | None = None, *, reportable_only: bool = True) -> list[
     return _signals_from(detections, now, reportable_only=reportable_only)
 
 
+def _report(signal: CellSignal) -> bool:
+    """Whether this detection clears the bar, and a log line saying why not.
+
+    Two gates, and the second only applies once the first has fired. The rate
+    establishes that the cell is a standing thermal source; the signature then
+    decides whether this particular overpass is that source doing its usual
+    thing. Only a detection that is both gets dropped.
+
+    A persistent cell with no fitted profile stays suppressed, as it was before
+    this existed. The rate is a year of evidence and the signature is nothing
+    at all, so there is no grounds to overturn it — but it is logged as
+    unjudged rather than as routine, because they are different states and the
+    fix for one of them is to rebuild the baseline.
+    """
+    if signal.rarity is None or signal.rarity >= RARITY_BAR:
+        return True
+
+    share = 100 * (1 - signal.rarity)
+    departure = signal.evidence.get("signature")
+
+    if departure is None:
+        logger.info(
+            "firms: %s suppressed, lights %.0f%% of days (%s of %s); "
+            "no fitted signature to judge this detection against",
+            signal.cell_id, share,
+            signal.evidence["detection_days"], signal.evidence["days_observed"],
+        )
+        return False
+
+    if departure["score"] < NOVELTY_BAR:
+        logger.info(
+            "firms: %s suppressed, lights %.0f%% of days and this looks "
+            "routine for it (novelty %.2f, %s); profile: %s",
+            signal.cell_id, share, departure["score"], departure["driver"],
+            signal.evidence["signature_profile"],
+        )
+        return False
+
+    logger.info(
+        "firms: %s lights %.0f%% of days but this detection is not its usual "
+        "behaviour (novelty %.2f on %s); reporting. Profile: %s",
+        signal.cell_id, share, departure["score"], departure["driver"],
+        signal.evidence["signature_profile"],
+    )
+    return True
+
+
 def _signals_from(
     detections: list[dict[str, Any]], now: datetime, *, reportable_only: bool
 ) -> list[CellSignal]:
@@ -392,6 +521,14 @@ def _signals_from(
             "unweighed, including known industrial sources. "
             "Run: python -m ecoguard.scripts.build_firms_baselines"
         )
+    profiles = signature_profiles()
+    if rates and not profiles:
+        logger.warning(
+            "firms: no fitted cell signatures - persistent cells will be "
+            "suppressed on rate alone, as they were before, and a fire in one "
+            "cannot be reported. Rebuild with: "
+            "python -m ecoguard.scripts.build_firms_baselines"
+        )
     history = recent_detections([row["cell_id"] for row in detections], now)
 
     signals: list[CellSignal] = []
@@ -406,6 +543,14 @@ def _signals_from(
             rarity = rarity_from_rate(share)
         else:
             share, rarity = None, None
+
+        # How unusual this overpass is for this cell, against the cell's own
+        # fitted history. None when the cell has no profile, which the
+        # suppression rule below treats as "cannot judge", never as "routine".
+        departure = signature.novelty(
+            profiles.get(row["cell_id"]),
+            signature.features_of(pixels, row["observed_at"]),
+        )
 
         location = locate_points(
             [
@@ -441,24 +586,20 @@ def _signals_from(
                     "detection_days": detection_days,
                     "days_observed": days_observed,
                     "detection_share": None if share is None else round(share, 4),
+                    # How far this sits from what the cell normally does, and
+                    # on which axis. Carried whether or not it changed the
+                    # decision: a detection that was kept despite a persistent
+                    # cell has to be able to show why.
+                    "signature": departure,
+                    "signature_profile": signature.explain(
+                        profiles.get(row["cell_id"])
+                    ),
                 },
             )
         )
 
     if reportable_only:
-        kept = []
-        for signal in signals:
-            if signal.rarity is not None and signal.rarity < RARITY_BAR:
-                logger.info(
-                    "firms: %s suppressed, lights %.0f%% of days (%s of %s)",
-                    signal.cell_id,
-                    100 * (1 - signal.rarity),
-                    signal.evidence["detection_days"],
-                    signal.evidence["days_observed"],
-                )
-                continue
-            kept.append(signal)
-        signals = kept
+        signals = [signal for signal in signals if _report(signal)]
 
     logger.info(
         "firms: %s cells with a fresh detection, %s reported",

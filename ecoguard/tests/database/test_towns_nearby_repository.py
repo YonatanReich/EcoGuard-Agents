@@ -1,6 +1,7 @@
 from ecoguard.database.repositories.towns import (
     TownLookupStatus,
     nearby_towns,
+    resolve_named_town,
     responsible_police_stations,
     town_at_location,
 )
@@ -113,6 +114,41 @@ def test_missing_or_empty_towns_reference_layer_is_not_a_zero_result():
     assert missing.reason == empty.reason == "reference_data_not_loaded"
 
 
+def test_named_town_uses_outline_not_label_point_for_signal_relation():
+    session = _Session([
+        _Result(scalar=True),
+        _Result(scalar=True),
+        _Result(rows=[{
+            "town_id": "mevaseret-zion",
+            "name_he": "מבשרת ציון",
+            "name_en": "Mevaseret Zion",
+            "place": "town",
+            "cbs_code": "1015",
+            "outline_source": "fabric/admin8",
+            "authority": "מבשרת ציון",
+            "authority_type": "מועצה מקומית",
+            "distance_m": 0.0,
+            "contains_signal": True,
+        }]),
+    ])
+
+    result = resolve_named_town(
+        candidate_names=["מבשרת ציון", "מבשרת"],
+        latitude=31.80,
+        longitude=35.15,
+        session_factory=lambda: session,
+    )
+
+    assert result.status == TownLookupStatus.SUCCESS_WITH_RESULTS
+    assert result.match is not None
+    assert result.match.name_he == "מבשרת ציון"
+    assert result.match.contains_signal is True
+    query, parameters = session.calls[2]
+    assert "name_he = ANY" in query
+    assert "ST_Covers(outline::geometry" in query
+    assert "ST_Distance(outline" in query
+    assert "label_lat" not in query
+    assert parameters["candidate_names"] == ["מבשרת ציון", "מבשרת"]
 def test_responsible_police_stations_returns_internal_database_keys():
     session = _Session([
         _Result(rows=[{

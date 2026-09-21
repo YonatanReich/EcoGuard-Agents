@@ -1,0 +1,267 @@
+{
+  "carmel_east_wind": {
+    "scenario": "carmel_east_wind",
+    "title": "Carmel pine forest, east wind toward Haifa",
+    "analysis": {
+      "status": "ok",
+      "severity": "high",
+      "severity_score": 55,
+      "detection": {
+        "verdict": "confirmed",
+        "score": 100,
+        "reasons": [
+          {
+            "factor": "independent_instruments",
+            "points": 25,
+            "detail": "5 products agree: VIIRS_NOAA20_NRT, VIIRS_NOAA21_NRT, VIIRS_SNPP_NRT, MODIS_NRT, GOES_NRT"
+          },
+          {
+            "factor": "instrument_confidence",
+            "points": 15,
+            "detail": "instrument confidence 0.90"
+          },
+          {
+            "factor": "multiple_pixels",
+            "points": 15,
+            "detail": "23 pixels alight"
+          },
+          {
+            "factor": "radiative_power",
+            "points": 20,
+            "detail": "142.7 MW"
+          },
+          {
+            "factor": "seen_more_than_once",
+            "points": 10,
+            "detail": "9 signals attached to this incident"
+          }
+        ]
+      },
+      "exposure": [
+        {
+          "locality_id": "beit-oren",
+          "name": "Beit Oren",
+          "name_he": "בית אורן",
+          "population": 526,
+          "exposure": "likely",
+          "distance_m": 1583.0,
+          "bearing_deg": 252.8,
+          "arrival_minutes": 166.4,
+          "arrival_bearing_deg": 258.1,
+          "place": "village",
+          "authority": "חוף הכרמל",
+          "authority_type": "מועצה אזורית",
+          "authority_phone": "04-8132220",
+          "authority_website": "https://www.hof-hacarmel.co.il/",
+          "fire_district": "חוף",
+          "police_station": "תחנת נשר"
+        }
+      ],
+      "evacuation": [
+        {
+          "locality_id": "beit-oren",
+          "name": "Beit Oren",
+          "name_he": "בית אורן",
+          "population": 526,
+          "priority": "prepare",
+          "reason": "on the forecast wind the fire reaches it within the horizon",
+          "arrival_minutes": 166.4,
+          "distance_m": 1583.0,
+          "authority": "חוף הכרמל",
+          "authority_phone": "04-8132220",
+          "authority_website": "https://www.hof-hacarmel.co.il/",
+          "fire_district": "חוף",
+          "police_station": "תחנת נשר"
+        }
+      ],
+      "report": "DETECTION\nThis is a fire. Detection confidence 100 of 100. For: 5 products agree: VIIRS_NOAA20_NRT, VIIRS_NOAA21_NRT, VIIRS_SNPP_NRT, MODIS_NRT, GOES_NRT; instrument confidence 0.90; 23 pixels alight; 142.7 MW; 9 signals attached to this incident.\n\nSITUATION\nFire burning in open ground, running west-northwest at about 15 m/min through tree cover. Wind 45 km/h from east, 39 C, 14% humidity.\nGround averages 9 degrees, with faces up to 24 degrees inside the same ground — a fire on one of those runs far faster than the average suggests.\n\nFORECAST SPREAD\nUnchecked, the head reaches roughly 2.7 km west-northwest in 3 hours. Two extents are drawn: the likely one on the forecast wind, and a wider possible one covering a wind shift within forecast error.\n\nPEOPLE AT RISK\nInside the forecast spread: 399 people, counted off the population grid over the drawn extent.\nWhole-settlement totals, which count every resident of an affected place rather than only those inside the line: 0 in settlements already burning, 526 in settlements the forecast reaches, 0 in settlements only a wind shift reaches.\n\nSETTLEMENTS IN THE PATH\n- Beit Oren (526) — on the forecast wind, about 166 minutes away [1.6 km]\n\nOTHER SITES IN THE PATH\nNo mapped hospital, school, industrial or hazardous site lies in the forecast path. This is what the survey holds, not proof that there is nothing there.\n\nEVACUATION PRIORITY\n- PREPARE: Beit Oren, 526 people — on the forecast wind the fire reaches it within the horizon.\n    authority 04-8132220; fire district חוף; police תחנת נשר\n\nSEVERITY\nhigh — 55 of 100, for the spread over the next 3 hours. This scores how bad the spread is about to be; it is not how likely a fire was to start here, nor how severe the fire already is.\nDriven by: a moderate head rate of 15 m/min.\n\nEVIDENCE GAPS\n- weather supplied by scenario not observed\n\nLIMITS\n- Unsuppressed spread: no crew, engine, aircraft or existing containment is modelled.\n- Surface fire only: spotting ahead of the front and sustained crown runs are not modelled.\n- Barriers finer than the land-cover grid — a road, a firebreak, a wadi — are invisible here.\n- Arrival times assume the forecast wind holds for the whole horizon."
+    },
+    "services": [
+      {
+        "town_id": "beit-oren",
+        "found": true,
+        "name": "Beit Oren",
+        "name_he": "בית אורן",
+        "population": 526,
+        "authority": "חוף הכרמל",
+        "authority_phone": "04-8132220",
+        "authority_website": "https://www.hof-hacarmel.co.il/",
+        "fire_district": "חוף",
+        "fire_stations": [
+          {
+            "id": 99,
+            "name": "חדרה",
+            "address": "צה\"ל 30, 3822039",
+            "regional": true,
+            "latitude": 32.4393657,
+            "longitude": 34.9311928
+          },
+          {
+            "id": 2,
+            "name": "חיפה - חלץ",
+            "address": "חלץ 9, 3295017",
+            "regional": true,
+            "latitude": 32.7990705,
+            "longitude": 35.0213126
+          },
+          {
+            "id": 115,
+            "name": "עכו - זבולון",
+            "address": "דוד רמז 1, עכו 2425804",
+            "regional": true,
+            "latitude": 32.9260521,
+            "longitude": 35.0826907
+          },
+          {
+            "id": 105,
+            "name": "אולגה",
+            "address": null,
+            "regional": false,
+            "latitude": 32.4450463,
+            "longitude": 34.8831494
+          },
+          {
+            "id": 100,
+            "name": "אום אל פחם",
+            "address": "כניסה אום אל פחם",
+            "regional": false,
+            "latitude": 32.5158385,
+            "longitude": 35.152491
+          },
+          {
+            "id": 103,
+            "name": "אור עקיבא",
+            "address": "האילן 9, אור עקיבא",
+            "regional": false,
+            "latitude": 32.5216006,
+            "longitude": 34.9210845
+          },
+          {
+            "id": 104,
+            "name": "באקה אלגרבייה",
+            "address": "מחלף בקעה (כביש 6)",
+            "regional": false,
+            "latitude": 32.4197144,
+            "longitude": 35.0428311
+          },
+          {
+            "id": 117,
+            "name": "ג'וליס",
+            "address": "כפר ג'וליס",
+            "regional": false,
+            "latitude": 32.9430618,
+            "longitude": 35.1869431
+          },
+          {
+            "id": 102,
+            "name": "זכרון יעקב",
+            "address": "דרך אהרון, זכרון יעקב",
+            "regional": false,
+            "latitude": 32.5659949,
+            "longitude": 34.9564199
+          },
+          {
+            "id": 112,
+            "name": "טבעון",
+            "address": "דוד אלעזר 1, קרית טבעון",
+            "regional": false,
+            "latitude": 32.7075298,
+            "longitude": 35.116893
+          },
+          {
+            "id": 110,
+            "name": "טירת כרמל",
+            "address": "לח\"י 9, טירת כרמל",
+            "regional": false,
+            "latitude": 32.7666773,
+            "longitude": 34.9665358
+          },
+          {
+            "id": 111,
+            "name": "כרמל",
+            "address": "היינריך היינה 1, חיפה",
+            "regional": false,
+            "latitude": 32.7994322,
+            "longitude": 34.9834612
+          },
+          {
+            "id": 101,
+            "name": "מירב - חוף הכרמל",
+            "address": "מרכז קהילתי מירב",
+            "regional": false,
+            "latitude": null,
+            "longitude": null
+          },
+          {
+            "id": 109,
+            "name": "מערב (חיפה)",
+            "address": "אנילביץ' 9, חיפה",
+            "regional": false,
+            "latitude": 32.8191218,
+            "longitude": 34.9983856
+          },
+          {
+            "id": 107,
+            "name": "מפרץ חיפה - קריות",
+            "address": "החרש 1 חיפה",
+            "regional": false,
+            "latitude": 32.8113223,
+            "longitude": 35.064586
+          },
+          {
+            "id": 116,
+            "name": "נהריה",
+            "address": "יחיעם 1, נהריה",
+            "regional": false,
+            "latitude": 33.0081464,
+            "longitude": 35.107886
+          },
+          {
+            "id": 113,
+            "name": "נשר",
+            "address": "דרך השלום 26, נשר",
+            "regional": false,
+            "latitude": 32.7708284,
+            "longitude": 35.0465204
+          },
+          {
+            "id": 114,
+            "name": "עוספיא",
+            "address": "שדרות אבא חושי 44, עוספיא",
+            "regional": false,
+            "latitude": 32.7061447,
+            "longitude": 35.0607339
+          },
+          {
+            "id": 108,
+            "name": "קריית ביאליק",
+            "address": "שדרות חן 9, קרית ביאליק",
+            "regional": false,
+            "latitude": 32.8285812,
+            "longitude": 35.0844915
+          }
+        ],
+        "police_stations": [
+          {
+            "id": 48,
+            "name": "תחנת נשר מחוז חוף",
+            "address": "דרך השלום 25 נשר",
+            "match_confidence": 0.95,
+            "latitude": 32.7676149902289,
+            "longitude": 35.0508433789104
+          }
+        ]
+      }
+    ],
+    "planner": {
+      "status": "failed",
+      "incident_id": "INC-20260814-0033",
+      "plan": null,
+      "error": "invalid request",
+      "retrieved_chunks": 13,
+      "model": null,
+      "generated_at": null
+    },
+    "operator_text": null
+  }
+}

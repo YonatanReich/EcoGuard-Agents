@@ -22,15 +22,19 @@ from ecoguard.collection.flood.hydrometric_observations import (
     SOURCE as HYDROMETRIC_OBSERVATIONS_SOURCE,
     HydrometricObservationCollector,
 )
+from ecoguard.collection.earthquake.gsi import GsiEarthquakeCollector
 from ecoguard.collection.pollution.collector import AirPollutionCollector
 from ecoguard.collection.fire.effis.collector import FireWeatherCollector
 from ecoguard.collection.fire.firms.collector import FirmsCollector
 from ecoguard.collection.fire.fwi.collector import FireWeatherIndexCollector
 from ecoguard.collection.fire.gibs.collector import VegetationCollector
-from ecoguard.collection.fire.telegram.collector import TelegramCollector
+from ecoguard.collection.shared.telegram.collector import TelegramCollector
 from ecoguard.collection.shared.open_meteo.forecast import WeatherForecastCollector
 from ecoguard.collection.shared.open_meteo.observations import WeatherCollector
 from ecoguard.resource_allocator.allocation_agent import ResourceAllocationAgent
+from ecoguard.resource_allocator.allocation_agent import (
+    EARTHQUAKE_MINIMUM_RESPONSE_POLICY,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +103,7 @@ INTERVAL_MINUTES = {
     "vegetation": 720,
     "telegram": 5,
     HYDROMETRIC_OBSERVATIONS_SOURCE: 10,
+    "gsi_earthquake": 5,
 }
 
 COLLECTORS = {
@@ -111,6 +116,7 @@ COLLECTORS = {
     "vegetation": VegetationCollector,
     "telegram": TelegramCollector,
     HYDROMETRIC_OBSERVATIONS_SOURCE: HydrometricObservationCollector,
+    "gsi_earthquake": GsiEarthquakeCollector,
 }
 
 # fwi reads the hours the weather collector wrote, so on a cold start it has
@@ -210,14 +216,36 @@ def detect_and_coordinate():
     from ecoguard.detectors.air_pollution import observation_processing
     from ecoguard.detectors.fire import satellite, weather
     from ecoguard.detectors.flood import observation_processing as flood_processing
+    from ecoguard.detectors.earthquake import observation_processing as earthquake_processing
 
     signals = []
-    for detector in (satellite, weather, observation_processing, flood_processing):
+    for detector in (
+        satellite,
+        weather,
+        observation_processing,
+        flood_processing,
+        earthquake_processing,
+    ):
         try:
             signals.extend(detector.detect_new())
         except Exception:
             logger.exception("detector %s failed; continuing without it",
                              detector.__name__)
+
+    # Telegram is evidence for already-produced structured Fire/Flood signals.
+    # The enrichment service is deliberately one-input/one-output and forwards
+    # these original objects unchanged on any failure. It never creates a
+    # signal and therefore cannot reach the Coordinator by itself.
+    try:
+        from ecoguard.detectors.telegram.evidence import enrich_signals_with_telegram
+
+        signals = enrich_signals_with_telegram(signals)
+    except Exception:
+        # Keep this outer guard even though the service is fail-open: an import
+        # or initialization regression must not suppress structured detection.
+        logger.exception(
+            "Telegram evidence integration failed; coordinating structured signals"
+        )
 
     coordination = coordinate(signals)
     if coordination is None:

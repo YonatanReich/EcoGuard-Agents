@@ -37,7 +37,19 @@ function EventCard({ event, onOpen, isSelected }: {
       <span className="event-card__type">{hazard.label}</span>
       <span className="event-card__title">{event.title}</span>
 
-      {event.type === 'air_pollution' ? (
+      {event.type === 'earthquake' ? (
+        <>
+          <span className="event-card__measurement">
+            Magnitude {event.details.magnitude.toFixed(1)} · depth {event.details.depth_km.toFixed(1)} km
+          </span>
+          <span className="event-card__meta">
+            <span>Estimated Impact Area: {event.details.estimated_impact_radius_km} km</span>
+            {event.observed_at && (
+              <time dateTime={event.observed_at}>{formatObservationTime(event.observed_at)}</time>
+            )}
+          </span>
+        </>
+      ) : event.type === 'air_pollution' ? (
         <>
           <span className="event-card__measurement">
             {event.details.pollutant}: {event.details.measured_value} {event.details.unit}
@@ -77,20 +89,56 @@ function EventCard({ event, onOpen, isSelected }: {
           </span>
         </>
       ) : (
-        <span className="event-card__meta">
-          {assessed && fire ? (
-            <span className="event-card__score">
-              {fire.risk_level}
-            </span>
-          ) : (
-            <span className="event-card__score event-card__score--none">
-              not assessed
+        <>
+          {fire?.dispatch?.grade != null && (
+            <span className="event-card__grade">
+              Grade {fire.dispatch.grade}
+              {fire.dispatch.teams_required != null
+                && ` · ${fire.dispatch.teams_required} teams`}
+              {fire.dispatch.is_national_event && ' · national event'}
             </span>
           )}
-          <span className="event-card__coords">
-            {event.latitude.toFixed(3)}, {event.longitude.toFixed(3)}
+
+          {/* Only ever shown when it was actually counted. A fire whose
+              population could not be read must not render a zero. */}
+          {fire?.people_in_spread != null && (
+            <span className="event-card__measurement">
+              {fire.people_in_spread.toLocaleString()} people in the forecast spread
+            </span>
+          )}
+
+          {(fire?.evacuation?.length ?? 0) > 0 && (
+            <span className="event-card__evacuation">
+              {fire!.evacuation.filter((item) => item.priority === 'immediate').length > 0
+                ? `Evacuate now: ${fire!.evacuation
+                    .filter((item) => item.priority === 'immediate')
+                    .map((item) => item.name)
+                    .slice(0, 2)
+                    .join(', ')}`
+                : `${fire!.evacuation.length} settlement(s) to prepare`}
+            </span>
+          )}
+
+          <span className="event-card__meta">
+            {assessed && fire ? (
+              <span className="event-card__score">
+                {fire.risk_level} · {fire.risk_score}
+              </span>
+            ) : (
+              <span className="event-card__score event-card__score--none">
+                not assessed
+              </span>
+            )}
+            {fire?.detection && fire.detection.verdict !== 'confirmed' && (
+              <span className="event-card__detection">
+                detection {fire.detection.verdict}
+              </span>
+            )}
+            <span className="event-card__coords">
+              {event.latitude.toFixed(3)}, {event.longitude.toFixed(3)}
+            </span>
           </span>
-        </span>
+        </>
       )}
     </button>
   )

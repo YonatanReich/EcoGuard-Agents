@@ -24,6 +24,13 @@ def _empty_flood_detector(monkeypatch):
         "detect_new",
         lambda: [],
     )
+    from ecoguard.detectors.telegram import evidence
+
+    monkeypatch.setattr(
+        evidence,
+        "enrich_signals_with_telegram",
+        lambda signals: list(signals),
+    )
 
 
 def _fire_signal() -> CellSignal:
@@ -73,6 +80,35 @@ def test_fire_and_air_pollution_share_one_coordinator_batch(monkeypatch):
     shared_runtime.detect_and_coordinate()
 
     assert batches == [[fire, pollution]]
+
+
+def test_telegram_enrichment_occurs_once_immediately_before_coordinator(monkeypatch):
+    from ecoguard import scheduler as shared_runtime
+    from ecoguard.coordinator import agent
+    from ecoguard.detectors.air_pollution import observation_processing
+    from ecoguard.detectors.fire import satellite, weather
+    from ecoguard.detectors.telegram import evidence
+
+    fire = _fire_signal()
+    enriched = CellSignal(**{**fire.__dict__, "evidence": {"telegram_evidence": {}}})
+    calls = []
+    monkeypatch.setattr(satellite, "detect_new", lambda: [fire])
+    monkeypatch.setattr(weather, "detect_new", lambda: [])
+    monkeypatch.setattr(observation_processing, "detect_new", lambda: [])
+    monkeypatch.setattr(
+        evidence,
+        "enrich_signals_with_telegram",
+        lambda signals: calls.append(("enrich", list(signals))) or [enriched],
+    )
+    monkeypatch.setattr(
+        agent,
+        "run",
+        lambda signals: calls.append(("coordinate", list(signals))),
+    )
+
+    shared_runtime.detect_and_coordinate()
+
+    assert calls == [("enrich", [fire]), ("coordinate", [enriched])]
 
 
 def test_air_pollution_failure_does_not_suppress_fire_signals(monkeypatch):
@@ -251,6 +287,17 @@ def test_scheduler_allocates_all_eligible_fire_plans_in_one_batch(monkeypatch):
         planner_result={"event_id": "PLAN-3"},
         resource_allocation_result=None,
     )
+    earthquake = SimpleNamespace(
+        incident_id="INC-EQ-1",
+        hazard="earthquake",
+        route="emergency",
+        requested_at=requested_at,
+        planner_result={
+            "metadata": {"planning_status": "success"},
+            "hazard_type": "earthquake",
+        },
+        resource_allocation_result=None,
+    )
 
     class RecordingAllocator:
         def __init__(self):
@@ -264,11 +311,21 @@ def test_scheduler_allocates_all_eligible_fire_plans_in_one_batch(monkeypatch):
     monkeypatch.setattr(shared_runtime, "resource_allocator", allocator)
 
     allocations = shared_runtime.allocate_resources(
-        [fire_one, advisory, fire_two]
+        [fire_one, advisory, fire_two, earthquake]
     )
 
+    # The scheduler is now a delegation boundary: one call, every result handed
+    # over unchanged, and whatever the allocator returns passed straight back.
+    #
+    # This test used to assert the requests the scheduler built itself -- the
+    # eligibility filter, the per-hazard request shape and the earthquake
+    # policy tag. Those did not disappear; they moved into
+    # ResourceAllocationAgent.allocate_processing_results, where the hazard
+    # branches live, and test_batch_allocation covers them there. Asserting
+    # them here as well would be asserting the allocator through a fake that
+    # does not implement it.
     assert len(allocator.calls) == 1
-    assert allocator.calls[0] == [fire_one, advisory, fire_two]
+    assert allocator.calls[0] == [fire_one, advisory, fire_two, earthquake]
     assert allocations == {"delegated": True}
 
 

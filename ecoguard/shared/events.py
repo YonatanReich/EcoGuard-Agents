@@ -106,6 +106,114 @@ class ResourceAllocationSummary(EventContract):
     settlement: AllocationSettlement | None = None
 
 
+class EarthquakeResourceAllocationSummary(ResourceAllocationSummary):
+    unsupported_units: list[str] = Field(default_factory=list)
+    allocation_policy: Literal["earthquake_minimum_response_v1"]
+    allocation_basis: Literal["protocol_recommended_units"]
+    quantity_source: Literal["ecoguard_minimum_response_policy"]
+
+
+class FireSpreadRing(EventContract):
+    """One forecast extent, as the analyser draws it."""
+
+    type: Literal["Polygon"] = "Polygon"
+    coordinates: list[list[list[float]]]
+
+
+class FireSpread(EventContract):
+    """Where the fire is forecast to go, and how fast.
+
+    Two rings rather than one: `likely` on the forecast wind, `possible` as the
+    union of a wind-error ensemble. A map that draws only the first understates
+    the question an operator is actually asking.
+    """
+
+    likely: FireSpreadRing | None = None
+    possible: FireSpreadRing | None = None
+    heading_deg: float | None = None
+    heading_compass: str | None = None
+    head_rate_m_per_min: float | None = None
+    head_distance_m: float | None = None
+    horizon_minutes: float | None = None
+
+
+class FireExposedSettlement(EventContract):
+    """A settlement the fire is in, or forecast to reach."""
+
+    name: str
+    name_he: str | None = None
+    population: int | None = None
+    exposure: Literal["burning", "likely", "possible"]
+    arrival_minutes: float | None = None
+    distance_m: float | None = None
+    authority_phone: str | None = None
+    fire_district: str | None = None
+    police_station: str | None = None
+
+
+class FireEvacuationDirective(EventContract):
+    """Which settlement moves, when, and who holds the decision."""
+
+    name: str
+    priority: Literal["immediate", "prepare", "standby"]
+    population: int | None = None
+    reason: str
+    arrival_minutes: float | None = None
+    authority: str | None = None
+    authority_phone: str | None = None
+    police_station: str | None = None
+
+
+class FireSiteAtRisk(EventContract):
+    """Something in the path that is not a settlement."""
+
+    name: str
+    kind: str
+    category: Literal["hazard", "life_safety", "economic"]
+    exposure: Literal["burning", "likely", "possible"]
+    distance_m: float | None = None
+
+
+class FireDetectionVerdict(EventContract):
+    """Whether this is a fire at all, and on what evidence."""
+
+    verdict: Literal["confirmed", "probable", "possible", "doubtful", "unassessed"]
+    score: int | None = None
+    reasons: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class FireDispatchStation(EventContract):
+    """One responsible station, and under which request type."""
+
+    name: str
+    district: str | None = None
+    teams: int | None = None
+    role: str
+    request_type: str
+
+
+class FireDispatch(EventContract):
+    """Who is responsible: the grade, the stations, the police and MDA.
+
+    Computed rather than generated, which is why it sits beside the plan
+    instead of inside it. `teams_shortfall` is carried explicitly because a
+    dispatch that could not be filled must not look like one that was.
+    """
+
+    grade: int | None = None
+    grade_reason: str | None = None
+    teams_required: int | None = None
+    teams_assigned: int | None = None
+    teams_shortfall: int | None = None
+    home_district: str | None = None
+    stations: list[FireDispatchStation] = Field(default_factory=list)
+    police: list[dict[str, Any]] = Field(default_factory=list)
+    mda: list[dict[str, Any]] = Field(default_factory=list)
+    is_national_event: bool = False
+    national_event_basis: str | None = None
+    limits: list[str] = Field(default_factory=list)
+
+
 class FireDetails(EventContract):
     detection_confidence: str | None = None
     fire_weather_severity: str | None = None
@@ -122,6 +230,59 @@ class FireDetails(EventContract):
     response_actions: list[FireResponseAction] = Field(default_factory=list)
     protocol_citations: list[ProtocolCitation] = Field(default_factory=list)
     resource_allocation: ResourceAllocationSummary | None = None
+
+    # The analyser's measured findings and the planner's computed dispatch,
+    # carried beside the narrative rather than folded into it. Every one of
+    # these is None or empty when the corresponding step did not run, which a
+    # reader must be able to tell from a step that ran and found nothing.
+    detection: FireDetectionVerdict | None = None
+    spread: FireSpread | None = None
+    exposed_settlements: list[FireExposedSettlement] = Field(default_factory=list)
+    sites_at_risk: list[FireSiteAtRisk] = Field(default_factory=list)
+    evacuation: list[FireEvacuationDirective] = Field(default_factory=list)
+    people_in_spread: int | None = None
+    population_at_risk: dict[str, int] = Field(default_factory=dict)
+    dispatch: FireDispatch | None = None
+    incident_report: str | None = None
+    coverage_gaps: list[str] = Field(default_factory=list)
+    limits: list[str] = Field(default_factory=list)
+
+
+class EarthquakeTown(EventContract):
+    town_id: str
+    name_he: str
+    name_en: str
+    cbs_code: str | None = None
+
+
+class EarthquakePopulationSummary(EventContract):
+    status: Literal["available", "unavailable"]
+    wording: Literal[
+        "Estimated population geographically located within the impact area"
+    ] = "Estimated population geographically located within the impact area"
+    estimated_population: int | None = Field(default=None, ge=0)
+    intersected_cell_count: int | None = Field(default=None, ge=0)
+    reason: str | None = None
+
+
+class EarthquakeDetails(EventContract):
+    provider_event_id: str
+    magnitude: float
+    depth_km: float = Field(ge=0)
+    estimated_impact_radius_km: float = Field(gt=0)
+    estimated_impact_area: "GeoJsonPolygon"
+    towns: list[EarthquakeTown] = Field(default_factory=list)
+    towns_status: Literal["available", "unavailable"]
+    population_summary: EarthquakePopulationSummary
+    provider: Literal["GSI"] = "GSI"
+    source: str
+    plan_summary: str | None = None
+    recommended_units: list[str] = Field(default_factory=list)
+    response_actions: list[FireResponseAction] = Field(default_factory=list)
+    protocol_citations: list[ProtocolCitation] = Field(default_factory=list)
+    evidence_gaps: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+    resource_allocation: EarthquakeResourceAllocationSummary | None = None
 
 
 class AirPollutionBaselineContext(EventContract):
@@ -488,6 +649,12 @@ class FireSharedEvent(CommonSharedEvent):
     details: FireDetails
 
 
+class EarthquakeSharedEvent(CommonSharedEvent):
+    type: Literal["earthquake"] = "earthquake"
+    classification: Literal["emergency"] = "emergency"
+    details: EarthquakeDetails
+
+
 class FloodSharedEvent(CommonSharedEvent):
     type: Literal["flood"] = "flood"
     classification: Literal["emergency"] = "emergency"
@@ -502,6 +669,7 @@ class GenericSharedEvent(CommonSharedEvent):
 SharedEvent = Annotated[
     Union[
         AirPollutionSharedEvent,
+        EarthquakeSharedEvent,
         FireSharedEvent,
         FloodSharedEvent,
         GenericSharedEvent,

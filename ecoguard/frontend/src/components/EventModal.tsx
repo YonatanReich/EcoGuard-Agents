@@ -3,6 +3,7 @@ import { classify, hazardOf } from './hazards'
 import type {
   AirPollutionEvent,
   AllocationSettlement,
+  EarthquakeEvent,
   FireEvent,
   FloodEvent,
   SharedEvent,
@@ -136,7 +137,101 @@ function FireEventDetails({ event }: { event: FireEvent }) {
         <div><dt>Risk</dt><dd>{assessed ? details.risk_level : 'not assessed'}</dd></div>
       </dl>
 
-      {details.explanation && (
+      {details.dispatch && (
+        <section className="event-modal__section event-modal__section--dispatch">
+          <h3>
+            Dispatch — grade {details.dispatch.grade}
+            {details.dispatch.teams_required != null
+              && ` · ${details.dispatch.teams_required} teams`}
+          </h3>
+          <p>{details.dispatch.grade_reason}</p>
+
+          {details.dispatch.is_national_event && (
+            <p className="event-modal__national">
+              {details.dispatch.national_event_basis}
+            </p>
+          )}
+
+          {/* A dispatch that could not be filled must never look like one
+              that was. */}
+          {(details.dispatch.teams_shortfall ?? 0) > 0 && (
+            <p className="event-modal__allocation-warning">
+              {details.dispatch.teams_shortfall} team(s) could not be filled
+              from the stations on file.
+            </p>
+          )}
+
+          <ul className="event-modal__stations">
+            {details.dispatch.stations.map((station) => (
+              <li key={`${station.name}-${station.role}`}>
+                <strong>{station.teams}× {station.name}</strong>
+                <span>{station.district}</span>
+                <span className="event-modal__request-type">
+                  {station.request_type}
+                </span>
+                {station.role.startsWith('initial_response') && (
+                  <span className="event-modal__parallel">
+                    dispatched in parallel — no approval required
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {details.evacuation.length > 0 && (
+        <section className="event-modal__section event-modal__section--evacuation">
+          <h3>Evacuation</h3>
+          <ul className="event-modal__evacuation">
+            {details.evacuation.map((item) => (
+              <li key={item.name} data-priority={item.priority}>
+                <strong>{item.priority.toUpperCase()}: {item.name}</strong>
+                {item.population != null && (
+                  <span>{item.population.toLocaleString()} residents</span>
+                )}
+                <span>{item.reason}</span>
+                {item.authority_phone ? (
+                  <a href={`tel:${item.authority_phone.replaceAll('-', '')}`}>
+                    {item.authority}  {item.authority_phone}
+                  </a>
+                ) : (
+                  <span className="event-modal__no-contact">
+                    no contact on file for this authority
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {details.sites_at_risk.length > 0 && (
+        <section className="event-modal__section">
+          <h3>Other sites in the path</h3>
+          <ul className="event-modal__sites">
+            {details.sites_at_risk.slice(0, 10).map((site) => (
+              <li key={`${site.name}-${site.kind}`} data-category={site.category}>
+                <span className="event-modal__site-category">
+                  {site.category.replaceAll('_', ' ')}
+                </span>
+                {site.name} ({site.kind})
+                {site.distance_m != null
+                  && ` — ${(site.distance_m / 1000).toFixed(1)} km`}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {details.incident_report && (
+        <section className="event-modal__section">
+          <h3>Incident report</h3>
+          <pre className="event-modal__report">{details.incident_report}</pre>
+        </section>
+      )}
+
+      {details.explanation && !details.incident_report && (
         <section className="event-modal__section">
           <h3>Assessment</h3>
           <p>{details.explanation}</p>
@@ -253,6 +348,15 @@ function FireEventDetails({ event }: { event: FireEvent }) {
         </section>
       )}
 
+      {details.coverage_gaps.length > 0 && (
+        <section className="event-modal__section event-modal__section--gaps">
+          <h3>Not covered by doctrine</h3>
+          <ul>
+            {details.coverage_gaps.map((gap) => <li key={gap}>{gap}</li>)}
+          </ul>
+        </section>
+      )}
+
       {details.evidence_gaps.length > 0 && (
         <section className="event-modal__section event-modal__section--gaps">
           <h3>Evidence gaps</h3>
@@ -285,6 +389,156 @@ function FireEventDetails({ event }: { event: FireEvent }) {
           ))}
         </section>
       )}
+    </>
+  )
+}
+
+function EarthquakeEventDetails({ event }: { event: EarthquakeEvent }) {
+  const details = event.details
+  const population = details.population_summary
+  return (
+    <>
+      <section className="event-modal__section">
+        <h3>Earthquake</h3>
+        <dl className="event-modal__facts event-modal__facts--compact">
+          <div><dt>Magnitude</dt><dd>{details.magnitude.toFixed(1)}</dd></div>
+          <div><dt>Depth</dt><dd>{details.depth_km.toFixed(1)} km</dd></div>
+          <div><dt>Impact radius</dt><dd>{details.estimated_impact_radius_km} km</dd></div>
+          <div><dt>Provider</dt><dd>{details.provider}</dd></div>
+        </dl>
+      </section>
+
+      {details.plan_summary && (
+        <section className="event-modal__section">
+          <h3>Earthquake response plan</h3>
+          <p>{details.plan_summary}</p>
+          {details.response_actions.length > 0 && (
+            <ol className="event-modal__actions">
+              {details.response_actions.map((action, index) => (
+                <li key={`${action.responsible_unit}-${index}`}>
+                  <p>{action.action}</p>
+                  <span className="event-modal__timeframe">{action.timeframe}</span>
+                  <span className="event-modal__action-owner">{action.responsible_unit}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+      )}
+
+      {details.resource_allocation && (
+        <section className="event-modal__section">
+          <h3>Resource allocation</h3>
+          <p>
+            {details.resource_allocation.allocation_policy}
+            {' · '}{details.resource_allocation.quantity_source}
+          </p>
+          <ul className="event-modal__allocations">
+            {details.resource_allocation.stations.map((station) => (
+              <li key={`${station.recommended_unit}-${station.database_id}`}>
+                <strong>{station.name}</strong>
+                <span>{formatComponentName(station.recommended_unit)}</span>
+                <span>
+                  {station.distance_km == null ? 'Distance unavailable' : `${station.distance_km.toFixed(1)} km`}
+                  {station.route?.duration_s != null && ` · ${formatDuration(station.route.duration_s)}`}
+                </span>
+                {station.address && <span>{station.address}</span>}
+                {station.route?.estimated_arrival_at && (
+                  <span>ETA {formatTimestamp(station.route.estimated_arrival_at)}</span>
+                )}
+                {station.route?.requires_field_access_confirmation && (
+                  <span className="event-modal__allocation-warning">Field access requires confirmation</span>
+                )}
+                {station.route?.steps_he && station.route.steps_he.length > 0 && (
+                  <details
+                    id={`allocation-directions-${station.recommended_unit}-${station.database_id}`}
+                    className="event-modal__directions"
+                    dir="rtl"
+                  >
+                    <summary>הוראות נסיעה</summary>
+                    <ol>
+                      {station.route.steps_he.map((step, index) => (
+                        <li key={`${station.database_id}-step-${index}`}>
+                          <span className="event-modal__direction-instruction">
+                            {step.instruction ?? 'המשך במסלול'}
+                          </span>
+                          <span className="event-modal__direction-meta">
+                            {step.distance_m != null
+                              && formatRouteStepDistance(step.distance_m)}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  </details>
+                )}
+              </li>
+            ))}
+          </ul>
+          {details.resource_allocation.unsupported_units.length > 0 && (
+            <p className="event-modal__allocation-warning">
+              Recommended capabilities without a station catalog: {' '}
+              {details.resource_allocation.unsupported_units.join(', ')}.
+            </p>
+          )}
+        </section>
+      )}
+
+      {details.protocol_citations.length > 0 && (
+        <section className="event-modal__section">
+          <h3>Protocol citations</h3>
+          {details.protocol_citations.map((citation) => (
+            <blockquote key={citation.chunk_id} className="event-modal__citation">
+              <p>“{citation.quoted_text}”</p>
+              <footer>{citation.document_title}</footer>
+            </blockquote>
+          ))}
+        </section>
+      )}
+
+      {details.evidence_gaps.length > 0 && (
+        <section className="event-modal__section event-modal__section--gaps">
+          <h3>Evidence gaps</h3>
+          <ul>{details.evidence_gaps.map((gap) => <li key={gap}>{gap}</li>)}</ul>
+        </section>
+      )}
+
+      <section className="event-modal__section">
+        <h3>Estimated Impact Area</h3>
+        <p>The semi-transparent map polygon is the deterministic screening area.</p>
+        <p className="event-modal__semantic-note">{details.limitations.join(' ')}</p>
+      </section>
+
+      <section className="event-modal__section">
+        <h3>Towns in the area</h3>
+        {details.towns_status === 'unavailable' ? (
+          <p>Town intersection data is unavailable.</p>
+        ) : details.towns.length === 0 ? (
+          <p>No town geometries intersect the Estimated Impact Area.</p>
+        ) : (
+          <ul className="event-modal__settlements">
+            {details.towns.map((town) => (
+              <li key={town.town_id}>
+                <strong>{town.name_en || town.name_he}</strong>
+                {town.name_he && town.name_en && <span>{town.name_he}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="event-modal__section">
+        <h3>Population</h3>
+        {population.status === 'available' && population.estimated_population != null ? (
+          <>
+            <p className="event-modal__population">
+              {population.estimated_population.toLocaleString()}
+            </p>
+            <p>{population.wording}</p>
+          </>
+        ) : (
+          <p>Estimated population geographically located within the impact area is unavailable.</p>
+        )}
+      </section>
     </>
   )
 }
@@ -810,6 +1064,7 @@ function EventModal({ event, onClose, directionsStationKey = null }: {
           <FireEventDetails event={event} />
         )}
         {event.type === 'air_pollution' && <AirPollutionEventDetails event={event} />}
+        {event.type === 'earthquake' && <EarthquakeEventDetails event={event} />}
         {event.type === 'flood' && <FloodEventDetails event={event} />}
       </div>
     </div>

@@ -13,7 +13,7 @@ def valid_input(**overrides):
     return payload
 
 
-@pytest.mark.parametrize("hazard", ["fire", "flood"])
+@pytest.mark.parametrize("hazard", ["fire", "flood", "earthquake"])
 def test_input_supports_only_current_emergency_hazards(hazard):
     contract = EmergencyResponsePlanInput(**valid_input(hazard_type=hazard))
     assert contract.hazard_type == hazard
@@ -44,7 +44,7 @@ def test_optional_analyzer_context_is_opaque_and_preserved():
 
 def test_unsupported_hazard_and_empty_description_are_rejected():
     with pytest.raises(ValidationError):
-        EmergencyResponsePlanInput(**valid_input(hazard_type="earthquake"))
+        EmergencyResponsePlanInput(**valid_input(hazard_type="tsunami"))
     with pytest.raises(ValidationError):
         EmergencyResponsePlanInput(**valid_input(event_description="   "))
 

@@ -12,6 +12,7 @@
  *   - Flood Events — active stream warnings and operational road sites.
  *   - Wind — animated near-surface wind visualization from Open-Meteo.
  *   - Fire Districts — the seven fire & rescue districts of responsibility.
+ *   - MDA Districts — Magen David Adom regions, from govmap's WMS.
  *   - Allocations — assigned stations and their routes to the selected event.
  *
  * Additional layers can be added here later without changing MapView.
@@ -56,6 +57,11 @@ type LayersControlProps = {
   /** Toggle the fire & rescue district outlines. */
   onToggleFireDistricts: () => void
 
+  /** Whether the MDA region overlay is visible. */
+  showMdaDistricts: boolean
+
+  /** Toggle the MDA region overlay. */
+  onToggleMdaDistricts: () => void
   /** Whether assigned stations and their routes are visible. */
   showAllocations: boolean
 
@@ -77,6 +83,8 @@ function LayersControl({
   onToggleWind,
   showFireDistricts,
   onToggleFireDistricts,
+  showMdaDistricts,
+  onToggleMdaDistricts,
   showAllocations,
   onToggleAllocations,
 }: LayersControlProps) {
@@ -127,6 +135,15 @@ function LayersControl({
           onChange={onToggleFireDistricts}
         />
         <span>🛡 Fire Districts</span>
+      </label>
+
+      <label style={rowStyle}>
+        <input
+          type="checkbox"
+          checked={showMdaDistricts}
+          onChange={onToggleMdaDistricts}
+        />
+        <span>🚑 MDA Districts</span>
       </label>
 
       <label style={rowStyle}>

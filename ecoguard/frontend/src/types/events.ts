@@ -1,4 +1,4 @@
-export type HazardKind = 'fire' | 'air_pollution' | 'flood' | 'other'
+export type HazardKind = 'fire' | 'air_pollution' | 'earthquake' | 'flood' | 'other'
 export type EventClassification = 'emergency' | 'advisory'
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
 export type StepStatus = 'success' | 'partial' | 'unavailable' | 'failed' | 'skipped'
@@ -90,6 +90,83 @@ export type ResourceAllocationSummary = {
   settlement: AllocationSettlement | null
 }
 
+export type EarthquakeResourceAllocationSummary = ResourceAllocationSummary & {
+  unsupported_units: string[]
+  allocation_policy: 'earthquake_minimum_response_v1'
+  allocation_basis: 'protocol_recommended_units'
+  quantity_source: 'ecoguard_minimum_response_policy'
+}
+
+export type FireSpread = {
+  likely: GeoJsonPolygon | null
+  possible: GeoJsonPolygon | null
+  heading_deg: number | null
+  heading_compass: string | null
+  head_rate_m_per_min: number | null
+  head_distance_m: number | null
+  horizon_minutes: number | null
+}
+
+export type FireExposedSettlement = {
+  name: string
+  name_he: string | null
+  population: number | null
+  exposure: 'burning' | 'likely' | 'possible'
+  arrival_minutes: number | null
+  distance_m: number | null
+  authority_phone: string | null
+  fire_district: string | null
+  police_station: string | null
+}
+
+export type FireEvacuationDirective = {
+  name: string
+  priority: 'immediate' | 'prepare' | 'standby'
+  population: number | null
+  reason: string
+  arrival_minutes: number | null
+  authority: string | null
+  authority_phone: string | null
+  police_station: string | null
+}
+
+export type FireSiteAtRisk = {
+  name: string
+  kind: string
+  category: 'hazard' | 'life_safety' | 'economic'
+  exposure: 'burning' | 'likely' | 'possible'
+  distance_m: number | null
+}
+
+export type FireDetectionVerdict = {
+  verdict: 'confirmed' | 'probable' | 'possible' | 'doubtful' | 'unassessed'
+  score: number | null
+  reasons: Array<{ factor: string; points: number; detail: string }>
+}
+
+export type FireDispatchStation = {
+  name: string
+  district: string | null
+  teams: number | null
+  role: string
+  request_type: string
+}
+
+export type FireDispatch = {
+  grade: number | null
+  grade_reason: string | null
+  teams_required: number | null
+  teams_assigned: number | null
+  teams_shortfall: number | null
+  home_district: string | null
+  stations: FireDispatchStation[]
+  police: Array<Record<string, unknown>>
+  mda: Array<Record<string, unknown>>
+  is_national_event: boolean
+  national_event_basis: string | null
+  limits: string[]
+}
+
 export type FireDetails = {
   detection_confidence: string | null
   fire_weather_severity: string | null
@@ -106,6 +183,52 @@ export type FireDetails = {
   response_actions: FireResponseAction[]
   protocol_citations: ProtocolCitation[]
   resource_allocation: ResourceAllocationSummary | null
+
+  /** Measured by the analyser and computed by the planner. Null or empty
+   *  whenever the corresponding step did not run — which the UI must render
+   *  as "not assessed" rather than as a zero. */
+  detection: FireDetectionVerdict | null
+  spread: FireSpread | null
+  exposed_settlements: FireExposedSettlement[]
+  sites_at_risk: FireSiteAtRisk[]
+  evacuation: FireEvacuationDirective[]
+  people_in_spread: number | null
+  population_at_risk: Record<string, number>
+  dispatch: FireDispatch | null
+  incident_report: string | null
+  coverage_gaps: string[]
+  limits: string[]
+}
+
+export type EarthquakeDetails = {
+  provider_event_id: string
+  magnitude: number
+  depth_km: number
+  estimated_impact_radius_km: number
+  estimated_impact_area: GeoJsonPolygon
+  towns: Array<{
+    town_id: string
+    name_he: string
+    name_en: string
+    cbs_code: string | null
+  }>
+  towns_status: 'available' | 'unavailable'
+  population_summary: {
+    status: 'available' | 'unavailable'
+    wording: 'Estimated population geographically located within the impact area'
+    estimated_population: number | null
+    intersected_cell_count: number | null
+    reason: string | null
+  }
+  provider: 'GSI'
+  source: string
+  plan_summary: string | null
+  recommended_units: string[]
+  response_actions: FireResponseAction[]
+  protocol_citations: ProtocolCitation[]
+  evidence_gaps: string[]
+  limitations: string[]
+  resource_allocation: EarthquakeResourceAllocationSummary | null
 }
 
 export type GeoJsonPolygon = {
@@ -416,6 +539,12 @@ export type AirPollutionEvent = CommonEvent & {
   details: AirPollutionDetails
 }
 
+export type EarthquakeEvent = CommonEvent & {
+  type: 'earthquake'
+  classification: 'emergency'
+  details: EarthquakeDetails
+}
+
 export type FloodEvent = CommonEvent & {
   type: 'flood'
   classification: 'emergency'
@@ -427,7 +556,12 @@ export type OtherEvent = CommonEvent & {
   details: Record<string, unknown>
 }
 
-export type SharedEvent = FireEvent | AirPollutionEvent | FloodEvent | OtherEvent
+export type SharedEvent =
+  | FireEvent
+  | AirPollutionEvent
+  | EarthquakeEvent
+  | FloodEvent
+  | OtherEvent
 
 export type SharedEventFeed = {
   events: SharedEvent[]
@@ -507,6 +641,20 @@ export function detectedFireToSharedEvent(event: DetectedFireEventPayload): Fire
       response_actions: event.response_actions,
       protocol_citations: event.protocol_citations,
       resource_allocation: null,
+      // The legacy point-query endpoint measures none of this. Empty rather
+      // than fabricated, so the UI shows "not assessed" for a fire that came
+      // through the old path instead of implying nothing is at risk.
+      detection: null,
+      spread: null,
+      exposed_settlements: [],
+      sites_at_risk: [],
+      evacuation: [],
+      people_in_spread: null,
+      population_at_risk: {},
+      dispatch: null,
+      incident_report: null,
+      coverage_gaps: [],
+      limits: [],
     },
   }
 }

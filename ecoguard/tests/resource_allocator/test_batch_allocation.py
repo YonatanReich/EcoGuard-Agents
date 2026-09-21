@@ -10,6 +10,9 @@ from ecoguard.analyzers.emergency.flood.risk_analysis_schemas import (
     FloodRiskAssessment,
 )
 from ecoguard.resource_allocator.allocation_agent import ResourceAllocationAgent
+from ecoguard.resource_allocator.allocation_agent import (
+    EARTHQUAKE_MINIMUM_RESPONSE_POLICY,
+)
 from ecoguard.resource_allocator.mapbox_client import RoutingError
 
 
@@ -118,6 +121,9 @@ class InMemoryAllocationRepository:
         risk_score,
         risk_level,
         allocated_at,
+        allocation_policy=None,
+        allocation_basis=None,
+        quantity_source=None,
     ):
         with self._lock:
             active = [
@@ -157,6 +163,9 @@ class InMemoryAllocationRepository:
                     "distance_km": candidate["distance_km"],
                     "risk_score": risk_score,
                     "risk_level": risk_level,
+                    "allocation_policy": allocation_policy,
+                    "allocation_basis": allocation_basis,
+                    "quantity_source": quantity_source,
                 }
                 self._next_id += 1
                 self._rows.append(row)
@@ -287,6 +296,16 @@ def allocation_request(incident_id, plan):
         "incident_id": incident_id,
         "queued_at": NOW,
         "response_plan": plan,
+    }
+
+
+def earthquake_allocation_request(incident_id, *, units):
+    plan = response_plan(incident_id, units=units)
+    plan["hazard_type"] = "earthquake"
+    plan["responding_to"] = None
+    return {
+        **allocation_request(incident_id, plan),
+        "allocation_policy": EARTHQUAKE_MINIMUM_RESPONSE_POLICY,
     }
 
 
@@ -782,6 +801,69 @@ def test_batch_uses_fire_police_and_mda_db_catalogs_including_coarse_points():
     )
     assert result["status"] == "fulfilled"
     assert all(reader.call_count == 1 for reader in readers.values())
+
+
+def test_earthquake_policy_requests_one_supported_station_without_risk_values():
+    readers = {
+        "fire_department": Mock(return_value=catalog(
+            station(1, "Fire one", 31.01, 35.0),
+            station(2, "Fire two", 31.02, 35.0),
+        )),
+        "police": Mock(return_value=catalog(
+            station(3, "Police", 31.03, 35.0),
+        )),
+        "medical_services": Mock(return_value=catalog(
+            station(4, "MDA", 31.04, 35.0),
+        )),
+    }
+    agent = allocation_agent(readers)
+    result = agent.allocate_batch([
+        earthquake_allocation_request(
+            "INC-EQ-1",
+            units=[
+                "fire_department",
+                "police",
+                "medical_services",
+                "home_front_command",
+            ],
+        )
+    ], now=NOW)[0]
+
+    assert result["allocation_policy"] == "earthquake_minimum_response_v1"
+    assert result["allocation_basis"] == "protocol_recommended_units"
+    assert result["quantity_source"] == "ecoguard_minimum_response_policy"
+    assert result["risk_score"] is None
+    assert result["risk_level"] is None
+    assert all(
+        requirement["requested"] == 1
+        for requirement in result["requirements"].values()
+    )
+    assert len(result["allocated_units"]["fire_stations"]) == 1
+    assert len(result["allocated_units"]["police_stations"]) == 1
+    assert len(result["allocated_units"]["mda_stations"]) == 1
+    assert result["unsupported_units"] == ["home_front_command"]
+    fire_station = result["allocated_units"]["fire_stations"][0]
+    assert fire_station["risk_score"] is None
+    assert fire_station["risk_level"] is None
+    assert fire_station["route"]["geometry"]["type"] == "LineString"
+    assert fire_station["route"]["estimated_arrival_at"] is not None
+
+
+def test_earthquake_policy_does_not_create_eta_when_routing_is_unavailable():
+    agent = allocation_agent(
+        {"fire_department": lambda: catalog(
+            station(1, "Fire", 31.01, 35.0),
+        )},
+        routing_client=FailingRoutingClient(),
+    )
+    result = agent.allocate_batch([
+        earthquake_allocation_request("INC-EQ-1", units=["fire_department"])
+    ], now=NOW)[0]
+
+    assigned = result["allocated_units"]["fire_stations"][0]
+    assert assigned["selection_reason"] == "straight_line_fallback"
+    assert assigned["route"]["estimated_arrival_at"] is None
+    assert result["routing_status"] == "unavailable"
 
 
 def test_higher_operational_risk_gets_contended_stations_first():

@@ -734,6 +734,146 @@
   box-shadow: 0 4px 14px #0005;
 }
 
+.allocation-simulation-panel button {
+  border: 1px solid #fb923c;
+  border-radius: 0.4rem;
+  background: #f97316;
+  color: #fff;
+  min-width: 0;
+  padding: 0.15rem 0.24rem;
+  font: inherit;
+  font-size: 0.62rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.allocation-simulation-panel button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.allocation-simulation-panel {
+  position: absolute;
+  top: 180px;
+  left: 12px;
+  z-index: 5;
+  display: grid;
+  box-sizing: border-box;
+  gap: 0.2rem;
+  width: 214px;
+  padding: 0.38rem 0.45rem;
+  border: 1px solid rgba(251, 146, 60, 0.65);
+  border-radius: 0.55rem;
+  background: rgba(15, 23, 42, 0.92);
+  color: #f8fafc;
+  font-size: 0.63rem;
+  box-shadow: 0 5px 18px #0007;
+}
+
+.allocation-simulation-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.allocation-simulation-controls,
+.allocation-simulation-vehicles > div {
+  display: grid;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.allocation-simulation-controls {
+  grid-template-columns: auto auto auto minmax(0, 1fr);
+}
+
+.allocation-simulation-speed {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  min-width: 0;
+  color: #cbd5e1;
+}
+
+.allocation-simulation-speed input {
+  min-width: 0;
+  width: 100%;
+  height: 0.75rem;
+  accent-color: #f97316;
+}
+
+.allocation-simulation-speed output {
+  min-width: 1.2rem;
+  color: #fff;
+  text-align: right;
+  font-weight: 700;
+}
+
+.allocation-simulation-vehicles {
+  display: grid;
+  gap: 0;
+  max-height: 7.5rem;
+  overflow-y: auto;
+}
+
+.allocation-simulation-vehicles > div {
+  grid-template-columns: 2.7rem minmax(0, 1fr) auto;
+  gap: 0.2rem;
+  padding: 0.12rem 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.allocation-vehicle-type {
+  overflow: hidden;
+  color: var(--allocation-vehicle-color);
+  font-size: 0.58rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+}
+
+.allocation-simulation-error {
+  color: #fecaca !important;
+  font-weight: 700;
+}
+
+.allocation-simulation-error-detail {
+  max-height: 2.4rem;
+  overflow-y: auto;
+  color: #fecaca;
+  font-size: 0.56rem;
+  line-height: 1.15;
+}
+
+.allocation-vehicle-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #e2e8f0;
+}
+
+.allocation-simulation-model-status {
+  color: #86efac !important;
+  font-size: 0.56rem;
+  white-space: nowrap;
+}
+
+.allocation-vehicle-remaining {
+  color: #cbd5e1;
+  font-size: 0.58rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .allocation-simulation-panel {
+    top: 180px;
+    left: 12px;
+    width: 214px;
+  }
+}
+
 .event-modal__actions li {
     margin-bottom: 0.4rem;
 }
@@ -845,4 +985,156 @@
     height: 0.8rem;
     border: 2px dashed #a855f7;
     background: rgba(168, 85, 247, 0.18);
+}
+
+/* --- fire incident card additions -------------------------------------- */
+/* Matched to the existing card vocabulary rather than invented: the grade
+   reads like the pollutant line, evacuation like the official-classification
+   line, so a fire card and an advisory card scan the same way. */
+
+.event-card__grade {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--hazard);
+  margin-top: 0.15rem;
+}
+
+.event-card__evacuation {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #b91c1c;
+  background: rgba(185, 28, 28, 0.08);
+  border-left: 3px solid #b91c1c;
+  padding: 0.2rem 0.45rem;
+  border-radius: 3px;
+  margin-top: 0.25rem;
+}
+
+/* Detection doubt is a caveat, not an alarm — muted so it qualifies the
+   score beside it rather than competing with it. */
+.event-card__detection {
+  font-size: 0.72rem;
+  font-style: italic;
+  opacity: 0.75;
+}
+
+/* --- fire spread on the map -------------------------------------------- */
+
+.fire-spread__origin {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  color: #dc2626;
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.55));
+  pointer-events: auto;
+  cursor: help;
+}
+
+.fire-spread__arrow {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.fire-spread__legend {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(17, 20, 24, 0.82);
+  color: #f3f4f6;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  backdrop-filter: blur(3px);
+  pointer-events: none;
+}
+
+.fire-spread__legend i {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-right: 6px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+
+/* The possible extent is dashed on the map, so its legend key is too —
+   a solid swatch would imply the same confidence as the likely ring. */
+.fire-spread__legend i.dashed {
+  background: transparent;
+  border: 1.5px dashed currentColor;
+}
+
+.fire-spread__settlement {
+  opacity: 0.9;
+}
+
+/* --- fire dispatch and evacuation in the modal -------------------------- */
+
+.event-modal__section--dispatch { border-left: 3px solid #dc2626; padding-left: 0.75rem; }
+
+.event-modal__national {
+  font-size: 0.82rem;
+  background: rgba(220, 38, 38, 0.08);
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem;
+}
+
+.event-modal__stations { list-style: none; margin: 0.4rem 0 0; padding: 0; }
+.event-modal__stations li {
+  display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline;
+  padding: 0.35rem 0; border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+  font-size: 0.85rem;
+}
+.event-modal__stations li:last-child { border-bottom: none; }
+
+.event-modal__request-type {
+  font-size: 0.74rem; padding: 0.1rem 0.4rem; border-radius: 3px;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+/* The parallel out-of-district team is the detail most easily lost when a
+   plan is skimmed, so it gets its own line rather than a suffix. */
+.event-modal__parallel {
+  flex-basis: 100%; font-size: 0.74rem; font-style: italic; color: #b45309;
+}
+
+.event-modal__evacuation { list-style: none; margin: 0.4rem 0 0; padding: 0; }
+.event-modal__evacuation li {
+  display: flex; flex-direction: column; gap: 0.15rem;
+  padding: 0.45rem 0.6rem; margin-bottom: 0.4rem; border-radius: 4px;
+  font-size: 0.85rem; border-left: 3px solid transparent;
+}
+.event-modal__evacuation li[data-priority='immediate'] {
+  background: rgba(185, 28, 28, 0.1); border-left-color: #b91c1c;
+}
+.event-modal__evacuation li[data-priority='prepare'] {
+  background: rgba(217, 119, 6, 0.09); border-left-color: #d97706;
+}
+.event-modal__evacuation li[data-priority='standby'] {
+  background: rgba(100, 116, 139, 0.09); border-left-color: #64748b;
+}
+.event-modal__no-contact { font-style: italic; opacity: 0.7; font-size: 0.78rem; }
+
+.event-modal__sites { list-style: none; margin: 0.4rem 0 0; padding: 0; font-size: 0.83rem; }
+.event-modal__sites li { padding: 0.2rem 0; }
+.event-modal__site-category {
+  display: inline-block; min-width: 5.5rem; font-size: 0.7rem;
+  text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.75;
+}
+.event-modal__sites li[data-category='hazard'] .event-modal__site-category { color: #b91c1c; }
+.event-modal__sites li[data-category='life_safety'] .event-modal__site-category { color: #b45309; }
+
+.event-modal__report {
+  white-space: pre-wrap; font-family: inherit; font-size: 0.82rem;
+  line-height: 1.5; background: rgba(0, 0, 0, 0.03);
+  padding: 0.6rem 0.75rem; border-radius: 4px; margin: 0;
+  max-height: 22rem; overflow-y: auto;
 }
