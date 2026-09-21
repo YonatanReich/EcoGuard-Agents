@@ -280,6 +280,10 @@ export default function AllocationVehicleSimulation({ vehicles }: { vehicles: Al
   const [speed, setSpeed] = useState(8)
   const [now, setNow] = useState(0)
   const [layerActive, setLayerActive] = useState(false)
+  // The Three.js layer and its models are only built once Run is pressed.
+  // Building them on mount put a renderer, five GLTF parses and a round of
+  // shader compiles on every click that selected an event.
+  const [armed, setArmed] = useState(false)
   const [layerError, setLayerError] = useState<string | null>(null)
   const [modelStates, setModelStates] = useState<Record<string, ModelLoadState>>(() => Object.fromEntries(
     vehicles.map((vehicle) => [vehicle.id, { phase: 'waiting', url: vehicle.modelUrl }]),
@@ -308,7 +312,7 @@ export default function AllocationVehicleSimulation({ vehicles }: { vehicles: Al
 
   useEffect(() => {
     const map = mapRef?.getMap()
-    if (!map) return
+    if (!map || !armed) return
     const initialFrames = vehicles.map((vehicle) => routeFrame(vehicle, 0))
     let onAddRan = false
     let registrationInterval = 0
@@ -355,7 +359,7 @@ export default function AllocationVehicleSimulation({ vehicles }: { vehicles: Al
       if (map.getLayer(LAYER_ID)) map.removeLayer(LAYER_ID)
       layerRef.current = null
     }
-  }, [mapRef, vehicles])
+  }, [armed, mapRef, vehicles])
 
   useEffect(() => {
     layerRef.current?.updateFrames(frames)
@@ -371,6 +375,7 @@ export default function AllocationVehicleSimulation({ vehicles }: { vehicles: Al
   }, [longestDuration, speed])
 
   const start = (restart: boolean) => {
+    setArmed(true)
     const startedAt = performance.now()
     setNow(startedAt)
     setPlayback((current) => ({ elapsedSeconds: restart || current.elapsedSeconds >= longestDuration ? 0 : current.elapsedSeconds,
@@ -401,7 +406,7 @@ export default function AllocationVehicleSimulation({ vehicles }: { vehicles: Al
       ? `3D error: ${modelError[0]} · ${modelError[1].error}`
       : layerActive
         ? `3D: ready ${readyCount}/${vehicles.length}`
-        : '3D: activating'
+        : armed ? '3D: activating' : '3D: loads on Run'
 
   return <div className="allocation-simulation-panel">
     <div className="allocation-simulation-header">

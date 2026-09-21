@@ -38,6 +38,11 @@ from ecoguard.database.repositories.text_candidates import (
     store_candidates,
     unclassified_text_observations,
 )
+from ecoguard.database.repositories.collector_runs import (
+    last_success_at,
+    log_finish,
+    log_start,
+)
 from ecoguard.detectors.text.keywords import HAZARDS, hazards_in, normalise
 from ecoguard.shared.llm import ClaudeLLMService
 
@@ -57,6 +62,9 @@ DEFAULT_BATCH_SIZE = 40
 # classifier read and found nothing in leaves no row, so it is indistinguishable
 # from one never read and would be offered forever without this bound.
 DEFAULT_LOOKBACK = timedelta(hours=24)
+
+# The classifier's bookmark in collector_runs, same as every other lane.
+SOURCE = "text_classifier"
 
 Hazard = Literal["fire", "flood", "earthquake", "air_quality"]
 UpdateType = Literal["new", "update", "contained", "false_alarm", "none"]
@@ -341,18 +349,39 @@ def classify_new_text(
 ) -> dict[str, Any]:
     """Label every stored message nothing has labelled yet, and store the rows.
 
-    The scheduler calls this immediately before the text-triage sweep. Keeping
-    the entry point separate makes classification independently testable and
-    lets a model outage leave previously stored candidates available to triage.
-    """
-    lookback = since or datetime.now(timezone.utc) - DEFAULT_LOOKBACK
-    messages = unclassified_text_observations(since=lookback, limit=limit)
-    if not messages:
-        return {"messages": 0, "candidates": 0, "disagreements": {}}
+    The scheduler calls this immediately before the text-triage sweep.
+    Keeping the entry point separate makes classification independently testable
+    and lets a model outage leave previously stored candidates available to triage.
 
-    results = (classifier or TextClassifier()).classify(messages)
-    stored = store_candidates(results)
+    A tick with no new messages returns before the model is called, so the cost
+    follows how much the feeds actually published.
+    """
+    # A message the model read and found nothing in writes no candidate row, so
+    # the row-existence check alone calls it unclassified forever and re-sends
+    # it every tick for a day. The bookmark is what bounds that: read what
+    # arrived since the last successful run, like every other detector.
+    # DEFAULT_LOOKBACK stays as the cold-start floor.
+    bookmark = last_success_at(SOURCE)
+    lookback = since or max(
+        datetime.now(timezone.utc) - DEFAULT_LOOKBACK,
+        bookmark or datetime.min.replace(tzinfo=timezone.utc),
+    )
+
+    run_id = log_start(SOURCE)
+    try:
+        messages = unclassified_text_observations(since=lookback, limit=limit)
+        if not messages:
+            log_finish(run_id, status="ok", rows_written=0)
+            return {"messages": 0, "candidates": 0, "disagreements": {}}
+
+        results = (classifier or TextClassifier()).classify(messages)
+        stored = store_candidates(results)
+    except Exception as error:
+        log_finish(run_id, status="failed", error=f"{type(error).__name__}: {error}")
+        raise
+
     report = disagreements(results)
+    log_finish(run_id, status="ok", rows_written=stored)
     logger.info(
         "text classifier: %s messages, %s candidate rows, disagreements %s",
         len(messages), stored, report,

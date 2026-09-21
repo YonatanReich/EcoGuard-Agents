@@ -21,13 +21,18 @@
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  border-radius: 8px;
+  border: 1px solid rgba(148, 170, 200, 0.16);
+  background: rgba(8, 14, 26, 0.93);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.town-search__field:focus-within {
+  border-color: rgba(140, 198, 63, 0.6);
 }
 
 .town-search__icon {
-  color: #64748b;
+  color: #8594ab;
   font-size: 1.1rem;
   line-height: 1;
 }
@@ -37,10 +42,12 @@
   border: 0;
   outline: none;
   background: transparent;
-  color: #111827;
+  color: #e4ebf5;
   font: inherit;
   min-width: 0;
 }
+
+.town-search__input::placeholder { color: #6b788d; }
 
 /* The type="search" widget draws its own clear affordance in WebKit, which
    would sit next to ours. */
@@ -49,22 +56,23 @@
 .town-search__clear {
   border: 0;
   background: transparent;
-  color: #64748b;
+  color: #8594ab;
   font-size: 1.2rem;
   line-height: 1;
   cursor: pointer;
   padding: 0 2px;
 }
 
-.town-search__clear:hover { color: #111827; }
+.town-search__clear:hover { color: #e4ebf5; }
 
 .town-search__results {
   list-style: none;
   margin: 6px 0 0;
   padding: 4px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  border-radius: 8px;
+  border: 1px solid rgba(148, 170, 200, 0.16);
+  background: rgba(8, 14, 26, 0.94);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
   max-height: 320px;
   overflow-y: auto;
 }
@@ -78,6 +86,7 @@
   border: 0;
   border-radius: 7px;
   background: transparent;
+  color: inherit;
   cursor: pointer;
   text-align: start;
   font: inherit;
@@ -85,7 +94,7 @@
 
 .town-search__result:hover,
 .town-search__result:focus-visible {
-  background: #e0f2fe;
+  background: rgba(148, 170, 200, 0.1);
   outline: none;
 }
 
@@ -95,17 +104,17 @@
   direction: rtl;
   unicode-bidi: isolate;
   font-weight: 600;
-  color: #0f172a;
+  color: #e4ebf5;
 }
 
 .town-search__en {
-  color: #64748b;
+  color: #8594ab;
   font-size: 0.82rem;
 }
 
 .town-search__pop {
   margin-inline-start: auto;
-  color: #0369a1;
+  color: #8cc63f;
   font-size: 0.78rem;
   font-variant-numeric: tabular-nums;
 }
@@ -113,10 +122,11 @@
 .town-search__empty {
   margin-top: 6px;
   padding: 10px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.96);
-  color: #64748b;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  border: 1px solid rgba(148, 170, 200, 0.16);
+  background: rgba(8, 14, 26, 0.93);
+  color: #8594ab;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
 
