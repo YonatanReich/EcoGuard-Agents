@@ -13,6 +13,10 @@ from ecoguard.analyzers.emergency.flood.risk_analysis_schemas import (
     FloodRiskAssessment,
 )
 from ecoguard.analyzers.emergency.earthquake.impact import EarthquakeImpact, LIMITATION
+from ecoguard.analyzers.emergency.earthquake.risk_scale import (
+    RISK_SEMANTICS as EARTHQUAKE_RISK_SEMANTICS,
+    earthquake_operational_risk,
+)
 from ecoguard.response_planner.emergency.schemas import EmergencyResponsePlanInput
 
 
@@ -393,12 +397,39 @@ def build_earthquake_plan_input(
             str(population.get("reason") or "Population intersection data is unavailable.")
         )
 
+    # A counted zero and an uncountable population are different facts, and
+    # the scale treats them differently: only a reading that succeeded is
+    # passed on. Absence of a count narrows the basis to magnitude rather
+    # than being scored as nobody at risk.
+    counted = population.get("estimated_population")
+    population_at_risk = (
+        int(counted)
+        if population.get("status") == "available" and isinstance(counted, (int, float))
+        else None
+    )
+    risk_score, risk_level = earthquake_operational_risk(
+        impact.magnitude, population_at_risk=population_at_risk
+    )
+
     return EmergencyResponsePlanInput(
         incident_id=incident_id,
         hazard_type="earthquake",
         location={"latitude": impact.latitude, "longitude": impact.longitude},
         event_description=" ".join(description_parts),
-        risk_context=None,
+        # Carried on the same key Fire and Flood use, so the allocator
+        # reads one comparable number per hazard and needs no earthquake
+        # special case to rank it.
+        risk_context={
+            "risk_semantics": EARTHQUAKE_RISK_SEMANTICS,
+            "risk_score": risk_score,
+            "risk_level": risk_level,
+            "population_at_risk": population_at_risk,
+            "basis": (
+                "magnitude_and_population"
+                if population_at_risk is not None
+                else "magnitude_only"
+            ),
+        },
         evidence_gaps=evidence_gaps,
         limitations=[LIMITATION],
         additional_context={

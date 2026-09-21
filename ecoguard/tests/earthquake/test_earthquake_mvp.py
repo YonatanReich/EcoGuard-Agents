@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -17,7 +17,9 @@ from ecoguard.analyzers.emergency.earthquake import incident_handler as earthqua
 from ecoguard.coordinator.dispatcher import IncidentDispatchContext
 from ecoguard.coordinator.dispatcher import IncidentProcessingResult
 from ecoguard.coordinator.event_projection import earthquake_shared_event
+from ecoguard.analyzers.emergency.earthquake.risk_scale import earthquake_operational_risk
 from ecoguard.collection.earthquake.gsi import normalize_fdsn_text
+from ecoguard.resource_allocator.allocation_agent import ResourceAllocationAgent
 from ecoguard.database.repositories.towns import (
     TownIntersection,
     TownIntersectionResult,
@@ -221,7 +223,17 @@ def test_impact_reuses_same_polygon_for_towns_and_population():
         "latitude": 31.75,
         "longitude": 35.21,
     }
-    assert planner_input.risk_context is None
+    # This asserted None until earthquake gained a score on the shared scale.
+    # It is derived, not invented: M4.6 sets the band, the counted population
+    # inside the impact area moves it, and the basis records which of the two
+    # were available.
+    assert planner_input.risk_context == {
+        "risk_semantics": "detected_event_operational_risk",
+        "risk_score": 50,
+        "risk_level": "high",
+        "population_at_risk": 1235,
+        "basis": "magnitude_and_population",
+    }
     assert planner_input.additional_context["magnitude"] == 4.6
     assert planner_input.additional_context["depth_km"] == 12.4
     assert planner_input.additional_context["town_intersection"]["towns"][0][
@@ -232,8 +244,14 @@ def test_impact_reuses_same_polygon_for_towns_and_population():
     ] == 1235
     assert planner_input.limitations == [LIMITATION]
     serialized = planner_input.model_dump_json().lower()
-    assert "risk_score" not in serialized
-    assert "risk_level" not in serialized
+    # risk_score and risk_level used to be asserted absent here, back when
+    # earthquake carried no operational risk at all. They are present now and
+    # checked above, derived from the magnitude and a counted population.
+    #
+    # What must still never appear is a damage claim. This analyser models no
+    # casualties and no structural collapse -- the impact area is a screening
+    # radius -- so a number for either would be invented, and invented numbers
+    # in a plan input are the ones an operator acts on.
     assert "casualt" not in serialized
     assert "collapsed building" not in serialized
 
@@ -489,3 +507,115 @@ def test_earthquake_projection_exposes_plan_allocation_route_and_policy(monkeypa
     api_allocation = response.json()["events"][0]["details"]["resource_allocation"]
     assert api_allocation["stations"][0]["route"]["duration_s"] == 600
     assert api_allocation["quantity_source"] == "ecoguard_minimum_response_policy"
+
+
+# The rows below are copied from a real GSI FDSN response, not composed. The
+# fixture above was composed, and it is why this collector passed its tests
+# for weeks while being unable to complete a single live fetch: it invented a
+# Z suffix GSI does not send and stopped at 13 columns where GSI sends 14.
+REAL_GSI_HEADER = (
+    "#EventID|Time|Latitude|Longitude|Depth/km|Author|Catalog|Contributor|"
+    "ContributorID|MagType|Magnitude|MagAuthor|EventLocationName|EventType"
+)
+REAL_GSI_EARTHQUAKE = (
+    "gsi_loc_2026skyt|2026-09-17T06:41:12.884184|32.6875|35.48468"
+    "|8.244140625|dagmara@janalyse||GSI|gsi_loc_2026skyt|MLv"
+    "|2.8368797|gsi28jauto.sysop|Galilee|earthquake"
+)
+REAL_GSI_EXPLOSION = (
+    "gsi_loc_2026slcj|2026-09-17T09:20:46.673487|31.10417175292969"
+    "|35.161778891958846|0.7405598958333333|dagmara@janalyse||GSI"
+    "|gsi_loc_2026slcj|MLv|2.3723277713615034|gsi28jauto.sysop|Negev|explosion"
+)
+
+
+def test_a_real_gsi_row_parses_and_its_naive_time_is_read_as_utc():
+    """GSI sends no zone suffix; FDSN text times are UTC by specification."""
+    events = normalize_fdsn_text(f"{REAL_GSI_HEADER}\n{REAL_GSI_EARTHQUAKE}\n")
+
+    assert len(events) == 1
+    observed = events[0].observed_at
+    assert observed.tzinfo is not None, "a naive time fails AwareDatetime"
+    assert observed.utcoffset() == timedelta(0)
+    assert events[0].raw["event_type"] == "earthquake"
+
+
+def test_a_quarry_blast_is_not_an_earthquake():
+    """Most of what GSI returns is explosions - 37 of 45 in a sample week."""
+    payload = f"{REAL_GSI_HEADER}\n{REAL_GSI_EXPLOSION}\n{REAL_GSI_EARTHQUAKE}\n"
+
+    events = normalize_fdsn_text(payload)
+
+    assert [event.provider_event_id for event in events] == ["gsi_loc_2026skyt"]
+
+
+def test_an_unlabelled_row_is_kept():
+    """Absence of a label is not evidence of a blast, and missing a real
+    earthquake is the worse of the two errors."""
+    unlabelled = REAL_GSI_EARTHQUAKE.rsplit("|", 1)[0] + "|"
+
+    events = normalize_fdsn_text(f"{REAL_GSI_HEADER}\n{unlabelled}\n")
+
+    assert len(events) == 1
+    assert events[0].raw["event_type"] is None
+
+
+# --- operational risk on the shared scale --------------------------------
+
+@pytest.mark.parametrize(
+    ("magnitude", "expected"),
+    [(3.5, 40), (4.4, 40), (4.5, 60), (5.4, 60), (5.5, 80), (6.4, 80), (6.5, 100)],
+)
+def test_magnitude_bands_land_on_the_shared_scale(magnitude, expected):
+    """Same 40/60/80/100 steps Flood uses, so the two are comparable."""
+    score, _ = earthquake_operational_risk(magnitude)
+    assert score == expected
+
+
+def test_population_moves_the_score_in_both_directions():
+    """The whole reason the score exists: the same magnitude under a city and
+    under open desert are not the same emergency."""
+    desert, _ = earthquake_operational_risk(5.0, population_at_risk=0)
+    town, _ = earthquake_operational_risk(5.0, population_at_risk=50_000)
+    city, _ = earthquake_operational_risk(5.0, population_at_risk=900_000)
+
+    assert desert < town < city
+    assert (desert, town, city) == (40, 60, 80)
+
+
+def test_a_counted_zero_is_not_an_unavailable_count():
+    """Nobody there, and nobody could look, must not produce the same score."""
+    counted_zero, _ = earthquake_operational_risk(5.0, population_at_risk=0)
+    could_not_read, _ = earthquake_operational_risk(5.0, population_at_risk=None)
+
+    assert counted_zero == 40
+    assert could_not_read == 60  # magnitude band alone, no adjustment
+
+
+def test_below_the_dashboard_threshold_has_no_operational_risk():
+    with pytest.raises(ValueError):
+        earthquake_operational_risk(3.4)
+
+
+def test_a_large_earthquake_under_a_city_outranks_a_moderate_fire():
+    """The defect this closes: an M6.0 used to queue behind a brush fire.
+
+    _priority_key had returned a leading 1 for earthquake against 0 for
+    everything else, and tuple comparison decides at index 0.
+    """
+    earthquake_score, _ = earthquake_operational_risk(6.0, population_at_risk=600_000)
+    moderate_fire_score = 55
+
+    ranked = sorted(
+        [
+            {"incident_id": "INC-EQ", "effective_priority": float(earthquake_score),
+             "risk_score": float(earthquake_score), "urgency": 0,
+             "queued_at": NOW},
+            {"incident_id": "INC-FIRE", "effective_priority": float(moderate_fire_score),
+             "risk_score": float(moderate_fire_score), "urgency": 0,
+             "queued_at": NOW},
+        ],
+        key=ResourceAllocationAgent._priority_key,
+    )
+
+    assert [item["incident_id"] for item in ranked] == ["INC-EQ", "INC-FIRE"]

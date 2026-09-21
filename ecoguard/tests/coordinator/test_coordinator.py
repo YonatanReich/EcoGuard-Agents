@@ -22,6 +22,7 @@ from sqlalchemy import text
 from ecoguard.coordinator import incidents as store
 from ecoguard.coordinator.agent import coordinate
 from ecoguard.coordinator.matching import (
+    DEFAULT_QUIET_PERIOD,
     best_match,
     has_gone_quiet,
     matches,
@@ -55,6 +56,16 @@ from ecoguard.shared.signals import (
 
 def test_flood_quiet_period_is_three_hours():
     assert quiet_period_for(FLOOD) == timedelta(hours=3)
+
+
+def test_earthquake_quiet_period_is_chosen_and_not_inherited():
+    """A day, to hold one incident across an aftershock sequence.
+
+    The assertion that matters is the second one: earthquake had no entry and
+    silently took the six-hour default, which nobody had picked for it.
+    """
+    assert quiet_period_for("earthquake") == timedelta(hours=24)
+    assert quiet_period_for("earthquake") != DEFAULT_QUIET_PERIOD
 
 WHEN = datetime(2026, 9, 14, 12, 0, tzinfo=timezone.utc)
 

@@ -15,6 +15,20 @@ SOURCE = "gsi_earthquake"
 PROVIDER = "GSI"
 FDSN_EVENT_QUERY_URL = "https://seis.gsi.gov.il/fdsnws/event/1/query"
 
+# GSI's FDSN text carries a 14th column, EventType, and most of what the
+# service returns is not seismic: a sample week held 37 explosions to 8
+# earthquakes, quarry blasts across the Negev. Ingesting those as
+# earthquakes would put a magnitude 2.5 blast into the incident pipeline
+# as ground shaking.
+#
+# A row with no label is kept. Absence of a label is not evidence the
+# event was a blast, and missing a real earthquake is the worse error of
+# the two. Anything GSI explicitly labels as something other than an
+# earthquake is skipped, so a vocabulary we have not seen shows up as a
+# drop in counts rather than as a fabricated earthquake.
+EVENT_TYPE_COLUMN = 13
+
+
 
 class GsiEarthquake(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -52,7 +66,20 @@ def normalize_fdsn_text(text_payload: str) -> list[GsiEarthquake]:
             "magnitude_author": columns[11] if len(columns) > 11 else None,
             "event_location_name": columns[12] if len(columns) > 12 else None,
         }
+        event_type = ""
+        if len(columns) > EVENT_TYPE_COLUMN:
+            event_type = columns[EVENT_TYPE_COLUMN].strip().lower()
+        if event_type and "earthquake" not in event_type:
+            continue
+        raw["event_type"] = event_type or None
+
+        # FDSN text times are UTC by specification and GSI sends them with no
+        # zone suffix, so attaching UTC reads the format rather than guessing
+        # at it. Without this every live response fails validation on the
+        # first row, which is why this collector had never completed a fetch.
         timestamp = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
         events.append(GsiEarthquake(
             provider_event_id=event_id,
             observed_at=timestamp,

@@ -687,15 +687,33 @@ class ResourceAllocationAgent:
             queued_at = self._utc(
                 item.get("queued_at") or metadata.get("timestamp") or now
             )
+            # The policy still governs how MANY stations go (one per unit
+            # type); what it no longer governs is WHERE the incident sits in
+            # the queue. That is now the same derived 0-100 score Fire and
+            # Flood carry, so an M6.0 under a city outranks a brush fire and a
+            # small tremor in open desert does not.
+            responding_to = response_plan.get("responding_to") or {}
+            risk_score = responding_to.get("risk_score")
+            if (
+                not isinstance(risk_score, (int, float))
+                or isinstance(risk_score, bool)
+                or not math.isfinite(risk_score)
+                or not 0 <= risk_score <= 100
+            ):
+                raise ValueError("operational risk score must be between 0 and 100")
+            risk_level = str(responding_to.get("risk_level") or "").lower()
+            if risk_level not in RISK_LEVELS:
+                raise ValueError("operational risk level is unavailable")
+            waited_seconds = max(0, (now - queued_at).total_seconds())
             return {
                 "incident_id": incident_id,
                 "response_plan": response_plan,
-                "risk_score": None,
-                "risk_level": None,
+                "risk_score": float(risk_score),
+                "risk_level": risk_level,
                 "queued_at": queued_at,
                 "allocation_time": now,
                 "urgency": self._urgency(response_plan),
-                "effective_priority": None,
+                "effective_priority": float(risk_score) + int(waited_seconds // 300),
                 "allocation_policy": EARTHQUAKE_MINIMUM_RESPONSE_POLICY,
                 "allocation_basis": EARTHQUAKE_ALLOCATION_BASIS,
                 "quantity_source": EARTHQUAKE_QUANTITY_SOURCE,
@@ -768,19 +786,11 @@ class ResourceAllocationAgent:
 
     @staticmethod
     def _priority_key(request):
-        if request.get("allocation_policy") == EARTHQUAKE_MINIMUM_RESPONSE_POLICY:
-            # Policy-driven requests do not receive a fabricated risk score.
-            # They follow Fire requests in a mixed batch, then sort by action
-            # urgency, queue time and incident id. Fire-to-Fire ordering below
-            # is unchanged.
-            return (
-                1,
-                -request["urgency"],
-                request["queued_at"],
-                request["incident_id"],
-            )
+        # One key for every hazard. Earthquake used to return a leading 1 here
+        # against everyone else's 0, and tuple comparison decides at index 0 --
+        # so every fire and every flood outranked every earthquake, at any
+        # magnitude. It was not ranked low; it was not ranked at all.
         return (
-            0,
             -request["effective_priority"],
             -request["risk_score"],
             -request["urgency"],
