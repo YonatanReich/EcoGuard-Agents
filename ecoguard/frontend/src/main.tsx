@@ -10,6 +10,12 @@
  */
 
 import '@fontsource/plus-jakarta-sans'
+// The package's default import is weight 400 only. Without the real heavier
+// cuts the browser fakes bold by smearing the 400 glyphs, which crowds words
+// together, so load every weight the stylesheets use.
+import '@fontsource/plus-jakarta-sans/500.css'
+import '@fontsource/plus-jakarta-sans/600.css'
+import '@fontsource/plus-jakarta-sans/700.css'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'

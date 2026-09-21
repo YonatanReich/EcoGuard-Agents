@@ -1,4 +1,5 @@
 import { hazardOf } from './hazards'
+import HazardIcon from './HazardIcon'
 import type { SharedEvent } from '../types/events'
 
 function formatObservationTime(timestamp: string) {
@@ -34,7 +35,10 @@ function EventCard({ event, onOpen, isSelected }: {
       onClick={() => onOpen(event)}
       aria-label={`${hazard.label}: ${event.title}`}
     >
-      <span className="event-card__type">{hazard.label}</span>
+      <span className="event-card__type">
+        <HazardIcon kind={event.type} />
+        {hazard.label}
+      </span>
       <span className="event-card__title">{event.title}</span>
 
       {event.type === 'earthquake' ? (

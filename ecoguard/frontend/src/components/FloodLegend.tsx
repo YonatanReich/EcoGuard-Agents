@@ -7,17 +7,9 @@ const SEVERITY_LEVELS = [
   { label: '100-year', color: '#7f1d1d' },
 ]
 
-function FloodLegend({ fireDangerVisible = false }: {
-  fireDangerVisible?: boolean
-}) {
+function FloodLegend() {
   return (
-    <div
-      style={{
-        ...containerStyle,
-        left: fireDangerVisible ? 216 : 12,
-      }}
-      aria-label="Flood map legend"
-    >
+    <div style={containerStyle} aria-label="Flood map legend">
       <div style={titleStyle}>Flood response</div>
 
       {SEVERITY_LEVELS.map((level) => (
@@ -61,22 +53,24 @@ function FloodLegend({ fireDangerVisible = false }: {
 const containerStyle: CSSProperties = {
   position: 'absolute',
   bottom: 36,
+  left: 12,
   zIndex: 5,
   minWidth: 198,
   padding: '10px 12px',
   borderRadius: 8,
-  background: 'rgba(255, 255, 255, 0.95)',
-  color: '#111827',
-  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
+  border: '1px solid rgba(148, 170, 200, 0.16)',
+  background: 'rgba(8, 14, 26, 0.93)',
+  color: '#e4ebf5',
+  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
   fontSize: '0.8rem',
 }
 
 const titleStyle: CSSProperties = { fontWeight: 700, marginBottom: 8 }
 const rowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginTop: 5 }
 const labelStyle: CSSProperties = { flex: 1 }
-const rangeStyle: CSSProperties = { color: '#4b5563', fontSize: '0.72rem' }
+const rangeStyle: CSSProperties = { color: '#8594ab', fontSize: '0.72rem' }
 const streamLineStyle: CSSProperties = { width: 22, height: 0, borderTop: '4px solid', flexShrink: 0 }
-const dividerStyle: CSSProperties = { borderTop: '1px solid #d1d5db', margin: '9px 0 4px' }
+const dividerStyle: CSSProperties = { borderTop: '1px solid rgba(148, 170, 200, 0.16)', margin: '9px 0 4px' }
 const stationStyle: CSSProperties = {
   display: 'grid', placeItems: 'center', width: 18, height: 18,
   borderRadius: '50%', background: '#ef4444', color: '#fff', fontWeight: 800,
@@ -93,8 +87,8 @@ const uncertaintyStyle: CSSProperties = {
   width: 17, height: 17, border: '2px dashed #f97316', borderRadius: '50%',
 }
 const noteStyle: CSSProperties = {
-  marginTop: 9, paddingTop: 7, borderTop: '1px solid #d1d5db',
-  color: '#4b5563', fontSize: '0.68rem',
+  marginTop: 9, paddingTop: 7, borderTop: '1px solid rgba(148, 170, 200, 0.16)',
+  color: '#8594ab', fontSize: '0.68rem',
 }
 
 export default FloodLegend
