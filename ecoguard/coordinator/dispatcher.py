@@ -45,12 +45,17 @@ class IncidentProcessingResult:
     coordinator_routing_id: str | None = None
     handler: str | None = None
     analysis_status: str | None = None
+    risk_status: str | None = None
     planner_status: str | None = None
     analysis_result: Any | None = None
+    risk_assessment: Any | None = None
     planner_result: Any | None = None
     failure_stage: str | None = None
     failure_reason: str | None = None
     resource_allocation_result: dict[str, Any] | None = None
+    response_refresh_required: bool | None = None
+    requires_resource_allocation: bool | None = None
+    preserve_existing_response: bool = False
 
 
 class IncidentHandler(Protocol):

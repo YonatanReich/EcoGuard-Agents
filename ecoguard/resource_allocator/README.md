@@ -42,6 +42,12 @@ requests follow Fire requests in a mixed batch; among Earthquake requests they
 sort by the most urgent planner action, then `queued_at`, then incident id.
 Fire-to-Fire ordering is unchanged.
 
+Each unit type in the successful response plan receives exactly one station.
+Risk level does not multiply station counts, and the allocator ignores any
+quantity hint: staffing and vehicle quantities remain decisions for the
+assigned station. Every station result carries the actions for its unit type;
+each action carries its own timeframe.
+
 Station details are cached in each allocator process because they are static
 reference data. Active claims are always read from and written to PostgreSQL.
 Partial unique indexes prevent concurrent double assignment of fire and MDA
@@ -56,20 +62,13 @@ release path.
 ## Flood road response sites
 
 `FloodRoadTargetAgent` identifies where a Flood allocation could be sent. It
-does not infer inundation. Until an operational policy source is available, the
-allocator uses a deterministic fallback of one responsible police station per
-Flood incident, for every supported severity:
+does not infer inundation. A successful Flood response plan drives allocation
+in the same way as Fire: one station is selected for each recommended unit
+type. If planning fails closed, the existing deterministic safety fallback
+assigns one responsible police station; it is not scaled by Flood severity.
 
-| Severity | Police stations |
-|---:|---:|
-| 3 (Q10) | 1 |
-| 4 (Q20) | 1 |
-| 5 (Q50) | 1 |
-| 6 (Q100) | 1 |
-
-This is a station responsibility assignment, not a vehicle count. One police
-station owns all retained road-response sites for the incident. The station may
-also cover other active incidents; the active
+A police assignment represents station responsibility, not a vehicle count.
+The station may also cover other active incidents; the active
 `(incident_id, police_station_id)` pair remains unique so retries are
 idempotent.
 

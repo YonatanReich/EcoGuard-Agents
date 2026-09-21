@@ -15,39 +15,13 @@ from ecoguard.database.repositories.towns import (
     town_at_location,
 )
 from ecoguard.coordinator import incidents as incident_store
+from ecoguard.analyzers.emergency.flood.risk_analysis_schemas import (
+    FloodRiskAssessment,
+)
 from ecoguard.resource_allocator.mapbox_client import MapboxClient, RoutingError
 from ecoguard.resource_allocator.flood_road_targets import FloodRoadTargetAgent
 
-# Fallback station counts, used only when the planner supplies none. These
-# numbers represent stations, not vehicles, and they are a placeholder: the
-# authority's own dispatch guidance table lives in the שלהבת CAD system and is
-# not available to us.
-#
-# The fire planner now derives counts from an event grade tied to a published
-# threshold and passes them on the request, so for fire this table is the
-# path taken when planning failed rather than the normal one.
-STATIONS_REQUIRED_BY_RISK = {
-    "low": {
-        "fire_department": 1,
-        "police": 1,
-        "medical_services": 1,
-    },
-    "medium": {
-        "fire_department": 2,
-        "police": 1,
-        "medical_services": 1,
-    },
-    "high": {
-        "fire_department": 3,
-        "police": 2,
-        "medical_services": 2,
-    },
-    "critical": {
-        "fire_department": 4,
-        "police": 2,
-        "medical_services": 2,
-    },
-}
+RISK_LEVELS = frozenset({"low", "medium", "high", "critical"})
 
 EARTHQUAKE_MINIMUM_RESPONSE_POLICY = "earthquake_minimum_response_v1"
 EARTHQUAKE_ALLOCATION_BASIS = "protocol_recommended_units"
@@ -66,20 +40,6 @@ STATION_TYPES = {
     "medical_services": ("mda_station", "mda_stations"),
 }
 
-# Temporary Flood station counts until an operational policy source provides
-# real requirements.  These are station assignments, not vehicle quantities.
-FLOOD_STATIONS_REQUIRED_BY_SEVERITY = {
-    3: {"police": 1},
-    4: {"police": 1},
-    5: {"police": 1},
-    6: {"police": 1},
-}
-FLOOD_RISK_BY_SEVERITY = {
-    3: ("low", 40.0),
-    4: ("medium", 60.0),
-    5: ("high", 80.0),
-    6: ("critical", 100.0),
-}
 FLOOD_ROAD_PRIORITY = {
     "motorway": 6,
     "trunk": 5,
@@ -346,7 +306,11 @@ class ResourceAllocationAgent:
 
     @staticmethod
     def _required_station_count(
-        risk_level, recommended_unit, response_plan=None, allocation_policy=None
+        risk_level,
+        recommended_unit,
+        response_plan=None,
+        allocation_policy=None,
+        hazard=None,
     ):
         """How many stations to commit for one unit type.
 
@@ -377,7 +341,17 @@ class ResourceAllocationAgent:
         ).get(recommended_unit)
         if explicit is not None:
             return explicit
-        return STATIONS_REQUIRED_BY_RISK[risk_level].get(recommended_unit, 1)
+        # Nothing cited supplied a number, so one station per requested unit
+        # type: the planner selects types, not fleet sizes, and the station
+        # owns its internal vehicle and crew dispatch.
+        #
+        # This replaces a risk-level lookup table that returned two to four
+        # stations. That table was invented -- its own comment said so, the
+        # authority's real dispatch guidance living in the CAD system and not
+        # in anything we hold. The branches above return counts that can cite
+        # where they came from; when none of them applies, one station and the
+        # station's own judgement beats a number nobody can source.
+        return 1
 
     @staticmethod
     def _flood_site_priority(site):
@@ -405,6 +379,17 @@ class ResourceAllocationAgent:
         targeting = item.get("flood_targeting")
         if not isinstance(targeting, dict):
             raise ValueError("flood_targeting must be an object")
+        try:
+            risk = FloodRiskAssessment.model_validate(item.get("risk_assessment"))
+        except (TypeError, ValueError, AttributeError) as error:
+            raise ValueError("flood_risk_assessment is required") from error
+        if (
+            risk.event_id != incident_id
+            or risk.metadata.analysis_status not in {"success", "partial"}
+            or risk.risk_score is None
+            or risk.risk_level is None
+        ):
+            raise ValueError("flood_risk_assessment is unavailable")
         ready_sites = [
             site
             for site in targeting.get("allocation_ready_sites") or []
@@ -421,7 +406,7 @@ class ResourceAllocationAgent:
                     max(int(site.get("severity_level") or 3) for site in ready_sites),
                 ),
             )
-            requirements = dict(FLOOD_STATIONS_REQUIRED_BY_SEVERITY[severity])
+            requirements = {"police": 1}
             location = primary["allocation_location"]
             allocation_target = {
                 "target_id": primary.get("target_id"),
@@ -485,38 +470,72 @@ class ResourceAllocationAgent:
             }
             fallback_reason = "no_verified_flood_response_site"
 
-        risk_level, risk_score = FLOOD_RISK_BY_SEVERITY[severity]
+        if risk.hydrologic_severity_level != severity:
+            raise ValueError("flood risk severity does not match targeting evidence")
+        risk_score = risk.risk_score
+        risk_level = risk.risk_level
         event_id = (
             f"{incident_id}:flood-road-target"
             if ready_sites
             else f"{incident_id}:flood-station-fallback"
         )
-        response_plan = {
-            "metadata": {
-                "planning_status": "success",
-                "timestamp": self._utc(item.get("queued_at") or now).isoformat(),
-                "agent": "deterministic_flood_station_fallback",
-            },
-            "event_id": event_id,
-            "location": {
+        planner_plan = item.get("response_plan")
+        planner_succeeded = (
+            isinstance(planner_plan, dict)
+            and self._planning_status(planner_plan) == "success"
+        )
+        if planner_succeeded:
+            response_plan = deepcopy(planner_plan)
+            planned_risk = response_plan.get("responding_to") or {}
+            if (
+                planned_risk.get("risk_score") != risk_score
+                or str(planned_risk.get("risk_level") or "").lower() != risk_level
+            ):
+                raise ValueError("flood response plan does not match risk analyzer")
+            # Road targeting owns the dispatch destination. The planner owns
+            # the units and instructions, but must not replace that verified
+            # operational location with the gauge centroid.
+            response_plan["event_id"] = event_id
+            response_plan["location"] = {
                 "latitude": float(location["latitude"]),
                 "longitude": float(location["longitude"]),
-            },
-            "responding_to": {
-                "risk_semantics": "detected_event_operational_risk",
-                "risk_score": risk_score,
-                "risk_level": risk_level,
-                "severity_level": severity,
+            }
+            response_plan["responding_to"] = {
+                **planned_risk,
                 "primary_target_id": primary_target_id,
                 "fallback_reason": fallback_reason,
-            },
-            "recommended_units": list(requirements),
-            "station_requirements": requirements,
-            "response_actions": [
-                {"timeframe": "immediate", "responsible_unit": unit}
-                for unit in requirements
-            ],
-        }
+            }
+        else:
+            response_plan = {
+                "metadata": {
+                    "planning_status": "success",
+                    "timestamp": self._utc(item.get("queued_at") or now).isoformat(),
+                    "agent": "deterministic_flood_station_fallback",
+                },
+                "event_id": event_id,
+                "location": {
+                    "latitude": float(location["latitude"]),
+                    "longitude": float(location["longitude"]),
+                },
+                "responding_to": {
+                    "risk_semantics": "detected_event_operational_risk",
+                    "risk_score": risk_score,
+                    "risk_level": risk_level,
+                    "severity_level": severity,
+                    "risk_confidence": risk.confidence,
+                    "primary_target_id": primary_target_id,
+                    "fallback_reason": fallback_reason,
+                },
+                "recommended_units": list(requirements),
+                "response_actions": [
+                    {
+                        "action": "Secure access to the identified flood response site.",
+                        "timeframe": "immediate",
+                        "responsible_unit": unit,
+                    }
+                    for unit in requirements
+                ],
+            }
         prepared = self._prepare_batch_request(
             {
                 "incident_id": incident_id,
@@ -696,30 +715,34 @@ class ResourceAllocationAgent:
             raise ValueError("operational risk score must be between 0 and 100")
 
         risk_level = str(responding_to.get("risk_level") or "").lower()
-        if risk_level not in STATIONS_REQUIRED_BY_RISK:
+        if risk_level not in RISK_LEVELS:
             raise ValueError("operational risk level is unavailable")
 
         recommended_units = list(
             dict.fromkeys(response_plan.get("recommended_units") or [])
         )
-        station_requirements = response_plan.get("station_requirements")
-        if station_requirements is not None:
-            if not isinstance(station_requirements, dict):
-                raise ValueError("station_requirements must be an object")
-            for unit, count in station_requirements.items():
-                if unit not in recommended_units:
-                    raise ValueError(
-                        "station requirement has no matching recommended unit"
-                    )
-                if (
-                    not isinstance(count, int)
-                    or isinstance(count, bool)
-                    or not 1 <= count <= 8
-                ):
-                    raise ValueError("station requirement must be between 1 and 8")
-                if unit == "police" and count != 1:
-                    raise ValueError("police allocation is one station per incident")
-
+        response_actions = response_plan.get("response_actions") or []
+        if not isinstance(response_actions, list):
+            raise ValueError("response_actions must be a list")
+        action_units = set()
+        for action in response_actions:
+            if not isinstance(action, dict):
+                raise ValueError("each response action must be an object")
+            responsible_unit = str(action.get("responsible_unit") or "").strip()
+            if responsible_unit not in recommended_units:
+                raise ValueError(
+                    "each response action must name a recommended responsible unit"
+                )
+            if not str(action.get("action") or "").strip():
+                raise ValueError("each response action must contain an instruction")
+            if action.get("timeframe") not in TIMEFRAME_PRIORITY:
+                raise ValueError("each response action must contain a valid timeframe")
+            action_units.add(responsible_unit)
+        missing_action_units = set(recommended_units) - action_units
+        if missing_action_units:
+            raise ValueError(
+                "each recommended unit must have at least one response action"
+            )
         metadata = response_plan.get("metadata") or {}
         queued_at = self._utc(
             item.get("queued_at") or metadata.get("timestamp") or now
@@ -1059,6 +1082,10 @@ class ResourceAllocationAgent:
             "queued_at": request["queued_at"].isoformat(),
             "allocation_needed": bool(recommended_units),
             "allocation_scope": "station",
+            # Preserve the complete plan at the allocation boundary. Actions
+            # are also copied onto every assigned station of their responsible
+            # unit below, so dispatch consumers do not have to rejoin them.
+            "response_actions": deepcopy(response_plan.get("response_actions") or []),
             "allocated_units": {},
             "requirements": {},
             "shortages": {},
@@ -1099,6 +1126,7 @@ class ResourceAllocationAgent:
                 recommended_unit,
                 response_plan,
                 request.get("allocation_policy"),
+                request.get("hazard"),
             )
             mapping = STATION_TYPES.get(recommended_unit)
             if mapping is None:
@@ -1226,6 +1254,13 @@ class ResourceAllocationAgent:
                         assigned, event_location
                     )
                 result["errors"].extend(route_errors)
+            assigned_actions = [
+                deepcopy(action)
+                for action in response_plan.get("response_actions") or []
+                if action.get("responsible_unit") == recommended_unit
+            ]
+            for station in assigned:
+                station["response_actions"] = deepcopy(assigned_actions)
             result["allocated_units"][output_key] = assigned
             if result["road_access"] is None:
                 for station in assigned:
@@ -1329,6 +1364,12 @@ class ResourceAllocationAgent:
         Hazard-specific preparation belongs here.  In particular, Flood road
         discovery and Mapbox verification happen inside resource allocation,
         while the scheduler remains a generic orchestration boundary.
+
+        Earthquake preparation moved here when the scheduler became a pure
+        delegation. It had been inline in `allocate_resources`, which meant
+        adopting that delegation without moving it would have dropped every
+        earthquake request silently -- the same defect that kept Flood out
+        of allocation, in the other direction.
         """
 
         requests = []
@@ -1350,6 +1391,11 @@ class ResourceAllocationAgent:
                 }
                 targeting = None
             elif hazard == "flood":
+                if getattr(result, "requires_resource_allocation", None) is False:
+                    # De-escalation and unchanged observations preserve every
+                    # durable active allocation. They do not recalculate road
+                    # targets or request another station assignment.
+                    continue
                 incident = self.incident_reader(result.incident_id)
                 if not isinstance(incident, dict):
                     result.resource_allocation_result = {
@@ -1384,7 +1430,29 @@ class ResourceAllocationAgent:
                     "hazard": "flood",
                     "queued_at": result.requested_at,
                     "flood_targeting": targeting,
+                    "risk_assessment": getattr(result, "risk_assessment", None),
+                    "response_plan": getattr(result, "planner_result", None),
                 }
+            elif hazard == "earthquake":
+                response_plan = getattr(result, "planner_result", None)
+                if not isinstance(response_plan, dict):
+                    continue
+                # Only a successfully planned earthquake is allocatable. The
+                # minimum-response policy commits stations on the plan's
+                # authority, and a plan that failed has none to lend.
+                if (response_plan.get("metadata") or {}).get(
+                    "planning_status"
+                ) != "success":
+                    continue
+                request = {
+                    "incident_id": result.incident_id,
+                    "hazard": "earthquake",
+                    "queued_at": result.requested_at,
+                    "response_plan": response_plan,
+                    "allocation_policy": EARTHQUAKE_MINIMUM_RESPONSE_POLICY,
+                }
+                targeting = None
+
             else:
                 continue
 

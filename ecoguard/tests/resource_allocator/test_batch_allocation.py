@@ -6,6 +6,9 @@ from unittest.mock import Mock
 
 import pytest
 
+from ecoguard.analyzers.emergency.flood.risk_analysis_schemas import (
+    FloodRiskAssessment,
+)
 from ecoguard.resource_allocator.allocation_agent import ResourceAllocationAgent
 from ecoguard.resource_allocator.allocation_agent import (
     EARTHQUAKE_MINIMUM_RESPONSE_POLICY,
@@ -277,7 +280,14 @@ def response_plan(
             "risk_semantics": "detected_event_operational_risk",
         },
         "recommended_units": units or ["fire_department"],
-        "response_actions": [{"timeframe": "immediate"}],
+        "response_actions": [
+            {
+                "action": "Carry out the assigned operational response.",
+                "responsible_unit": unit,
+                "timeframe": "immediate",
+            }
+            for unit in (units or ["fire_department"])
+        ],
     }
 
 
@@ -385,17 +395,6 @@ def test_allocator_attaches_only_frontend_settlement_fields():
     town_reader.assert_called_once_with(latitude=31.0, longitude=35.0)
 
 
-def test_explicit_station_count_overrides_risk_count_but_police_stays_one():
-    plan = {"station_requirements": {"medical_services": 1, "police": 1}}
-
-    assert ResourceAllocationAgent._required_station_count(
-        "high", "medical_services", plan
-    ) == 1
-    assert ResourceAllocationAgent._required_station_count(
-        "critical", "police", plan
-    ) == 1
-
-
 def _flood_site(severity, road_class="primary", target_id="target-primary"):
     return {
         "target_id": target_id,
@@ -408,22 +407,53 @@ def _flood_site(severity, road_class="primary", target_id="target-primary"):
     }
 
 
+def _flood_risk(severity, incident_id="INC-FLOOD-1"):
+    scores = {
+        3: (40, "medium"),
+        4: (60, "high"),
+        5: (80, "critical"),
+        6: (100, "critical"),
+    }
+    score, level = scores[severity]
+    return FloodRiskAssessment(
+        metadata={"timestamp": NOW, "analysis_status": "success"},
+        event_id=incident_id,
+        risk_score=score,
+        risk_level=level,
+        confidence="high",
+        hydrologic_severity_level=severity,
+        return_period_years={3: 10, 4: 20, 5: 50, 6: 100}[severity],
+        alert_level={
+            3: "active",
+            4: "severe",
+            5: "emergency",
+            6: "emergency",
+        }[severity],
+        change_type="initial",
+        primary_drivers=[f"Severity {severity} was observed"],
+        explanation="Detected Flood operational risk derived from current hydrometric severity.",
+    )
+
+
 @pytest.mark.parametrize(
-    ("severity", "expected"),
+    ("severity", "risk_score", "risk_level"),
     [
-        (3, {"police": 1}),
-        (4, {"police": 1}),
-        (5, {"police": 1}),
-        (6, {"police": 1}),
+        (3, 40.0, "medium"),
+        (4, 60.0, "high"),
+        (5, 80.0, "critical"),
+        (6, 100.0, "critical"),
     ],
 )
-def test_flood_counts_are_hardcoded_in_resource_allocator(severity, expected):
+def test_flood_uses_shared_0_to_100_risk_scale(
+    severity, risk_score, risk_level
+):
     agent = allocation_agent({})
     prepared = agent._prepare_batch_request(
         {
             "incident_id": "INC-FLOOD-1",
             "hazard": "flood",
             "queued_at": NOW,
+            "risk_assessment": _flood_risk(severity),
             "flood_targeting": {
                 "allocation_ready_sites": [_flood_site(severity)],
             },
@@ -431,9 +461,75 @@ def test_flood_counts_are_hardcoded_in_resource_allocator(severity, expected):
         NOW,
     )
 
-    assert prepared["response_plan"]["station_requirements"] == expected
-    assert prepared["response_plan"]["station_requirements"]["police"] == 1
+    assert prepared["response_plan"]["recommended_units"] == ["police"]
+    assert "station_requirements" not in prepared["response_plan"]
+    assert prepared["risk_score"] == risk_score
+    assert prepared["risk_level"] == risk_level
     assert prepared["hazard"] == "flood"
+
+
+def test_fire_and_flood_receive_the_same_level_for_the_same_score():
+    agent = allocation_agent({})
+    fire = agent._prepare_batch_request(
+        allocation_request(
+            "INC-FIRE-1",
+            response_plan("fire-event", risk_score=60, risk_level="high"),
+        ),
+        NOW,
+    )
+    flood = agent._prepare_batch_request(
+        {
+            "incident_id": "INC-FLOOD-1",
+            "hazard": "flood",
+            "queued_at": NOW,
+            "risk_assessment": _flood_risk(4),
+            "flood_targeting": {
+                "allocation_ready_sites": [_flood_site(4)],
+            },
+        },
+        NOW,
+    )
+
+    assert fire["risk_score"] == flood["risk_score"] == 60.0
+    assert fire["risk_level"] == flood["risk_level"] == "high"
+
+
+def test_flood_allocator_rejects_targeting_that_disagrees_with_risk_analyzer():
+    agent = allocation_agent({})
+
+    with pytest.raises(
+        ValueError,
+        match="risk severity does not match targeting evidence",
+    ):
+        agent._prepare_batch_request(
+            {
+                "incident_id": "INC-FLOOD-1",
+                "hazard": "flood",
+                "queued_at": NOW,
+                "risk_assessment": _flood_risk(3),
+                "flood_targeting": {
+                    "allocation_ready_sites": [_flood_site(4)],
+                },
+            },
+            NOW,
+        )
+
+
+def test_flood_allocator_requires_risk_analyzer_output():
+    agent = allocation_agent({})
+
+    with pytest.raises(ValueError, match="flood_risk_assessment is required"):
+        agent._prepare_batch_request(
+            {
+                "incident_id": "INC-FLOOD-1",
+                "hazard": "flood",
+                "queued_at": NOW,
+                "flood_targeting": {
+                    "allocation_ready_sites": [_flood_site(4)],
+                },
+            },
+            NOW,
+        )
 
 
 def test_flood_allocator_selects_the_highest_priority_verified_road():
@@ -446,6 +542,7 @@ def test_flood_allocator_selects_the_highest_priority_verified_road():
             "incident_id": "INC-FLOOD-1",
             "hazard": "flood",
             "queued_at": NOW,
+            "risk_assessment": _flood_risk(4),
             "flood_targeting": {
                 "allocation_ready_sites": [street, motorway],
             },
@@ -468,6 +565,7 @@ def test_flood_allocator_assigns_police_to_gauge_when_no_site_was_verified():
             "incident_id": "INC-FLOOD-1",
             "hazard": "flood",
             "queued_at": NOW,
+            "risk_assessment": _flood_risk(4),
             "flood_targeting": {
                 "allocation_ready_sites": [],
                 "hydrometric_sources": [{
@@ -485,7 +583,7 @@ def test_flood_allocator_assigns_police_to_gauge_when_no_site_was_verified():
         NOW,
     )
 
-    assert prepared["response_plan"]["station_requirements"] == {"police": 1}
+    assert prepared["response_plan"]["recommended_units"] == ["police"]
     assert prepared["response_plan"]["location"] == {
         "latitude": 30.735,
         "longitude": 35.235,
@@ -528,6 +626,7 @@ def test_resource_allocator_discovers_flood_roads_and_assigns_one_police_station
         route="emergency",
         requested_at=NOW,
         planner_result=None,
+        risk_assessment=_flood_risk(3),
         resource_allocation_result=None,
     )
 
@@ -542,6 +641,35 @@ def test_resource_allocator_discovers_flood_roads_and_assigns_one_police_station
     }
     assert len(station_allocation["allocated_units"]["police_stations"]) == 1
     assert allocations["INC-FLOOD-1"] is station_allocation
+
+
+def test_flood_deescalation_preserves_existing_allocation_without_retargeting():
+    flood_target_agent = Mock()
+    agent = allocation_agent(
+        {
+            "police": lambda: catalog(
+                station(2, "Police station", 32.02, 34.8, kind="station")
+            ),
+        },
+        flood_target_agent=flood_target_agent,
+        incident_reader=lambda _: pytest.fail(
+            "preserved allocation must not reload incident"
+        ),
+    )
+    result = SimpleNamespace(
+        incident_id="INC-FLOOD-1",
+        hazard="flood",
+        route="emergency",
+        requested_at=NOW,
+        planner_result=None,
+        resource_allocation_result=None,
+        requires_resource_allocation=False,
+        preserve_existing_response=True,
+    )
+
+    assert agent.allocate_processing_results([result]) == {}
+    assert result.resource_allocation_result is None
+    flood_target_agent.identify.assert_not_called()
 
 
 def test_flood_without_road_crossing_assigns_police_and_routes_to_road_access():
@@ -585,6 +713,7 @@ def test_flood_without_road_crossing_assigns_police_and_routes_to_road_access():
         route="emergency",
         requested_at=NOW,
         planner_result=None,
+        risk_assessment=_flood_risk(4, incident["id"]),
         resource_allocation_result=None,
     )
 
@@ -765,17 +894,116 @@ def test_higher_operational_risk_gets_contended_stations_first():
         "medium-incident",
     ]
     assert results[0]["requirements"]["fire_department"] == {
-        "requested": 4,
-        "assigned": 4,
+        "requested": 1,
+        "assigned": 1,
         "shortfall": 0,
     }
     assert results[1]["requirements"]["fire_department"] == {
-        "requested": 2,
-        "assigned": 0,
-        "shortfall": 2,
+        "requested": 1,
+        "assigned": 1,
+        "shortfall": 0,
     }
-    assert results[1]["status"] == "partial"
+    assert results[1]["status"] == "fulfilled"
+    assert results[0]["allocated_units"]["fire_stations"][0]["database_id"] == 1
+    assert results[1]["allocated_units"]["fire_stations"][0]["database_id"] == 2
     assert fire_reader.call_count == 1
+
+
+def test_fire_actions_are_preserved_and_attached_to_responsible_stations():
+    agent = allocation_agent({
+        "fire_department": lambda: catalog(
+            station(1, "Fire station", 31.01, 35.0)
+        ),
+        "police": lambda: catalog(
+            station(2, "Police station", 31.02, 35.0)
+        ),
+    })
+    plan = response_plan(
+        "fire-event",
+        units=["fire_department", "police"],
+    )
+    plan["response_actions"] = [
+        {
+            "action": "Contain the fire perimeter.",
+            "responsible_unit": "fire_department",
+            "timeframe": "ongoing",
+        },
+        {
+            "action": "Establish the initial fire command point.",
+            "responsible_unit": "fire_department",
+            "timeframe": "within_1_hour",
+        },
+        {
+            "action": "Restrict access to the incident area.",
+            "responsible_unit": "police",
+            "timeframe": "immediate",
+        },
+    ]
+
+    result = agent.allocate_batch(
+        [allocation_request("fire-incident", plan)], now=NOW
+    )[0]
+
+    assert result["response_actions"] == plan["response_actions"]
+    assert result["allocated_units"]["fire_stations"][0]["response_actions"] == [
+        plan["response_actions"][0],
+        plan["response_actions"][1],
+    ]
+    assert result["allocated_units"]["police_stations"][0]["response_actions"] == [
+        plan["response_actions"][2]
+    ]
+
+
+def test_flood_successful_planner_actions_drive_station_allocation():
+    agent = allocation_agent({
+        "fire_department": lambda: catalog(
+            station(1, "Fire station", 31.01, 35.0),
+            station(2, "Fire station 2", 31.02, 35.0),
+            station(3, "Fire station 3", 31.03, 35.0),
+        ),
+        "police": lambda: catalog(
+            station(4, "Police station", 31.04, 35.0)
+        ),
+    })
+    plan = response_plan(
+        "flood-event",
+        risk_score=60,
+        risk_level="high",
+        units=["fire_department", "police"],
+    )
+    plan["response_actions"] = [
+        {
+            "action": "Prepare for rescue at the verified road site.",
+            "responsible_unit": "fire_department",
+            "timeframe": "immediate",
+        },
+        {
+            "action": "Close access to the verified road site.",
+            "responsible_unit": "police",
+            "timeframe": "immediate",
+        },
+    ]
+
+    result = agent.allocate_batch([{
+        "incident_id": "INC-FLOOD-1",
+        "hazard": "flood",
+        "queued_at": NOW,
+        "risk_assessment": _flood_risk(4),
+        "flood_targeting": {
+            "allocation_ready_sites": [_flood_site(4)],
+        },
+        "response_plan": plan,
+    }], now=NOW)[0]
+
+    assert result["response_actions"] == plan["response_actions"]
+    assert all(
+        station_result["response_actions"] == [plan["response_actions"][0]]
+        for station_result in result["allocated_units"]["fire_stations"]
+    )
+    assert len(result["allocated_units"]["fire_stations"]) == 1
+    assert result["allocated_units"]["police_stations"][0]["response_actions"] == [
+        plan["response_actions"][1]
+    ]
 
 
 def test_concurrent_batches_cannot_claim_the_same_station():

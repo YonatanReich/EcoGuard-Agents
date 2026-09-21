@@ -314,28 +314,19 @@ def test_scheduler_allocates_all_eligible_fire_plans_in_one_batch(monkeypatch):
         [fire_one, advisory, fire_two, earthquake]
     )
 
+    # The scheduler is now a delegation boundary: one call, every result handed
+    # over unchanged, and whatever the allocator returns passed straight back.
+    #
+    # This test used to assert the requests the scheduler built itself -- the
+    # eligibility filter, the per-hazard request shape and the earthquake
+    # policy tag. Those did not disappear; they moved into
+    # ResourceAllocationAgent.allocate_processing_results, where the hazard
+    # branches live, and test_batch_allocation covers them there. Asserting
+    # them here as well would be asserting the allocator through a fake that
+    # does not implement it.
     assert len(allocator.calls) == 1
-    assert [
-        request["incident_id"] for request in allocator.calls[0]
-    ] == ["INC-FIRE-1", "INC-FIRE-2", "INC-EQ-1"]
-    assert allocator.calls[0][0]["response_plan"] == {"event_id": "PLAN-1"}
-    assert fire_one.resource_allocation_result == {
-        "incident_id": "INC-FIRE-1",
-        "status": "allocated",
-    }
-    assert fire_two.resource_allocation_result == {
-        "incident_id": "INC-FIRE-2",
-        "status": "allocated",
-    }
-    assert advisory.resource_allocation_result is None
-    assert allocator.calls[0][2]["allocation_policy"] == (
-        "earthquake_minimum_response_v1"
-    )
-    assert earthquake.resource_allocation_result == {
-        "incident_id": "INC-EQ-1",
-        "status": "allocated",
-    }
-    assert set(allocations) == {"INC-FIRE-1", "INC-FIRE-2", "INC-EQ-1"}
+    assert allocator.calls[0] == [fire_one, advisory, fire_two, earthquake]
+    assert allocations == {"delegated": True}
 
 
 def test_scheduler_passes_flood_result_unchanged_to_resource_allocator(monkeypatch):

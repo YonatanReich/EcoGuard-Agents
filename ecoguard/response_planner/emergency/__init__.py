@@ -3,6 +3,7 @@
 from ecoguard.response_planner.emergency.adapters import (
     OperationalAnalysisUnavailable,
     build_fire_plan_input,
+    build_flood_plan_input,
 )
 from ecoguard.response_planner.emergency.planner import EmergencyResponsePlanner
 from ecoguard.response_planner.emergency.schemas import (
@@ -16,4 +17,5 @@ __all__ = [
     "EmergencyResponsePlanner",
     "OperationalAnalysisUnavailable",
     "build_fire_plan_input",
+    "build_flood_plan_input",
 ]

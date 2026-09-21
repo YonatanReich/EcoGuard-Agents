@@ -75,6 +75,11 @@ function EventCard({ event, onOpen, isSelected }: {
             Severity {event.details.severity_level} · {event.details.return_period_label}
           </span>
           <span className="event-card__station">
+            {event.details.risk_level && event.details.risk_score != null
+              ? `Operational risk: ${event.details.risk_level} (${event.details.risk_score}/100)`
+              : 'Operational risk not assessed'}
+          </span>
+          <span className="event-card__station">
             {event.details.sources.length} hydrometric station(s) ·{' '}
             {event.details.response_sites.length} road site(s)
           </span>

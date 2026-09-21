@@ -39,6 +39,7 @@ class FireResponseAction(EventContract):
     action: str
     responsible_unit: str
     timeframe: Literal["immediate", "within_1_hour", "within_6_hours", "ongoing"]
+    supporting_protocol_chunk_ids: list[str] = Field(default_factory=list)
 
 
 class AllocationRequirement(EventContract):
@@ -80,6 +81,7 @@ class AllocatedStation(EventContract):
     distance_km: float | None = Field(default=None, ge=0)
     allocation_status: str
     selection_reason: str
+    response_actions: list[FireResponseAction] = Field(default_factory=list)
     route: AllocationRoute | None = None
 
 
@@ -220,7 +222,9 @@ class FireDetails(EventContract):
     confidence: Literal["low", "medium", "high"] | None = None
     primary_drivers: list[str] = Field(default_factory=list)
     explanation: str | None = None
+    assumptions: list[str] = Field(default_factory=list)
     evidence_gaps: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
     recommended_units: list[str] = Field(default_factory=list)
     response_plan: list[str] = Field(default_factory=list)
     response_actions: list[FireResponseAction] = Field(default_factory=list)
@@ -459,6 +463,12 @@ class FloodAdvisory(EventContract):
 class FloodDetails(EventContract):
     severity_level: int = Field(ge=3, le=6)
     return_period_label: str
+    risk_status: Literal["success", "partial", "unavailable"] | None = None
+    risk_score: int | None = Field(default=None, ge=0, le=100)
+    risk_level: Literal["low", "medium", "high", "critical"] | None = None
+    risk_confidence: Literal["low", "medium", "high"] | None = None
+    risk_primary_drivers: list[str] = Field(default_factory=list)
+    risk_explanation: str | None = None
     sources: list[FloodSourceContext] = Field(default_factory=list)
     response_sites: list[FloodResponseSite] = Field(default_factory=list)
     allocation_ready_site_ids: list[str] = Field(default_factory=list)
@@ -466,7 +476,15 @@ class FloodDetails(EventContract):
     targeting_reason: str | None = None
     allocation_target: dict[str, Any] | None = None
     advisories: list[FloodAdvisory] = Field(default_factory=list)
+    response_actions: list[FireResponseAction] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
+    evidence_gaps: list[str] = Field(default_factory=list)
     resource_allocation: ResourceAllocationSummary | None = None
+    response_plan: dict[str, Any] | None = None
+    change_type: str | None = None
+    threshold_transition: str | None = None
+    response_refresh_required: bool | None = None
+    existing_response_preserved: bool = False
     limitations: list[str] = Field(default_factory=list)
 
 

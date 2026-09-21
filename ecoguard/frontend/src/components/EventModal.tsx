@@ -49,6 +49,12 @@ function formatUnavailableReason(reason: string) {
   return reason.replaceAll('_', ' ')
 }
 
+function formatAllocationError(error: Record<string, unknown>) {
+  const reason = typeof error.reason === 'string' ? formatUnavailableReason(error.reason) : null
+  const message = typeof error.message === 'string' ? error.message : null
+  return [reason, message].filter(Boolean).join(': ') || 'Allocation failed'
+}
+
 function websiteUrl(value: string) {
   return /^https?:\/\//i.test(value) ? value : `https://${value}`
 }
@@ -282,6 +288,15 @@ function FireEventDetails({ event }: { event: FireEvent }) {
                   )}
                 </span>
                 {station.address && <span>{station.address}</span>}
+                {(station.response_actions?.length ?? 0) > 0 && (
+                  <ul className="event-modal__station-actions">
+                    {station.response_actions?.map((action, index) => (
+                      <li key={`${station.database_id}-action-${index}`}>
+                        {action.action} <span className="event-modal__timeframe">{action.timeframe}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 {station.route?.requires_field_access_confirmation && (
                   <span className="event-modal__allocation-warning">
                     The straight dashed segment to the target is not a verified access route; its travel time is unknown.
@@ -320,6 +335,16 @@ function FireEventDetails({ event }: { event: FireEvent }) {
               The allocation is partial; at least one requested resource is missing.
             </p>
           )}
+          {details.resource_allocation.errors.length > 0 && (
+            <div className="event-modal__allocation-warning">
+              <strong>Allocation errors</strong>
+              <ul>
+                {details.resource_allocation.errors.map((error, index) => (
+                  <li key={index}>{formatAllocationError(error)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </section>
       )}
 
@@ -336,6 +361,20 @@ function FireEventDetails({ event }: { event: FireEvent }) {
         <section className="event-modal__section event-modal__section--gaps">
           <h3>Evidence gaps</h3>
           <ul>{details.evidence_gaps.map((gap) => <li key={gap}>{gap}</li>)}</ul>
+        </section>
+      )}
+
+      {details.assumptions.length > 0 && (
+        <section className="event-modal__section">
+          <h3>Assumptions</h3>
+          <ul>{details.assumptions.map((item) => <li key={item}>{item}</li>)}</ul>
+        </section>
+      )}
+
+      {details.limitations.length > 0 && (
+        <section className="event-modal__section event-modal__section--gaps">
+          <h3>Limitations</h3>
+          <ul>{details.limitations.map((item) => <li key={item}>{item}</li>)}</ul>
         </section>
       )}
 
@@ -761,10 +800,48 @@ function FloodEventDetails({ event }: { event: FloodEvent }) {
         <dl className="event-modal__facts event-modal__facts--compact">
           <div><dt>Severity</dt><dd>{details.severity_level} / 6</dd></div>
           <div><dt>Threshold</dt><dd>{details.return_period_label}</dd></div>
+          <div>
+            <dt>Operational risk</dt>
+            <dd>
+              {details.risk_level && details.risk_score != null
+                ? `${details.risk_level} (${details.risk_score}/100)`
+                : 'not assessed'}
+            </dd>
+          </div>
+          <div><dt>Risk confidence</dt><dd>{details.risk_confidence ?? 'unavailable'}</dd></div>
           <div><dt>Targeting</dt><dd>{details.targeting_status.replaceAll('_', ' ')}</dd></div>
           <div><dt>Road sites</dt><dd>{details.response_sites.length}</dd></div>
         </dl>
       </section>
+
+      {(details.risk_explanation || (details.risk_primary_drivers?.length ?? 0) > 0) && (
+        <section className="event-modal__section">
+          <h3>Operational risk assessment</h3>
+          {details.risk_explanation && <p>{details.risk_explanation}</p>}
+          {(details.risk_primary_drivers?.length ?? 0) > 0 && (
+            <ul>
+              {details.risk_primary_drivers?.map((driver) => (
+                <li key={driver}>{driver}</li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {(details.response_actions?.length ?? 0) > 0 && (
+        <section className="event-modal__section">
+          <h3>Response plan</h3>
+          <ol className="event-modal__actions">
+            {details.response_actions?.map((action, index) => (
+              <li key={`${action.responsible_unit}-${index}`}>
+                {action.action}
+                <span className="event-modal__timeframe">{action.timeframe}</span>
+                <span className="event-modal__action-owner">{formatComponentName(action.responsible_unit)}</span>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
 
       <section className="event-modal__section">
         <h3>Hydrometric sources</h3>
@@ -839,6 +916,15 @@ function FloodEventDetails({ event }: { event: FloodEvent }) {
                     The straight dashed segment to the target is not a verified access route; its travel time is unknown.
                   </span>
                 )}
+                {(station.response_actions?.length ?? 0) > 0 && (
+                  <ul className="event-modal__station-actions">
+                    {station.response_actions?.map((action, index) => (
+                      <li key={`${station.database_id}-flood-action-${index}`}>
+                        {action.action} <span className="event-modal__timeframe">{action.timeframe}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 {station.route?.steps_he && station.route.steps_he.length > 0 && (
                   <details
                     id={`allocation-directions-${station.recommended_unit}-${station.database_id}`}
@@ -861,6 +947,37 @@ function FloodEventDetails({ event }: { event: FloodEvent }) {
               </li>
             ))}
           </ul>
+          {allocation.errors.length > 0 && (
+            <div className="event-modal__allocation-warning">
+              <strong>Allocation errors</strong>
+              <ul>
+                {allocation.errors.map((error, index) => (
+                  <li key={index}>{formatAllocationError(error)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
+
+      {(details.assumptions?.length ?? 0) > 0 && (
+        <section className="event-modal__section">
+          <h3>Assumptions</h3>
+          <ul>{details.assumptions?.map((item) => <li key={item}>{item}</li>)}</ul>
+        </section>
+      )}
+
+      {(details.evidence_gaps?.length ?? 0) > 0 && (
+        <section className="event-modal__section event-modal__section--gaps">
+          <h3>Evidence gaps</h3>
+          <ul>{details.evidence_gaps?.map((item) => <li key={item}>{item}</li>)}</ul>
+        </section>
+      )}
+
+      {details.limitations.length > 0 && (
+        <section className="event-modal__section event-modal__section--gaps">
+          <h3>Limitations</h3>
+          <ul>{details.limitations.map((item) => <li key={item}>{item}</li>)}</ul>
         </section>
       )}
     </>

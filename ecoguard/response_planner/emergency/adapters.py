@@ -6,6 +6,12 @@ import json
 from typing import Any, Mapping
 
 from ecoguard.analyzers.emergency.fire.risk_analysis_agent import build_event_id
+from ecoguard.analyzers.emergency.flood.event_analysis_schemas import (
+    FloodEventAnalysis,
+)
+from ecoguard.analyzers.emergency.flood.risk_analysis_schemas import (
+    FloodRiskAssessment,
+)
 from ecoguard.analyzers.emergency.earthquake.impact import EarthquakeImpact, LIMITATION
 from ecoguard.response_planner.emergency.schemas import EmergencyResponsePlanInput
 
@@ -413,3 +419,128 @@ def build_earthquake_plan_input(
             "source": impact.source,
         },
     )
+
+
+def build_flood_plan_input(
+    analysis: FloodEventAnalysis | Mapping[str, Any],
+    risk_assessment: FloodRiskAssessment | Mapping[str, Any],
+) -> EmergencyResponsePlanInput:
+    """Adapt event and risk outputs without recalculating either one."""
+
+    try:
+        validated = FloodEventAnalysis.model_validate(analysis)
+    except (TypeError, ValueError, AttributeError) as error:
+        raise OperationalAnalysisUnavailable("flood_analysis_unavailable") from error
+    try:
+        risk = FloodRiskAssessment.model_validate(risk_assessment)
+    except (TypeError, ValueError, AttributeError) as error:
+        raise OperationalAnalysisUnavailable("flood_risk_unavailable") from error
+
+    state = validated.current_state
+    change = validated.change_assessment
+    progression = validated.progression_assessment
+    if validated.status == "unavailable" or state is None or change is None:
+        raise OperationalAnalysisUnavailable("flood_analysis_unavailable")
+    if (
+        risk.event_id != validated.incident_id
+        or risk.event_type != "flood"
+        or risk.metadata.analysis_status not in {"success", "partial"}
+        or risk.risk_score is None
+        or risk.risk_level is None
+        or risk.hydrologic_severity_level != state.severity_level
+    ):
+        raise OperationalAnalysisUnavailable("flood_risk_unavailable")
+
+    primary = next(
+        (
+            station
+            for station in state.stations
+            if station.station_id == state.primary_station_id
+        ),
+        None,
+    )
+    location = (
+        {"latitude": primary.latitude, "longitude": primary.longitude}
+        if primary is not None
+        and primary.latitude is not None
+        and primary.longitude is not None
+        else None
+    )
+
+    description = [
+        f"Confirmed hydrometric Flood incident at station {state.primary_station_id}.",
+        f"Current severity level is {state.severity_level}",
+    ]
+    if state.return_period_years is not None:
+        description[-1] += f" (Q{state.return_period_years})"
+    description[-1] += f", with operational alert state {state.alert_level}."
+    if change.threshold_transition:
+        description.append(
+            "The latest observation changed the event from "
+            + change.threshold_transition.replace("_to_", " to ")
+            + "."
+        )
+    if progression is not None:
+        description.append(
+            f"Observed discharge trend at station {progression.station_id} is "
+            f"{progression.trend}."
+        )
+    if change.new_station_ids:
+        description.append(
+            "New hydrometric station evidence: "
+            + ", ".join(str(item) for item in change.new_station_ids)
+            + "."
+        )
+    if change.new_cell_ids:
+        description.append(
+            f"The observed footprint expanded into {len(change.new_cell_ids)} new cell(s)."
+        )
+    description.append(
+        f"Operational risk is {risk.risk_score} out of 100 "
+        f"({risk.risk_level}), with {risk.confidence} confidence."
+    )
+    if risk.primary_drivers:
+        description.append(
+            "Primary risk drivers: " + "; ".join(risk.primary_drivers) + "."
+        )
+
+    return EmergencyResponsePlanInput(
+        hazard_type="flood",
+        incident_id=validated.incident_id,
+        location=location,
+        event_description=" ".join(description),
+        risk_context={
+            "risk_semantics": risk.risk_semantics,
+            "risk_score": risk.risk_score,
+            "risk_level": risk.risk_level,
+            "confidence": risk.confidence,
+            "risk_basis": "hydrometric_severity_mapping",
+            "hydrologic_severity_level": state.severity_level,
+            "return_period_years": state.return_period_years,
+            "alert_level": state.alert_level,
+            "change_type": change.change_type,
+            "threshold_transition": change.threshold_transition,
+        },
+        evidence_gaps=list(
+            dict.fromkeys([*validated.evidence_gaps, *risk.evidence_gaps])
+        ),
+        limitations=list(
+            dict.fromkeys([*validated.limitations, *risk.limitations])
+        ),
+        additional_context={
+            "current_hydrologic_state": state.model_dump(mode="json"),
+            "progression_assessment": (
+                progression.model_dump(mode="json")
+                if progression is not None
+                else None
+            ),
+            "change_assessment": change.model_dump(mode="json"),
+            "risk_assessment": risk.model_dump(mode="json"),
+        },
+    )
+
+__all__ = [
+    "build_earthquake_plan_input",
+    "build_fire_plan_input",
+    "build_flood_plan_input",
+]

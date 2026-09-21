@@ -10,10 +10,17 @@ from typing import Any
 from ecoguard.analyzers.non_emergency.air_pollution.incident_handler import (
     pollution_candidates_from_incident,
 )
+from ecoguard.analyzers.emergency.flood.event_analysis_schemas import (
+    FloodEventAnalysis,
+)
+from ecoguard.analyzers.emergency.flood.risk_analysis_schemas import (
+    FloodRiskAssessment,
+)
 from ecoguard.coordinator import incidents as incident_store
 from ecoguard.coordinator.dispatcher import IncidentProcessingResult
 from ecoguard.database.repositories.event_projections import (
     EventProjectionWrite,
+    event_projection_by_incident,
     upsert_event_projection,
 )
 from ecoguard.shared.events import (
@@ -49,6 +56,7 @@ from ecoguard.shared.events import (
     FloodSharedEvent,
     FloodSourceContext,
     FloodStream,
+    FireResponseAction,
     GeographicPoint,
     MinistryAirQualityIndex,
     OfficialPollutantClassification,
@@ -61,6 +69,7 @@ logger = logging.getLogger(__name__)
 
 IncidentReader = Callable[[str], dict[str, Any] | None]
 ProjectionWriter = Callable[[EventProjectionWrite], dict[str, Any] | None]
+ProjectionReader = Callable[[str], dict[str, Any] | None]
 EventMapper = Callable[
     [IncidentProcessingResult, Mapping[str, Any]],
     AirPollutionSharedEvent | EarthquakeSharedEvent | FloodSharedEvent,
@@ -382,11 +391,42 @@ def air_pollution_shared_event(
 
 
 def _flood_station_sources(
-    targeting: Mapping[str, Any], incident: Mapping[str, Any]
+    targeting: Mapping[str, Any],
+    incident: Mapping[str, Any],
+    analysis: FloodEventAnalysis | None = None,
 ) -> list[dict[str, Any]]:
     sources = targeting.get("hydrometric_sources")
     if isinstance(sources, list) and sources:
         return [dict(item) for item in sources if isinstance(item, Mapping)]
+
+    # When a de-escalation intentionally skips road targeting, project the
+    # analyzer's latest per-station state. Reconstructing every historical
+    # signal here would incorrectly keep showing the incident's peak band.
+    if analysis is not None and analysis.current_state is not None:
+        current_sources = []
+        for state in analysis.current_state.stations:
+            if (
+                state.latitude is None
+                or state.longitude is None
+                or not 3 <= state.severity_level <= 6
+            ):
+                continue
+            current_sources.append({
+                "station": {
+                    "id": state.station_id,
+                    "latitude": state.latitude,
+                    "longitude": state.longitude,
+                    "precision_m": state.precision_m,
+                    "severity_level": state.severity_level,
+                    "observed_at": state.observed_at,
+                    "stream_match": "unmatched",
+                },
+                "strategy": "analyzer_current_state",
+                "stream": None,
+            })
+        if current_sources:
+            return current_sources
+
     reconstructed = []
     for signal in incident.get("signals") or []:
         if not isinstance(signal, Mapping) or signal.get("hazard") != "flood":
@@ -472,6 +512,11 @@ def _allocation_summary(value: Any) -> ResourceAllocationSummary | None:
                     distance_km=station.get("distance_km"),
                     allocation_status=str(station["allocation_status"]),
                     selection_reason=str(station["selection_reason"]),
+                    response_actions=[
+                        FireResponseAction.model_validate(action)
+                        for action in station.get("response_actions") or []
+                        if isinstance(action, Mapping)
+                    ],
                     route=route,
                 ))
     settlement_value = value.get("settlement")
@@ -497,8 +542,18 @@ def flood_shared_event(
 
     if result.hazard != "flood" or result.route != "emergency":
         raise ValueError("not_a_flood_emergency_result")
+    analysis = (
+        result.analysis_result
+        if isinstance(result.analysis_result, FloodEventAnalysis)
+        else None
+    )
+    risk = (
+        result.risk_assessment
+        if isinstance(result.risk_assessment, FloodRiskAssessment)
+        else None
+    )
     targeting = result.resource_allocation_result or {}
-    sources = _flood_station_sources(targeting, incident)
+    sources = _flood_station_sources(targeting, incident, analysis)
     if not sources:
         raise ValueError("hydrometric_station_evidence_unavailable")
 
@@ -551,11 +606,46 @@ def flood_shared_event(
             ),
         ))
 
-    primary = max(projected_sources, key=lambda item: item.station.severity_level)
-    severity = primary.station.severity_level
+    primary_station_id = (
+        analysis.current_state.primary_station_id
+        if analysis is not None and analysis.current_state is not None
+        else None
+    )
+    primary = next(
+        (
+            source
+            for source in projected_sources
+            if source.station.id == primary_station_id
+        ),
+        max(projected_sources, key=lambda item: item.station.severity_level),
+    )
+    severity = (
+        analysis.current_state.severity_level
+        if analysis is not None and analysis.current_state is not None
+        else primary.station.severity_level
+    )
     return_period = {3: "10-year", 4: "20-year", 5: "50-year", 6: "100-year"}[severity]
     drawable_streams = sum(source.stream is not None for source in projected_sources)
     targeting_status = targeting.get("status")
+    change = analysis.change_assessment if analysis is not None else None
+    preserving = result.preserve_existing_response
+    plan = (
+        result.planner_result
+        if isinstance(result.planner_result, Mapping)
+        else {}
+    )
+    plan_actions = [
+        FireResponseAction.model_validate({
+            "action": action.get("action"),
+            "responsible_unit": action.get("responsible_unit"),
+            "timeframe": action.get("timeframe"),
+            "supporting_protocol_chunk_ids": (
+                action.get("supporting_protocol_chunk_ids") or []
+            ),
+        })
+        for action in plan.get("response_actions") or []
+        if isinstance(action, Mapping)
+    ]
     return FloodSharedEvent(
         id=result.incident_id,
         title=f"Flood warning: hydrometric station {primary.station.id}",
@@ -568,18 +658,39 @@ def flood_shared_event(
         observed_at=primary.station.observed_at,
         classification="emergency",
         analysis_status=(
-            "success"
+            analysis.status
+            if analysis is not None
+            else "success"
             if targeting_status not in {None, "failed", "not_evaluated"}
             else "partial"
         ),
-        planning_status="success",
+        planning_status=(
+            result.planner_status
+            or (
+                "success"
+                if targeting_status not in {None, "failed", "not_evaluated"}
+                else "unavailable"
+            )
+        ),
         details=FloodDetails(
             severity_level=severity,
             return_period_label=return_period,
+            risk_status=(risk.metadata.analysis_status if risk is not None else None),
+            risk_score=(risk.risk_score if risk is not None else None),
+            risk_level=(risk.risk_level if risk is not None else None),
+            risk_confidence=(risk.confidence if risk is not None else None),
+            risk_primary_drivers=(
+                list(risk.primary_drivers) if risk is not None else []
+            ),
+            risk_explanation=(risk.explanation if risk is not None else None),
             sources=projected_sources,
             response_sites=sites,
             allocation_ready_site_ids=[site.target_id for site in sites if site.allocation_eligible],
-            targeting_status=str(targeting_status or "unavailable"),
+            targeting_status=(
+                "preserved_existing_response"
+                if preserving and not targeting
+                else str(targeting_status or "unavailable")
+            ),
             targeting_reason=targeting.get("reason"),
             allocation_target=targeting.get("allocation_target"),
             advisories=[
@@ -587,14 +698,102 @@ def flood_shared_event(
                 for advisory in targeting.get("advisories") or []
                 if isinstance(advisory, Mapping)
             ],
+            response_actions=plan_actions,
+            assumptions=[str(item) for item in plan.get("assumptions") or []],
+            evidence_gaps=list(dict.fromkeys([
+                *(analysis.evidence_gaps if analysis is not None else []),
+                *(risk.evidence_gaps if risk is not None else []),
+                *[str(item) for item in plan.get("evidence_gaps") or []],
+            ])),
             resource_allocation=_allocation_summary(targeting.get("station_allocation")),
+            response_plan=(
+                dict(result.planner_result)
+                if isinstance(result.planner_result, Mapping)
+                else None
+            ),
+            change_type=change.change_type if change is not None else None,
+            threshold_transition=(
+                change.threshold_transition if change is not None else None
+            ),
+            response_refresh_required=result.response_refresh_required,
+            existing_response_preserved=preserving,
             limitations=[
                 "The stream line marks the stream under warning, not confirmed inundation extent.",
                 "A ring around an unmatched station represents location precision, not flood extent.",
                 f"Drawable matched stream geometries: {drawable_streams} of {len(projected_sources)}.",
+                *(analysis.limitations if analysis is not None else []),
+                *(risk.limitations if risk is not None else []),
+                *[str(item) for item in plan.get("limitations") or []],
             ],
         ),
     )
+
+
+def _preserve_flood_operational_response(
+    event: FloodSharedEvent,
+    previous_projection: Mapping[str, Any] | None,
+) -> FloodSharedEvent:
+    """Carry forward the last plan/targets while keeping new hydrology."""
+
+    if not previous_projection:
+        return event
+    payload = (
+        previous_projection.get("last_successful_event_payload")
+        or previous_projection.get("event_payload")
+    )
+    if not isinstance(payload, Mapping):
+        return event
+    previous_details = payload.get("details")
+    if not isinstance(previous_details, Mapping):
+        return event
+
+    details = event.details.model_dump(mode="json")
+    for key in (
+        "response_sites",
+        "allocation_ready_site_ids",
+        "targeting_reason",
+        "allocation_target",
+        "advisories",
+        "resource_allocation",
+        "response_plan",
+        "response_actions",
+        "assumptions",
+    ):
+        if key in previous_details:
+            details[key] = previous_details[key]
+
+    for key in ("evidence_gaps", "limitations"):
+        details[key] = list(dict.fromkeys([
+            *(details.get(key) or []),
+            *(previous_details.get(key) or []),
+        ]))
+
+    # Retain a previously verified stream geometry for a station, but never
+    # copy its old severity or timestamp over the current analyzer state.
+    previous_sources = {
+        item.get("station", {}).get("id"): item
+        for item in previous_details.get("sources") or []
+        if isinstance(item, Mapping) and isinstance(item.get("station"), Mapping)
+    }
+    for source in details.get("sources") or []:
+        if not isinstance(source, dict) or source.get("stream") is not None:
+            continue
+        station = source.get("station") or {}
+        previous = previous_sources.get(station.get("id"))
+        if isinstance(previous, Mapping) and previous.get("stream") is not None:
+            source["stream"] = previous["stream"]
+            source["strategy"] = previous.get("strategy") or source.get("strategy")
+            station["stream_match"] = "matched"
+
+    preserved_details = FloodDetails.model_validate(details)
+    return event.model_copy(update={
+        "details": preserved_details,
+        "description": (
+            f"Hydrometric Flood warning at station "
+            f"{preserved_details.sources[0].station.id}; "
+            f"{len(preserved_details.response_sites)} relevant road site(s) identified."
+        ),
+    })
 
 
 def default_mapper_registry() -> dict[tuple[str, str], EventMapper]:
@@ -718,7 +917,8 @@ def earthquake_shared_event(
 def _retryable(result: IncidentProcessingResult) -> bool:
     return bool(
         result.status == "failed"
-        or result.failure_stage in {"adaptation", "analysis", "planning", "handler"}
+        or result.failure_stage
+        in {"adaptation", "analysis", "risk_analysis", "planning", "handler"}
         or result.analysis_status == "failed"
         or result.planner_status == "failed"
     )
@@ -729,6 +929,7 @@ def project_processing_results(
     *,
     mapper_registry: Mapping[tuple[str, str], EventMapper] | None = None,
     incident_reader: IncidentReader = incident_store.incident_by_id,
+    projection_reader: ProjectionReader = event_projection_by_incident,
     writer: ProjectionWriter = upsert_event_projection,
 ) -> list[ProjectionOutcome]:
     """Project and persist each result independently; unsupported skips vanish."""
@@ -753,6 +954,14 @@ def project_processing_results(
         mapping_failure = None
         try:
             event = mapper(result, incident)
+            if (
+                isinstance(event, FloodSharedEvent)
+                and result.preserve_existing_response
+            ):
+                event = _preserve_flood_operational_response(
+                    event,
+                    projection_reader(result.incident_id),
+                )
         except Exception as error:
             mapping_failure = type(error).__name__
             logger.exception("event mapping failed for %s", result.incident_id)
