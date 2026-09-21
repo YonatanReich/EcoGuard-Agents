@@ -36,6 +36,7 @@ import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 
 import IsraelMask from './layers/IsraelMask'
+import KinneretLayer from './layers/KinneretLayer'
 import FloodEventLayer from './layers/FloodEventLayer'
 import { classify, hazardOf } from './hazards'
 
@@ -321,6 +322,9 @@ function MapView({
 
 
         <IsraelMask />
+
+
+        <KinneretLayer />
 
 
         <NavigationControl

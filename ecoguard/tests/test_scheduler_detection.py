@@ -32,6 +32,15 @@ def _empty_flood_detector(monkeypatch):
         lambda signals: list(signals),
     )
 
+    # The media lane is stubbed for the same reason as the flood detector: these
+    # tests assert what one tick hands the coordinator, and the real lane reads
+    # whatever news happens to be in the database and spends a model call
+    # classifying it. Its own tests cover it.
+    from ecoguard.detectors.text import classifier, run as text_run
+
+    monkeypatch.setattr(classifier, "classify_new_text", lambda **kwargs: None)
+    monkeypatch.setattr(text_run, "run_text_triage", lambda **kwargs: None)
+
 
 def _fire_signal() -> CellSignal:
     return CellSignal(
@@ -139,7 +148,7 @@ def test_shared_detection_job_is_registered_exactly_once():
     jobs = [job for job in scheduler.get_jobs() if job.id == "detect_and_coordinate"]
 
     assert len(jobs) == 1
-    assert jobs[0].trigger.interval.total_seconds() == 30 * 60
+    assert jobs[0].trigger.interval.total_seconds() == 10 * 60
     assert jobs[0].max_instances == 1
     assert jobs[0].coalesce is True
 
@@ -392,3 +401,43 @@ def test_scheduler_allocation_failure_does_not_block_projection(monkeypatch):
 
     assert shared_runtime.detect_and_coordinate() == processing_results
     assert projected == processing_results
+
+
+def test_advisory_plans_publish_before_the_allocator_runs(monkeypatch):
+    """The two planning lines: advisory straight out, emergency via allocation."""
+    from ecoguard import scheduler as shared_runtime
+    from ecoguard.coordinator import agent, dispatcher, event_projection
+    from ecoguard.detectors.air_pollution import observation_processing
+    from ecoguard.detectors.fire import satellite, weather
+
+    advisory = SimpleNamespace(incident_id="INC-AIR", route="non_emergency")
+    emergency = SimpleNamespace(incident_id="INC-FIRE", route="emergency")
+    order = []
+
+    monkeypatch.setattr(satellite, "detect_new", lambda: [])
+    monkeypatch.setattr(weather, "detect_new", lambda: [])
+    monkeypatch.setattr(observation_processing, "detect_new", lambda: [])
+    monkeypatch.setattr(
+        agent, "run", lambda signals: agent.CoordinationResult(created=["INC-1"])
+    )
+    monkeypatch.setattr(
+        dispatcher, "dispatch_touched", lambda identifiers: [advisory, emergency]
+    )
+    monkeypatch.setattr(
+        shared_runtime,
+        "allocate_resources",
+        lambda results: order.append(("allocate", [r.incident_id for r in results])),
+    )
+    monkeypatch.setattr(
+        event_projection,
+        "project_processing_results",
+        lambda results: order.append(("publish", [r.incident_id for r in results])),
+    )
+
+    shared_runtime.detect_and_coordinate()
+
+    assert order == [
+        ("publish", ["INC-AIR"]),
+        ("allocate", ["INC-FIRE"]),
+        ("publish", ["INC-FIRE"]),
+    ]

@@ -33,6 +33,12 @@ function Home() {
     setTimeout(() => navigate('/dashboard'), 700)
   }
 
+  /** Same exit animation, different destination. */
+  const handleDemo = () => {
+    setLeaving(true)
+    setTimeout(() => navigate('/demo'), 700)
+  }
+
   return (
     <main className={`home${leaving ? ' home--leaving' : ''}`}>
       <img src="/logo-bot.png" alt="EcoGuard bot" className="home__bot" />
@@ -42,6 +48,10 @@ function Home() {
       </p>
       <button className="login-button" onClick={handleLogin}>
         Log in
+      </button>
+
+      <button className="demo-button" onClick={handleDemo}>
+        Show incidents demo
       </button>
     </main>
   )

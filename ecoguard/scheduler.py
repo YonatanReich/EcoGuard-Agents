@@ -198,8 +198,31 @@ scheduler.add_job(
 )
 
 
+def publish(results):
+    """Project finished results to the frontend. Never raises."""
+    if not results:
+        return
+    try:
+        from ecoguard.coordinator.event_projection import project_processing_results
+
+        project_processing_results(results)
+    except Exception:
+        # Projection is delivery state. It must not erase completed processing
+        # or affect the authoritative persisted Coordinator incident.
+        logger.exception(
+            "incident event projection failed; processing results are unaffected"
+        )
+
+
 def detect_and_coordinate():
-    """Sweep stored observations for shared hazard signals and coordinate once.
+    """One wave: every detector, one coordinator, the analysers, then publish.
+
+    Detectors and the media lane all run first and their candidates are
+    coordinated together in a single batch, so corroboration and deduplication
+    see the whole tick at once rather than one lane at a time. The coordinator
+    routes what it touched to the hazard analysers, and planning leaves by two
+    lines: advisory plans to the frontend, emergency plans through the resource
+    allocator and then to the frontend.
 
     The detectors intentionally emit separate hazard streams. Satellite
     hotspots emit ``fire`` signals for emergency routing, weather anomalies
@@ -246,6 +269,28 @@ def detect_and_coordinate():
             logger.exception("detector %s failed; continuing without it",
                              detector.__name__)
 
+    # The media lane, in its two halves. Classification labels the messages the
+    # RSS and Telegram collectors stored; triage decides which labelled reports
+    # are worth an incident. Its own guard, because a rate-limited model call
+    # must not also stop the triage of candidates already stored.
+    try:
+        from ecoguard.detectors.text.classifier import classify_new_text
+
+        classify_new_text()
+    except Exception:
+        logger.exception("text classification failed; triaging what is stored")
+
+    # Triage would otherwise call the coordinator a second time on its own — a
+    # separate wave of incidents arriving at the frontend out of step with
+    # everything else. Handing it this tick's batch is what makes "all
+    # detectors, then one coordinator" true rather than nearly true.
+    try:
+        from ecoguard.detectors.text.run import run_text_triage
+
+        run_text_triage(coordinate=signals.extend)
+    except Exception:
+        logger.exception("text triage failed; continuing without it")
+
     # Telegram is evidence for already-produced structured Fire/Flood signals.
     # The enrichment service is deliberately one-input/one-output and forwards
     # these original objects unchanged on any failure. It never creates a
@@ -276,8 +321,28 @@ def detect_and_coordinate():
         logger.exception("incident dispatch failed after coordination")
         return []
 
+    # Planning has two exits, not one. An advisory plan is finished the moment
+    # it is written — nobody is dispatched to it — so it goes straight to the
+    # frontend. An emergency plan is not finished until stations are committed
+    # against it, so it goes through the allocator first and is published with
+    # its allocation attached. Splitting them means a Mapbox round trip for one
+    # fire cannot hold up an air quality warning that is already written.
+    #
+    # getattr rather than .route: the allocator reads results the same way, and
+    # a result that cannot say which line it is on is not an emergency one.
+    emergency = [
+        result for result in processing_results
+        if getattr(result, "route", None) == "emergency"
+    ]
+    advisory = [
+        result for result in processing_results
+        if getattr(result, "route", None) != "emergency"
+    ]
+
+    publish(advisory)
+
     try:
-        allocate_resources(processing_results)
+        allocate_resources(emergency)
     except Exception:
         # Allocation is downstream of analysis and planning. A routing, DB, or
         # Mapbox failure must not discard their completed results.
@@ -285,34 +350,31 @@ def detect_and_coordinate():
             "resource allocation failed; processing results are unaffected"
         )
 
-    try:
-        from ecoguard.coordinator.event_projection import project_processing_results
-
-        project_processing_results(processing_results)
-    except Exception:
-        # Projection is delivery state. It must not erase completed processing
-        # or affect the authoritative persisted Coordinator incident.
-        logger.exception(
-            "incident event projection failed; processing results are unaffected"
-        )
+    publish(emergency)
     return processing_results
 
 
-# Every thirty minutes, set by the satellite rather than the weather.
+# Every ten minutes: one wave through the whole pipeline. Every detector and
+# the media lane run, their candidates are coordinated together, the analysers
+# report on what the coordinator touched, and the two planning lines publish.
 #
-# The weather half only changes hourly and a second look at the same stored
-# hour finds the same anomaly. But FIRMS is the half that detects fires, its
-# overpasses arrive irregularly, and the collector already polls at thirty
-# minutes — so an hourly detector would sit on a fresh hotspot for up to an
-# hour after it landed. That is the one delay in this pipeline that costs
-# something real.
+# Ten rather than thirty because the fastest sources are the ones worth being
+# fast for — Telegram polls at five minutes, RSS at three, hydrometric at ten —
+# and a thirty-minute sweep left a report of a fire sitting in a table for up
+# to half an hour after someone posted it. The slow collectors are unaffected:
+# a tick that finds nothing new from FIRMS or EFFIS reads rows it has already
+# seen and emits nothing.
 #
-# The cost of the extra tick is re-reporting detections already attached to an
+# The cost of the extra ticks is re-reporting detections already attached to an
 # open incident, which the coordinator absorbs by design.
+#
+# max_instances=1 makes this a wave rather than an overlap: if a run is still
+# analysing when the next tick fires, that tick is dropped instead of starting
+# a second pass over the same incidents.
 scheduler.add_job(
     detect_and_coordinate,
     "interval",
-    minutes=30,
+    minutes=10,
     id="detect_and_coordinate",
     max_instances=1,
     coalesce=True,
