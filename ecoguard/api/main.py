@@ -50,6 +50,7 @@ from ecoguard.analyzers.emergency.fire.national_scan import NationalCurrentRiskS
 from ecoguard.api.fire_danger_surface import build_surface as build_fire_danger_surface
 from ecoguard.shared.protocols import ProtocolRetriever
 from ecoguard.api.events import router as events_router
+from ecoguard.api.weak_events import router as weak_events_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -82,6 +83,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(events_router)
+app.include_router(weak_events_router)
 
 # Allow the Vite dev server to call the API directly during development.
 # Both localhost and 127.0.0.1 are listed because browsers treat them as
@@ -281,6 +283,59 @@ def get_fire_stations():
     except Exception as error:
         logging.error("Fire station query failed: %s", error, exc_info=True)
         raise HTTPException(status_code=503, detail="Fire station data is unavailable.")
+
+
+@app.get("/api/water-levels")
+def get_water_levels():
+    """Serve the current Kinneret advisory: level, trend, and what to do.
+
+    Transport only. The bands, the trend and the recommended action are all
+    computed by the advisory module against the Water Authority's published
+    operating lines; nothing is decided here.
+
+    Only the Kinneret is served. The Dead Sea has no published management
+    thresholds and no inflow scheme, so there is no action to advise on and
+    EcoGuard does not invent lines for it.
+
+    Returns:
+        dict: `status` "available" with an `advisory` object, or "unavailable"
+            with a `reason` when nothing has been collected yet. A fresh
+            database is the normal way to see the second one.
+
+    Raises:
+        HTTPException: 503 when the observation store cannot be reached.
+    """
+    from dataclasses import asdict
+
+    from ecoguard.analyzers.non_emergency.water_level.advisory import (
+        LevelReading,
+        advise,
+    )
+    from ecoguard.database.repositories.observations import (
+        read_kinneret_level_history,
+    )
+
+    try:
+        rows = read_kinneret_level_history()
+    except Exception as error:
+        logging.error("Kinneret level query failed: %s", error, exc_info=True)
+        raise HTTPException(status_code=503, detail="Water level data is unavailable.")
+
+    readings = [
+        LevelReading(
+            observed_at=row["observed_at"],
+            level_m=float(row["payload"]["level_m"]),
+        )
+        for row in rows
+        if isinstance(row.get("payload"), dict)
+        and row["payload"].get("level_m") is not None
+    ]
+    if not readings:
+        return {
+            "status": "unavailable",
+            "reason": "no_kinneret_readings_collected_yet",
+        }
+    return {"status": "available", "advisory": asdict(advise(readings))}
 
 
 @app.get("/api/police-stations")

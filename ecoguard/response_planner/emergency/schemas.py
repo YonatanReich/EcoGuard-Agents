@@ -76,6 +76,9 @@ class EmergencyPlanGrounding(EmergencyContract):
     retrieved_chunk_ids: list[str] = Field(default_factory=list)
     citations: list[dict[str, Any]] = Field(default_factory=list)
     unverified_citation_count: int = Field(default=0, ge=0)
+    # How many model calls this plan took. 2 means the first was ungrounded and
+    # the retry recovered it; read it to learn whether retrying pays.
+    attempts: int = Field(default=1, ge=1)
 
 
 class EmergencyResponsePlan(EmergencyContract):

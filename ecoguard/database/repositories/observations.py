@@ -21,6 +21,10 @@ MAX_READ_BATCH_SIZE = 5000
 AIR_POLLUTION_SOURCE = "air_pollution"
 AIR_POLLUTION_TREND_LOOKBACK_MINUTES = 120
 MAX_AIR_POLLUTION_HISTORY_ROWS = 100
+KINNERET_LEVEL_SOURCE = "kinneret_level"
+# One survey a day, so a year of history is a year of rows. The advisory fits
+# a thirty-day window; the rest is headroom for the gaps the series has.
+MAX_KINNERET_HISTORY_ROWS = 400
 
 
 def _aware(value: datetime | None, *, name: str) -> datetime | None:
@@ -194,6 +198,37 @@ def read_air_pollution_series_history(
     return list(reversed(newest_first))
 
 
+def kinneret_level_history_statement(*, limit: int = MAX_KINNERET_HISTORY_ROWS):
+    """Build one bounded read of the stored Kinneret level series."""
+
+    if type(limit) is not int or not 1 <= limit <= MAX_KINNERET_HISTORY_ROWS:
+        raise ValueError(f"limit must be between 1 and {MAX_KINNERET_HISTORY_ROWS}")
+    return (
+        select(Observation.observed_at, Observation.payload)
+        .where(
+            Observation.source == KINNERET_LEVEL_SOURCE,
+            Observation.issued_at.is_(None),
+        )
+        .order_by(Observation.observed_at.desc())
+        .limit(limit)
+    )
+
+
+def read_kinneret_level_history(
+    *, limit: int = MAX_KINNERET_HISTORY_ROWS
+) -> list[dict[str, Any]]:
+    """Read the stored level series, newest last. One SELECT, no writes."""
+
+    with Session() as session:
+        newest_first = [
+            dict(row)
+            for row in session.execute(kinneret_level_history_statement(limit=limit))
+            .mappings()
+            .all()
+        ]
+    return list(reversed(newest_first))
+
+
 def _point(record: dict[str, Any]) -> WKTElement | None:
     latitude, longitude = record.get("latitude"), record.get("longitude")
     if latitude is None or longitude is None:
@@ -216,6 +251,49 @@ def _row(source: str, record: dict[str, Any], ingested_at: datetime) -> dict[str
         "issued_at": record.get("issued_at"),
         "payload": record["payload"],
     }
+
+
+def upsert_editable_observations(source: str, records: Iterable[dict[str, Any]]) -> int:
+    """Insert, and replace the payload of a row whose content has changed.
+
+    For sources that revise what they already published. Operational Telegram
+    channels edit a post as an incident develops — "שריפה באזור" becomes the
+    same message with a street and an evacuation instruction twenty minutes
+    later — and under insert-and-ignore the newer text is discarded and the
+    system keeps reasoning from the first draft.
+
+    Returns rows inserted *or updated*, so an edit-only tick reports the work
+    it did. Rows whose payload is unchanged are not counted and not written:
+    the collector re-reads the same window constantly and touching every row
+    each time would make `updated_at` meaningless.
+    """
+    rows = list(records)
+    if not rows:
+        return 0
+
+    ingested_at = datetime.now(timezone.utc)
+    written = 0
+    with Session() as session:
+        for start in range(0, len(rows), CHUNK_SIZE):
+            values = [_row(source, record, ingested_at) for record in rows[start:start + CHUNK_SIZE]]
+            insert_statement = insert(Observation).values(values)
+            statement = (
+                insert_statement
+                .on_conflict_do_update(
+                    constraint="observations_identity",
+                    set_={
+                        "payload": insert_statement.excluded.payload,
+                        "ingested_at": insert_statement.excluded.ingested_at,
+                    },
+                    where=Observation.payload.is_distinct_from(
+                        insert_statement.excluded.payload
+                    ),
+                )
+                .returning(Observation.id)
+            )
+            written += len(session.execute(statement).scalars().all())
+        session.commit()
+    return written
 
 
 def upsert_observations(source: str, records: Iterable[dict[str, Any]]) -> int:

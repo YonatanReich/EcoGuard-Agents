@@ -38,6 +38,17 @@ class BaseCollector:
         """
         raise NotImplementedError
 
+    def store(self, records: list[dict[str, Any]]) -> int:
+        """Write what fetch() returned, and return how many rows are new.
+
+        Insert-and-ignore, because almost every source here re-serves a window
+        it has already delivered and the identity constraint is what makes that
+        free. A source whose records can legitimately *change* after first
+        publication — a Telegram message that is edited as an incident develops
+        — overrides this.
+        """
+        return upsert_observations(self.source, records)
+
     def run(self) -> None:
         """Never raises. A failed collector is one stale layer, not an outage.
 
@@ -52,7 +63,7 @@ class BaseCollector:
                     return
                 run_id = log_start(self.source)
                 try:
-                    written = upsert_observations(self.source, self.fetch())
+                    written = self.store(self.fetch())
                     log_finish(run_id, status="ok", rows_written=written)
                     logger.info("%s collector: %s new observations", self.source, written)
                 except Exception as error:

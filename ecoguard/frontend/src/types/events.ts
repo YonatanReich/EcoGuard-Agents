@@ -505,6 +505,41 @@ export type AirPollutionDetails = {
   trend: 'RISING' | 'STABLE' | 'FALLING' | null
 }
 
+/** The Kinneret advisory from GET /api/water-levels.
+ *
+ *  Not a SharedEvent: it does not enter the event feed, because there is one
+ *  reading a day from one source and nothing to deduplicate or corroborate.
+ *  It is served and rendered on its own. */
+export type WaterLevelBand =
+  | 'above_upper_red'
+  | 'normal'
+  | 'below_lower_red'
+  | 'below_black'
+
+export type KinneretAdvisory = {
+  level_m: number
+  observed_at: string
+  band: WaterLevelBand
+  action: string
+  rationale: string
+  /** Null means not assessed, never flat. Render it as "not assessed". */
+  trend_m_per_day: number | null
+  trend_m_per_year: number | null
+  distance_to_upper_red_m: number
+  distance_to_lower_red_m: number
+  days_to_black_line: number | null
+  sample_count: number
+  thresholds: {
+    upper_red_line_m: number
+    lower_red_line_m: number
+    black_line_m: number
+  }
+}
+
+export type WaterLevelResponse =
+  | { status: 'available'; advisory: KinneretAdvisory }
+  | { status: 'unavailable'; reason: string }
+
 type CommonEvent = {
   id: string
   title: string
@@ -567,94 +602,3 @@ export type SharedEventFeed = {
   events: SharedEvent[]
 }
 
-/** The unchanged flat fire event currently returned by GET /api/detected-events. */
-export type DetectedFireEventPayload = {
-  id: string
-  type: string
-  title: string
-  description: string
-  latitude: number
-  longitude: number
-  detection_confidence: string | null
-  fire_weather_severity: string | null
-  risk_score: number | null
-  risk_level: RiskLevel | null
-  confidence: 'low' | 'medium' | 'high' | null
-  primary_drivers: string[]
-  explanation: string | null
-  assumptions: string[]
-  evidence_gaps: string[]
-  limitations: string[]
-  recommended_units: string[]
-  response_plan: string[]
-  response_actions: FireResponseAction[]
-  protocol_citations: ProtocolCitation[]
-  analysis_status: 'success' | 'failed' | 'skipped'
-  planning_status: 'success' | 'failed' | 'skipped'
-}
-
-export type DetectedEventsResponse = {
-  metadata: {
-    timestamp: string | null
-    collection_status: string
-    services: Record<string, { status: string; source: string | null }>
-  }
-  query: {
-    latitude: number
-    longitude: number
-    radius_km: number
-    day_range: number
-    include_analysis: boolean
-  }
-  events: DetectedFireEventPayload[]
-}
-
-/** Adapt the existing fire-only transport payload to the shared UI model. */
-export function detectedFireToSharedEvent(event: DetectedFireEventPayload): FireEvent {
-  return {
-    id: event.id,
-    type: 'fire',
-    title: event.title,
-    description: event.description,
-    latitude: event.latitude,
-    longitude: event.longitude,
-    observed_at: null,
-    classification:
-      event.risk_level === 'critical' || event.risk_level === 'high'
-        ? 'emergency'
-        : 'advisory',
-    analysis_status: event.analysis_status,
-    planning_status: event.planning_status,
-    details: {
-      detection_confidence: event.detection_confidence,
-      fire_weather_severity: event.fire_weather_severity,
-      risk_score: event.risk_score,
-      risk_level: event.risk_level,
-      confidence: event.confidence,
-      primary_drivers: event.primary_drivers,
-      explanation: event.explanation,
-      assumptions: event.assumptions,
-      evidence_gaps: event.evidence_gaps,
-      limitations: event.limitations,
-      recommended_units: event.recommended_units,
-      response_plan: event.response_plan,
-      response_actions: event.response_actions,
-      protocol_citations: event.protocol_citations,
-      resource_allocation: null,
-      // The legacy point-query endpoint measures none of this. Empty rather
-      // than fabricated, so the UI shows "not assessed" for a fire that came
-      // through the old path instead of implying nothing is at risk.
-      detection: null,
-      spread: null,
-      exposed_settlements: [],
-      sites_at_risk: [],
-      evacuation: [],
-      people_in_spread: null,
-      population_at_risk: {},
-      dispatch: null,
-      incident_report: null,
-      coverage_gaps: [],
-      limits: [],
-    },
-  }
-}

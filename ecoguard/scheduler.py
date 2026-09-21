@@ -29,6 +29,8 @@ from ecoguard.collection.fire.firms.collector import FirmsCollector
 from ecoguard.collection.fire.fwi.collector import FireWeatherIndexCollector
 from ecoguard.collection.fire.gibs.collector import VegetationCollector
 from ecoguard.collection.shared.telegram.collector import TelegramCollector
+from ecoguard.collection.text.rss import RssCollector
+from ecoguard.collection.water_level.kinneret import KinneretLevelCollector
 from ecoguard.collection.shared.open_meteo.forecast import WeatherForecastCollector
 from ecoguard.collection.shared.open_meteo.observations import WeatherCollector
 from ecoguard.resource_allocator.allocation_agent import ResourceAllocationAgent
@@ -102,8 +104,18 @@ INTERVAL_MINUTES = {
     "fwi": 360,
     "vegetation": 720,
     "telegram": 5,
+    # News feeds republish within a minute or two of an editor pressing
+    # publish, and conditional requests make an unchanged feed nearly free, so
+    # this is set by how fast a breaking item matters rather than by provider
+    # cost. Three minutes across eight outlets is a few hundred requests a day.
+    "rss": 3,
     HYDROMETRIC_OBSERVATIONS_SOURCE: 10,
     "gsi_earthquake": 5,
+    # One survey a day, published to an open dataset with no key and no rate
+    # limit worth respecting. Six hours is four requests a day, which catches
+    # the new reading within a morning without asking repeatedly for a number
+    # that changes by centimetres. The lake itself moves on a scale of months.
+    "kinneret_level": 360,
 }
 
 COLLECTORS = {
@@ -115,8 +127,10 @@ COLLECTORS = {
     "fwi": FireWeatherIndexCollector,
     "vegetation": VegetationCollector,
     "telegram": TelegramCollector,
+    "rss": RssCollector,
     HYDROMETRIC_OBSERVATIONS_SOURCE: HydrometricObservationCollector,
     "gsi_earthquake": GsiEarthquakeCollector,
+    "kinneret_level": KinneretLevelCollector,
 }
 
 # fwi reads the hours the weather collector wrote, so on a cold start it has
