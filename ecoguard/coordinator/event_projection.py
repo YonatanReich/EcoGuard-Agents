@@ -617,6 +617,57 @@ def earthquake_shared_event(
     if impact is None:
         raise ValueError("earthquake_impact_missing")
     towns_available = impact.towns.status.value.startswith("SUCCESS")
+    plan = result.planner_result if isinstance(result.planner_result, dict) else {}
+    allocation = (
+        result.resource_allocation_result
+        if isinstance(result.resource_allocation_result, dict)
+        else None
+    )
+    allocation_summary = None
+    if allocation is not None:
+        stations = [
+            station
+            for group in (allocation.get("allocated_units") or {}).values()
+            for station in group
+        ]
+        allocation_summary = {
+            "status": allocation.get("status", "failed"),
+            "routing_status": allocation.get("routing_status", "not_available"),
+            "requirements": allocation.get("requirements") or {},
+            "shortages": allocation.get("shortages") or {},
+            "stations": [
+                {
+                    "database_id": station["database_id"],
+                    "name": station.get("name") or f"Station {station['database_id']}",
+                    "address": station.get("address"),
+                    "unit_type": station["unit_type"],
+                    "recommended_unit": station["recommended_unit"],
+                    "latitude": station["latitude"],
+                    "longitude": station["longitude"],
+                    "distance_km": station.get("distance_km"),
+                    "allocation_status": station.get("allocation_status", "assigned"),
+                    "selection_reason": station.get("selection_reason", "unknown"),
+                    "route": station.get("route"),
+                }
+                for station in stations
+            ],
+            "errors": [
+                error for error in allocation.get("errors") or []
+                if isinstance(error, dict)
+            ],
+            "unsupported_units": allocation.get("unsupported_units") or [],
+            "allocation_policy": allocation.get("allocation_policy"),
+            "allocation_basis": allocation.get("allocation_basis"),
+            "quantity_source": allocation.get("quantity_source"),
+        }
+    actions = [
+        {
+            "action": action["action"],
+            "responsible_unit": action["responsible_unit"],
+            "timeframe": action["timeframe"],
+        }
+        for action in plan.get("response_actions") or []
+    ]
     return EarthquakeSharedEvent(
         id=str(incident["id"]),
         title=f"Earthquake M{impact.magnitude:.1f}",
@@ -626,7 +677,7 @@ def earthquake_shared_event(
         observed_at=impact.observed_at,
         classification="emergency",
         analysis_status="success",
-        planning_status="skipped",
+        planning_status=result.planner_status or "skipped",
         details=EarthquakeDetails(
             provider_event_id=impact.provider_event_id,
             magnitude=impact.magnitude,
@@ -648,11 +699,18 @@ def earthquake_shared_event(
             ),
             provider=impact.provider,
             source=impact.source,
-            limitations=[
+            plan_summary=plan.get("plan_summary"),
+            recommended_units=plan.get("recommended_units") or [],
+            response_actions=actions,
+            protocol_citations=(plan.get("grounding") or {}).get("citations") or [],
+            evidence_gaps=plan.get("evidence_gaps") or [],
+            limitations=list(dict.fromkeys([
                 "Estimated Impact Area is a screening radius only; it does not "
                 "model soil conditions, shaking intensity, building vulnerability, "
-                "or actual damage."
-            ],
+                "or actual damage.",
+                *(plan.get("limitations") or []),
+            ])),
+            resource_allocation=allocation_summary,
         ),
     )
 
@@ -707,7 +765,6 @@ def project_processing_results(
             and analysis_status in {"success", "partial"}
             and (
                 planning_status == "success"
-                or (result.hazard == "earthquake" and planning_status == "skipped")
             )
         )
         record = EventProjectionWrite(

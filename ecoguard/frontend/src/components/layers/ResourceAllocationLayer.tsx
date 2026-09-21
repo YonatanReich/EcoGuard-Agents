@@ -1,6 +1,6 @@
 import { useMemo, useState, type CSSProperties } from 'react'
 import { Layer, Marker, Popup, Source } from 'react-map-gl/mapbox'
-import type { AllocatedStation, FireEvent, FloodEvent } from '../../types/events'
+import type { AllocatedStation, EarthquakeEvent, FireEvent, FloodEvent } from '../../types/events'
 import { resourceAllocationSimulation } from '../../utils/resourceAllocationSimulation'
 import AllocationVehicleSimulation from './AllocationVehicleSimulation'
 
@@ -49,7 +49,7 @@ function ResourceAllocationLayer({
   onShowDirections,
   showLegend = false,
 }: {
-  event: FireEvent | FloodEvent
+  event: FireEvent | EarthquakeEvent | FloodEvent
   onShowDirections: (stationKey: string) => void
   showLegend?: boolean
 }) {

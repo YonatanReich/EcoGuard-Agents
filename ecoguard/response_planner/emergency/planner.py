@@ -214,7 +214,7 @@ class EmergencyResponsePlanner:
             return analysis.hazard_type
         if isinstance(analysis, dict):
             hazard = analysis.get("hazard_type")
-            if hazard not in {"fire", "flood"}:
+            if hazard not in {"fire", "flood", "earthquake"}:
                 raise ValueError("unsupported emergency hazard")
             return str(hazard)
         # There is no safe doctrine to select without a hazard.

@@ -43,6 +43,10 @@ STATIONS_REQUIRED_BY_RISK = {
     },
 }
 
+EARTHQUAKE_MINIMUM_RESPONSE_POLICY = "earthquake_minimum_response_v1"
+EARTHQUAKE_ALLOCATION_BASIS = "protocol_recommended_units"
+EARTHQUAKE_QUANTITY_SOURCE = "ecoguard_minimum_response_policy"
+
 TIMEFRAME_PRIORITY = {
     "ongoing": 0,
     "within_6_hours": 1,
@@ -335,7 +339,12 @@ class ResourceAllocationAgent:
         )
 
     @staticmethod
-    def _required_station_count(risk_level, recommended_unit, response_plan=None):
+    def _required_station_count(
+        risk_level, recommended_unit, response_plan=None, allocation_policy=None
+    ):
+        if allocation_policy == EARTHQUAKE_MINIMUM_RESPONSE_POLICY:
+            # EcoGuard product policy, not an official dispatch quantity.
+            return 1
         if recommended_unit == "police":
             # Severity is sent to the responsible station; the station decides
             # how many internal units it dispatches.
@@ -626,6 +635,30 @@ class ResourceAllocationAgent:
                 }
             }
 
+        allocation_policy = item.get("allocation_policy")
+        if allocation_policy is not None:
+            if allocation_policy != EARTHQUAKE_MINIMUM_RESPONSE_POLICY:
+                raise ValueError("unsupported allocation policy")
+            if response_plan.get("hazard_type") != "earthquake":
+                raise ValueError("earthquake allocation policy requires an earthquake plan")
+            metadata = response_plan.get("metadata") or {}
+            queued_at = self._utc(
+                item.get("queued_at") or metadata.get("timestamp") or now
+            )
+            return {
+                "incident_id": incident_id,
+                "response_plan": response_plan,
+                "risk_score": None,
+                "risk_level": None,
+                "queued_at": queued_at,
+                "allocation_time": now,
+                "urgency": self._urgency(response_plan),
+                "effective_priority": None,
+                "allocation_policy": EARTHQUAKE_MINIMUM_RESPONSE_POLICY,
+                "allocation_basis": EARTHQUAKE_ALLOCATION_BASIS,
+                "quantity_source": EARTHQUAKE_QUANTITY_SOURCE,
+            }
+
         responding_to = response_plan.get("responding_to") or {}
         if responding_to.get("risk_semantics") != "detected_event_operational_risk":
             raise ValueError("response plan does not contain operational risk")
@@ -682,11 +715,26 @@ class ResourceAllocationAgent:
             "urgency": self._urgency(response_plan),
             # Aging adds one point every five minutes so old requests progress.
             "effective_priority": float(risk_score) + aging_bonus,
+            "allocation_policy": None,
+            "allocation_basis": None,
+            "quantity_source": None,
         }
 
     @staticmethod
     def _priority_key(request):
+        if request.get("allocation_policy") == EARTHQUAKE_MINIMUM_RESPONSE_POLICY:
+            # Policy-driven requests do not receive a fabricated risk score.
+            # They follow Fire requests in a mixed batch, then sort by action
+            # urgency, queue time and incident id. Fire-to-Fire ordering below
+            # is unchanged.
+            return (
+                1,
+                -request["urgency"],
+                request["queued_at"],
+                request["incident_id"],
+            )
         return (
+            0,
             -request["effective_priority"],
             -request["risk_score"],
             -request["urgency"],
@@ -775,6 +823,12 @@ class ResourceAllocationAgent:
             "real_world_availability": "unknown",
             "selection_reason": "nearest_available_station",
         }
+        if allocation.get("allocation_policy") is not None:
+            result.update({
+                "allocation_policy": allocation["allocation_policy"],
+                "allocation_basis": allocation.get("allocation_basis"),
+                "quantity_source": allocation.get("quantity_source"),
+            })
         for field in ("allocated_at", "released_at"):
             value = allocation.get(field)
             result[field] = (
@@ -793,16 +847,28 @@ class ResourceAllocationAgent:
         risk_score,
         risk_level,
         allocated_at,
+        allocation_policy=None,
+        allocation_basis=None,
+        quantity_source=None,
     ):
         """Atomically claim stations through the shared DB repository."""
+        claim = {
+            "incident_id": incident_id,
+            "recommended_unit": recommended_unit,
+            "candidates": candidates,
+            "required_count": required_count,
+            "risk_score": risk_score,
+            "risk_level": risk_level,
+            "allocated_at": allocated_at,
+        }
+        if allocation_policy is not None:
+            claim.update({
+                "allocation_policy": allocation_policy,
+                "allocation_basis": allocation_basis,
+                "quantity_source": quantity_source,
+            })
         allocations = self.allocation_repository.claim_stations(
-            incident_id=incident_id,
-            recommended_unit=recommended_unit,
-            candidates=candidates,
-            required_count=required_count,
-            risk_score=risk_score,
-            risk_level=risk_level,
-            allocated_at=allocated_at,
+            **claim,
         )
         return [self._allocation_view(allocation) for allocation in allocations]
 
@@ -976,6 +1042,13 @@ class ResourceAllocationAgent:
             "unsupported_units": [],
             "errors": [],
         }
+        if request.get("allocation_policy") is not None:
+            result.update({
+                "allocation_policy": request["allocation_policy"],
+                "allocation_basis": request["allocation_basis"],
+                "quantity_source": request["quantity_source"],
+                "priority_basis": "fire_before_policy_then_action_timeframe_queued_at",
+            })
         if request.get("allocation_target") is not None:
             result["allocation_target"] = request["allocation_target"]
 
@@ -999,7 +1072,10 @@ class ResourceAllocationAgent:
 
         for recommended_unit in recommended_units:
             required_count = self._required_station_count(
-                request["risk_level"], recommended_unit, response_plan
+                request["risk_level"],
+                recommended_unit,
+                response_plan,
+                request.get("allocation_policy"),
             )
             mapping = STATION_TYPES.get(recommended_unit)
             if mapping is None:
@@ -1098,6 +1174,9 @@ class ResourceAllocationAgent:
                     request["risk_score"],
                     request["risk_level"],
                     request["allocation_time"],
+                    request.get("allocation_policy"),
+                    request.get("allocation_basis"),
+                    request.get("quantity_source"),
                 )
             except Exception as error:
                 assigned = []

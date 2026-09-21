@@ -84,9 +84,12 @@ class ResourceAllocationRepository:
         recommended_unit: str,
         candidates: Iterable[dict[str, Any]],
         required_count: int,
-        risk_score: float,
-        risk_level: str,
+        risk_score: float | None,
+        risk_level: str | None,
         allocated_at: datetime,
+        allocation_policy: str | None = None,
+        allocation_basis: str | None = None,
+        quantity_source: str | None = None,
     ) -> list[dict[str, Any]]:
         """Assign stations without exceeding one incident's demand.
 
@@ -119,7 +122,10 @@ class ResourceAllocationRepository:
                                release_reason,
                                distance_km,
                                risk_score,
-                               risk_level
+                               risk_level,
+                               allocation_policy,
+                               allocation_basis,
+                               quantity_source
                         FROM resource_allocations
                         WHERE incident_id = :incident_id
                           AND released_at IS NULL
@@ -151,14 +157,20 @@ class ResourceAllocationRepository:
                               allocated_at,
                               distance_km,
                               risk_score,
-                              risk_level
+                              risk_level,
+                              allocation_policy,
+                              allocation_basis,
+                              quantity_source
                             ) VALUES (
                               :incident_id,
                               :station_id,
                               :allocated_at,
                               :distance_km,
                               :risk_score,
-                              :risk_level
+                              :risk_level,
+                              :allocation_policy,
+                              :allocation_basis,
+                              :quantity_source
                             )
                             ON CONFLICT DO NOTHING
                             RETURNING id,
@@ -170,7 +182,10 @@ class ResourceAllocationRepository:
                                       release_reason,
                                       distance_km,
                                       risk_score,
-                                      risk_level
+                                      risk_level,
+                                      allocation_policy,
+                                      allocation_basis,
+                                      quantity_source
                             """
                         ),
                         {
@@ -180,6 +195,9 @@ class ResourceAllocationRepository:
                             "distance_km": candidate["distance_km"],
                             "risk_score": risk_score,
                             "risk_level": risk_level,
+                            "allocation_policy": allocation_policy,
+                            "allocation_basis": allocation_basis,
+                            "quantity_source": quantity_source,
                         },
                     ).mappings().first()
                     if inserted is None:
@@ -244,7 +262,10 @@ class ResourceAllocationRepository:
                            release_reason,
                            distance_km,
                            risk_score,
-                           risk_level
+                           risk_level,
+                           allocation_policy,
+                           allocation_basis,
+                           quantity_source
                     FROM resource_allocations
                     WHERE released_at IS NULL
                     ORDER BY incident_id, allocated_at, id

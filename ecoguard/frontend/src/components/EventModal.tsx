@@ -266,6 +266,100 @@ function EarthquakeEventDetails({ event }: { event: EarthquakeEvent }) {
         </dl>
       </section>
 
+      {details.plan_summary && (
+        <section className="event-modal__section">
+          <h3>Earthquake response plan</h3>
+          <p>{details.plan_summary}</p>
+          {details.response_actions.length > 0 && (
+            <ol className="event-modal__actions">
+              {details.response_actions.map((action, index) => (
+                <li key={`${action.responsible_unit}-${index}`}>
+                  <p>{action.action}</p>
+                  <span className="event-modal__timeframe">{action.timeframe}</span>
+                  <span className="event-modal__action-owner">{action.responsible_unit}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+      )}
+
+      {details.resource_allocation && (
+        <section className="event-modal__section">
+          <h3>Resource allocation</h3>
+          <p>
+            {details.resource_allocation.allocation_policy}
+            {' · '}{details.resource_allocation.quantity_source}
+          </p>
+          <ul className="event-modal__allocations">
+            {details.resource_allocation.stations.map((station) => (
+              <li key={`${station.recommended_unit}-${station.database_id}`}>
+                <strong>{station.name}</strong>
+                <span>{formatComponentName(station.recommended_unit)}</span>
+                <span>
+                  {station.distance_km == null ? 'Distance unavailable' : `${station.distance_km.toFixed(1)} km`}
+                  {station.route?.duration_s != null && ` · ${formatDuration(station.route.duration_s)}`}
+                </span>
+                {station.address && <span>{station.address}</span>}
+                {station.route?.estimated_arrival_at && (
+                  <span>ETA {formatTimestamp(station.route.estimated_arrival_at)}</span>
+                )}
+                {station.route?.requires_field_access_confirmation && (
+                  <span className="event-modal__allocation-warning">Field access requires confirmation</span>
+                )}
+                {station.route?.steps_he && station.route.steps_he.length > 0 && (
+                  <details
+                    id={`allocation-directions-${station.recommended_unit}-${station.database_id}`}
+                    className="event-modal__directions"
+                    dir="rtl"
+                  >
+                    <summary>הוראות נסיעה</summary>
+                    <ol>
+                      {station.route.steps_he.map((step, index) => (
+                        <li key={`${station.database_id}-step-${index}`}>
+                          <span className="event-modal__direction-instruction">
+                            {step.instruction ?? 'המשך במסלול'}
+                          </span>
+                          <span className="event-modal__direction-meta">
+                            {step.distance_m != null
+                              && formatRouteStepDistance(step.distance_m)}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  </details>
+                )}
+              </li>
+            ))}
+          </ul>
+          {details.resource_allocation.unsupported_units.length > 0 && (
+            <p className="event-modal__allocation-warning">
+              Recommended capabilities without a station catalog: {' '}
+              {details.resource_allocation.unsupported_units.join(', ')}.
+            </p>
+          )}
+        </section>
+      )}
+
+      {details.protocol_citations.length > 0 && (
+        <section className="event-modal__section">
+          <h3>Protocol citations</h3>
+          {details.protocol_citations.map((citation) => (
+            <blockquote key={citation.chunk_id} className="event-modal__citation">
+              <p>“{citation.quoted_text}”</p>
+              <footer>{citation.document_title}</footer>
+            </blockquote>
+          ))}
+        </section>
+      )}
+
+      {details.evidence_gaps.length > 0 && (
+        <section className="event-modal__section event-modal__section--gaps">
+          <h3>Evidence gaps</h3>
+          <ul>{details.evidence_gaps.map((gap) => <li key={gap}>{gap}</li>)}</ul>
+        </section>
+      )}
+
       <section className="event-modal__section">
         <h3>Estimated Impact Area</h3>
         <p>The semi-transparent map polygon is the deterministic screening area.</p>

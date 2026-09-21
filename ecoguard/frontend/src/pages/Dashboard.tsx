@@ -46,6 +46,7 @@ import {
   detectedFireToSharedEvent,
   type DetectedEventsResponse,
   type FireEvent,
+  type EarthquakeEvent,
   type FloodEvent,
   type SharedEvent,
   type SharedEventFeed,
@@ -208,8 +209,8 @@ function Dashboard() {
     : null
   const allocationEvents = useMemo(
     () => events.filter(
-      (event): event is FireEvent | FloodEvent => (
-        (event.type === 'fire' || event.type === 'flood')
+      (event): event is FireEvent | EarthquakeEvent | FloodEvent => (
+        (event.type === 'fire' || event.type === 'earthquake' || event.type === 'flood')
         && event.details.resource_allocation !== null
       ),
     ),

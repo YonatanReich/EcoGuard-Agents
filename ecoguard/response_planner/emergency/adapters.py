@@ -6,6 +6,7 @@ import json
 from typing import Any, Mapping
 
 from ecoguard.analyzers.emergency.fire.risk_analysis_agent import build_event_id
+from ecoguard.analyzers.emergency.earthquake.impact import EarthquakeImpact, LIMITATION
 from ecoguard.response_planner.emergency.schemas import EmergencyResponsePlanInput
 
 
@@ -102,3 +103,66 @@ def build_fire_plan_input(
         )
     except (TypeError, ValueError) as error:
         raise OperationalAnalysisUnavailable("risk_analysis_unavailable") from error
+
+
+def build_earthquake_plan_input(
+    impact: EarthquakeImpact,
+    *,
+    incident_id: str,
+) -> EmergencyResponsePlanInput:
+    """Adapt deterministic Earthquake impact facts without adding risk claims."""
+
+    towns = [town.model_dump(mode="json") for town in impact.towns.towns]
+    town_status = impact.towns.status.value
+    population = dict(impact.population_summary)
+    description_parts = [
+        f"GSI reported earthquake {impact.provider_event_id} at "
+        f"{impact.observed_at.isoformat()} with magnitude {impact.magnitude} and "
+        f"depth {impact.depth_km} km.",
+        f"The epicenter is at latitude {impact.latitude}, longitude {impact.longitude}.",
+        f"The deterministic Estimated Impact Area screening radius is {impact.radius_km} km.",
+        f"Town intersection status is {town_status}; {len(towns)} intersecting town records are available.",
+        (
+            "Population intersection status is "
+            f"{population.get('status')}; estimated population is "
+            f"{population.get('estimated_population')} across "
+            f"{population.get('intersected_cell_count')} intersected grid cells."
+        ),
+        LIMITATION,
+    ]
+    evidence_gaps = []
+    if not town_status.startswith("SUCCESS"):
+        evidence_gaps.append(
+            impact.towns.reason or "Town intersection data is unavailable."
+        )
+    if population.get("status") != "available":
+        evidence_gaps.append(
+            str(population.get("reason") or "Population intersection data is unavailable.")
+        )
+
+    return EmergencyResponsePlanInput(
+        incident_id=incident_id,
+        hazard_type="earthquake",
+        location={"latitude": impact.latitude, "longitude": impact.longitude},
+        event_description=" ".join(description_parts),
+        risk_context=None,
+        evidence_gaps=evidence_gaps,
+        limitations=[LIMITATION],
+        additional_context={
+            "provider_event_id": impact.provider_event_id,
+            "observed_at": impact.observed_at.isoformat(),
+            "magnitude": impact.magnitude,
+            "depth_km": impact.depth_km,
+            "estimated_impact_radius_km": impact.radius_km,
+            "estimated_impact_area": impact.area,
+            "town_intersection": {
+                "status": town_status,
+                "source": impact.towns.source,
+                "reason": impact.towns.reason,
+                "towns": towns,
+            },
+            "population_summary": population,
+            "provider": impact.provider,
+            "source": impact.source,
+        },
+    )

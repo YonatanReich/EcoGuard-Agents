@@ -141,6 +141,35 @@ def test_flood_uses_only_an_injected_flood_test_corpus(tmp_path: Path):
     assert "population" not in result.model_dump_json().lower()
 
 
+def test_earthquake_uses_only_the_earthquake_protocol_corpus():
+    retriever = ProtocolRetriever(hazard="earthquake")
+    analysis = analyzed(
+        "earthquake",
+        event_description="GSI reported an earthquake; actual damage is unknown.",
+    )
+    chunk = retriever.retrieve(
+        EmergencyResponsePlanner.build_query(analysis), top_k=1
+    )[0]
+    llm = FakeLLM(proposal(chunk["chunk_id"], quoted_text=chunk["text"]))
+    result = EmergencyResponsePlanner(
+        llm_service=llm,
+        retriever=retriever,
+    ).plan_response(analysis)
+
+    assert result.metadata.planning_status == "success", result.error
+    assert result.hazard_type == "earthquake"
+    assert result.responding_to is None
+    assert result.grounding.citations[0]["verified"] is True
+    assert all(
+        item.startswith((
+            "israel-police-multi-agency-emergency-response",
+            "home-front-command-earthquake-preparedness",
+            "nema-earthquake-preparedness",
+        ))
+        for item in result.grounding.retrieved_chunk_ids
+    )
+
+
 def test_production_flood_corpus_reaches_claude_with_verified_grounding():
     retriever = ProtocolRetriever(hazard="flood")
     chunk = retriever.retrieve(
@@ -287,7 +316,7 @@ def test_wrong_hazard_retriever_is_rejected_without_fallback():
 
 def test_unsupported_hazard_is_rejected_before_protocol_selection():
     raw = analyzed().model_dump(mode="json")
-    raw["hazard_type"] = "earthquake"
+    raw["hazard_type"] = "tsunami"
     with pytest.raises(ValueError, match="unsupported emergency hazard"):
         planner().plan_response(raw)
 

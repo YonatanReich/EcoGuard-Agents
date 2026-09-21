@@ -88,6 +88,13 @@ export type ResourceAllocationSummary = {
   settlement: AllocationSettlement | null
 }
 
+export type EarthquakeResourceAllocationSummary = ResourceAllocationSummary & {
+  unsupported_units: string[]
+  allocation_policy: 'earthquake_minimum_response_v1'
+  allocation_basis: 'protocol_recommended_units'
+  quantity_source: 'ecoguard_minimum_response_policy'
+}
+
 export type FireDetails = {
   detection_confidence: string | null
   fire_weather_severity: string | null
@@ -126,7 +133,13 @@ export type EarthquakeDetails = {
   }
   provider: 'GSI'
   source: string
+  plan_summary: string | null
+  recommended_units: string[]
+  response_actions: FireResponseAction[]
+  protocol_citations: ProtocolCitation[]
+  evidence_gaps: string[]
   limitations: string[]
+  resource_allocation: EarthquakeResourceAllocationSummary | null
 }
 
 export type GeoJsonPolygon = {

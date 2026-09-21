@@ -1,13 +1,22 @@
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from ecoguard.analyzers.emergency.earthquake.impact import (
     LIMITATION,
     estimate_impact,
     estimated_impact_radius_km,
 )
+from ecoguard.response_planner.emergency.adapters import build_earthquake_plan_input
+from ecoguard.api import events as event_api
 from ecoguard.api.events import shared_event_feed
+from ecoguard.analyzers.emergency.earthquake import incident_handler as earthquake_handler
+from ecoguard.coordinator.dispatcher import IncidentDispatchContext
+from ecoguard.coordinator.dispatcher import IncidentProcessingResult
+from ecoguard.coordinator.event_projection import earthquake_shared_event
 from ecoguard.collection.earthquake.gsi import normalize_fdsn_text
 from ecoguard.database.repositories.towns import (
     TownIntersection,
@@ -202,6 +211,32 @@ def test_impact_reuses_same_polygon_for_towns_and_population():
     }
     assert "actual damage" in LIMITATION
 
+    planner_input = build_earthquake_plan_input(
+        impact,
+        incident_id="INC-EQ-1",
+    )
+    assert planner_input.hazard_type == "earthquake"
+    assert planner_input.incident_id == "INC-EQ-1"
+    assert planner_input.location.model_dump() == {
+        "latitude": 31.75,
+        "longitude": 35.21,
+    }
+    assert planner_input.risk_context is None
+    assert planner_input.additional_context["magnitude"] == 4.6
+    assert planner_input.additional_context["depth_km"] == 12.4
+    assert planner_input.additional_context["town_intersection"]["towns"][0][
+        "name_en"
+    ] == "Jerusalem"
+    assert planner_input.additional_context["population_summary"][
+        "estimated_population"
+    ] == 1235
+    assert planner_input.limitations == [LIMITATION]
+    serialized = planner_input.model_dump_json().lower()
+    assert "risk_score" not in serialized
+    assert "risk_level" not in serialized
+    assert "casualt" not in serialized
+    assert "collapsed building" not in serialized
+
 
 def test_shared_event_feed_accepts_earthquake_contract():
     area = GeoJsonPolygon(coordinates=[[[35.0, 31.0], [35.1, 31.0], [35.0, 31.0]]])
@@ -257,3 +292,200 @@ def test_shared_event_feed_accepts_earthquake_contract():
     assert delivered.details.population_summary.wording == (
         "Estimated population geographically located within the impact area"
     )
+
+
+def test_earthquake_handler_invokes_and_preserves_successful_planner(monkeypatch):
+    impact = SimpleNamespace(
+        provider_event_id="gsi2026abcd",
+        observed_at=NOW,
+        latitude=31.75,
+        longitude=35.21,
+        magnitude=4.6,
+        depth_km=12.4,
+        radius_km=25.0,
+        area={"type": "Polygon", "coordinates": []},
+        towns=TownIntersectionResult(
+            status=TownLookupStatus.SUCCESS_EMPTY,
+            towns=[],
+        ),
+        population_summary={
+            "status": "unavailable",
+            "estimated_population": None,
+            "intersected_cell_count": None,
+            "reason": "population_grid_not_loaded",
+        },
+        provider="GSI",
+        source="https://seis.gsi.gov.il/fdsnws/event/1/query",
+    )
+    monkeypatch.setattr(earthquake_handler, "estimate_impact", lambda _: impact)
+
+    class Planner:
+        def __init__(self):
+            self.inputs = []
+
+        def plan_response(self, planner_input):
+            self.inputs.append(planner_input)
+            return {
+                "metadata": {"planning_status": "success"},
+                "hazard_type": "earthquake",
+                "recommended_units": ["fire_department"],
+                "response_actions": [],
+            }
+
+    planner = Planner()
+    handler = earthquake_handler.EarthquakeIncidentHandler(planner=planner)
+    context = IncidentDispatchContext(
+        incident_id="INC-EQ-1",
+        hazard="earthquake",
+        route="emergency",
+        analysis_id="analysis-1",
+        coordinator_routing_id="routing-1",
+        routed_by="test",
+        routed_at=NOW,
+        requested_at=NOW,
+    )
+    result = handler.process({
+        "signals": [{"evidence": {"earthquake": {
+            "provider_event_id": "gsi2026abcd",
+            "observed_at": NOW.isoformat(),
+        }}}],
+    }, context)
+
+    assert planner.inputs[0].hazard_type == "earthquake"
+    assert result.planner_status == "success"
+    assert result.planner_result["recommended_units"] == ["fire_department"]
+    assert result.analysis_result is impact
+
+
+def test_earthquake_projection_exposes_plan_allocation_route_and_policy(monkeypatch):
+    impact = SimpleNamespace(
+        provider_event_id="gsi2026abcd",
+        observed_at=NOW,
+        latitude=31.75,
+        longitude=35.21,
+        magnitude=4.6,
+        depth_km=12.4,
+        radius_km=25.0,
+        area={
+            "type": "Polygon",
+            "coordinates": [[[35.0, 31.0], [35.1, 31.0], [35.0, 31.0]]],
+        },
+        towns=TownIntersectionResult(
+            status=TownLookupStatus.SUCCESS_EMPTY,
+            towns=[],
+        ),
+        population_summary={
+            "status": "unavailable",
+            "estimated_population": None,
+            "intersected_cell_count": None,
+            "reason": "population_grid_not_loaded",
+        },
+        provider="GSI",
+        source="https://seis.gsi.gov.il/fdsnws/event/1/query",
+    )
+    result = IncidentProcessingResult(
+        incident_id="INC-EQ-1",
+        hazard="earthquake",
+        route="emergency",
+        status="success",
+        requested_at=NOW,
+        completed_at=NOW,
+        analysis_status="success",
+        planner_status="success",
+        analysis_result=impact,
+        planner_result={
+            "plan_summary": "Coordinate an initial multi-agency response.",
+            "recommended_units": ["fire_department", "home_front_command"],
+            "response_actions": [{
+                "action": "Coordinate initial response at the reported epicenter.",
+                "responsible_unit": "fire_department",
+                "timeframe": "immediate",
+                "supporting_protocol_chunk_ids": ["official#response#0"],
+            }],
+            "evidence_gaps": ["Actual damage is unknown."],
+            "limitations": [LIMITATION],
+            "grounding": {"citations": []},
+        },
+        resource_allocation_result={
+            "status": "partial",
+            "routing_status": "complete",
+            "requirements": {
+                "fire_department": {"requested": 1, "assigned": 1, "shortfall": 0},
+                "home_front_command": {"requested": 1, "assigned": 0, "shortfall": 1},
+            },
+            "shortages": {},
+            "unsupported_units": ["home_front_command"],
+            "allocation_policy": "earthquake_minimum_response_v1",
+            "allocation_basis": "protocol_recommended_units",
+            "quantity_source": "ecoguard_minimum_response_policy",
+            "errors": [],
+            "allocated_units": {"fire_stations": [{
+                "database_id": 7,
+                "name": "Existing Fire Station",
+                "address": "Station address",
+                "unit_type": "fire_station",
+                "recommended_unit": "fire_department",
+                "latitude": 31.8,
+                "longitude": 35.2,
+                "distance_km": 8.2,
+                "allocation_status": "assigned",
+                "selection_reason": "shortest_road_travel_time",
+                "route": {
+                    "status": "complete",
+                    "provider": "mapbox",
+                    "profile": "mapbox/driving-traffic",
+                    "distance_m": 8200,
+                    "duration_s": 600,
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [[35.2, 31.8], [35.21, 31.75]],
+                    },
+                    "estimated_arrival_at": "2026-09-20T10:40:00Z",
+                    "road_access_verified": True,
+                    "requires_field_access_confirmation": False,
+                    "steps_he": [],
+                },
+            }]},
+        },
+    )
+    event = earthquake_shared_event(result, {"id": "INC-EQ-1"})
+    payload = event.model_dump(mode="json")
+
+    assert payload["details"]["recommended_units"] == [
+        "fire_department", "home_front_command"
+    ]
+    allocation = payload["details"]["resource_allocation"]
+    assert allocation["allocation_policy"] == "earthquake_minimum_response_v1"
+    assert allocation["unsupported_units"] == ["home_front_command"]
+    assert allocation["stations"][0]["route"]["estimated_arrival_at"] == (
+        "2026-09-20T10:40:00Z"
+    )
+    row = {
+        "incident_id": "INC-EQ-1",
+        "event_payload": payload,
+        "last_successful_event_payload": None,
+        "route": "emergency",
+        "processing_status": "success",
+        "failure_stage": None,
+        "failure_reason": None,
+        "retryable": False,
+        "attempt_count": 1,
+        "last_attempt_at": NOW,
+        "processed_at": NOW,
+    }
+    delivered = shared_event_feed([row]).model_dump(mode="json")
+    delivered_allocation = delivered["events"][0]["details"]["resource_allocation"]
+    assert delivered_allocation["stations"][0]["name"] == "Existing Fire Station"
+    assert delivered_allocation["allocation_policy"] == (
+        "earthquake_minimum_response_v1"
+    )
+
+    monkeypatch.setattr(event_api, "read_projected_events", lambda *, limit: [row])
+    application = FastAPI()
+    application.include_router(event_api.router)
+    response = TestClient(application).get("/api/events")
+
+    assert response.status_code == 200
+    api_allocation = response.json()["events"][0]["details"]["resource_allocation"]
+    assert api_allocation["stations"][0]["route"]["duration_s"] == 600
+    assert api_allocation["quantity_source"] == "ecoguard_minimum_response_policy"

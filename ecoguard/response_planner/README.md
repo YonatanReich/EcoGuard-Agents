@@ -5,8 +5,8 @@ published protocol rather than invented.
 
 ## Shared emergency planner
 
-`emergency/EmergencyResponsePlanner` is the common planning boundary for Fire
-and Flood. Its analyzer-agnostic required handoff is only `hazard_type` plus a
+`emergency/EmergencyResponsePlanner` is the common planning boundary for Fire,
+Flood, and Earthquake. Its analyzer-agnostic required handoff is only `hazard_type` plus a
 non-empty `event_description`. Incident identity, location, risk context,
 evidence gaps, limitations and analyzer-specific context are optional trusted
 context. The planner preserves supplied context but does not derive missing
@@ -18,6 +18,7 @@ Analyzer-specific integration belongs outside the shared planner:
 ```text
 Fire Analyzer  -> fire  + textual event description -> EmergencyResponsePlanner
 Flood Analyzer -> flood + textual event description -> EmergencyResponsePlanner
+Earthquake Impact -> earthquake + factual impact description -> EmergencyResponsePlanner
 Future analyzer -> supported hazard + description   -> the same planner
 ```
 
@@ -31,6 +32,9 @@ schema.
 - **Flood:** the shared planner routes to the approved Flood corpus and can plan
   directly from a Flood event description. No Flood Analyzer, coordinator, or
   runtime integration is included here.
+- **Earthquake:** the deterministic impact result is adapted without deriving
+  damage, casualties, operational severity, risk scores, risk levels, or
+  quantities. Planning retrieves only from the Israeli Earthquake corpus.
 
 Protocol retrieval is isolated by hazard. Neither hazard falls back to the
 other's doctrine.

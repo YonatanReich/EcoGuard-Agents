@@ -104,6 +104,13 @@ class ResourceAllocationSummary(EventContract):
     settlement: AllocationSettlement | None = None
 
 
+class EarthquakeResourceAllocationSummary(ResourceAllocationSummary):
+    unsupported_units: list[str] = Field(default_factory=list)
+    allocation_policy: Literal["earthquake_minimum_response_v1"]
+    allocation_basis: Literal["protocol_recommended_units"]
+    quantity_source: Literal["ecoguard_minimum_response_policy"]
+
+
 class FireDetails(EventContract):
     detection_confidence: str | None = None
     fire_weather_severity: str | None = None
@@ -148,7 +155,13 @@ class EarthquakeDetails(EventContract):
     population_summary: EarthquakePopulationSummary
     provider: Literal["GSI"] = "GSI"
     source: str
+    plan_summary: str | None = None
+    recommended_units: list[str] = Field(default_factory=list)
+    response_actions: list[FireResponseAction] = Field(default_factory=list)
+    protocol_citations: list[ProtocolCitation] = Field(default_factory=list)
+    evidence_gaps: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
+    resource_allocation: EarthquakeResourceAllocationSummary | None = None
 
 
 class AirPollutionBaselineContext(EventContract):
