@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from 'react'
 import { Layer, Marker, Popup, Source } from 'react-map-gl/mapbox'
-import type { AllocatedStation, FireEvent } from '../../types/events'
+import type { AllocatedStation, FireEvent, FloodEvent } from '../../types/events'
 
 const RESOURCE_STYLE: Record<string, { color: string; label: string }> = {
   fire_department: { color: '#ef4444', label: 'F' },
@@ -25,15 +25,15 @@ function stationKey(station: AllocatedStation) {
   return `${station.recommended_unit}-${station.database_id}`
 }
 
-function formatEta(timestamp: string | null | undefined) {
-  if (!timestamp) return 'לא זמין'
-  const value = new Date(timestamp)
-  if (Number.isNaN(value.getTime())) return timestamp
-  return new Intl.DateTimeFormat('he-IL', {
-    timeZone: 'Asia/Jerusalem',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(value)
+function formatTravelTime(seconds: number | null | undefined) {
+  if (seconds == null) return 'לא זמין'
+  const totalMinutes = Math.max(1, Math.round(seconds / 60))
+  if (totalMinutes < 60) return `${totalMinutes} דקות`
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return minutes === 0
+    ? `${hours} שעות`
+    : `${hours} שעות ו-${minutes} דקות`
 }
 
 function formatStationDistance(distanceKm: number | null) {
@@ -43,11 +43,16 @@ function formatStationDistance(distanceKm: number | null) {
 function ResourceAllocationLayer({
   event,
   onShowDirections,
+  showLegend = false,
 }: {
-  event: FireEvent
+  event: FireEvent | FloodEvent
   onShowDirections: (stationKey: string) => void
+  showLegend?: boolean
 }) {
   const stations = event.details.resource_allocation?.stations ?? []
+  // Every event owns separate Mapbox source/layer IDs, allowing all active
+  // allocation routes to be rendered at the same time.
+  const layerSuffix = event.id.replace(/[^a-zA-Z0-9_-]/g, '_')
   const [selectedStationKey, setSelectedStationKey] = useState<string | null>(null)
   const selectedStation = stations.find(
     (station) => stationKey(station) === selectedStationKey,
@@ -64,17 +69,29 @@ function ResourceAllocationLayer({
       geometry,
     }]
   })
+  const offroadFeatures = stations.flatMap((station) => {
+    const segment = station.route?.offroad_segment
+    if (!segment?.geometry) return []
+    return [{
+      type: 'Feature' as const,
+      properties: {
+        routeKey: stationKey(station),
+        color: stationStyle(station).color,
+      },
+      geometry: segment.geometry,
+    }]
+  })
 
   return (
     <>
       {routeFeatures.length > 0 && (
         <Source
-          id="resource-allocation-routes"
+          id={`resource-allocation-routes-${layerSuffix}`}
           type="geojson"
           data={{ type: 'FeatureCollection', features: routeFeatures }}
         >
           <Layer
-            id="resource-allocation-background-routes"
+            id={`resource-allocation-background-routes-${layerSuffix}`}
             type="line"
             slot="top"
             filter={selectedStationKey
@@ -95,7 +112,7 @@ function ResourceAllocationLayer({
             // This layer is declared after the background layer so Mapbox
             // always paints the selected route above every other route.
             <Layer
-              id="resource-allocation-selected-route"
+              id={`resource-allocation-selected-route-${layerSuffix}`}
               type="line"
               slot="top"
               filter={['==', ['get', 'routeKey'], selectedStationKey]}
@@ -110,6 +127,37 @@ function ResourceAllocationLayer({
               }}
             />
           )}
+        </Source>
+      )}
+
+      {offroadFeatures.length > 0 && (
+        <Source
+          id={`resource-allocation-field-segments-${layerSuffix}`}
+          type="geojson"
+          data={{ type: 'FeatureCollection', features: offroadFeatures }}
+        >
+          <Layer
+            id={`resource-allocation-field-segments-line-${layerSuffix}`}
+            type="line"
+            slot="top"
+            layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+            paint={{
+              'line-color': ['get', 'color'],
+              'line-width': selectedStationKey ? [
+                'case',
+                ['==', ['get', 'routeKey'], selectedStationKey],
+                5,
+                2,
+              ] : 3,
+              'line-opacity': selectedStationKey ? [
+                'case',
+                ['==', ['get', 'routeKey'], selectedStationKey],
+                1,
+                0.35,
+              ] : 0.8,
+              'line-dasharray': [2, 2],
+            }}
+          />
         </Source>
       )}
 
@@ -158,9 +206,17 @@ function ResourceAllocationLayer({
               {selectedStation.name}
             </strong>
             <span>
-              זמן הגעה משוער: {formatEta(selectedStation.route?.estimated_arrival_at)},{' '}
+              {selectedStation.route?.requires_field_access_confirmation
+                ? 'זמן נסיעה עד נקודת סיום המסלול בכביש'
+                : 'זמן נסיעה'}:{' '}
+              {formatTravelTime(selectedStation.route?.duration_s)},{' '}
               {formatStationDistance(selectedStation.distance_km)}
             </span>
+            {selectedStation.route?.requires_field_access_confirmation && (
+              <span className="event-modal__allocation-warning">
+                הקו המקווקו אל היעד הוא קטע שטח משוער; דרך הגישה וזמן ההתקדמות בו אינם מאומתים
+              </span>
+            )}
             <button
               type="button"
               onClick={() => onShowDirections(stationKey(selectedStation))}
@@ -171,7 +227,7 @@ function ResourceAllocationLayer({
         </Popup>
       )}
 
-      {stations.length > 0 && (
+      {showLegend && stations.length > 0 && (
         <div className="allocation-route-legend">
           Assigned stations and fastest routes
         </div>

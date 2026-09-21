@@ -1,4 +1,4 @@
-"""Small synchronous client for Mapbox Matrix and Directions APIs."""
+"""Small synchronous client for Mapbox routing and road verification APIs."""
 
 from __future__ import annotations
 
@@ -100,6 +100,20 @@ class MapboxClient:
         return float(value)
 
     def _request(self, path: str, params: dict[str, Any]) -> dict[str, Any]:
+        payload = self._get_json(path, params)
+        code = payload.get("code")
+        if code != "Ok":
+            message = payload.get("message") or code or "unknown Mapbox error"
+            error_type = (
+                RouteNotFoundError
+                if code in {"NoRoute", "NoSegment"}
+                else RoutingError
+            )
+            raise error_type(f"Mapbox could not route coordinates: {message}")
+        return payload
+
+    def _get_json(self, path: str, params: dict[str, Any]) -> dict[str, Any]:
+        """GET one Mapbox JSON object without assuming a routing response."""
         if not self.access_token:
             raise RoutingError("MAPBOX_ACCESS_TOKEN is not configured")
 
@@ -121,17 +135,146 @@ class MapboxClient:
             raise RoutingError("Mapbox returned invalid JSON") from error
         if not isinstance(payload, dict):
             raise RoutingError("Mapbox returned a non-object response")
-
-        code = payload.get("code")
-        if response.is_error or code != "Ok":
-            message = payload.get("message") or code or f"HTTP {response.status_code}"
-            error_type = (
-                RouteNotFoundError
-                if code in {"NoRoute", "NoSegment"}
-                else RoutingError
-            )
-            raise error_type(f"Mapbox could not route coordinates: {message}")
+        if response.is_error:
+            message = payload.get("message") or f"HTTP {response.status_code}"
+            raise RoutingError(f"Mapbox request failed: {message}")
         return payload
+
+    @staticmethod
+    def _normalised_label(value: object) -> str:
+        return " ".join(str(value or "").casefold().split())
+
+    @staticmethod
+    def _base_road_class(value: object) -> str:
+        road_class = str(value or "").strip()
+        return (
+            road_class[:-5]
+            if road_class.endswith("_link")
+            else road_class
+        )
+
+    @classmethod
+    def _compatible_road_class(cls, expected: object, actual: object) -> bool:
+        expected_base = cls._base_road_class(expected)
+        actual_base = cls._base_road_class(actual)
+        if expected_base == actual_base:
+            return True
+        # Different source vintages may classify the same restricted local
+        # street as ordinary ``street`` or ``street_limited``.
+        return {expected_base, actual_base} <= {"street", "street_limited"}
+
+    def verify_road_candidate(
+        self,
+        candidate: dict[str, Any],
+        *,
+        radius_m: float = 50.0,
+    ) -> dict[str, Any]:
+        """Match a local GIS crossing to the nearest compatible Mapbox road.
+
+        Tilequery returns the closest point on each road feature rather than
+        its full line.  That point is the navigation access coordinate; the
+        original local intersection remains the hazard coordinate.
+        """
+
+        if not 0 < radius_m <= 50:
+            raise ValueError("Mapbox road verification radius must be 0-50 metres")
+        try:
+            latitude = float(candidate["latitude"])
+            longitude = float(candidate["longitude"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("road candidate must contain coordinates") from error
+        if not math.isfinite(latitude) or not math.isfinite(longitude):
+            raise ValueError("road candidate must contain finite coordinates")
+
+        payload = self._get_json(
+            (
+                "v4/mapbox.mapbox-streets-v8/tilequery/"
+                f"{longitude},{latitude}.json"
+            ),
+            {
+                "radius": radius_m,
+                "limit": 20,
+                "dedupe": "true",
+                "geometry": "linestring",
+                "layers": "road",
+            },
+        )
+        features = payload.get("features")
+        if not isinstance(features, list):
+            raise RoutingError("Mapbox Tilequery returned invalid features")
+
+        expected_ref = self._normalised_label(candidate.get("road_ref"))
+        expected_name = self._normalised_label(candidate.get("road_name"))
+        matches: list[tuple[tuple[int, int, float], dict[str, Any]]] = []
+        for feature in features:
+            if not isinstance(feature, dict):
+                continue
+            properties = feature.get("properties") or {}
+            geometry = feature.get("geometry") or {}
+            if not isinstance(properties, dict) or not isinstance(geometry, dict):
+                continue
+            tilequery = properties.get("tilequery") or {}
+            if (
+                not isinstance(tilequery, dict)
+                or tilequery.get("layer") != "road"
+                or geometry.get("type") != "Point"
+            ):
+                continue
+            mapbox_class = str(properties.get("class") or "")
+            if not self._compatible_road_class(
+                candidate.get("road_class"), mapbox_class
+            ):
+                continue
+            mapbox_ref = self._normalised_label(properties.get("ref"))
+            mapbox_name = self._normalised_label(
+                properties.get("name_he") or properties.get("name")
+            )
+            # A conflicting explicit road number is stronger evidence than a
+            # coincident class, so never accept it as the same road.
+            if expected_ref and mapbox_ref and expected_ref != mapbox_ref:
+                continue
+            try:
+                distance = self._number(
+                    tilequery.get("distance"), "Tilequery distance"
+                )
+                access_location = self._point(geometry.get("coordinates"))
+            except RoutingError:
+                continue
+            ref_rank = 0 if expected_ref and mapbox_ref == expected_ref else 1
+            name_rank = 0 if expected_name and mapbox_name == expected_name else 1
+            matches.append(
+                (
+                    (ref_rank, name_rank, distance),
+                    {
+                        "mapbox_feature_id": feature.get("id"),
+                        "mapbox_road_class": mapbox_class,
+                        "mapbox_road_name": properties.get("name_he")
+                        or properties.get("name"),
+                        "mapbox_road_ref": properties.get("ref") or None,
+                        "mapbox_access_location": access_location,
+                        "mapbox_snap_distance_m": distance,
+                    },
+                )
+            )
+
+        if not matches:
+            return {
+                "status": "unverified",
+                "verified": False,
+                "reason": "compatible_mapbox_road_not_found",
+                "mapbox_access_location": None,
+                "mapbox_snap_distance_m": None,
+            }
+
+        _, selected = min(matches, key=lambda item: item[0])
+        distance = selected["mapbox_snap_distance_m"]
+        return {
+            "status": "verified",
+            "verified": True,
+            "reason": None,
+            "confidence": "high" if distance <= 20 else "medium",
+            **selected,
+        }
 
     @staticmethod
     def _coordinates(points: Iterable[dict[str, Any]]) -> str:

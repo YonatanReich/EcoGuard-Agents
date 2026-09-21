@@ -2,6 +2,8 @@ from ecoguard.database.repositories.towns import (
     TownLookupStatus,
     nearby_towns,
     resolve_named_town,
+    responsible_police_stations,
+    town_at_location,
 )
 
 
@@ -147,3 +149,81 @@ def test_named_town_uses_outline_not_label_point_for_signal_relation():
     assert "ST_Distance(outline" in query
     assert "label_lat" not in query
     assert parameters["candidate_names"] == ["מבשרת ציון", "מבשרת"]
+def test_responsible_police_stations_returns_internal_database_keys():
+    session = _Session([
+        _Result(rows=[{
+            "town_id": "haifa",
+            "name_he": "חיפה",
+            "police_station_ids": [12, 18, 21],
+        }]),
+    ])
+
+    result = responsible_police_stations(
+        latitude=32.794,
+        longitude=34.990,
+        session_factory=lambda: session,
+    )
+
+    assert result == {
+        "town_id": "haifa",
+        "town_name": "חיפה",
+        "police_station_ids": [12, 18, 21],
+    }
+    query, parameters = session.calls[0]
+    assert "ST_Covers" in query
+    assert "town_police_stations" in query
+    assert parameters == {"latitude": 32.794, "longitude": 34.990}
+
+
+def test_responsible_police_stations_returns_none_outside_every_town():
+    result = responsible_police_stations(
+        latitude=31.0,
+        longitude=35.0,
+        session_factory=lambda: _Session([_Result(rows=[])]),
+    )
+
+    assert result is None
+
+
+def test_town_at_location_returns_full_contact_record():
+    row = {
+        "town_id": "haifa",
+        "name_he": "חיפה",
+        "name_en": "Haifa",
+        "place": "city",
+        "population": 295_000,
+        "households": 120_000,
+        "cbs_code": "4000",
+        "outline_source": "municipal boundary",
+        "fire_district": "חוף",
+        "authority": "חיפה",
+        "authority_type": "עירייה",
+        "authority_phone": "04-8356860",
+        "authority_address": "חסן שוקרי 14",
+        "authority_website": "https://www.haifa.muni.il",
+        "police_station": "תחנת חיפה",
+        "police_region": "מרחב כרמל",
+        "police_district": "חוף",
+        "area_km2": 64.6,
+        "label_lat": 32.794,
+        "label_lon": 34.9896,
+        "min_lon": 34.9,
+        "min_lat": 32.7,
+        "max_lon": 35.1,
+        "max_lat": 32.9,
+    }
+    session = _Session([_Result(rows=[row])])
+
+    result = town_at_location(
+        latitude=32.794,
+        longitude=34.9896,
+        session_factory=lambda: session,
+    )
+
+    assert result is not None
+    assert result["town_id"] == "haifa"
+    assert result["authority_phone"] == "04-8356860"
+    assert result["authority_website"] == "https://www.haifa.muni.il"
+    query, parameters = session.calls[0]
+    assert "ST_Covers" in query
+    assert parameters == {"latitude": 32.794, "longitude": 34.9896}

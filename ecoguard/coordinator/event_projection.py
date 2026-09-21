@@ -31,10 +31,25 @@ from ecoguard.shared.events import (
     ComponentUnavailableReason,
     CorridorPopulationContext,
     GeoJsonLineString,
+    GeoJsonMultiLineString,
     GeoJsonPolygon,
+    AllocatedStation,
+    AllocationRoute,
+    AllocationSettlement,
+    FloodAdvisory,
+    FloodDetails,
+    FloodHydrometricStation,
+    FloodResponseSite,
+    FloodRoad,
+    FloodRoadVerification,
+    FloodSharedEvent,
+    FloodSourceContext,
+    FloodStream,
+    GeographicPoint,
     MinistryAirQualityIndex,
     OfficialPollutantClassification,
     TransportTimeEvidence,
+    ResourceAllocationSummary,
     VerifiedReference,
 )
 
@@ -44,7 +59,7 @@ IncidentReader = Callable[[str], dict[str, Any] | None]
 ProjectionWriter = Callable[[EventProjectionWrite], dict[str, Any] | None]
 EventMapper = Callable[
     [IncidentProcessingResult, Mapping[str, Any]],
-    AirPollutionSharedEvent,
+    AirPollutionSharedEvent | FloodSharedEvent,
 ]
 
 
@@ -362,8 +377,227 @@ def air_pollution_shared_event(
     )
 
 
+def _flood_station_sources(
+    targeting: Mapping[str, Any], incident: Mapping[str, Any]
+) -> list[dict[str, Any]]:
+    sources = targeting.get("hydrometric_sources")
+    if isinstance(sources, list) and sources:
+        return [dict(item) for item in sources if isinstance(item, Mapping)]
+    reconstructed = []
+    for signal in incident.get("signals") or []:
+        if not isinstance(signal, Mapping) or signal.get("hazard") != "flood":
+            continue
+        evidence = signal.get("evidence") or {}
+        location = signal.get("location") or {}
+        if not isinstance(evidence, Mapping) or not isinstance(location, Mapping):
+            continue
+        try:
+            station_id = int(evidence.get("source_station_id", evidence.get("station_id")))
+            severity = int(evidence["severity_level"])
+            latitude = float(location["latitude"])
+            longitude = float(location["longitude"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        reconstructed.append({
+            "station": {
+                "id": station_id,
+                "latitude": latitude,
+                "longitude": longitude,
+                "precision_m": max(0.0, float(location.get("precision_m") or 0.0)),
+                "severity_level": severity,
+                "observed_at": signal.get("observed_at"),
+                "stream_match": "unmatched",
+            },
+            "strategy": "spatial_lookup_unavailable",
+            "stream": None,
+        })
+    return reconstructed
+
+
+def _flood_stream(value: Any) -> FloodStream | None:
+    if not isinstance(value, Mapping) or not isinstance(value.get("geometry"), Mapping):
+        return None
+    geometry = value["geometry"]
+    if geometry.get("type") == "LineString":
+        parsed_geometry = GeoJsonLineString.model_validate(geometry)
+    elif geometry.get("type") == "MultiLineString":
+        parsed_geometry = GeoJsonMultiLineString.model_validate(geometry)
+    else:
+        return None
+    return FloodStream(
+        stream_id=value.get("stream_id"),
+        water_source_id=int(value["water_source_id"]),
+        name=value.get("stream_name") or value.get("name"),
+        match_confidence=value.get("match_confidence"),
+        geometry=parsed_geometry,
+    )
+
+
+def _allocation_summary(value: Any) -> ResourceAllocationSummary | None:
+    if not isinstance(value, Mapping):
+        return None
+    stations = []
+    allocated = value.get("allocated_units") or {}
+    if isinstance(allocated, Mapping):
+        for assigned in allocated.values():
+            for station in assigned if isinstance(assigned, list) else []:
+                if not isinstance(station, Mapping):
+                    continue
+                route_value = station.get("route")
+                route = None
+                if isinstance(route_value, Mapping):
+                    route = AllocationRoute.model_validate({
+                        key: route_value.get(key)
+                        for key in (
+                            "status", "provider", "profile", "distance_m",
+                            "duration_s", "geometry", "origin", "destination",
+                            "estimated_arrival_at", "road_access_verified",
+                            "requires_field_access_confirmation", "offroad_segment",
+                            "steps_he", "error",
+                        )
+                        if key in route_value
+                    })
+                stations.append(AllocatedStation(
+                    database_id=int(station["database_id"]),
+                    name=str(station["name"]),
+                    address=station.get("address"),
+                    unit_type=str(station["unit_type"]),
+                    recommended_unit=str(station["recommended_unit"]),
+                    latitude=float(station["latitude"]),
+                    longitude=float(station["longitude"]),
+                    distance_km=station.get("distance_km"),
+                    allocation_status=str(station["allocation_status"]),
+                    selection_reason=str(station["selection_reason"]),
+                    route=route,
+                ))
+    settlement_value = value.get("settlement")
+    return ResourceAllocationSummary(
+        status=str(value.get("status") or "unavailable"),
+        routing_status=str(value.get("routing_status") or "not_available"),
+        requirements=dict(value.get("requirements") or {}),
+        shortages=dict(value.get("shortages") or {}),
+        stations=stations,
+        errors=[dict(item) for item in value.get("errors") or [] if isinstance(item, Mapping)],
+        settlement=(
+            AllocationSettlement.model_validate(settlement_value)
+            if isinstance(settlement_value, Mapping) else None
+        ),
+    )
+
+
+def flood_shared_event(
+    result: IncidentProcessingResult,
+    incident: Mapping[str, Any],
+) -> FloodSharedEvent:
+    """Project observed gauges, exact matched streams and operational sites."""
+
+    if result.hazard != "flood" or result.route != "emergency":
+        raise ValueError("not_a_flood_emergency_result")
+    targeting = result.resource_allocation_result or {}
+    sources = _flood_station_sources(targeting, incident)
+    if not sources:
+        raise ValueError("hydrometric_station_evidence_unavailable")
+
+    projected_sources = []
+    for source in sources:
+        station_value = source.get("station") or {}
+        station = FloodHydrometricStation.model_validate({
+            **station_value,
+            "stream_match": "matched" if source.get("stream") is not None else "unmatched",
+        })
+        projected_sources.append(FloodSourceContext(
+            station=station,
+            strategy=str(source.get("strategy") or "unknown"),
+            stream=_flood_stream(source.get("stream")),
+        ))
+
+    sites = []
+    for site in targeting.get("response_sites") or []:
+        if not isinstance(site, Mapping):
+            continue
+        verification = site.get("mapbox_verification") or {}
+        sites.append(FloodResponseSite(
+            target_id=str(site["target_id"]),
+            source_station_id=int(site["source_station_id"]),
+            severity_level=int(site["severity_level"]),
+            strategy=str(site["strategy"]),
+            road=FloodRoad(
+                **{
+                    key: value
+                    for key, value in dict(site.get("road") or {}).items()
+                    if key not in {"class", "road_class"}
+                },
+                road_class=(site.get("road") or {}).get("class")
+                or (site.get("road") or {}).get("road_class"),
+            ),
+            crossing_type=site.get("crossing_type"),
+            urban=site.get("urban") is True,
+            crossing_location=GeographicPoint.model_validate(site["crossing_location"]),
+            allocation_location=(
+                GeographicPoint.model_validate(site["allocation_location"])
+                if isinstance(site.get("allocation_location"), Mapping) else None
+            ),
+            allocation_eligible=site.get("allocation_eligible") is True,
+            local_match_confidence=str(site.get("local_match_confidence") or "unknown"),
+            mapbox_verification=FloodRoadVerification(
+                status=str(verification.get("status") or "unavailable"),
+                verified=verification.get("verified") is True,
+                reason=verification.get("reason"),
+                mapbox_snap_distance_m=verification.get("mapbox_snap_distance_m"),
+            ),
+        ))
+
+    primary = max(projected_sources, key=lambda item: item.station.severity_level)
+    severity = primary.station.severity_level
+    return_period = {3: "10-year", 4: "20-year", 5: "50-year", 6: "100-year"}[severity]
+    drawable_streams = sum(source.stream is not None for source in projected_sources)
+    targeting_status = targeting.get("status")
+    return FloodSharedEvent(
+        id=result.incident_id,
+        title=f"Flood warning: hydrometric station {primary.station.id}",
+        description=(
+            f"Hydrometric Flood warning at station {primary.station.id}; "
+            f"{len(sites)} relevant road site(s) identified."
+        ),
+        latitude=primary.station.latitude,
+        longitude=primary.station.longitude,
+        observed_at=primary.station.observed_at,
+        classification="emergency",
+        analysis_status=(
+            "success"
+            if targeting_status not in {None, "failed", "not_evaluated"}
+            else "partial"
+        ),
+        planning_status="success",
+        details=FloodDetails(
+            severity_level=severity,
+            return_period_label=return_period,
+            sources=projected_sources,
+            response_sites=sites,
+            allocation_ready_site_ids=[site.target_id for site in sites if site.allocation_eligible],
+            targeting_status=str(targeting_status or "unavailable"),
+            targeting_reason=targeting.get("reason"),
+            allocation_target=targeting.get("allocation_target"),
+            advisories=[
+                FloodAdvisory.model_validate(advisory)
+                for advisory in targeting.get("advisories") or []
+                if isinstance(advisory, Mapping)
+            ],
+            resource_allocation=_allocation_summary(targeting.get("station_allocation")),
+            limitations=[
+                "The stream line marks the stream under warning, not confirmed inundation extent.",
+                "A ring around an unmatched station represents location precision, not flood extent.",
+                f"Drawable matched stream geometries: {drawable_streams} of {len(projected_sources)}.",
+            ],
+        ),
+    )
+
+
 def default_mapper_registry() -> dict[tuple[str, str], EventMapper]:
-    return {("air_pollution", "non_emergency"): air_pollution_shared_event}
+    return {
+        ("air_pollution", "non_emergency"): air_pollution_shared_event,
+        ("flood", "emergency"): flood_shared_event,
+    }
 
 
 def _retryable(result: IncidentProcessingResult) -> bool:
