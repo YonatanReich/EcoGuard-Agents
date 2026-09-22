@@ -352,9 +352,12 @@ def classify_new_text(
 ) -> dict[str, Any]:
     """Label every stored message nothing has labelled yet, and store the rows.
 
-    Runs on every detection tick, ahead of triage, which is the only reader of
-    `text_candidates`. A tick with no new messages returns before the model is
-    called, so the cost follows how much the feeds actually published.
+    The scheduler calls this immediately before the text-triage sweep.
+    Keeping the entry point separate makes classification independently testable
+    and lets a model outage leave previously stored candidates available to triage.
+
+    A tick with no new messages returns before the model is called, so the cost
+    follows how much the feeds actually published.
     """
     # A message the model read and found nothing in writes no candidate row, so
     # the row-existence check alone calls it unclassified forever and re-sends
