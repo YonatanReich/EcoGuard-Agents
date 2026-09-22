@@ -274,21 +274,36 @@ function formatTime(seconds: number) {
   return `${Math.floor(rounded / 60)}:${String(rounded % 60).padStart(2, '0')}`
 }
 
+function formatClock(timestamp: string | undefined) {
+  if (!timestamp) return null
+  const value = new Date(timestamp)
+  return Number.isNaN(value.getTime()) ? null : new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit',
+  }).format(value)
+}
+
+/**
+ * The vehicles driving their allocated routes, with what is left of each trip.
+ *
+ * Mounted from the event panel only when the operator asks to see vehicles, so
+ * it starts rolling at once. The panel sits outside the map, so the map is
+ * reached by its id through the dashboard's MapProvider; inside the map it is
+ * simply the current one.
+ */
 export default function AllocationVehicleSimulation({ vehicles }: { vehicles: AllocationVehicle[] }) {
-  const { current: mapRef } = useMap()
+  const maps = useMap()
+  const mapRef = maps.current ?? maps.ecoguard
   const layerRef = useRef<VehicleThreeLayer | null>(null)
   const [speed, setSpeed] = useState(8)
-  const [now, setNow] = useState(0)
+  const [openedAt] = useState(() => performance.now())
+  const [now, setNow] = useState(openedAt)
   const [layerActive, setLayerActive] = useState(false)
-  // The Three.js layer and its models are only built once Run is pressed.
-  // Building them on mount put a renderer, five GLTF parses and a round of
-  // shader compiles on every click that selected an event.
-  const [armed, setArmed] = useState(false)
+  const [armed, setArmed] = useState(true)
   const [layerError, setLayerError] = useState<string | null>(null)
   const [modelStates, setModelStates] = useState<Record<string, ModelLoadState>>(() => Object.fromEntries(
     vehicles.map((vehicle) => [vehicle.id, { phase: 'waiting', url: vehicle.modelUrl }]),
   ))
-  const [playback, setPlayback] = useState<Playback>({ elapsedSeconds: 0, startedAt: 0, running: false })
+  const [playback, setPlayback] = useState<Playback>({ elapsedSeconds: 0, startedAt: openedAt, running: true })
   const longestDuration = useMemo(() => Math.max(...vehicles.map((vehicle) => vehicle.route.durationSeconds)), [vehicles])
   const elapsedSeconds = playback.running
     ? Math.min(longestDuration, playback.elapsedSeconds + (now - playback.startedAt) * speed / 1000) : playback.elapsedSeconds
@@ -410,28 +425,37 @@ export default function AllocationVehicleSimulation({ vehicles }: { vehicles: Al
 
   return <div className="allocation-simulation-panel">
     <div className="allocation-simulation-header">
-      <strong>DEMO · NOT DISPATCHED</strong>
+      <strong>Simulated vehicles</strong>
+      <span className="allocation-simulation-note">not actually dispatched</span>
       <span className={modelStatus.includes('error') ? 'allocation-simulation-error' : 'allocation-simulation-model-status'} title={modelStatus}>
         {modelStatus.includes('error') ? '3D: error' : modelStatus}
       </span>
+      <div className="allocation-simulation-controls">
+        <button type="button" disabled={playback.running} onClick={() => start(false)}>Run</button>
+        <button type="button" onClick={() => start(true)}>Restart</button>
+        <button type="button" disabled={!playback.running} onClick={stop}>Stop</button>
+        <label className="allocation-simulation-speed">
+          <span>Speed</span>
+          <input type="range" min={1} max={8} step={1} value={speed} onChange={(event) => rebaseSpeed(Number(event.target.value))} />
+          <output>{speed}×</output>
+        </label>
+      </div>
     </div>
     {modelStatus.includes('error') && <span className="allocation-simulation-error-detail">{modelStatus}</span>}
-    <div className="allocation-simulation-controls">
-      <button type="button" disabled={playback.running} onClick={() => start(false)}>Run</button>
-      <button type="button" onClick={() => start(true)}>Restart</button>
-      <button type="button" disabled={!playback.running} onClick={stop}>Stop</button>
-      <label className="allocation-simulation-speed">
-        <span>Speed</span>
-        <input type="range" min={1} max={8} step={1} value={speed} onChange={(event) => rebaseSpeed(Number(event.target.value))} />
-        <output>{speed}×</output>
-      </label>
-    </div>
     <div className="allocation-simulation-vehicles">
-      {frames.map(({ vehicle, progress }) => <div key={vehicle.id}>
-        <span className="allocation-vehicle-type" style={{ '--allocation-vehicle-color': vehicle.color } as CSSProperties}>{vehicle.shortLabel}</span>
-        <span className="allocation-vehicle-name" title={vehicle.sourceName}>{vehicle.sourceName}</span>
-        <span className="allocation-vehicle-remaining">{progress >= 1 ? 'Arrived' : `${formatDistance(vehicle.route.distanceMeters * (1 - progress))} · ${formatTime(vehicle.route.durationSeconds * (1 - progress))}`}</span>
-      </div>)}
+      {frames.map(({ vehicle, progress }) => {
+        const eta = formatClock(vehicle.route.estimatedArrivalAt)
+        return <div key={vehicle.id}>
+          <span className="allocation-vehicle-type" style={{ '--allocation-vehicle-color': vehicle.color } as CSSProperties}>{vehicle.displayName}</span>
+          <span className="allocation-vehicle-name" title={vehicle.sourceName}>{vehicle.sourceName}</span>
+          <span className="allocation-vehicle-remaining">
+            {progress >= 1
+              ? 'Arrived'
+              : `${formatDistance(vehicle.route.distanceMeters * (1 - progress))} · ${formatTime(vehicle.route.durationSeconds * (1 - progress))} left`}
+          </span>
+          <span className="allocation-vehicle-eta">{eta ? `ETA ${eta}` : `${formatTime(vehicle.route.durationSeconds)} trip`}</span>
+        </div>
+      })}
     </div>
   </div>
 }

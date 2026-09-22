@@ -1,4 +1,4 @@
-"""Raw Telegram polling for later Fire/Flood evidence processing."""
+"""Raw Telegram polling for the shared text-event classify-then-triage lane."""
 
 from __future__ import annotations
 

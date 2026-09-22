@@ -26,6 +26,8 @@ absorbed on a later run, when the fire it belongs to exists.
 
 from __future__ import annotations
 
+from ecoguard.shared.activity import live_actor
+
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -175,6 +177,7 @@ def _package(at: datetime, *, incident_store=None) -> list[dict[str, Any]]:
     return links
 
 
+@live_actor("coordinator")
 def run(signals: Sequence[CellSignal] | None = None) -> CoordinationResult | None:
     """Coordinate once, recording the outcome like any other scheduled job.
 

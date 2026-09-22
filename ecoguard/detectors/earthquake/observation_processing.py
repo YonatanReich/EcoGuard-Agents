@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ecoguard.shared.activity import live_actor
+
 from datetime import datetime, timezone
 
 from ecoguard.collection.earthquake.gsi import SOURCE
@@ -43,6 +45,7 @@ def signals_from_observations(rows: list[dict]) -> list[CellSignal]:
     return signals
 
 
+@live_actor("detector.earthquake")
 def detect_new(*, at: datetime | None = None) -> list[CellSignal]:
     through = (at or datetime.now(timezone.utc)).astimezone(timezone.utc)
     since = last_success_at(RUN_SOURCE)

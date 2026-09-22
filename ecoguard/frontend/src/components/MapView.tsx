@@ -6,7 +6,7 @@
  * and fetches nothing.
  *
  * The map itself has no click behaviour. Layers that need one — the station
- * dots, the area drawing tool — attach their own listeners through useMap, so
+ * dots, the allocation stations — attach their own listeners through useMap, so
  * a click belongs to whatever drew the thing under it rather than being routed
  * up to Dashboard and dispatched back down.
  *
@@ -19,15 +19,15 @@
  * the terrain is the point — slope and aspect drive fire behaviour.
  */
 
-import { useMemo, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import Map, {
   NavigationControl,
   ScaleControl,
   FullscreenControl,
   GeolocateControl,
   Marker,
-  Layer,
   type MapProps,
+  type MapRef,
   Source,
 } from 'react-map-gl/mapbox'
 
@@ -80,12 +80,12 @@ const MAPBOX_KEY =
 const MAP_STYLE = 'mapbox://styles/mapbox/standard'
 
 /**
- * Standard's night light preset, so the basemap recedes and the hazard markers
- * are the brightest thing on screen, matching the dark dashboard. Passed as the
+ * Standard's dusk light preset: dim enough that the hazard markers are the
+ * brightest thing on screen, light enough to read the ground. Passed as the
  * map's initial config (react-map-gl forwards it to the Mapbox constructor), so
  * there is no daylight flash first. 'basemap' is Standard's fragment id.
  */
-const MAP_CONFIG = { basemap: { lightPreset: 'night' } }
+const MAP_CONFIG = { basemap: { lightPreset: 'dusk' } }
 
 
 /**
@@ -210,20 +210,20 @@ function MapView({
   ] = useState(false)
 
   /**
-   * Built once per events change, not per render: a fresh object on every
-   * render makes Mapbox re-parse and re-tile the source each time.
+   * Mapbox only resizes itself on window resize, not when its container
+   * changes size — and the event panel docked under the map shrinks it. Watch
+   * the container and resize the canvas with it, frame by frame, so the map
+   * follows the panel's animation instead of stretching until it ends.
    */
-  const earthquakeImpactAreas = useMemo(() => ({
-    type: 'FeatureCollection' as const,
-    features: events
-      .filter((event) => event.type === 'earthquake')
-      .map((event) => ({
-        type: 'Feature' as const,
-        geometry: event.details.estimated_impact_area,
-        properties: { eventId: event.id },
-      })),
-  }), [events])
-
+  const containerRef = useRef<HTMLDivElement>(null)
+  const mapRef = useRef<MapRef>(null)
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+    const observer = new ResizeObserver(() => mapRef.current?.resize())
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [])
 
   const containerStyle: CSSProperties = {
     position: 'relative',
@@ -263,6 +263,7 @@ function MapView({
 
   return (
     <div
+      ref={containerRef}
       style={containerStyle}
     >
 
@@ -277,6 +278,12 @@ function MapView({
 
 
       <Map
+        ref={mapRef}
+
+        // Lets anything under the dashboard's MapProvider reach this map with
+        // useMap().ecoguard — the event panel below the map, for one.
+        id="ecoguard"
+
         mapboxAccessToken={
           MAPBOX_KEY
         }
@@ -371,31 +378,6 @@ function MapView({
           position="bottom-left"
           unit="metric"
         />
-
-        <Source
-          id="earthquake-impact-areas"
-          type="geojson"
-          data={earthquakeImpactAreas}
-        >
-          <Layer
-            id="earthquake-impact-area-fill"
-            type="fill"
-            paint={{
-              'fill-color': '#dc2626',
-              'fill-opacity': 0.18,
-            }}
-          />
-          <Layer
-            id="earthquake-impact-area-outline"
-            type="line"
-            paint={{
-              'line-color': '#dc2626',
-              'line-width': 2,
-              'line-opacity': 0.75,
-            }}
-          />
-        </Source>
-
 
         {events.map(
           (event) => {

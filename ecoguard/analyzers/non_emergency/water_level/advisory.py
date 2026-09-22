@@ -14,6 +14,8 @@ the least clever thing that answers the question. See the ponytail note on
 
 from __future__ import annotations
 
+from ecoguard.shared.activity import live_actor
+
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from statistics import linear_regression
@@ -176,6 +178,7 @@ def _rationale(level_m: float, band: str, slope_m_per_day: float | None) -> str:
     )
 
 
+@live_actor("analyzer.water_level")
 def advise(readings: list[LevelReading]) -> KinneretAdvisory:
     """The current advisory from a series of surveys, newest anywhere in it.
 

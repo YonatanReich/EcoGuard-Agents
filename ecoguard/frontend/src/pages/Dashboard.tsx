@@ -18,6 +18,7 @@ import {
 } from 'react'
 
 import { useNavigate } from 'react-router-dom'
+import { MapProvider, useMap } from 'react-map-gl/mapbox'
 
 import MapView from '../components/MapView'
 
@@ -34,7 +35,6 @@ import FireRiskAlert from '../components/FireRiskAlert'
 import KinneretLevelCard from '../components/KinneretLevelCard'
 import { clusterHighRiskCells, type FireRiskCluster } from '../components/fireRiskClusters'
 import { normalizeNationalRiskScanResponse, type NationalRiskScan } from '../components/fireRiskScan'
-import AreaSelect from '../components/AreaSelect'
 import FireDistrictsLayer from '../components/layers/FireDistrictsLayer'
 import MdaDistrictsLayer from '../components/layers/MdaDistrictsLayer'
 import TownSearch from '../components/TownSearch'
@@ -45,6 +45,7 @@ import MdaStationsLayer from '../components/layers/MdaStationsLayer'
 import AirPollutionCorridorLayer from '../components/layers/AirPollutionCorridorLayer'
 import FireSpreadLayer from '../components/layers/FireSpreadLayer'
 import ResourceAllocationLayer from '../components/layers/ResourceAllocationLayer'
+import SettlementGlowLayer from '../components/layers/SettlementGlowLayer'
 import type { WeakEvent, WeakEventFeed } from '../types/weakEvents'
 import {
   type FireEvent,
@@ -55,6 +56,33 @@ import {
 } from '../types/events'
 
 import './visuals/dashboard.css'
+
+
+/** The zoom each hazard is framed at when opened: an earthquake's impact
+ *  area spans tens of kilometres, a fire's front a few hundred metres. */
+const FLY_ZOOM: Record<SharedEvent['type'], number> = {
+  fire: 13,
+  flood: 12.5,
+  earthquake: 9.5,
+  air_pollution: 12,
+  other: 12,
+}
+
+/** Flies the map to the event just opened. Rendered inside MapView so it can
+ *  reach the map; `at` makes a second click on the same card fly again. */
+function FlyToEvent({ request }: { request: { event: SharedEvent; at: number } | null }) {
+  const { current: map } = useMap()
+  useEffect(() => {
+    if (!map || !request) return
+    map.flyTo({
+      center: [request.event.longitude, request.event.latitude],
+      zoom: FLY_ZOOM[request.event.type],
+      duration: 1600,
+      essential: true,
+    })
+  }, [map, request])
+  return null
+}
 
 
 function Dashboard({ demo = false }: { demo?: boolean }) {
@@ -96,9 +124,19 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
     [airPollutionPreview, floodPreviewEvents, liveEvents],
   )
 
-  /** The event whose modal is open, from either a card or a map marker. */
+  /** The event shown in the panel under the map, from a card or a marker.
+   *  Kept after the panel closes so it can animate shut with content in it. */
   const [openEvent, setOpenEvent] =
     useState<SharedEvent | null>(null)
+  const [panelOpen, setPanelOpen] = useState(false)
+  const [flyRequest, setFlyRequest] =
+    useState<{ event: SharedEvent; at: number } | null>(null)
+
+  /** The open event's optimal routes, and its simulated vehicles on them.
+   *  Both belong to the open event and reset whenever it changes or closes,
+   *  so nothing is left drawn without its controls on screen. */
+  const [routesShown, setRoutesShown] = useState(false)
+  const [vehiclesShown, setVehiclesShown] = useState(false)
   const [directionsStationKey, setDirectionsStationKey] =
     useState<string | null>(null)
 
@@ -117,12 +155,24 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
     setSelectedEventKey(`${event.type}:${event.id}`)
     setDirectionsStationKey(null)
     setOpenEvent(event)
+    setPanelOpen(true)
+    setFlyRequest({ event, at: Date.now() })
+    setRoutesShown(false)
+    setVehiclesShown(false)
   }
 
   const showStationDirections = (event: SharedEvent, stationKey: string) => {
     setSelectedEventKey(`${event.type}:${event.id}`)
     setDirectionsStationKey(stationKey)
     setOpenEvent(event)
+    setPanelOpen(true)
+  }
+
+  const closePanel = () => {
+    setPanelOpen(false)
+    setDirectionsStationKey(null)
+    setRoutesShown(false)
+    setVehiclesShown(false)
   }
 
   useEffect(() => {
@@ -187,11 +237,15 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
     () => events.filter(
       (event): event is FireEvent | EarthquakeEvent | FloodEvent => (
         (event.type === 'fire' || event.type === 'earthquake' || event.type === 'flood')
-        && event.details.resource_allocation !== null
+        && (event.details.resource_allocation?.stations.length ?? 0) > 0
       ),
     ),
     [events],
   )
+  const openAllocationEvent = openEvent
+    ? allocationEvents.find((event) => event.type === openEvent.type && event.id === openEvent.id) ?? null
+    : null
+  const routesEvent = routesShown ? openAllocationEvent : null
   // Drawn for the selected fire only. Every open fire at once would overlay
   // rings across the country and make the one the operator opened the hardest
   // to read.
@@ -393,6 +447,7 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
   }
 
   return (
+    <MapProvider>
     <main
       className={
         `dashboard${
@@ -413,16 +468,18 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
           <h1 className="dashboard__title">
             <span className="dashboard__eco">Eco</span>Guard
           </h1>
-          {demo ? (
-            <span className="dashboard__status dashboard__status--demo">
-              Demo data — no incident shown here is real
-            </span>
-          ) : (
-            <span className="dashboard__status">Live</span>
-          )}
+          {!demo && <span className="dashboard__status">Live</span>}
         </div>
 
         <EventLegend />
+
+        <button
+          type="button"
+          className="logout-button"
+          onClick={() => navigate('/system', { state: { from: demo ? '/demo' : '/dashboard' } })}
+        >
+          System
+        </button>
 
         <button
           className="logout-button"
@@ -467,6 +524,8 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
 
         </aside>
 
+
+        <div className="dashboard__center">
 
         <main className="dashboard__map">
 
@@ -596,18 +655,23 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
               <FireSpreadLayer key={spreadEvent.id} event={spreadEvent} />
             )}
 
-            {allocationEvents.map((event) => (
+            {/* The open event's allocated stations and the roads chosen for
+                them, glowing — shown from the panel's "Show optimal routes". */}
+            {routesEvent && (
               <ResourceAllocationLayer
-                key={`${event.type}:${event.id}`}
-                event={event}
-                showSimulation={
-                  selectedEvent?.type === event.type && selectedEvent.id === event.id
-                }
+                key={`${routesEvent.type}:${routesEvent.id}`}
+                event={routesEvent}
                 onShowDirections={(stationKey) => (
-                  showStationDirections(event, stationKey)
+                  showStationDirections(routesEvent, stationKey)
                 )}
               />
-            ))}
+            )}
+
+            {/* The selected event's settlements: red if affected now,
+                yellow if in the path. */}
+            <SettlementGlowLayer event={selectedEvent} />
+
+            <FlyToEvent request={flyRequest} />
 
 
             {/* ================================================= */}
@@ -616,16 +680,35 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
 
             <TownSearch />
 
-
-            {/* ================================================= */}
-            {/* Draw an area, read what is inside it              */}
-            {/* ================================================= */}
-
-            <AreaSelect />
-
           </MapView>
 
         </main>
+
+        {/* The event panel docks under the map and pushes it up as it opens.
+            Inert while shut, so its hidden controls are not tab stops. */}
+        <div className={`event-dock${panelOpen ? ' event-dock--open' : ''}`} inert={!panelOpen}>
+          <div className="event-dock__inner">
+            {openEvent && (
+              <EventModal
+                key={`${openEvent.type}:${openEvent.id}`}
+                event={openEvent}
+                directionsStationKey={directionsStationKey}
+                onClose={closePanel}
+                routes={openAllocationEvent ? {
+                  shown: routesShown,
+                  onToggle: () => {
+                    setRoutesShown((current) => !current)
+                    setVehiclesShown(false)
+                  },
+                  vehiclesShown,
+                  onToggleVehicles: () => setVehiclesShown((current) => !current),
+                } : undefined}
+              />
+            )}
+          </div>
+        </div>
+
+        </div>
 
 
         <aside className="dashboard__panel dashboard__panel--emergency">
@@ -684,20 +767,8 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
 
       </div>
 
-
-      {openEvent && (
-        <EventModal
-          key={`${openEvent.type}:${openEvent.id}`}
-          event={openEvent}
-          directionsStationKey={directionsStationKey}
-          onClose={() => {
-            setOpenEvent(null)
-            setDirectionsStationKey(null)
-          }}
-        />
-      )}
-
     </main>
+    </MapProvider>
   )
 }
 

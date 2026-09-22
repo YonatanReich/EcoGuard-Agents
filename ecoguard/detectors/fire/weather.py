@@ -52,6 +52,8 @@ Three fire variables in `CONCERNING_DIRECTION` are deliberately not here:
 
 from __future__ import annotations
 
+from ecoguard.shared.activity import live_actor
+
 import logging
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
@@ -303,6 +305,7 @@ def score(
     return signals, unassessed
 
 
+@live_actor("detector.fire_weather")
 def detect_new(*, reportable_only: bool = True) -> list[CellSignal]:
     """Everything that arrived since this detector last finished. The live path.
 

@@ -424,9 +424,9 @@ table. A separate three-minute job classifies both source kinds into
 `text_candidates`, then triages those candidates into weak events or
 `CellSignal` objects for the Coordinator. Authority and media reports may emit
 a signal directly; unofficial reports remain weak until an independent report
-or structured incident corroborates them. The previous Telegram evidence
-enricher remains in the repository for compatibility but is not wired into the
-automatic structured Fire/Flood path.
+or structured incident corroborates them. There is no separate Telegram
+evidence step: a Telegram message is text like any RSS item, and this
+classify-then-triage lane is the only path it takes to an incident.
 
 Configured channels are `Israel_Police_100`, `Atanpolice`, `mdaisrael`, and the
 unofficial `fireisrael7777` aggregator. Source tiers and allowed hazards come

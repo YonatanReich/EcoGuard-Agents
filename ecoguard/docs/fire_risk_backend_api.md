@@ -3,7 +3,7 @@
 EcoGuard's production fire-risk path is **Current Risk only**. It estimates how
 closely current environmental conditions resemble historically higher-risk fire
 conditions. It does not indicate that a fire has been detected and remains
-separate from FIRMS or Telegram event evidence.
+separate from an actual FIRMS-detected fire.
 
 Historical forecast deterioration was evaluated separately and showed no
 predictive benefit in the completed pilot. Forecast and Combined Risk are not
@@ -49,7 +49,7 @@ Successful response:
   },
   "actual_fire_detection": {
     "included": false,
-    "semantics": "separate_firms_or_telegram_evidence"
+    "semantics": "separate_from_firms_detected_fire"
   }
 }
 ```

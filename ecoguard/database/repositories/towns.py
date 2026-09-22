@@ -340,6 +340,49 @@ def town_at_location(
     return _as_town(row) if row is not None else None
 
 
+# ~5 m tolerance: invisible at any zoom the operator reads settlements at,
+# and it keeps the few 2,000-vertex municipal outlines from dominating the
+# payload.
+_TOWN_OUTLINES_SQL = text(
+    """
+    SELECT town_id, name_he, name_en,
+           ST_AsGeoJSON(ST_SimplifyPreserveTopology(outline::geometry, 0.00005))::json AS geometry
+    FROM towns
+    WHERE town_id = ANY(:ids) OR name_he = ANY(:names) OR name_en = ANY(:names)
+    """
+)
+
+
+def town_outlines(*, ids: list[str], names: list[str]) -> dict[str, Any]:
+    """Outlines for a set of towns, as one FeatureCollection.
+
+    Matched by id or by Hebrew or English name, because the analysers name
+    settlements both ways: the earthquake and air-pollution screens carry town
+    ids, the fire planner carries names.
+    """
+    if not ids and not names:
+        return {"type": "FeatureCollection", "features": []}
+    with Session() as session:
+        rows = session.execute(
+            _TOWN_OUTLINES_SQL, {"ids": list(ids), "names": list(names)},
+        ).mappings().all()
+    return {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": row["geometry"],
+                "properties": {
+                    "town_id": row["town_id"],
+                    "name_he": row["name_he"],
+                    "name_en": row["name_en"],
+                },
+            }
+            for row in rows
+        ],
+    }
+
+
 def search_towns(query: str, limit: int = DEFAULT_LIMIT) -> list[dict[str, Any]]:
     """Towns whose Hebrew or English name contains `query`, best match first.
 

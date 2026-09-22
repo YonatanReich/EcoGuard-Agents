@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ecoguard.shared.activity import live_actor
+
 import math
 from dataclasses import dataclass
 from datetime import datetime
@@ -102,6 +104,7 @@ class EarthquakeImpact:
     source: str
 
 
+@live_actor("analyzer.earthquake")
 def estimate_impact(
     earthquake: Mapping[str, Any],
     *,

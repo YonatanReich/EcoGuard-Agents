@@ -6,8 +6,11 @@
  * shoreline moves with the water level by metres, not by anything a map at
  * this zoom can show, so a live fetch would buy nothing and add a dependency.
  *
- * Hovering brightens it; clicking opens the advisory card that the sidebar
+ * Hovering lights it blue; clicking opens the advisory card that the sidebar
  * already renders, so the popup and the panel can never disagree.
+ *
+ * Every paint here is emissive: Standard's dusk lighting otherwise shades
+ * added layers down, which is what kept the old hover glow nearly invisible.
  */
 
 import { useEffect, useState } from 'react'
@@ -63,11 +66,12 @@ function KinneretLayer() {
           id="kinneret-glow"
           type="line"
           paint={{
-            'line-color': '#67e8f9',
-            'line-width': 14,
-            'line-blur': 10,
-            'line-opacity': hovered ? 0.85 : 0,
+            'line-color': '#3b82f6',
+            'line-width': 18,
+            'line-blur': 12,
+            'line-opacity': hovered ? 0.95 : 0,
             'line-opacity-transition': { duration: HOVER_FADE_MS },
+            'line-emissive-strength': 1,
           }}
         />
 
@@ -75,9 +79,10 @@ function KinneretLayer() {
           id={FILL_LAYER_ID}
           type="fill"
           paint={{
-            'fill-color': '#22d3ee',
-            'fill-opacity': hovered ? 0.42 : 0.16,
+            'fill-color': '#3b82f6',
+            'fill-opacity': hovered ? 0.4 : 0.14,
             'fill-opacity-transition': { duration: HOVER_FADE_MS },
+            'fill-emissive-strength': 1,
           }}
         />
 
@@ -85,11 +90,12 @@ function KinneretLayer() {
           id="kinneret-outline"
           type="line"
           paint={{
-            'line-color': hovered ? '#a5f3fc' : '#0ea5e9',
+            'line-color': hovered ? '#bfdbfe' : '#60a5fa',
             'line-color-transition': { duration: HOVER_FADE_MS },
-            'line-width': hovered ? 3 : 1.6,
+            'line-width': hovered ? 2.6 : 1.4,
             'line-width-transition': { duration: HOVER_FADE_MS },
-            'line-opacity': 0.9,
+            'line-opacity': 0.95,
+            'line-emissive-strength': 1,
           }}
         />
       </Source>
@@ -99,14 +105,15 @@ function KinneretLayer() {
           longitude={popupAt.lng}
           latitude={popupAt.lat}
           anchor="bottom"
-          maxWidth="300px"
-          closeOnClick={false}
+          offset={10}
+          maxWidth="260px"
+          // The card is the whole popup; a click anywhere else on the map
+          // closes it, so it needs no close button eating into its header.
+          closeButton={false}
+          className="kinneret-popup"
           onClose={() => setPopupAt(null)}
         >
-          <strong style={{ fontSize: '.9rem' }}>Lake Kinneret</strong>
-          <div style={{ marginTop: 8 }}>
-            <KinneretLevelCard />
-          </div>
+          <KinneretLevelCard compact />
         </Popup>
       )}
     </>

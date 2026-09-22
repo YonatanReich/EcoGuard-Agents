@@ -1,5 +1,6 @@
 """Compose non-emergency Air Pollution analysis from existing science services."""
 
+from ecoguard.shared.activity import live_actor
 from collections.abc import Callable
 from datetime import datetime, timezone
 
@@ -60,6 +61,7 @@ class AirPollutionNonEmergencyAnalyzer:
         self._spatial_enricher = spatial_enricher
         self._clock = clock
 
+    @live_actor("analyzer.air_pollution")
     def analyze(
         self,
         analysis_input: AirPollutionAnalysisInput,
@@ -119,6 +121,7 @@ class AirPollutionNonEmergencyAnalyzer:
             limitations=list(dict.fromkeys([*ANALYZER_LIMITATIONS, *population.limitations])),
         )
 
+    @live_actor("analyzer.air_pollution")
     def assess_official_index(
         self, analysis_input: AirPollutionAnalysisInput
     ) -> AnalysisComponent[EventSeverityAssessment]:

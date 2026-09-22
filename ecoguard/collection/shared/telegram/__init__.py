@@ -1,6 +1,6 @@
-"""Raw Telegram messages shared by Fire and Flood evidence processing.
+"""Raw Telegram messages, read by the shared text-event lane.
 
 Collection deliberately preserves provider material without deciding whether a
-message describes an event. Classification, location extraction and matching
-belong to the detector-side evidence service.
+message describes an event. Classification (`detectors/text/classifier.py`)
+and triage (`detectors/text/run.py`) do that, on their own schedule.
 """
