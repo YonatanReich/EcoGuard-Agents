@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -158,7 +159,21 @@ def unconfigured(source: str) -> list[str]:
 
 scheduler = BackgroundScheduler()
 
-for name, collector_class in COLLECTORS.items():
+# An interval job first fires one interval after the scheduler starts, so a
+# six-hour collector on a container that is redeployed every couple of hours
+# never runs at all: collector_runs showed 12- and 22-hour holes in the hourly
+# weather and twelve-hour vegetation feeds. Every collector therefore also runs
+# once at boot, staggered thirty seconds apart so a deploy does not open twelve
+# provider connections at once. Cheap by design: each collector fetches only
+# what it is missing and the unique constraints discard the rest.
+#
+# misfire_grace_time=None because that boot-time slot is computed at import and
+# the scheduler starts minutes later, after the heavy imports; with the default
+# one-second grace the boot run would be silently dropped as a misfire.
+BOOT = datetime.now(timezone.utc)
+BOOT_STAGGER = timedelta(seconds=30)
+
+for position, (name, collector_class) in enumerate(COLLECTORS.items()):
     missing = unconfigured(name)
     if missing:
         logger.warning(
@@ -178,6 +193,8 @@ for name, collector_class in COLLECTORS.items():
         # A tick missed while the process was down runs once, not once per
         # interval that elapsed.
         coalesce=True,
+        next_run_time=BOOT + BOOT_STAGGER * position,
+        misfire_grace_time=None,
     )
 
 
@@ -195,6 +212,10 @@ scheduler.add_job(
     id="prune_observations",
     max_instances=1,
     coalesce=True,
+    # Same boot-time run as the collectors: a daily job on a container that
+    # rarely lives a day would otherwise never prune.
+    next_run_time=BOOT + BOOT_STAGGER * len(COLLECTORS),
+    misfire_grace_time=None,
 )
 
 

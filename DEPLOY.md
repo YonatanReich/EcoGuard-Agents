@@ -43,7 +43,7 @@ already pay for.
        DATABASE_URL            Neon connection string — the only hard requirement
        DEMO_DATABASE_URL       Neon, demo project
        ANTHROPIC_API_KEY
-       ANTHROPIC_WORKSPACE_ID
+       ANTHROPIC_WORKSPACE_ID   optional; only workspace-scoped keys need it
        NASA_FIRMS_API_KEY
        NOMINATIM_BASE_URL
        NOMINATIM_USER_AGENT

@@ -25,7 +25,7 @@ from ecoguard.collection.base import cell_for
 
 SOURCE = "water_authority_hydrometric_stations"
 CATALOG_PATH = "/db_requests/get_hydro_stations_A7f3Q.php"
-USER_AGENT = "Mozilla/5.0 (compatible; EcoGuard-Agents/1.0)"
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 TOKEN_PATTERN = re.compile(
     r'<meta\s+name=["\']api-token["\']\s+content=["\']([^"\']+)["\']',
     re.IGNORECASE,

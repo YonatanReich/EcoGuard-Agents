@@ -66,6 +66,16 @@ async def lifespan(app: FastAPI):
     developer without DATABASE_URL set still gets a working API for the old
     request-scoped endpoints; only collection is missing, and loudly.
     """
+
+    # Say in the boot log whether the model key works from this host; every
+    # model-backed lane fails quietly otherwise. Never blocks startup.
+    try:
+        from ecoguard.shared.llm import probe_model_reachability
+
+        probe_model_reachability()
+    except Exception:
+        logging.exception("Claude reachability probe itself failed")
+
     current_risk_refresh.start()
     collection_scheduler = None
     try:
