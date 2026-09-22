@@ -552,8 +552,11 @@ class ResourceAllocationAgent:
     def _police_candidates_for_event(self, stations, event_location):
         """Prefer the event town's responsible police stations."""
 
-        fallback = list(stations)
-        
+        fallback = [
+            station
+            for station in stations
+            if (station.get("kind") or "station") == "station"
+        ]
         try:
             responsibility = self.police_responsibility_reader(
                 latitude=event_location["latitude"],
