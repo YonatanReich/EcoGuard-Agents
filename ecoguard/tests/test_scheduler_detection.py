@@ -7,7 +7,6 @@ import pytest
 
 from ecoguard.shared.signals import (
     AIR_POLLUTION,
-    EARTHQUAKE,
     FIRE,
     FLOOD,
     HIGH,
@@ -24,6 +23,13 @@ def _empty_flood_detector(monkeypatch):
         observation_processing,
         "detect_new",
         lambda: [],
+    )
+    from ecoguard.detectors.telegram import evidence
+
+    monkeypatch.setattr(
+        evidence,
+        "enrich_signals_with_telegram",
+        lambda signals: list(signals),
     )
 
     # The media lane is stubbed for the same reason as the flood detector: these
@@ -85,7 +91,7 @@ def test_fire_and_air_pollution_share_one_coordinator_batch(monkeypatch):
     assert batches == [[fire, pollution]]
 
 
-def test_structured_signals_bypass_legacy_telegram_enrichment(monkeypatch):
+def test_telegram_enrichment_occurs_once_immediately_before_coordinator(monkeypatch):
     from ecoguard import scheduler as shared_runtime
     from ecoguard.coordinator import agent
     from ecoguard.detectors.air_pollution import observation_processing
@@ -93,6 +99,7 @@ def test_structured_signals_bypass_legacy_telegram_enrichment(monkeypatch):
     from ecoguard.detectors.telegram import evidence
 
     fire = _fire_signal()
+    enriched = CellSignal(**{**fire.__dict__, "evidence": {"telegram_evidence": {}}})
     calls = []
     monkeypatch.setattr(satellite, "detect_new", lambda: [fire])
     monkeypatch.setattr(weather, "detect_new", lambda: [])
@@ -100,9 +107,7 @@ def test_structured_signals_bypass_legacy_telegram_enrichment(monkeypatch):
     monkeypatch.setattr(
         evidence,
         "enrich_signals_with_telegram",
-        lambda signals: (_ for _ in ()).throw(
-            AssertionError("legacy Telegram enrichment must not run automatically")
-        ),
+        lambda signals: calls.append(("enrich", list(signals))) or [enriched],
     )
     monkeypatch.setattr(
         agent,
@@ -112,100 +117,7 @@ def test_structured_signals_bypass_legacy_telegram_enrichment(monkeypatch):
 
     shared_runtime.detect_and_coordinate()
 
-    assert calls == [("coordinate", [fire])]
-
-
-def test_text_processing_job_is_registered_exactly_once():
-    from ecoguard.scheduler import scheduler
-
-    jobs = [job for job in scheduler.get_jobs() if job.id == "process_text_events"]
-
-    assert len(jobs) == 1
-    assert jobs[0].trigger.interval.total_seconds() == 3 * 60
-    assert jobs[0].max_instances == 1
-    assert jobs[0].coalesce is True
-
-
-def test_text_processing_runs_classifier_then_triage(monkeypatch):
-    from contextlib import contextmanager
-
-    from ecoguard import scheduler as shared_runtime
-    from ecoguard.detectors.text import classifier, run
-
-    calls = []
-
-    @contextmanager
-    def acquired(_name):
-        yield True
-
-    monkeypatch.setattr(shared_runtime, "single_flight", acquired)
-    monkeypatch.setattr(
-        classifier, "classify_new_text",
-        lambda: calls.append("classify") or {"messages": 1},
-    )
-    monkeypatch.setattr(
-        run, "run_text_triage",
-        lambda: calls.append("triage") or {"events": 1},
-    )
-
-    result = shared_runtime.process_text_events()
-
-    assert calls == ["classify", "triage"]
-    assert result == {
-        "classification": {"messages": 1},
-        "triage": {"events": 1},
-    }
-
-
-def test_text_classification_failure_is_isolated_and_triage_still_runs(monkeypatch):
-    from contextlib import contextmanager
-
-    from ecoguard import scheduler as shared_runtime
-    from ecoguard.detectors.text import classifier, run
-
-    calls = []
-
-    @contextmanager
-    def acquired(_name):
-        yield True
-
-    monkeypatch.setattr(shared_runtime, "single_flight", acquired)
-    monkeypatch.setattr(
-        classifier, "classify_new_text",
-        lambda: (_ for _ in ()).throw(RuntimeError("model unavailable")),
-    )
-    monkeypatch.setattr(
-        run, "run_text_triage",
-        lambda: calls.append("triage") or {"events": 0},
-    )
-
-    result = shared_runtime.process_text_events()
-
-    assert calls == ["triage"]
-    assert result["classification"] is None
-    assert result["triage"] == {"events": 0}
-
-
-def test_text_triage_failure_isolated_from_the_scheduler(monkeypatch):
-    from contextlib import contextmanager
-
-    from ecoguard import scheduler as shared_runtime
-    from ecoguard.detectors.text import classifier, run
-
-    @contextmanager
-    def acquired(_name):
-        yield True
-
-    monkeypatch.setattr(shared_runtime, "single_flight", acquired)
-    monkeypatch.setattr(classifier, "classify_new_text", lambda: {"messages": 0})
-    monkeypatch.setattr(
-        run, "run_text_triage",
-        lambda: (_ for _ in ()).throw(RuntimeError("coordinator unavailable")),
-    )
-
-    result = shared_runtime.process_text_events()
-
-    assert result == {"classification": {"messages": 0}, "triage": None}
+    assert calls == [("enrich", [fire]), ("coordinate", [enriched])]
 
 
 def test_air_pollution_failure_does_not_suppress_fire_signals(monkeypatch):
@@ -279,42 +191,6 @@ def test_flood_signal_uses_the_same_coordinator_batch(monkeypatch):
         "detect_new",
         lambda: [signal],
     )
-    monkeypatch.setattr(
-        agent,
-        "run",
-        lambda signals: received.extend(signals) or agent.CoordinationResult(),
-    )
-    monkeypatch.setattr(dispatcher, "dispatch_touched", lambda identifiers: [])
-    monkeypatch.setattr(event_projection, "project_processing_results", lambda _: None)
-
-    shared_runtime.detect_and_coordinate()
-
-    assert received == [signal]
-
-
-def test_earthquake_signal_uses_the_same_coordinator_batch(monkeypatch):
-    from ecoguard import scheduler as shared_runtime
-    from ecoguard.coordinator import agent, dispatcher, event_projection
-    from ecoguard.detectors.air_pollution import observation_processing as air
-    from ecoguard.detectors.earthquake import observation_processing as earthquake
-    from ecoguard.detectors.fire import satellite, weather
-
-    signal = CellSignal(
-        cell_id="ISR-001-004",
-        observed_at=datetime(2026, 9, 16, 10, 0, tzinfo=timezone.utc),
-        hazard=EARTHQUAKE,
-        variable="magnitude",
-        value=4.2,
-        unit="Mw",
-        source="gsi_earthquake",
-        rarity=None,
-        direction=HIGH,
-    )
-    received = []
-    monkeypatch.setattr(satellite, "detect_new", lambda: [])
-    monkeypatch.setattr(weather, "detect_new", lambda: [])
-    monkeypatch.setattr(air, "detect_new", lambda: [])
-    monkeypatch.setattr(earthquake, "detect_new", lambda: [signal])
     monkeypatch.setattr(
         agent,
         "run",

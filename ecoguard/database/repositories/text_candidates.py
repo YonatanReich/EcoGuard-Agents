@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any, Sequence
 
 from sqlalchemy import text
@@ -54,14 +54,12 @@ def store_candidates(results: Sequence[dict[str, Any]]) -> int:
                   observation_id, source_id, hazard, relevant, literal,
                   in_israel, update_type, location_text, claim, details,
                   classified_by, model_version, keyword_matched, observed_at
-                ) SELECT
+                ) VALUES (
                   :observation_id, :source_id, :hazard, :relevant, :literal,
                   :in_israel, :update_type, :location_text, :claim,
                   CAST(:details AS jsonb),
                   :classified_by, :model_version, :keyword_matched, :observed_at
-                  FROM text_sources source
-                 WHERE source.source_id = :source_id
-                   AND :hazard = ANY(source.hazards)
+                )
                 ON CONFLICT ON CONSTRAINT text_candidates_identity DO UPDATE SET
                   relevant = EXCLUDED.relevant,
                   literal = EXCLUDED.literal,
@@ -72,8 +70,7 @@ def store_candidates(results: Sequence[dict[str, Any]]) -> int:
                   details = EXCLUDED.details,
                   classified_by = EXCLUDED.classified_by,
                   model_version = EXCLUDED.model_version,
-                  keyword_matched = EXCLUDED.keyword_matched,
-                  triaged_at = NULL
+                  keyword_matched = EXCLUDED.keyword_matched
                 RETURNING id
                 """
             ),
@@ -144,7 +141,6 @@ def recent_candidates(
                   JOIN text_sources s ON s.source_id = c.source_id
                   JOIN observations o ON o.id = c.observation_id
                  WHERE c.hazard = :hazard
-                   AND c.hazard = ANY(s.hazards)
                    AND c.relevant AND c.literal AND c.in_israel
                    AND c.observed_at BETWEEN :since AND :at
                  ORDER BY c.observed_at DESC
@@ -153,25 +149,3 @@ def recent_candidates(
             {"hazard": hazard, "at": at, "since": at - window},
         ).mappings().all()
     return [dict(row) for row in rows]
-
-
-def mark_candidates_triaged(
-    candidate_ids: Sequence[int], *, at: datetime | None = None
-) -> int:
-    """Mark completed candidates without removing corroborating context."""
-    ids = sorted({int(candidate_id) for candidate_id in candidate_ids})
-    if not ids:
-        return 0
-    with Session() as session:
-        result = session.execute(
-            text(
-                """
-                UPDATE text_candidates
-                   SET triaged_at = :at
-                 WHERE id = ANY(:ids) AND triaged_at IS NULL
-                """
-            ),
-            {"ids": ids, "at": at or datetime.now(timezone.utc)},
-        )
-        session.commit()
-    return result.rowcount or 0

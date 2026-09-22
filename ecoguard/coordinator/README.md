@@ -2,10 +2,9 @@
 
 Detectors fire independently and will report the same event more than once: two
 satellite hotspots or repeated station readings can all describe one event.
-Telegram and RSS reports can arrive as text-pipeline signals after an official
-report or explicit corroboration; uncorroborated reports remain separate weak
-events and never reach this stage. This is where duplicates are merged into a
-single incident, candidates
+Telegram messages are attached upstream as evidence on an existing Fire/Flood
+signal and never arrive here as independent signals. This is where duplicates
+are merged into a single incident, candidates
 from different sources are correlated, and one event gets one identity before
 anything downstream analyses it.
 

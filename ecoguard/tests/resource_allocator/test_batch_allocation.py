@@ -861,34 +861,6 @@ def test_earthquake_policy_requests_one_station_per_supported_unit_type():
     assert fire_station["route"]["estimated_arrival_at"] is not None
 
 
-def test_allocator_attaches_successful_earthquake_allocation_directly():
-    agent = allocation_agent({
-        "fire_department": lambda: catalog(
-            station(1, "Fire station", 31.01, 35.0)
-        ),
-    })
-    request = earthquake_allocation_request(
-        "INC-EQ-1",
-        units=["fire_department"],
-    )
-    result = SimpleNamespace(
-        incident_id="INC-EQ-1",
-        hazard="earthquake",
-        route="emergency",
-        requested_at=NOW,
-        planner_result=request["response_plan"],
-        resource_allocation_result=None,
-    )
-
-    allocations = agent.allocate_processing_results([result])
-
-    allocation = allocations["INC-EQ-1"]
-    assert result.resource_allocation_result is allocation
-    assert allocation["allocation_policy"] == EARTHQUAKE_MINIMUM_RESPONSE_POLICY
-    assert len(allocation["allocated_units"]["fire_stations"]) == 1
-    assert "station_allocation" not in allocation
-
-
 def test_earthquake_policy_does_not_create_eta_when_routing_is_unavailable():
     agent = allocation_agent(
         {"fire_department": lambda: catalog(

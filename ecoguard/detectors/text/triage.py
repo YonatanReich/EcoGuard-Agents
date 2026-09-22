@@ -260,7 +260,6 @@ def corroboration_for(
 def triage(
     reports: Sequence[Report],
     *,
-    supporting_reports: Sequence[Report] | None = None,
     open_incidents: Sequence[Mapping[str, Any]] = (),
     open_weak_events: Sequence[Mapping[str, Any]] = (),
     at: datetime | None = None,
@@ -284,7 +283,6 @@ def triage(
         else:
             live_weak.append(weak)
 
-    support = reports if supporting_reports is None else supporting_reports
     for report in sorted(reports, key=lambda item: item.observed_at):
         if report.latitude is None or report.longitude is None:
             # A report with no place is not actionable and never becomes an
@@ -323,7 +321,7 @@ def triage(
             continue
 
         corroboration = corroboration_for(
-            report, supporting=support, open_incidents=open_incidents
+            report, supporting=reports, open_incidents=open_incidents
         )
         if corroboration is not None:
             outcome.promoted.append({

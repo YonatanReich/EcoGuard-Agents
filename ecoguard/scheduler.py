@@ -33,7 +33,6 @@ from ecoguard.collection.text.rss import RssCollector
 from ecoguard.collection.water_level.kinneret import KinneretLevelCollector
 from ecoguard.collection.shared.open_meteo.forecast import WeatherForecastCollector
 from ecoguard.collection.shared.open_meteo.observations import WeatherCollector
-from ecoguard.database.locks import single_flight
 from ecoguard.resource_allocator.allocation_agent import ResourceAllocationAgent
 from ecoguard.resource_allocator.allocation_agent import (
     EARTHQUAKE_MINIMUM_RESPONSE_POLICY,
@@ -182,50 +181,6 @@ for name, collector_class in COLLECTORS.items():
     )
 
 
-def process_text_events() -> dict[str, object]:
-    """Classify stored Telegram/RSS text, then triage it, without escaping.
-
-    This is deliberately separate from collection and structured detection.
-    A model, database, gazetteer, or Coordinator failure in the text lane must
-    not stop upstream collectors or FIRMS/Flood/Earthquake detection.
-    """
-    result: dict[str, object] = {"classification": None, "triage": None}
-    try:
-        with single_flight("process_text_events") as acquired:
-            if not acquired:
-                logger.info("text event processor: previous run still active, skipping")
-                return result
-
-            try:
-                from ecoguard.detectors.text.classifier import classify_new_text
-
-                result["classification"] = classify_new_text()
-            except Exception:
-                # Triage still runs: candidates successfully stored on an
-                # earlier tick must not be stranded by today's model outage.
-                logger.exception("text classification failed; continuing to triage")
-
-            try:
-                from ecoguard.detectors.text.run import run_text_triage
-
-                result["triage"] = run_text_triage()
-            except Exception:
-                logger.exception("text triage failed; collectors and detectors continue")
-    except Exception:
-        logger.exception("text event processor could not acquire its database lock")
-    return result
-
-
-scheduler.add_job(
-    process_text_events,
-    "interval",
-    minutes=3,
-    id="process_text_events",
-    max_instances=1,
-    coalesce=True,
-)
-
-
 # Retention is not a collector — it writes nothing and talks to no provider —
 # but it belongs on the same timer board, and logging it to collector_runs means
 # "is anything pruning?" is answered the same way as "is anything collecting?".
@@ -313,6 +268,43 @@ def detect_and_coordinate():
         except Exception:
             logger.exception("detector %s failed; continuing without it",
                              detector.__name__)
+
+    # The media lane, in its two halves. Classification labels the messages the
+    # RSS and Telegram collectors stored; triage decides which labelled reports
+    # are worth an incident. Its own guard, because a rate-limited model call
+    # must not also stop the triage of candidates already stored.
+    try:
+        from ecoguard.detectors.text.classifier import classify_new_text
+
+        classify_new_text()
+    except Exception:
+        logger.exception("text classification failed; triaging what is stored")
+
+    # Triage would otherwise call the coordinator a second time on its own — a
+    # separate wave of incidents arriving at the frontend out of step with
+    # everything else. Handing it this tick's batch is what makes "all
+    # detectors, then one coordinator" true rather than nearly true.
+    try:
+        from ecoguard.detectors.text.run import run_text_triage
+
+        run_text_triage(coordinate=signals.extend)
+    except Exception:
+        logger.exception("text triage failed; continuing without it")
+
+    # Telegram is evidence for already-produced structured Fire/Flood signals.
+    # The enrichment service is deliberately one-input/one-output and forwards
+    # these original objects unchanged on any failure. It never creates a
+    # signal and therefore cannot reach the Coordinator by itself.
+    try:
+        from ecoguard.detectors.telegram.evidence import enrich_signals_with_telegram
+
+        signals = enrich_signals_with_telegram(signals)
+    except Exception:
+        # Keep this outer guard even though the service is fail-open: an import
+        # or initialization regression must not suppress structured detection.
+        logger.exception(
+            "Telegram evidence integration failed; coordinating structured signals"
+        )
 
     coordination = coordinate(signals)
     if coordination is None:
