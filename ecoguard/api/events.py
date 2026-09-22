@@ -42,8 +42,6 @@ def set_manual_test_feed(feed: SharedEventFeed) -> None:
     """Replace the in-memory feed used only in explicit manual-test mode."""
 
     global _manual_test_feed
-    if not manual_flood_test_enabled():
-        raise RuntimeError("manual Flood test mode is not enabled")
     _manual_test_feed = feed
 
 
@@ -180,8 +178,6 @@ def get_shared_events(
     limit: int = Query(default=100, ge=1, le=200),
 ) -> SharedEventFeed:
 
-    if manual_flood_test_enabled():
-        return _manual_test_feed
 
     try:
         return shared_event_feed(read_projected_events(limit=limit))

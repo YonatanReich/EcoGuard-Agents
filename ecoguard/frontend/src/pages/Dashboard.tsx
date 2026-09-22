@@ -95,16 +95,8 @@ function formatIsraelTime(
 
 
 function Dashboard() {
-  const floodTestMode = new URLSearchParams(window.location.search)
-    .get('floodTest') === '1'
   const [projectedEvents, setProjectedEvents] =
     useState<SharedEvent[]>([])
-  const [floodTestScenario, setFloodTestScenario] =
-    useState('confirmed_q10')
-  const [floodTestStatus, setFloodTestStatus] =
-    useState<string | null>(null)
-  const [isRunningFloodTest, setIsRunningFloodTest] =
-    useState(false)
   // Held apart from `events` on purpose. A weak event is not a SharedEvent and
   // must never reach the code that assumes something is actually happening.
   const [weakEvents, setWeakEvents] = useState<WeakEvent[]>([])
@@ -266,7 +258,7 @@ function Dashboard() {
   const [
     showRainRadar,
     setShowRainRadar,
-  ] = useState(!floodTestMode)
+  ] = useState(true)
 
   const [
     showFireDanger,
@@ -435,45 +427,9 @@ function Dashboard() {
       .catch((error) => console.error('Error fetching projected events:', error))
       .finally(() => setIsLoadingEvents(false))
 
-    if (!floodTestMode) void loadWeakEvents()
-  }, [floodTestMode])
+    void loadWeakEvents()
+  }, [])
 
-  const runFloodTest = async () => {
-    setIsRunningFloodTest(true)
-    setFloodTestStatus(`Running ${floodTestScenario}… see the API terminal for every stage.`)
-    try {
-      const response = await fetch(
-        `/api/dev/flood-tests/${floodTestScenario}/run`,
-        { method: 'POST' },
-      )
-      if (!response.ok) {
-        const failure = await response.json() as { detail?: unknown }
-        throw new Error(typeof failure.detail === 'string'
-          ? failure.detail
-          : JSON.stringify(failure.detail ?? failure))
-      }
-      const feedResponse = await fetch('/api/events')
-      if (!feedResponse.ok) throw new Error('Final event feed is unavailable')
-      const feed = await feedResponse.json() as SharedEventFeed
-      setProjectedEvents(feed.events ?? [])
-      setSelectedEventKey(null)
-      setOpenEvent(null)
-      setFloodTestStatus(
-        feed.events.length > 0
-          ? `Complete: ${feed.events.length} active event(s) rendered from /api/events.`
-          : floodTestScenario === 'ended'
-            ? 'Complete: the event closed after 3h 00m 01s and disappeared from /api/events.'
-            : 'Complete: the detector emitted no confirmed event; /api/events is empty.',
-      )
-    } catch (reason: unknown) {
-      setFloodTestStatus(
-        `Failed: ${reason instanceof Error ? reason.message : 'unknown error'}`,
-      )
-    } finally {
-      setIsRunningFloodTest(false)
-      setIsLoadingEvents(false)
-    }
-  }
 
   const loadWeakEvents = () =>
     fetch('/api/weak-events')
@@ -507,7 +463,6 @@ function Dashboard() {
   }
 
   useEffect(() => {
-    if (floodTestMode) return
     let active = true
     let requestInFlight = false
     let controller: AbortController | null = null
@@ -540,7 +495,7 @@ function Dashboard() {
       controller?.abort()
       window.clearInterval(intervalId)
     }
-  }, [floodTestMode])
+  }, [])
 
   const highRiskClusters = useMemo(
     () => clusterHighRiskCells(nationalRiskScan?.cells ?? []),
@@ -792,31 +747,6 @@ function Dashboard() {
         advisoryCount={advisoryEvents.length}
       />
 
-      {floodTestMode && (
-        <section className="flood-test-panel" aria-label="Manual Flood pipeline test">
-          <strong>Manual Flood pipeline test</strong>
-          <label>
-            Scenario
-            <select
-              value={floodTestScenario}
-              onChange={(event) => setFloodTestScenario(event.target.value)}
-              disabled={isRunningFloodTest}
-            >
-              <option value="below_threshold">Below-threshold noise</option>
-              <option value="single_q10">Single Q10 reading</option>
-              <option value="gap_over_30m">Q10 readings 31m apart</option>
-              <option value="below_breaks_sequence">Below Q10 breaks sequence</option>
-              <option value="confirmed_q10">Confirmed Q10 event</option>
-              <option value="escalated_q20">Escalation Q10 → Q20</option>
-              <option value="ended">Event ends after 3 quiet hours</option>
-            </select>
-          </label>
-          <button type="button" onClick={() => void runFloodTest()} disabled={isRunningFloodTest}>
-            {isRunningFloodTest ? 'Running…' : 'Run through existing pipeline'}
-          </button>
-          <span>{floodTestStatus ?? 'Full component output will appear in the API terminal.'}</span>
-        </section>
-      )}
 
 
       <div className="dashboard__body">
