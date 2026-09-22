@@ -1,1 +1,1 @@
-"""Telegram is evidence for existing Fire/Flood signals, never a detector."""
+"""Legacy Telegram evidence enrichment, retained but not runtime-wired."""
