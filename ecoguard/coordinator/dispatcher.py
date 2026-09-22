@@ -3,18 +3,67 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal, Protocol
 from uuid import uuid4
 
 from ecoguard.coordinator import incidents as incident_store
 from ecoguard.coordinator.queues import UnroutableHazard, queue_for
+from ecoguard.database.repositories.event_projections import (
+    event_projection_by_incident,
+)
 
 logger = logging.getLogger(__name__)
 
 ProcessingStatus = Literal["success", "partial", "failed", "skipped"]
+
+# How long a successful plan stands before a routine re-dispatch may rebuild it.
+#
+# An open incident is "touched" every time another routine signal lands on it,
+# and the air pollution and earthquake handlers rebuild their plan on every
+# touch. One air quality episode took 140 signals in under five hours, each one
+# a fresh model call describing a situation that had not changed.
+#
+# ponytail: a clock, not a change detector. It cannot tell a worsening event
+# from a steady one, so a genuine escalation waits out the window before its
+# plan is rebuilt. The upgrade path is the flood handler's
+# `_response_refresh_required` — an analysis-aware gate that re-plans on
+# escalation and skips otherwise. Flood already has it and is unaffected by
+# this; port it per hazard and the clock stops mattering.
+PLAN_REFRESH_MINUTES = int(os.getenv("ECOGUARD_PLAN_REFRESH_MINUTES", "60"))
+
+ProjectionReader = Callable[[str], dict[str, Any] | None]
+
+
+def plan_is_fresh(
+    incident_id: str,
+    now: datetime,
+    reader: ProjectionReader,
+) -> bool:
+    """Whether this incident already carries a recent successful plan.
+
+    Only a *successful* projection counts. A failed or never-planned incident
+    is dispatched immediately, so a new incident and a retry after an outage
+    are both unaffected.
+    """
+    try:
+        projection = reader(incident_id)
+    except Exception:
+        # The gate is an optimisation. If the store cannot answer, dispatch.
+        logger.exception("plan freshness check failed for %s; dispatching", incident_id)
+        return False
+
+    if projection is None:
+        return False
+
+    last_success = projection.get("last_success_at")
+    if last_success is None:
+        return False
+
+    return now - last_success < timedelta(minutes=PLAN_REFRESH_MINUTES)
 
 
 @dataclass(frozen=True)
@@ -111,6 +160,7 @@ def dispatch_incidents(
     *,
     registry: HandlerRegistry | None = None,
     at: datetime | None = None,
+    projection_reader: ProjectionReader = event_projection_by_incident,
 ) -> list[IncidentProcessingResult]:
     """Dispatch each open incident facet independently and fail per handler."""
 
@@ -161,6 +211,16 @@ def dispatch_incidents(
                     failure_stage="dispatch",
                     failure_reason="incident_route_mismatch",
                 ))
+                continue
+
+            if plan_is_fresh(incident_id, requested_at, projection_reader):
+                # No result is appended on purpose: an incident nobody
+                # re-planned must keep the projection it already has, and must
+                # not be re-allocated either.
+                logger.debug(
+                    "incident %s (%s) skipped: plan is under %s minutes old",
+                    incident_id, hazard, PLAN_REFRESH_MINUTES,
+                )
                 continue
 
             handler = handlers.get((hazard, route))
@@ -214,6 +274,7 @@ def dispatch_touched(
     *,
     registry: HandlerRegistry | None = None,
     incident_reader: IncidentReader = incident_store.incident_by_id,
+    projection_reader: ProjectionReader = event_projection_by_incident,
     at: datetime | None = None,
 ) -> list[IncidentProcessingResult]:
     """Load only this Coordinator run's touched incidents, never a full rescan."""
@@ -242,5 +303,10 @@ def dispatch_touched(
             incidents.append(incident)
     return [
         *results,
-        *dispatch_incidents(incidents, registry=registry, at=requested_at),
+        *dispatch_incidents(
+            incidents,
+            registry=registry,
+            at=requested_at,
+            projection_reader=projection_reader,
+        ),
     ]

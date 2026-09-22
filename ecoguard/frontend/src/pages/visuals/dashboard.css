@@ -1,11 +1,34 @@
-/*This CSS sheet handles styling and effects for the dashboard screen*/
+/* Styling for the dashboard screen.
+
+   The look is an operations room: a deep slate ground, surfaces separated by
+   hairlines rather than fills, and colour kept for meaning. Hazard colours
+   mark incidents, eco green marks live and active states, red is reserved for
+   emergencies. Everything else is neutral so the incidents are what you see. */
+
 .dashboard {
+    --ops-bg: #050a14;
+    --ops-surface: #0a1220;
+    --ops-raised: #0f192b;
+    --ops-line: rgba(148, 170, 200, 0.12);
+    --ops-line-strong: rgba(148, 170, 200, 0.24);
+    --ops-text: #e4ebf5;
+    --ops-muted: #8594ab;
+    --ops-faint: #5d6a80;
+    --ops-eco: #8cc63f;
+    --ops-alert: #ef4444;
+    /* Overlays on the map are a dense fill, never backdrop-filter: blurring
+       over a WebGL canvas is recomputed on every frame the map redraws. */
+    --ops-glass: rgba(8, 14, 26, 0.93);
+
     width: 100%;
     height: 100vh;
     display: flex;
     flex-direction: column;
-    padding: 1.5rem;
-    gap: 1rem;
+    gap: 12px;
+    padding: 0 12px 12px;
+    background: var(--ops-bg);
+    color: var(--ops-text);
+    font-family: "Plus Jakarta Sans", sans-serif;
     animation: fadeIn 0.6s ease both;
     user-select: none;
 }
@@ -14,62 +37,198 @@
     animation: slideUpOut 0.6s ease both;
 }
 
+/* Thin, quiet scrollbars everywhere on the dashboard. */
+.dashboard * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 170, 200, 0.22) transparent;
+}
+
+/* ===== Header: brand, status, legend, log out ===== */
+
 .dashboard__header {
     flex: 0 0 auto;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+    min-height: 56px;
+    padding: 8px 4px;
+    border-bottom: 1px solid var(--ops-line);
 }
 
-.dashboard__header-center {
-    text-align: center;
-    flex: 1;
+.dashboard__brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
-.dashboard__header-spacer {
-    width: 110px;
+.dashboard__leaf {
+    width: 20px;
+    height: 20px;
+    fill: var(--ops-eco);
 }
 
-.logout-button {
-    font-size: 1rem;
-    font-weight: 600;
-    font-family: "Plus Jakarta Sans", sans-serif;
-    border-radius: 20px;
-    width: 110px;
-    height: 44px;
-    cursor: pointer;
-    border: 2px solid transparent;
-    background: white;
-    transition: background 0.3s ease, border-color 0.3s ease, color 0.3s ease, transform 0.3s ease;
-}
-
-.logout-button:hover {
-    background: #005eff;
-    border-color: white;
-    color: white;
-    transform: scale(1.1);
+.dashboard__leaf-vein {
+    fill: none;
+    stroke: var(--ops-bg);
+    stroke-width: 1.8;
+    stroke-linecap: round;
 }
 
 .dashboard__title {
     margin: 0;
-    font-size: clamp(1.75rem, 4vw, 2.5rem);
+    font-size: 1.15rem;
     font-weight: 700;
     letter-spacing: -0.02em;
-    font-family: "Plus Jakarta Sans", sans-serif;
-    word-spacing: 0.1em;
 }
 
-.dashboard__subtitle {
-    margin: 0.25rem 0 0;
-    color: var(--text-muted);
-    font-family: "Plus Jakarta Sans", sans-serif;
+.dashboard__eco {
+    color: var(--ops-eco);
 }
+
+.dashboard__status {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin-left: 8px;
+    padding: 3px 9px 3px 8px;
+    border: 1px solid var(--ops-line-strong);
+    border-radius: 6px;
+    color: var(--ops-muted);
+    font-size: 0.74rem;
+    font-weight: 600;
+}
+
+.dashboard__status::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--ops-eco);
+    box-shadow: 0 0 0 3px rgba(140, 198, 63, 0.18);
+}
+
+.dashboard__status--demo {
+    border-color: rgba(251, 191, 36, 0.4);
+    background: rgba(251, 191, 36, 0.08);
+    color: #fbbf24;
+}
+
+.dashboard__status--demo::before {
+    background: #fbbf24;
+    box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.18);
+}
+
+.logout-button {
+    height: 34px;
+    padding: 0 14px;
+    border: 1px solid var(--ops-line-strong);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ops-muted);
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.logout-button:hover {
+    border-color: rgba(148, 170, 200, 0.42);
+    background: rgba(148, 170, 200, 0.06);
+    color: var(--ops-text);
+}
+
+.logout-button:focus-visible {
+    outline: 2px solid var(--ops-eco);
+    outline-offset: 2px;
+}
+
+/* ===== Legend =====
+   The icon and its colour carry hazard type; the pulse rate carries urgency.
+   Keeping them on separate channels lets one mark say both without a lookup. */
+
+.legend {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+    margin-left: auto;
+    color: var(--ops-muted);
+    font-size: 0.78rem;
+}
+
+.legend__group {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.legend__group + .legend__group {
+    padding-left: 20px;
+    border-left: 1px solid var(--ops-line);
+}
+
+.legend__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.legend__glyph {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border: 1px solid var(--hazard);
+    border-radius: 50%;
+    background: var(--ops-surface);
+    color: var(--hazard);
+}
+
+.legend__glyph .hazard-icon {
+    width: 12px;
+    height: 12px;
+}
+
+.legend__pulse {
+    position: relative;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--ops-muted);
+    color: var(--ops-muted);
+}
+
+.legend__pulse::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border: 1.5px solid currentColor;
+    border-radius: 50%;
+    animation: marker-pulse 3.2s ease-out infinite;
+}
+
+.legend__pulse--fast {
+    background: var(--ops-text);
+    color: var(--ops-text);
+}
+
+.legend__pulse--fast::after {
+    animation-duration: 1.4s;
+}
+
+/* ===== Body: advisory panel, map, emergency panel ===== */
 
 .dashboard__body {
     flex: 1 1 auto;
     display: flex;
-    flex-direction: row;
-    gap: 1rem;
+    gap: 12px;
     min-height: 0;
 }
 
@@ -79,113 +238,10 @@
     flex-direction: column;
     flex: 1 1 auto;
     min-height: 400px;
-    border-radius: 12px;
-    overflow: hidden;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
-}
-
-
-
-
-
-
-
-
-
-
-
-/* ===== Event summary cards =====
-   One card per detected event in the sidebar. The citation blocks are the
-   point of this section: they show the verbatim protocol text the reasoning
-   was grounded in, so a reader can verify the analysis rather than trust it. */
-
-
-
-
-
-/* Colours mirror RISK_LEVEL_COLORS in MapView.tsx so the sidebar badge and
-   the map marker agree. Keep the two in step. */
-
-
-
-
-
-
-
-
-
-
-
-
-/* ============================================================
-   Event legend, panels, cards and modal
-   ============================================================ */
-
-/* Colour carries hazard type, motion carries urgency. Keeping them on
-   separate channels lets one mark say both without a lookup table. */
-
-.legend {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem 2rem;
-    padding: 0.6rem 1rem;
-    margin-bottom: 0.75rem;
-    background: var(--bg-cards);
+    border: 1px solid var(--ops-line);
     border-radius: 10px;
-    font-size: 0.8rem;
-}
-
-.legend__group {
-    display: flex;
-    align-items: center;
-    gap: 0.9rem;
-    flex-wrap: wrap;
-}
-
-.legend__caption {
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-size: 0.68rem;
-    opacity: 0.65;
-}
-
-.legend__item {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-}
-
-.legend__swatch {
-    width: 0.85rem;
-    height: 0.85rem;
-    border-radius: 3px;
-}
-
-.legend__dot,
-.legend__pulse {
-    position: relative;
-    width: 0.7rem;
-    height: 0.7rem;
-    border-radius: 50%;
-    background: #cbd5e1;
-}
-
-.legend__pulse {
-    animation: marker-pulse 1.6s ease-out infinite;
-}
-
-.legend__count {
-    padding: 0 0.4rem;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.12);
-}
-
-.legend__note {
-    flex-basis: 100%;
-    margin: 0;
-    font-size: 0.72rem;
-    opacity: 0.55;
+    overflow: hidden;
+    background: var(--ops-surface);
 }
 
 .dashboard__panel {
@@ -193,39 +249,52 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    background: var(--bg-cards);
+    border: 1px solid var(--ops-line);
     border-radius: 10px;
-    border: 2px solid transparent;
-    transition: border-color 0.3s ease;
-}
-
-.dashboard__panel:hover {
-    border-color: rgba(255, 255, 255, 0.5);
-}
-
-.dashboard__panel--emergency {
-    border-top: 3px solid #dc2626;
-}
-
-.dashboard__panel--advisory {
-    border-top: 3px solid #64748b;
+    overflow: hidden;
+    background: var(--ops-surface);
 }
 
 .panel__header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 0.75rem 1rem;
+    gap: 9px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--ops-line);
+    font-size: 0.86rem;
     font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    font-size: 0.78rem;
+}
+
+/* Each panel is keyed by a dot: grey for advisory, red for emergency, a dashed
+   ring for reports nobody has corroborated yet. */
+.panel__header::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--ops-muted);
+}
+
+.dashboard__panel--emergency > .panel__header::before {
+    background: var(--ops-alert);
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+}
+
+.panel__section .panel__header::before {
+    background: transparent;
+    border: 1.5px dashed var(--ops-muted);
 }
 
 .panel__count {
-    padding: 0.05rem 0.5rem;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.12);
+    min-width: 24px;
+    margin-left: auto;
+    padding: 1px 7px;
+    border-radius: 6px;
+    background: rgba(148, 170, 200, 0.1);
+    color: var(--ops-muted);
+    font-size: 0.76rem;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
 }
 
 /* The list scrolls, not the page: an operator watching twenty events should
@@ -233,79 +302,104 @@
 .panel__list {
     flex: 1 1 auto;
     overflow-y: auto;
-    padding: 0 0.6rem 0.6rem;
+    padding: 10px;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 8px;
+}
+
+.panel__section {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-top: 1px solid var(--ops-line);
 }
 
 .panel__empty {
-    padding: 0.75rem;
     margin: 0;
+    padding: 6px 4px;
+    color: var(--ops-faint);
     font-size: 0.82rem;
-    opacity: 0.55;
 }
+
+/* ===== Event cards ===== */
 
 .event-card {
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
+    gap: 4px;
     width: 100%;
+    padding: 10px 12px;
     text-align: left;
-    padding: 0.6rem 0.7rem;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--ops-line);
     /* The hazard colour arrives as an inline --hazard custom property, set
        from the same registry the legend and map markers read. */
-    border-left: 4px solid var(--hazard, #94a3b8);
+    border-left: 2px solid var(--hazard, #94a3b8);
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--ops-raised);
     color: inherit;
     font: inherit;
     cursor: pointer;
-    transition: background 0.15s ease, transform 0.15s ease;
+    transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .event-card:hover {
-    background: rgba(255, 255, 255, 0.09);
-    transform: translateX(2px);
+    border-color: var(--ops-line-strong);
+    border-left-color: var(--hazard, #94a3b8);
+    background: #132037;
+}
+
+.event-card:focus-visible {
+    outline: 2px solid var(--ops-eco);
+    outline-offset: 2px;
 }
 
 .event-card--selected {
-    background: rgba(255, 255, 255, 0.13);
-    border-color: var(--hazard, #94a3b8);
+    border-color: color-mix(in srgb, var(--hazard) 45%, transparent);
+    border-left-color: var(--hazard);
+    background: color-mix(in srgb, var(--hazard) 10%, var(--ops-raised));
 }
 
 .event-card--official-strong {
-  border-color: color-mix(in srgb, var(--hazard) 75%, #7f1d1d);
-  box-shadow: inset 4px 0 0 #b91c1c;
+    border-color: color-mix(in srgb, var(--hazard) 60%, transparent);
+    box-shadow: inset 2px 0 0 #ef4444;
 }
 
 .event-card__official-classification {
-  color: var(--color-text-secondary);
-  font-size: 0.76rem;
-  font-weight: 650;
-  text-transform: capitalize;
+    color: var(--ops-muted);
+    font-size: 0.76rem;
+    font-weight: 650;
+    text-transform: capitalize;
 }
 
 .event-card__type {
-    font-size: 0.66rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     color: var(--hazard, #94a3b8);
+    font-size: 0.74rem;
+    font-weight: 600;
+}
+
+.event-card__type .hazard-icon {
+    width: 14px;
+    height: 14px;
 }
 
 .event-card__title {
+    color: var(--ops-text);
     font-size: 0.9rem;
     font-weight: 600;
-    line-height: 1.25;
+    line-height: 1.3;
 }
 
 .event-card__meta {
     display: flex;
     justify-content: space-between;
-    gap: 0.5rem;
+    gap: 8px;
+    color: var(--ops-muted);
     font-size: 0.72rem;
-    opacity: 0.7;
+    font-variant-numeric: tabular-nums;
 }
 
 .event-card__score--none {
@@ -316,54 +410,114 @@
 .event-card__measurement {
     font-size: 0.84rem;
     font-weight: 700;
+    font-variant-numeric: tabular-nums;
 }
 
 .event-card__station {
-    font-size: 0.74rem;
-    opacity: 0.72;
+    color: var(--ops-muted);
+    font-size: 0.76rem;
 }
 
-/* Map markers ------------------------------------------------ */
+/* ===== Map markers =====
+   The hazard's icon on a dark disc ringed in its colour. Every marker pulses;
+   the rate is the urgency: fast for an emergency, slow for an advisory. */
 
 .map-marker {
     position: relative;
-    display: block;
-    width: 14px;
-    height: 14px;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border: 1.5px solid var(--hazard, #94a3b8);
     border-radius: 50%;
-    background: var(--hazard, #94a3b8);
-    border: 2px solid rgba(255, 255, 255, 0.9);
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+    background: rgba(8, 14, 26, 0.92);
+    color: var(--hazard, #94a3b8);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
     cursor: pointer;
+    transition: transform 0.15s ease;
 }
 
-/* Only emergencies pulse. If everything moved, nothing would stand out. */
-.map-marker--emergency::after {
+.map-marker:hover {
+    transform: scale(1.12);
+}
+
+.map-marker .hazard-icon {
+    position: relative;
+    width: 16px;
+    height: 16px;
+}
+
+.map-marker::before {
     content: "";
     position: absolute;
-    inset: -3px;
+    inset: -1.5px;
+    border: 2px solid var(--hazard, #94a3b8);
     border-radius: 50%;
-    background: var(--hazard-halo, rgba(148, 163, 184, 0.45));
-    animation: marker-pulse 1.6s ease-out infinite;
+    animation: marker-pulse 3.2s ease-out infinite;
     pointer-events: none;
+}
+
+.map-marker--emergency {
+    box-shadow: 0 0 0 3px var(--hazard-halo, rgba(148, 163, 184, 0.45)), 0 4px 14px rgba(0, 0, 0, 0.55);
+}
+
+.map-marker--emergency::before {
+    background: var(--hazard-halo, rgba(148, 163, 184, 0.45));
+    animation-duration: 1.4s;
 }
 
 @keyframes marker-pulse {
     0%   { transform: scale(1);   opacity: 0.9; }
-    70%  { transform: scale(2.6); opacity: 0; }
-    100% { transform: scale(2.6); opacity: 0; }
+    70%  { transform: scale(2.2); opacity: 0; }
+    100% { transform: scale(2.2); opacity: 0; }
 }
 
-/* Respect a stated preference for less motion; the colour still carries the
+/* Respect a stated preference for less motion; the icon still carries the
    hazard and the panel still carries the urgency. */
 @media (prefers-reduced-motion: reduce) {
-    .map-marker--emergency::after,
-    .legend__pulse {
+    .map-marker::before,
+    .legend__pulse::after {
         animation: none;
+        opacity: 0.4;
     }
-    .map-marker--emergency::after {
-        opacity: 0.5;
-    }
+}
+
+/* ===== Mapbox chrome, in the dashboard's colours ===== */
+
+.dashboard .mapboxgl-ctrl-group,
+.dashboard .mapboxgl-ctrl-group:not(:empty) {
+    border: 1px solid var(--ops-line);
+    border-radius: 8px;
+    background: var(--ops-glass);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.dashboard .mapboxgl-ctrl-group button + button {
+    border-top: 1px solid var(--ops-line);
+}
+
+.dashboard .mapboxgl-ctrl-group button:not(:disabled):hover {
+    background-color: rgba(148, 170, 200, 0.1);
+}
+
+.dashboard .mapboxgl-ctrl button .mapboxgl-ctrl-icon {
+    filter: invert(1) hue-rotate(180deg) brightness(0.9);
+}
+
+.dashboard .mapboxgl-ctrl-scale {
+    border-color: var(--ops-muted);
+    background: rgba(8, 14, 26, 0.7);
+    color: var(--ops-muted);
+}
+
+.dashboard .mapboxgl-ctrl-attrib.mapboxgl-compact,
+.dashboard .mapboxgl-ctrl-attrib {
+    background: rgba(8, 14, 26, 0.7);
+    color: var(--ops-muted);
+}
+
+.dashboard .mapboxgl-ctrl-attrib a {
+    color: var(--ops-muted);
 }
 
 /* Modal ------------------------------------------------------ */
@@ -376,8 +530,9 @@
     align-items: center;
     justify-content: center;
     padding: 1.5rem;
-    background: rgba(3, 7, 18, 0.72);
-    backdrop-filter: blur(2px);
+    /* A plain dim, no backdrop blur: the map behind keeps animating, and a
+       full-screen blur over it is recomputed every frame. */
+    background: rgba(3, 7, 18, 0.78);
 }
 
 .event-modal {
@@ -385,9 +540,10 @@
     max-height: 85vh;
     overflow-y: auto;
     padding: 1.25rem 1.5rem 1.75rem;
-    border-radius: 14px;
-    border-top: 4px solid var(--hazard, #94a3b8);
-    background: var(--bg-cards, #111827);
+    border-radius: 12px;
+    border: 1px solid var(--ops-line);
+    border-top: 3px solid var(--hazard, #94a3b8);
+    background: var(--ops-surface);
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
 }
 
@@ -736,10 +892,10 @@
 }
 
 .allocation-simulation-panel button {
-  border: 1px solid #fb923c;
-  border-radius: 0.4rem;
-  background: #f97316;
-  color: #fff;
+  border: 1px solid rgba(249, 115, 22, 0.5);
+  border-radius: 5px;
+  background: rgba(249, 115, 22, 0.14);
+  color: #fdba74;
   min-width: 0;
   padding: 0.15rem 0.24rem;
   font: inherit;
@@ -763,12 +919,12 @@
   gap: 0.2rem;
   width: 214px;
   padding: 0.38rem 0.45rem;
-  border: 1px solid rgba(251, 146, 60, 0.65);
-  border-radius: 0.55rem;
-  background: rgba(15, 23, 42, 0.92);
-  color: #f8fafc;
+  border: 1px solid var(--ops-line-strong);
+  border-radius: 8px;
+  background: var(--ops-glass);
+  color: var(--ops-text);
   font-size: 0.63rem;
-  box-shadow: 0 5px 18px #0007;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
 .allocation-simulation-header {
@@ -996,8 +1152,6 @@
 .event-card__grade {
   font-size: 0.78rem;
   font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   color: var(--hazard);
   margin-top: 0.15rem;
 }
@@ -1005,9 +1159,9 @@
 .event-card__evacuation {
   font-size: 0.8rem;
   font-weight: 600;
-  color: #b91c1c;
-  background: rgba(185, 28, 28, 0.08);
-  border-left: 3px solid #b91c1c;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.1);
+  border-left: 3px solid #ef4444;
   padding: 0.2rem 0.45rem;
   border-radius: 3px;
   margin-top: 0.25rem;
@@ -1049,11 +1203,11 @@
   gap: 4px;
   padding: 8px 10px;
   border-radius: 6px;
-  background: rgba(17, 20, 24, 0.82);
-  color: #f3f4f6;
+  background: var(--ops-glass);
+  border: 1px solid var(--ops-line);
+  color: var(--ops-text);
   font-size: 0.72rem;
   line-height: 1.35;
-  backdrop-filter: blur(3px);
   pointer-events: none;
 }
 
@@ -1280,18 +1434,16 @@
     align-items: center;
     gap: 0.4rem;
     padding: 0.3rem 0.7rem;
-    font-size: 0.72rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    opacity: 0.7;
+    color: var(--ops-muted);
+    font-size: 0.76rem;
 }
 
 .panel__operator input {
     flex: 1;
     padding: 0.2rem 0.4rem;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 5px;
-    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--ops-line-strong);
+    border-radius: 6px;
+    background: var(--ops-raised);
     color: inherit;
     font: inherit;
     font-size: 0.8rem;

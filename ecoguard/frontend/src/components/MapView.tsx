@@ -19,7 +19,7 @@
  * the terrain is the point — slope and aspect drive fire behaviour.
  */
 
-import { useState, type CSSProperties } from 'react'
+import { useMemo, useState, type CSSProperties } from 'react'
 import Map, {
   NavigationControl,
   ScaleControl,
@@ -36,8 +36,10 @@ import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 
 import IsraelMask from './layers/IsraelMask'
+import KinneretLayer from './layers/KinneretLayer'
 import FloodEventLayer from './layers/FloodEventLayer'
 import { classify, hazardOf } from './hazards'
+import HazardIcon from './HazardIcon'
 
 import type { SharedEvent } from '../types/events'
 
@@ -76,6 +78,14 @@ const MAPBOX_KEY =
  * Mapbox Standard: 3D buildings, landmarks and time-of-day lighting built in.
  */
 const MAP_STYLE = 'mapbox://styles/mapbox/standard'
+
+/**
+ * Standard's night light preset, so the basemap recedes and the hazard markers
+ * are the brightest thing on screen, matching the dark dashboard. Passed as the
+ * map's initial config (react-map-gl forwards it to the Mapbox constructor), so
+ * there is no daylight flash first. 'basemap' is Standard's fragment id.
+ */
+const MAP_CONFIG = { basemap: { lightPreset: 'night' } }
 
 
 /**
@@ -171,8 +181,6 @@ type MapViewProps = {
    */
   onEventClick?: (event: SharedEvent) => void
 
-  /** Whether the Flood event overlay is visible. */
-  showFloodEvents?: boolean
 } & Pick<MapProps, 'onLoad'>
 
 
@@ -189,7 +197,6 @@ function MapView({
   initialZoom = 7,
   children,
   onEventClick,
-  showFloodEvents = true,
   ...mapProps
 }: MapViewProps) {
 
@@ -201,6 +208,21 @@ function MapView({
     hadError,
     setHadError,
   ] = useState(false)
+
+  /**
+   * Built once per events change, not per render: a fresh object on every
+   * render makes Mapbox re-parse and re-tile the source each time.
+   */
+  const earthquakeImpactAreas = useMemo(() => ({
+    type: 'FeatureCollection' as const,
+    features: events
+      .filter((event) => event.type === 'earthquake')
+      .map((event) => ({
+        type: 'Feature' as const,
+        geometry: event.details.estimated_impact_area,
+        properties: { eventId: event.id },
+      })),
+  }), [events])
 
 
   const containerStyle: CSSProperties = {
@@ -280,6 +302,8 @@ function MapView({
           mapStyleId ?? MAP_STYLE
         }
 
+        config={mapStyleId ? undefined : MAP_CONFIG}
+
         /**
          * Drape the basemap over real elevation. Without this the pitch above
          * only tilts a flat plane, which looks 3D but tells you nothing.
@@ -323,6 +347,9 @@ function MapView({
         <IsraelMask />
 
 
+        <KinneretLayer />
+
+
         <NavigationControl
           position="top-right"
           visualizePitch
@@ -348,16 +375,7 @@ function MapView({
         <Source
           id="earthquake-impact-areas"
           type="geojson"
-          data={{
-            type: 'FeatureCollection',
-            features: events
-              .filter((event) => event.type === 'earthquake')
-              .map((event) => ({
-                type: 'Feature' as const,
-                geometry: event.details.estimated_impact_area,
-                properties: { eventId: event.id },
-              })),
-          }}
+          data={earthquakeImpactAreas}
         >
           <Layer
             id="earthquake-impact-area-fill"
@@ -379,7 +397,7 @@ function MapView({
         </Source>
 
 
-        {events.filter((event) => event.type !== 'flood').map(
+        {events.map(
           (event) => {
             const hazard = hazardOf(event)
             const isEmergency =
@@ -413,9 +431,9 @@ function MapView({
                 }}
               >
                 {/*
-                  * Hazard sets the colour, urgency sets the pulse. Two
-                  * independent signals on one mark, so an operator can read
-                  * "which kind" and "how urgent" without a lookup.
+                  * The icon and its colour say which hazard, the pulse rate
+                  * says how urgent: fast for emergencies, slow for advisories.
+                  * The same glyph as the legend, so no lookup is needed.
                   */}
                 <span
                   className={
@@ -429,13 +447,15 @@ function MapView({
                     '--hazard-halo': hazard.halo,
                   } as CSSProperties}
                   title={event.title}
-                />
+                >
+                  <HazardIcon kind={event.type} />
+                </span>
               </Marker>
             )
           }
         )}
 
-        {showFloodEvents && events.filter((event) => event.type === 'flood').map((event) => (
+        {events.filter((event) => event.type === 'flood').map((event) => (
           <FloodEventLayer
             key={event.id}
             event={event}
@@ -467,7 +487,7 @@ const messageStyle: CSSProperties = {
 
   padding: '1.5rem',
 
-  background: '#0a1f44',
+  background: '#0a1220',
 
   color: '#9fb3d1',
 

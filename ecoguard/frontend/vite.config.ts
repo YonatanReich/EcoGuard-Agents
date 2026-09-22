@@ -20,8 +20,11 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        // The Python backend, as started by `uvicorn ecoguard.api.main:app`.
-        target: 'http://127.0.0.1:8000',
+        // The hosted backend on Railway, so `npm run dev` works without a local
+        // uvicorn. A local one would start a second scheduler against the
+        // shared Neon database. Set VITE_API_TARGET=http://127.0.0.1:8000 to
+        // point at a local backend anyway.
+        target: process.env.VITE_API_TARGET ?? 'https://ecoguard-agents-production.up.railway.app',
         // Rewrite the Host header to match the target, so the backend sees a
         // request that looks like it was addressed to it directly.
         changeOrigin: true,

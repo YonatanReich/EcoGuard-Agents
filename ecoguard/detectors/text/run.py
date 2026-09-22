@@ -18,7 +18,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
 
 from ecoguard.database.repositories import weak_events as weak_store
-from ecoguard.database.repositories.text_candidates import recent_candidates
+from ecoguard.database.repositories.text_candidates import (
+    mark_candidates_triaged,
+    recent_candidates,
+)
 from ecoguard.detectors.fire.hebrew_location_extractor import locality_name_candidates
 from ecoguard.detectors.text.keywords import HAZARDS
 from ecoguard.detectors.text.triage import Report, origin_key, triage
@@ -197,30 +200,93 @@ def run_text_triage(
     reports, unplaceable = reports_from_candidates(candidates)
     open_weak = weak_store.open_weak_events()
 
+    # A completed candidate remains useful as corroborating context, but must
+    # not emit its own event again on every sweep. Reports already represented
+    # by an open weak event are the exception: they are reconsidered until
+    # corroboration arrives or the weak event expires.
+    pending_ids = {
+        int(candidate["id"])
+        for candidate in candidates
+        if candidate.get("triaged_at") is None
+    }
+    open_candidate_to_weak: dict[int, str] = {}
+    for weak in open_weak:
+        for stored_report in weak.get("reports") or ():
+            candidate_id = stored_report.get("candidate_id")
+            if candidate_id is not None:
+                open_candidate_to_weak[int(candidate_id)] = str(weak["id"])
+    primary_ids = pending_ids | set(open_candidate_to_weak)
+    primary_reports = [report for report in reports if report.candidate_id in primary_ids]
+
     from ecoguard.coordinator import incidents as incident_store
 
     outcome = triage(
-        reports,
+        primary_reports,
+        supporting_reports=reports,
         open_incidents=incident_store.open_incidents(),
         open_weak_events=open_weak,
         at=now,
     )
 
     weak_store.expire_weak_events(outcome.expired, at=now)
+    completed_without_coordinator: set[int] = set()
     for weak in outcome.weak_events:
-        weak_store.save_weak_event(weak, at=now)
+        new_reports = [
+            report for report in weak.get("reports") or ()
+            if report.candidate_id in pending_ids
+        ]
+        if not new_reports:
+            continue
+        weak_store.save_weak_event({**weak, "reports": new_reports}, at=now)
+        completed_without_coordinator.update(report.candidate_id for report in new_reports)
 
     signals = []
+    signal_candidate_ids: list[int] = []
+    promoted_weak_events: dict[str, str] = {}
     for entry in (*outcome.events, *outcome.promoted):
         signal = signal_from(entry["report"], entry["basis"])
         if signal is not None:
             signals.append(signal)
+            signal_candidate_ids.append(entry["report"].candidate_id)
+            weak_id = open_candidate_to_weak.get(entry["report"].candidate_id)
+            if weak_id is not None and entry in outcome.promoted:
+                promoted_weak_events[weak_id] = str(
+                    entry["basis"].get("kind") or "corroborated"
+                )
+        elif entry["report"].candidate_id in pending_ids:
+            completed_without_coordinator.add(entry["report"].candidate_id)
+
+    observation_to_candidates: dict[int, set[int]] = {}
+    for candidate in candidates:
+        observation_to_candidates.setdefault(
+            int(candidate["observation_id"]), set()
+        ).add(int(candidate["id"]))
+    for item in (*unplaceable, *outcome.skipped):
+        completed_without_coordinator.update(
+            observation_to_candidates.get(int(item["observation_id"]), set())
+            & pending_ids
+        )
+    completed_without_coordinator.update(
+        entry["report"].candidate_id
+        for entry in outcome.closed
+        if entry["report"].candidate_id in pending_ids
+    )
+
+    mark_candidates_triaged(completed_without_coordinator, at=now)
 
     coordinated = None
     if signals:
         if coordinate is None:
             from ecoguard.coordinator.agent import run as coordinate
         coordinated = coordinate(signals)
+        mark_candidates_triaged(signal_candidate_ids, at=now)
+        for weak_id, resolution in promoted_weak_events.items():
+            weak_store.resolve_weak_event(
+                weak_id,
+                status=weak_store.PROMOTED,
+                resolution=resolution,
+                at=now,
+            )
 
     logger.info(
         "text triage: %s events, %s promoted, %s weak, %s expired, %s unplaceable",

@@ -19,11 +19,13 @@ const BAND_LABEL: Record<WaterLevelBand, string> = {
 
 // Amber for the overflow case rather than green: it is not an emergency, but
 // it is not "nothing to do" either — the dam has to be opened.
+// On the dark dashboard the band colour is an accent (edge, level, band name)
+// over a faint tint of itself, not a light card of its own.
 const BAND_COLOR: Record<WaterLevelBand, { text: string; bg: string; border: string }> = {
-  above_upper_red: { text: '#92400e', bg: 'rgba(255,251,235,.97)', border: '#fcd34d' },
-  normal: { text: '#166534', bg: 'rgba(240,253,244,.97)', border: '#86efac' },
-  below_lower_red: { text: '#9a3412', bg: 'rgba(255,247,237,.97)', border: '#fdba74' },
-  below_black: { text: '#7f1d1d', bg: 'rgba(254,242,242,.97)', border: '#fca5a5' },
+  above_upper_red: { text: '#fcd34d', bg: 'rgba(252,211,77,.06)', border: 'rgba(252,211,77,.28)' },
+  normal: { text: '#86efac', bg: 'rgba(134,239,172,.06)', border: 'rgba(134,239,172,.28)' },
+  below_lower_red: { text: '#fdba74', bg: 'rgba(253,186,116,.06)', border: 'rgba(253,186,116,.28)' },
+  below_black: { text: '#fca5a5', bg: 'rgba(252,165,165,.07)', border: 'rgba(252,165,165,.3)' },
 }
 
 function KinneretLevelCard() {
@@ -75,17 +77,17 @@ function Advisory({ advisory, stale }: { advisory: KinneretAdvisory; stale: bool
     <div
       style={{
         ...containerStyle,
-        color: palette.text,
         background: palette.bg,
         borderColor: palette.border,
+        borderLeftColor: palette.text,
       }}
     >
       <div style={headerStyle}>
         <strong>Kinneret</strong>
-        <span style={levelStyle}>{advisory.level_m.toFixed(2)} m</span>
+        <span style={{ ...levelStyle, color: palette.text }}>{advisory.level_m.toFixed(2)} m</span>
       </div>
 
-      <div style={bandStyle}>{BAND_LABEL[advisory.band]}</div>
+      <div style={{ ...bandStyle, color: palette.text }}>{BAND_LABEL[advisory.band]}</div>
 
       <div style={detailStyle}>
         {below > 0
@@ -114,18 +116,17 @@ function Advisory({ advisory, stale }: { advisory: KinneretAdvisory; stale: bool
   )
 }
 
-const containerStyle: CSSProperties = { margin: '0 0 10px', padding: '10px 12px', borderRadius: 9,
-  border: '1px solid', fontSize: '.82rem' }
+const containerStyle: CSSProperties = { margin: '0 0 10px', padding: '10px 12px', borderRadius: 8,
+  border: '1px solid', borderLeftWidth: 3, color: '#d5deea', fontSize: '.82rem' }
 const headerStyle: CSSProperties = { display: 'flex', alignItems: 'baseline',
   justifyContent: 'space-between', gap: 8 }
-const levelStyle: CSSProperties = { fontWeight: 700, fontSize: '.95rem' }
-const bandStyle: CSSProperties = { marginTop: 3, fontWeight: 700, fontSize: '.76rem',
-  textTransform: 'uppercase', letterSpacing: '.02em' }
-const detailStyle: CSSProperties = { marginTop: 3, fontWeight: 600 }
-const actionStyle: CSSProperties = { marginTop: 7, paddingTop: 7, borderTop: '1px solid currentColor',
-  opacity: .92, fontWeight: 600 }
-const noteStyle: CSSProperties = { marginTop: 5, opacity: .78, fontSize: '.72rem' }
-const mutedStyle: CSSProperties = { margin: '0 0 10px', padding: '8px 12px', borderRadius: 9,
-  background: 'rgba(148,163,184,.12)', color: '#475569', fontSize: '.78rem' }
+const levelStyle: CSSProperties = { fontWeight: 700, fontSize: '.95rem', fontVariantNumeric: 'tabular-nums' }
+const bandStyle: CSSProperties = { marginTop: 2, fontWeight: 700, fontSize: '.78rem' }
+const detailStyle: CSSProperties = { marginTop: 3, color: '#aab6c8' }
+const actionStyle: CSSProperties = { marginTop: 8, paddingTop: 8,
+  borderTop: '1px solid rgba(148,170,200,.14)', fontWeight: 600 }
+const noteStyle: CSSProperties = { marginTop: 6, color: '#6b788d', fontSize: '.72rem' }
+const mutedStyle: CSSProperties = { margin: '0 0 10px', padding: '8px 12px', borderRadius: 8,
+  background: 'rgba(148,170,200,.06)', color: '#8594ab', fontSize: '.78rem' }
 
 export default KinneretLevelCard

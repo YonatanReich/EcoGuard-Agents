@@ -1,6 +1,6 @@
 """Shared incident dispatch and Air Pollution production-handler tests."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -558,3 +558,63 @@ def test_hybrid_merge_cause_is_in_coordinator_touched_ids():
     )
 
     assert result.touched_ids == ["INC-POLLUTION-EFFECT", "INC-FIRE-CAUSE"]
+
+
+def test_fresh_plan_is_not_rebuilt_by_a_routine_re_dispatch():
+    """The loop that re-planned one unchanged incident on every tick.
+
+    An open incident is touched by every routine signal that lands on it, and
+    the air pollution and earthquake handlers rebuild their plan on every
+    touch. A successful plan from a minute ago stands instead.
+    """
+    from ecoguard.coordinator import dispatcher as module
+
+    calls: list[str] = []
+
+    class CountingHandler:
+        name = "counting"
+
+        def process(self, incident, context):
+            calls.append(context.incident_id)
+            return module.IncidentProcessingResult(
+                incident_id=context.incident_id,
+                hazard=context.hazard,
+                route=context.route,
+                status="success",
+                requested_at=context.requested_at,
+                completed_at=context.requested_at,
+            )
+
+    now = datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc)
+    incident = {
+        "id": "INC-1",
+        "status": "open",
+        "primary_hazard": "air_pollution",
+        "hazards": ["air_pollution"],
+        "queues": ["non_emergency"],
+    }
+    registry = {("air_pollution", "non_emergency"): CountingHandler()}
+
+    fresh = dispatch_incidents(
+        [incident],
+        registry=registry,
+        at=now,
+        projection_reader=lambda _: {"last_success_at": now - timedelta(minutes=1)},
+    )
+    assert calls == []
+    assert fresh == []
+
+    dispatch_incidents(
+        [incident],
+        registry=registry,
+        at=now,
+        projection_reader=lambda _: {
+            "last_success_at": now - timedelta(minutes=module.PLAN_REFRESH_MINUTES + 1)
+        },
+    )
+    assert calls == ["INC-1"]
+
+    dispatch_incidents(
+        [incident], registry=registry, at=now, projection_reader=lambda _: None
+    )
+    assert calls == ["INC-1", "INC-1"]

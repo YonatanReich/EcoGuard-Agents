@@ -37,16 +37,17 @@ function FireRiskAlert({ clusters, evaluationTime, snapshotStale, onViewOnMap, o
 
 const containerStyle: CSSProperties = { position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)',
   zIndex: 7, display: 'flex', alignItems: 'center', gap: 14, maxWidth: 'min(720px, calc(100% - 440px))',
-  minWidth: 390, padding: '10px 12px', borderRadius: 9, color: '#7f1d1d', background: 'rgba(254,242,242,.97)',
-  border: '1px solid #fca5a5', boxShadow: '0 4px 16px rgba(127,29,29,.22)', fontSize: '.82rem' }
-const titleStyle: CSSProperties = { color: '#991b1b', fontSize: '.94rem' }
+  minWidth: 390, padding: '10px 12px', borderRadius: 8, color: '#e4ebf5', background: 'rgba(8,14,26,.93)', border: '1px solid rgba(239,68,68,.45)', borderLeft: '3px solid #ef4444',
+  boxShadow: '0 8px 24px rgba(0,0,0,.45)', fontSize: '.82rem' }
+const titleStyle: CSSProperties = { color: '#fca5a5', fontSize: '.94rem' }
 const detailStyle: CSSProperties = { marginTop: 3, fontWeight: 600 }
-const noteStyle: CSSProperties = { marginTop: 2, color: '#7f1d1d', opacity: .82, fontSize: '.74rem' }
-const staleStyle: CSSProperties = { marginTop: 3, color: '#92400e', fontWeight: 700, fontSize: '.76rem' }
-const buttonStyle: CSSProperties = { flexShrink: 0, border: 0, borderRadius: 7, padding: '8px 11px', cursor: 'pointer',
-  background: '#b91c1c', color: '#fff', fontWeight: 700 }
+const noteStyle: CSSProperties = { marginTop: 2, color: '#8594ab', fontSize: '.74rem' }
+const staleStyle: CSSProperties = { marginTop: 3, color: '#fbbf24', fontWeight: 700, fontSize: '.76rem' }
+const buttonStyle: CSSProperties = { flexShrink: 0, border: '1px solid rgba(239,68,68,.5)', borderRadius: 6,
+  padding: '6px 10px', cursor: 'pointer', background: 'rgba(239,68,68,.14)', color: '#fecaca', fontWeight: 600,
+  font: 'inherit' }
 const areaListStyle: CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 8, maxHeight: 92, overflowY: 'auto' }
-const closeStyle: CSSProperties = { alignSelf: 'flex-start', border: 0, background: 'transparent', color: '#991b1b',
+const closeStyle: CSSProperties = { alignSelf: 'flex-start', border: 0, background: 'transparent', color: '#8594ab',
   cursor: 'pointer', fontSize: '1.4rem', lineHeight: 1, padding: '0 2px' }
 
 export default FireRiskAlert

@@ -19,6 +19,7 @@ from ecoguard.detectors.text.classifier import (
     disagreements,
     is_classifiable,
 )
+from ecoguard.detectors.text import classifier as classifier_module
 from ecoguard.detectors.text.keywords import hazards_in, normalise
 
 AT = datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc)
@@ -205,6 +206,61 @@ def test_fallback_rows_are_excluded_from_the_disagreement_count():
     }
 
 
+def test_runtime_entry_reads_telegram_and_rss_in_one_batch(monkeypatch):
+    messages = [
+        message(1, "שריפה בחיפה", source_id="telegram:-1001"),
+        message(2, "Fire in Haifa", source_id="https://ynet.test/rss"),
+    ]
+    seen = []
+    stored = []
+
+    class RecordingClassifier:
+        def classify(self, batch):
+            seen.extend(batch)
+            return [{
+                "observation_id": item["observation_id"],
+                "source_id": item["source_id"],
+                "observed_at": item["observed_at"],
+                "hazards": ["fire"],
+                "relevant": True,
+                "literal": True,
+                "in_israel": True,
+                "update_type": "new",
+                "location_text": "חיפה",
+                "claim": item["text"],
+                "details": {},
+                "classified_by": "model",
+                "model_version": "test",
+                "keyword_hazards": ["fire"],
+            } for item in batch]
+
+    monkeypatch.setattr(
+        classifier_module, "unclassified_text_observations", lambda **_: messages
+    )
+    monkeypatch.setattr(
+        classifier_module, "store_candidates",
+        lambda results: stored.extend(results) or len(results),
+    )
+    monkeypatch.setattr(
+        classifier_module, "last_success_at", lambda _source: None
+    )
+    monkeypatch.setattr(
+        classifier_module, "log_start", lambda _source: "test-run"
+    )
+    monkeypatch.setattr(
+        classifier_module, "log_finish", lambda *_args, **_kwargs: None
+    )
+
+    result = classifier_module.classify_new_text(classifier=RecordingClassifier())
+
+    assert [item["source_id"] for item in seen] == [
+        "telegram:-1001", "https://ynet.test/rss",
+    ]
+    assert len(stored) == 2
+    assert result["messages"] == 2
+    assert result["candidates"] == 2
+
+
 # --- the keyword net -------------------------------------------------------
 
 @pytest.mark.parametrize("text,expected", [
@@ -237,3 +293,29 @@ def test_a_message_with_no_hazard_term_matches_nothing():
     assert hazards_in("טראמפ על איראן: השאלה אם ומתי") == {}
     assert hazards_in("") == {}
     assert hazards_in(None) == {}
+
+
+def test_classify_new_text_reads_from_the_bookmark_not_the_full_window(monkeypatch):
+    """The regression that made the lane re-send a day of messages every tick.
+
+    A message the model judged and found nothing in writes no candidate row, so
+    the row-existence check alone re-offers it until it ages out of the 24 hour
+    window. With a bookmark, the floor is the last successful run instead.
+    """
+    from ecoguard.detectors.text import classifier as module
+
+    bookmark = datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc)
+    seen: dict[str, datetime] = {}
+
+    monkeypatch.setattr(module, "last_success_at", lambda source: bookmark)
+    monkeypatch.setattr(module, "log_start", lambda source: 1)
+    monkeypatch.setattr(module, "log_finish", lambda *a, **k: None)
+    def record(*, since, limit):
+        seen["since"] = since
+        return []
+
+    monkeypatch.setattr(module, "unclassified_text_observations", record)
+
+    module.classify_new_text()
+
+    assert seen["since"] == bookmark

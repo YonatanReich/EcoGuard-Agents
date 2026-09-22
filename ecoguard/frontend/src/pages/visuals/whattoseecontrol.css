@@ -13,24 +13,41 @@
 .see-bar {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
+    gap: 18px;
     padding: 10px 14px;
-    background: linear-gradient(180deg, rgba(0, 37, 100, 0.92), rgba(0, 24, 66, 0.92));
-    border-bottom: 1px solid rgba(0, 98, 255, 0.28);
+    background: var(--ops-surface, #0a1220);
+    border-bottom: 1px solid var(--ops-line, rgba(148, 170, 200, 0.12));
     /* A row in the map column, so it must not be squeezed when the map claims
      * the remaining height. */
     flex: 0 0 auto;
 }
 
 .see-bar__title {
-    margin-inline-end: 4px;
-    color: #8fa9cf;
-    font-size: 0.68rem;
-    font-weight: 700;
-    letter-spacing: 0.09em;
-    text-transform: uppercase;
+    color: var(--ops-text, #e4ebf5);
+    font-size: 0.84rem;
+    font-weight: 600;
     white-space: nowrap;
+}
+
+.see-bar__rows {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.see-bar__row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+/* Fixed width so the chips of both rows start on the same line. */
+.see-bar__label {
+    width: 4.5rem;
+    color: var(--ops-muted, #8594ab);
+    font-size: 0.76rem;
 }
 
 .see-chip {
@@ -38,12 +55,12 @@
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    padding: 5px 12px 5px 10px;
-    border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    background: rgba(255, 255, 255, 0.04);
-    color: #b9cbe6;
-    font-size: 0.8rem;
+    padding: 4px 11px 4px 7px;
+    border-radius: 6px;
+    border: 1px solid var(--ops-line, rgba(148, 170, 200, 0.12));
+    background: transparent;
+    color: var(--ops-muted, #8594ab);
+    font-size: 0.78rem;
     font-weight: 500;
     line-height: 1.2;
     cursor: pointer;
@@ -53,15 +70,15 @@
 }
 
 .see-chip:hover {
-    background: rgba(255, 255, 255, 0.09);
-    border-color: rgba(255, 255, 255, 0.24);
-    color: #e7effb;
+    background: rgba(148, 170, 200, 0.08);
+    border-color: var(--ops-line-strong, rgba(148, 170, 200, 0.24));
+    color: var(--ops-text, #e4ebf5);
 }
 
 .see-chip--on {
-    background: rgba(0, 98, 255, 0.18);
-    border-color: rgba(0, 98, 255, 0.62);
-    color: #ffffff;
+    background: rgba(140, 198, 63, 0.1);
+    border-color: rgba(140, 198, 63, 0.5);
+    color: var(--ops-text, #e4ebf5);
     font-weight: 600;
 }
 
@@ -78,7 +95,7 @@
 }
 
 .see-chip__input:focus-visible + .see-chip__swatch {
-    outline: 2px solid #6ea8ff;
+    outline: 2px solid var(--ops-eco, #8cc63f);
     outline-offset: 2px;
 }
 
@@ -115,14 +132,19 @@
     opacity: 1;
 }
 
+/* Districts are areas, so their swatch is a rounded square, not a disc. */
+.see-chip__swatch--area {
+    border-radius: 4px;
+}
+
 .see-chip__note {
-    color: #8fa9cf;
+    color: var(--ops-muted, #8594ab);
     font-size: 0.7rem;
     font-variant-numeric: tabular-nums;
 }
 
 .see-chip--on .see-chip__note {
-    color: #a8c2e6;
+    color: var(--ops-eco, #8cc63f);
 }
 
 @media (prefers-reduced-motion: reduce) {

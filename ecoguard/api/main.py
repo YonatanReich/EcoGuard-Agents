@@ -50,6 +50,7 @@ from ecoguard.analyzers.emergency.fire.national_scan import NationalCurrentRiskS
 from ecoguard.api.fire_danger_surface import build_surface as build_fire_danger_surface
 from ecoguard.shared.protocols import ProtocolRetriever
 from ecoguard.api.weak_events import router as weak_events_router
+from ecoguard.api.demo import router as demo_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -84,8 +85,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 app.include_router(events_router)
 app.include_router(weak_events_router)
-app.include_router(flood_manual_test_router)
-app.include_router(fire_manual_test_router)
+app.include_router(demo_router)
 
 # Allow the Vite dev server to call the API directly during development.
 # Both localhost and 127.0.0.1 are listed because browsers treat them as

@@ -34,14 +34,10 @@ body {
   color: var(--text-primary);
 }
 
+/* Shared with dashboard.css — keep. */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes fadeInOpacity {
-  from { opacity: 0; }
-  to   { opacity: 1; }
 }
 
 @keyframes slideUpOut {
@@ -49,83 +45,207 @@ body {
   to   { opacity: 0; transform: translateY(-40px); }
 }
 
+/* Landing load sequence. Every element's resting CSS is its final state and
+   the keyframes only say where it starts, so with motion off (or animations
+   stripped) the page is simply complete. */
+@keyframes rise    { from { opacity: 0; transform: translateY(18px); filter: blur(6px); } }
+@keyframes arrive  { from { opacity: 0; transform: translateY(28px) scale(.96); filter: blur(8px); } }
+@keyframes sprout  { from { opacity: 0; transform: scale(0) rotate(-40deg); } 50% { opacity: 1; } }
+@keyframes trace   { from { stroke-dashoffset: 1; } }
+@keyframes fill-in { from { fill-opacity: 0; } }
+@keyframes pulse   {
+  0%, 100% { fill: var(--eco); filter: drop-shadow(0 0 0 rgba(140, 198, 63, 0)); }
+  18%      { fill: #b3e07a; filter: drop-shadow(0 0 7px rgba(140, 198, 63, .9)); }
+}
+
 .home {
-  text-align: center;
-  padding: 1.5rem;
+  --signal: #005eff;
+  --eco: #8cc63f;
+  --ease-out: cubic-bezier(.22, 1, .36, 1);
+  display: grid;
+  grid-template-columns: minmax(0, 30rem) minmax(0, 36rem);
+  align-items: center;
+  gap: clamp(2rem, 6vw, 6rem);
+  width: 100%;
+  max-width: 72rem;
+  padding: 2rem clamp(1.5rem, 5vw, 4rem);
+  font-family: "Plus Jakarta Sans", sans-serif;
   user-select: none;
-}
-
-.home__bot {
-  width: 400px;
-  height: auto;
-  margin-bottom: 1.5rem;
-  animation: fadeIn 0.6s ease both;
-}
-
-.home__title {
-  animation: fadeIn 0.6s ease 0.3s both;
-}
-
-.home__subtitle {
-  animation: fadeIn 0.6s ease 0.45s both;
-}
-
-.login-button {
-  animation: fadeInOpacity 0.6s ease 1s both;
-}
-
-.home--leaving .home__bot {
-  animation: slideUpOut 0.4s ease both;
-}
-
-.home--leaving .home__title {
-  animation: slideUpOut 0.4s ease 0.08s both;
-}
-
-.home--leaving .home__subtitle {
-  animation: slideUpOut 0.4s ease 0.16s both;
-}
-
-.home--leaving .login-button {
-  animation: slideUpOut 0.4s ease 0.24s both;
 }
 
 .home__title {
   margin: 0;
-  font-size: clamp(2.5rem, 6vw, 4.5rem);
+  font-size: clamp(2.75rem, 5.5vw, 4.5rem);
   font-weight: 700;
-  letter-spacing: -0.02em;
-  word-spacing: 0.1em;
-  font-family: "Plus Jakarta Sans", sans-serif;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  animation: rise 1.1s var(--ease-out) 1.4s both;
+}
+
+.home__eco {
+  position: relative;
+  color: var(--eco);
+}
+
+/* Sprouts from its stem above "Eco" last of all, as the shield turns green. */
+.home__leaf {
+  position: absolute;
+  left: calc(50% - .26em);
+  bottom: 80%;
+  width: .52em;
+  height: .52em;
+  fill: var(--eco);
+  transform-origin: 16% 84%; /* the stem end of the path */
+  animation: sprout 1s cubic-bezier(.34, 1.56, .64, 1) 3.7s both;
+}
+
+.home__leaf-vein {
+  fill: none;
+  stroke: var(--bg-dark-blue);
+  stroke-width: 1.8;
+  stroke-linecap: round;
 }
 
 .home__subtitle {
-  margin: 1rem 0 0;
-  font-size: clamp(1rem, 2vw, 1.25rem);
+  margin: 1.25rem 0 0;
+  max-width: 26em;
+  font-size: clamp(1.05rem, 1.6vw, 1.25rem);
+  line-height: 1.55;
   color: var(--text-muted);
-  font-family: "Plus Jakarta Sans", sans-serif;
+  animation: rise 1.1s var(--ease-out) 1.9s both;
 }
 
-.login-button{
-  margin-top: 50px;
+.home__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+  margin-top: 2.75rem;
+  animation: rise 1.1s var(--ease-out) 2.4s both;
+}
+
+/* The stage: the bot, with its shield repainted by an SVG laid exactly over
+   the image. Both share the image's 500×500 space via the viewBox. */
+.home__stage {
+  position: relative;
+  justify-self: center;
+  width: min(72vh, 36rem);
+  animation: arrive 1.4s var(--ease-out) .4s both;
+}
+
+/* Hold the whole entrance (hidden, at its first frame) until the page has
+   fully loaded: then robot, title, subtitle, buttons, and the leaf last. */
+.home:not(.home--ready) * {
+  animation-play-state: paused;
+}
+
+.home__stage img {
+  display: block;
+  width: 100%;
+  height: auto;
+  filter: drop-shadow(0 24px 32px rgba(0, 0, 0, .45));
+}
+
+.home__stage svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Sequence: the bot arrives already coated, the outline traces from the
+   north, the land fills leaf green, then the green pulses every 3s. */
+.home__coat {
+  fill: url(#shield-coat);
+}
+
+.home__outline {
+  fill: var(--eco);
+  fill-opacity: .9;
+  stroke: #eaf2ff;
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  animation:
+    trace 2.4s cubic-bezier(.45, 0, .25, 1) 1.6s both,
+    fill-in 1.2s ease 4s both,
+    pulse 3s ease-in-out 5.2s infinite;
+}
+
+/* Buttons: a filled primary and an outlined secondary, same height and shape
+   so they sit as a pair. Hover lifts, press settles back. */
+.login-button,
+.demo-button {
+  height: 3rem;
+  padding: 0 1.75rem;
+  border-radius: 999px;
+  font: inherit;
   font-size: 1rem;
   font-weight: 600;
-  font-family: "Plus Jakarta Sans", sans-serif;
-  border-radius: 20px;
-  width: 150px;
-  height: 50px;
+  color: var(--text-primary);
   cursor: pointer;
-  border: 2px solid transparent;
-  transition: background 0.3s ease,
-  border-color 0.3s ease, 
-  color 0.3s ease,
-  transform 0.3s ease;
-  background: white;
+  transition: background-color .2s ease, border-color .2s ease, box-shadow .2s ease, transform .2s ease;
 }
 
-.login-button:hover{
-  background: #005eff;
-  border-color: white;
-  color: white;
-  transform: scale(1.1);
+.login-button {
+  min-width: 9rem;
+  border: 1px solid #4d8dff;
+  background: var(--signal);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 10px 24px -10px rgba(0, 94, 255, .9);
+}
+
+.login-button:hover {
+  background: #1f73ff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .28), 0 14px 30px -10px rgba(0, 94, 255, 1);
+  transform: translateY(-2px);
+}
+
+.demo-button {
+  border: 1.5px solid rgba(159, 179, 209, .45);
+  background: transparent;
+}
+
+.demo-button:hover {
+  border-color: var(--text-primary);
+  background: rgba(255, 255, 255, .06);
+  transform: translateY(-2px);
+}
+
+.login-button:active,
+.demo-button:active {
+  transform: translateY(0);
+  transition-duration: .05s;
+}
+
+.login-button:focus-visible,
+.demo-button:focus-visible {
+  outline: 2px solid #9fc3ff;
+  outline-offset: 3px;
+}
+
+.home--leaving .home__title    { animation: slideUpOut .4s ease both; }
+.home--leaving .home__subtitle { animation: slideUpOut .4s ease .08s both; }
+.home--leaving .home__actions  { animation: slideUpOut .4s ease .16s both; }
+.home--leaving .home__stage    { animation: slideUpOut .5s ease .1s both; }
+
+/* Narrow screens: stage on top, text centred under it. */
+@media (max-width: 860px) {
+  .home {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    gap: 1.5rem;
+    text-align: center;
+  }
+
+  .home__intro { order: 1; }
+  .home__subtitle { margin-inline: auto; }
+  .home__actions { justify-content: center; margin-top: 2rem; }
+  .home__stage { width: min(80vw, 46vh); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home,
+  .home * {
+    animation: none !important;
+    transition: none !important;
+  }
 }
