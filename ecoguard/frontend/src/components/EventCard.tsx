@@ -28,10 +28,13 @@ function EventCard({ event, onOpen, isSelected }: {
     && event.details.publication_policy?.emphasis === 'strong'
 
   return (
-    <button
-      type="button"
+    <article
       className={`event-card${isSelected ? ' event-card--selected' : ''}${strongOfficialEmphasis ? ' event-card--official-strong' : ''}`}
       style={{ '--hazard': hazard.color } as React.CSSProperties}
+    >
+    <button
+      type="button"
+      className="event-card__open"
       onClick={() => onOpen(event)}
       aria-label={`${hazard.label}: ${event.title}`}
     >
@@ -145,6 +148,7 @@ function EventCard({ event, onOpen, isSelected }: {
         </>
       )}
     </button>
+    </article>
   )
 }
 

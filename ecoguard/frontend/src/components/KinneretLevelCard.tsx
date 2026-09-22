@@ -28,7 +28,10 @@ const BAND_COLOR: Record<WaterLevelBand, { text: string; bg: string; border: str
   below_black: { text: '#fca5a5', bg: 'rgba(252,165,165,.07)', border: 'rgba(252,165,165,.3)' },
 }
 
-function KinneretLevelCard() {
+function KinneretLevelCard({ compact = false }: {
+  /** The map popup's version: no outer margin, tighter type and padding. */
+  compact?: boolean
+}) {
   const [data, setData] = useState<WaterLevelResponse | null>(null)
   const [failed, setFailed] = useState(false)
 
@@ -67,16 +70,17 @@ function KinneretLevelCard() {
     return <div style={mutedStyle}>Kinneret level not collected yet.</div>
   }
 
-  return <Advisory advisory={data.advisory} stale={failed} />
+  return <Advisory advisory={data.advisory} stale={failed} compact={compact} />
 }
 
-function Advisory({ advisory, stale }: { advisory: KinneretAdvisory; stale: boolean }) {
+function Advisory({ advisory, stale, compact }: { advisory: KinneretAdvisory; stale: boolean; compact: boolean }) {
   const palette = BAND_COLOR[advisory.band]
   const below = advisory.distance_to_lower_red_m
   return (
     <div
       style={{
         ...containerStyle,
+        ...(compact && { margin: 0, padding: '8px 10px', fontSize: '.76rem' }),
         background: palette.bg,
         borderColor: palette.border,
         borderLeftColor: palette.text,

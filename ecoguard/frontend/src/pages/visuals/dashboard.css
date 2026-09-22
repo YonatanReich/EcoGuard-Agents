@@ -6,11 +6,11 @@
    emergencies. Everything else is neutral so the incidents are what you see. */
 
 .dashboard {
-    --ops-bg: #050a14;
-    --ops-surface: #0a1220;
-    --ops-raised: #0f192b;
-    --ops-line: rgba(148, 170, 200, 0.12);
-    --ops-line-strong: rgba(148, 170, 200, 0.24);
+    --ops-bg: #0d1626;
+    --ops-surface: #132035;
+    --ops-raised: #1a2940;
+    --ops-line: rgba(148, 170, 200, 0.15);
+    --ops-line-strong: rgba(148, 170, 200, 0.3);
     --ops-text: #e4ebf5;
     --ops-muted: #8594ab;
     --ops-faint: #5d6a80;
@@ -18,7 +18,7 @@
     --ops-alert: #ef4444;
     /* Overlays on the map are a dense fill, never backdrop-filter: blurring
        over a WebGL canvas is recomputed on every frame the map redraws. */
-    --ops-glass: rgba(8, 14, 26, 0.93);
+    --ops-glass: rgba(19, 32, 53, 0.94);
 
     width: 100%;
     height: 100vh;
@@ -108,17 +108,6 @@
     box-shadow: 0 0 0 3px rgba(140, 198, 63, 0.18);
 }
 
-.dashboard__status--demo {
-    border-color: rgba(251, 191, 36, 0.4);
-    background: rgba(251, 191, 36, 0.08);
-    color: #fbbf24;
-}
-
-.dashboard__status--demo::before {
-    background: #fbbf24;
-    box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.18);
-}
-
 .logout-button {
     height: 34px;
     padding: 0 14px;
@@ -152,25 +141,12 @@
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 8px 20px;
-    margin-left: auto;
-    color: var(--ops-muted);
-    font-size: 0.78rem;
-}
-
-.legend__group {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 6px 14px;
-    margin: 0;
+    gap: 6px 16px;
+    margin: 0 0 0 auto;
     padding: 0;
     list-style: none;
-}
-
-.legend__group + .legend__group {
-    padding-left: 20px;
-    border-left: 1px solid var(--ops-line);
+    color: var(--ops-muted);
+    font-size: 0.78rem;
 }
 
 .legend__item {
@@ -194,33 +170,6 @@
 .legend__glyph .hazard-icon {
     width: 12px;
     height: 12px;
-}
-
-.legend__pulse {
-    position: relative;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--ops-muted);
-    color: var(--ops-muted);
-}
-
-.legend__pulse::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border: 1.5px solid currentColor;
-    border-radius: 50%;
-    animation: marker-pulse 3.2s ease-out infinite;
-}
-
-.legend__pulse--fast {
-    background: var(--ops-text);
-    color: var(--ops-text);
-}
-
-.legend__pulse--fast::after {
-    animation-duration: 1.4s;
 }
 
 /* ===== Body: advisory panel, map, emergency panel ===== */
@@ -326,29 +275,38 @@
 .event-card {
     display: flex;
     flex-direction: column;
-    gap: 4px;
     width: 100%;
-    padding: 10px 12px;
-    text-align: left;
     border: 1px solid var(--ops-line);
     /* The hazard colour arrives as an inline --hazard custom property, set
        from the same registry the legend and map markers read. */
     border-left: 2px solid var(--hazard, #94a3b8);
     border-radius: 8px;
     background: var(--ops-raised);
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.event-card__open {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
     color: inherit;
     font: inherit;
+    text-align: left;
     cursor: pointer;
-    transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .event-card:hover {
     border-color: var(--ops-line-strong);
     border-left-color: var(--hazard, #94a3b8);
-    background: #132037;
+    background: #213250;
 }
 
-.event-card:focus-visible {
+.event-card__open:focus-visible {
     outline: 2px solid var(--ops-eco);
     outline-offset: 2px;
 }
@@ -474,8 +432,7 @@
 /* Respect a stated preference for less motion; the icon still carries the
    hazard and the panel still carries the urgency. */
 @media (prefers-reduced-motion: reduce) {
-    .map-marker::before,
-    .legend__pulse::after {
+    .map-marker::before {
         animation: none;
         opacity: 0.4;
     }
@@ -519,77 +476,747 @@
     color: var(--ops-muted);
 }
 
-/* Modal ------------------------------------------------------ */
+/* ===== Event panel, docked under the map =====
+   The dock animates its row from 0fr to 1fr, so the map above it (flex: 1)
+   gives up the height smoothly; MapView resizes its canvas as it goes. */
 
-.event-modal__backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 1000;
+.dashboard__center {
+    flex: 1 1 auto;
     display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 1.5rem;
-    /* A plain dim, no backdrop blur: the map behind keeps animating, and a
-       full-screen blur over it is recomputed every frame. */
-    background: rgba(3, 7, 18, 0.78);
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
 }
 
-.event-modal {
-    width: min(680px, 100%);
-    max-height: 85vh;
-    overflow-y: auto;
-    padding: 1.25rem 1.5rem 1.75rem;
-    border-radius: 12px;
+.dashboard__center > .dashboard__map {
+    min-height: 220px;
+}
+
+.event-dock {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.event-dock--open {
+    grid-template-rows: 1fr;
+}
+
+.event-dock__inner {
+    min-height: 0;
+    overflow: hidden;
+}
+
+.event-panel {
+    display: flex;
+    flex-direction: column;
+    height: min(44vh, 30rem);
+    margin-top: 12px;
     border: 1px solid var(--ops-line);
-    border-top: 3px solid var(--hazard, #94a3b8);
+    border-top: 2px solid var(--hazard, #94a3b8);
+    border-radius: 10px;
     background: var(--ops-surface);
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+    overflow: hidden;
 }
 
-.event-modal__header {
+.event-panel__header {
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
+    gap: 10px;
+    padding: 10px 12px 10px 14px;
+    border-bottom: 1px solid var(--ops-line);
 }
 
-.event-modal__type {
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    color: var(--hazard, #94a3b8);
-    margin-right: 0.6rem;
+.event-panel__glyph {
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    border: 1.5px solid var(--hazard);
+    border-radius: 50%;
+    color: var(--hazard);
 }
 
-.event-modal__urgency {
-    font-size: 0.68rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    padding: 0.1rem 0.5rem;
-    border-radius: 999px;
+.event-panel__glyph .hazard-icon {
+    width: 14px;
+    height: 14px;
 }
 
-.event-modal__urgency--emergency { background: #dc2626; color: #fff; }
-.event-modal__urgency--advisory  { background: #475569; color: #e2e8f0; }
+.event-panel__title {
+    margin: 0;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 1rem;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 
-.event-modal__close {
-    padding: 0.3rem 0.8rem;
+.event-panel__urgency {
+    flex: 0 0 auto;
+    padding: 2px 8px;
     border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.25);
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.event-panel__urgency--emergency {
+    background: rgba(239, 68, 68, 0.16);
+    color: #fca5a5;
+}
+
+.event-panel__urgency--advisory {
+    background: rgba(148, 170, 200, 0.12);
+    color: var(--ops-muted);
+}
+
+.event-panel__time {
+    flex: 0 0 auto;
+    color: var(--ops-muted);
+    font-size: 0.76rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.event-panel__close {
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    width: 30px;
+    height: 30px;
+    margin-left: auto;
+    border: 1px solid transparent;
+    border-radius: 6px;
     background: transparent;
-    color: inherit;
-    font: inherit;
+    color: var(--ops-muted);
     cursor: pointer;
 }
 
-.event-modal__close:hover {
-    background: rgba(255, 255, 255, 0.1);
+.event-panel__close svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
 }
 
-.event-modal__title {
-    margin: 0.6rem 0 1rem;
-    font-size: 1.25rem;
+.event-panel__close:hover {
+    border-color: var(--ops-line-strong);
+    color: var(--ops-text);
 }
+
+.event-panel__close:focus-visible,
+.event-box__head:focus-visible {
+    outline: 2px solid var(--ops-eco);
+    outline-offset: 2px;
+}
+
+/* ===== The four boxes =====
+   Equal while none is open. Opening one (hover or click) grows it and the
+   others shrink to a strip; only flex-grow animates, so it stays smooth. */
+
+.event-panel__boxes {
+    flex: 1 1 auto;
+    display: flex;
+    gap: 10px;
+    min-height: 0;
+    padding: 10px;
+}
+
+.event-box {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    min-width: 0;
+    border: 1px solid var(--ops-line);
+    border-radius: 8px;
+    background: var(--ops-raised);
+    overflow: hidden;
+    transition: flex-grow 0.4s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.2s ease;
+}
+
+.event-box--open {
+    flex-grow: 3.6;
+    border-color: color-mix(in srgb, var(--hazard) 40%, transparent);
+}
+
+.event-box__head {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.event-box__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.event-box__pin {
+    padding: 0 6px;
+    border-radius: 4px;
+    background: rgba(140, 198, 63, 0.14);
+    color: var(--ops-eco);
+    font-size: 0.66rem;
+    font-weight: 600;
+}
+
+/* The summary: a label/value row per fact, readable at a glance. */
+.event-box__summary {
+    display: grid;
+    gap: 5px;
+    margin: 0;
+    width: 100%;
+}
+
+.event-box__summary > div {
+    display: grid;
+    grid-template-columns: 6.5rem minmax(0, 1fr);
+    gap: 8px;
+    align-items: baseline;
+}
+
+.event-box__summary dt {
+    color: var(--ops-muted);
+    font-size: 0.72rem;
+}
+
+.event-box__summary dd {
+    margin: 0;
+    overflow: hidden;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.event-box__type {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--hazard);
+}
+
+.event-box__type .hazard-icon {
+    width: 13px;
+    height: 13px;
+}
+
+/* A shrunk box keeps its title and first fact; the rest would only clip. */
+.event-box--closed .event-box__summary > div:nth-child(n + 2) {
+    display: none;
+}
+
+.event-box--closed .event-box__summary > div {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.event-box--closed .event-box__summary dt {
+    display: none;
+}
+
+/* The detail. Hidden until the box is open; a minimum width means it is
+   revealed as the box grows rather than reflowing on every frame. */
+.event-box__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 26rem;
+    padding: 4px 12px 12px;
+    border-top: 1px solid var(--ops-line);
+    overflow-y: auto;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0s linear 0.2s;
+}
+
+.event-box--open .event-box__body {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.25s ease 0.12s, visibility 0s;
+}
+
+.event-box__muted {
+    color: var(--ops-muted);
+}
+
+/* Box 2: one small card per party. */
+.event-parties {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: 10px;
+    padding-top: 10px;
+}
+
+.event-party {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 10px;
+    border: 1px solid var(--ops-line);
+    border-radius: 6px;
+    font-size: 0.82rem;
+}
+
+.event-party h3 {
+    margin: 0 0 4px;
+    color: var(--ops-muted);
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.event-party__phone a,
+.event-party a {
+    color: var(--ops-eco);
+    font-weight: 600;
+    text-underline-offset: 2px;
+}
+
+.event-party__phone {
+    font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .event-dock,
+    .event-box,
+    .event-box__body {
+        transition: none;
+    }
+}
+
+/* ===== Flood legend: a chip until opened ===== */
+
+.flood-legend__summary {
+    font-weight: 700;
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.flood-legend__summary::-webkit-details-marker {
+    display: none;
+}
+
+.flood-legend__summary::after {
+    content: "";
+    width: 6px;
+    height: 6px;
+    margin-left: auto;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(-135deg) translate(-2px, -2px);
+    transition: transform 0.2s ease;
+}
+
+.flood-legend[open] > .flood-legend__summary {
+    margin-bottom: 8px;
+}
+
+.flood-legend[open] > .flood-legend__summary::after {
+    transform: rotate(45deg);
+}
+
+/* ===== Panel header tools: optimal routes, then vehicles ===== */
+
+.event-panel__tools {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.event-panel__tools + .event-panel__close {
+    margin-left: 4px;
+}
+
+.event-tool {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 11px 0 9px;
+    border: 1px solid var(--ops-line-strong);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ops-muted);
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.event-tool svg {
+    width: 15px;
+    height: 15px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.event-tool:hover {
+    border-color: var(--hazard);
+    color: var(--ops-text);
+}
+
+.event-tool--on {
+    border-color: var(--hazard);
+    background: color-mix(in srgb, var(--hazard) 16%, transparent);
+    color: var(--ops-text);
+    box-shadow: 0 0 12px color-mix(in srgb, var(--hazard) 35%, transparent);
+}
+
+.event-tool:focus-visible {
+    outline: 2px solid var(--ops-eco);
+    outline-offset: 2px;
+}
+
+/* The vehicles strip, between the header and the boxes. */
+.event-panel__sim {
+    flex: 0 0 auto;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--ops-line);
+    background: color-mix(in srgb, var(--hazard) 5%, var(--ops-surface));
+}
+
+/* ===== Box 3: the briefing ===== */
+
+.brief {
+    margin-top: 14px;
+}
+
+.brief h3,
+.plan-block h3 {
+    margin: 0 0 6px;
+    color: var(--ops-muted);
+    font-size: 0.76rem;
+    font-weight: 600;
+}
+
+.brief p {
+    margin: 0 0 6px;
+    font-size: 0.88rem;
+    line-height: 1.55;
+}
+
+.brief strong {
+    color: var(--ops-text);
+}
+
+.brief__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.brief__figure {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.brief__figure strong {
+    font-size: 1.6rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+}
+
+.brief__figure span {
+    color: var(--ops-muted);
+    font-size: 0.82rem;
+}
+
+.tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 7px;
+    border-radius: 5px;
+    background: rgba(148, 170, 200, 0.14);
+    color: var(--ops-text);
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.tag--critical { background: rgba(239, 68, 68, 0.18); color: #fecaca; }
+.tag--high     { background: rgba(249, 115, 22, 0.18); color: #fed7aa; }
+.tag--watch    { background: rgba(250, 204, 21, 0.16); color: #fef08a; }
+
+.places {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.places li {
+    display: grid;
+    gap: 2px;
+    padding: 7px 9px;
+    border: 1px solid var(--ops-line);
+    border-radius: 6px;
+}
+
+.places__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 0.86rem;
+}
+
+.places__detail {
+    color: var(--ops-muted);
+    font-size: 0.78rem;
+}
+
+/* ===== Box 4: the plan ===== */
+
+.plan-block {
+    margin-top: 14px;
+}
+
+.plan-block__intro {
+    margin: 0 0 8px;
+    font-size: 0.86rem;
+    line-height: 1.5;
+}
+
+.contacts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+    gap: 8px;
+}
+
+.contact {
+    display: grid;
+    gap: 1px;
+    padding: 8px 10px;
+    border: 1px solid var(--ops-line);
+    border-radius: 6px;
+    background: rgba(148, 170, 200, 0.04);
+}
+
+.contact__role {
+    color: var(--ops-muted);
+    font-size: 0.7rem;
+}
+
+.contact__name {
+    overflow: hidden;
+    font-size: 0.82rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.contact__phone {
+    color: var(--ops-eco);
+    font-size: 1rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    text-decoration: none;
+}
+
+.contact__phone:hover {
+    text-decoration: underline;
+}
+
+.contact__note {
+    color: var(--ops-faint);
+    font-size: 0.68rem;
+}
+
+.steps {
+    margin-bottom: 10px;
+}
+
+.steps__when {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 4px;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.steps__when::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--ops-muted);
+}
+
+.steps[data-when='immediate'] .steps__when { color: #fca5a5; }
+.steps[data-when='immediate'] .steps__when::before { background: var(--ops-alert); box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2); }
+.steps[data-when='within_1_hour'] .steps__when { color: #fdba74; }
+.steps[data-when='within_1_hour'] .steps__when::before { background: #f97316; }
+.steps[data-when='within_6_hours'] .steps__when::before { background: #facc15; }
+
+.steps ol {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding-left: 1.6rem;
+}
+
+.steps li {
+    padding-left: 2px;
+    font-size: 0.86rem;
+    line-height: 1.45;
+}
+
+.steps li::marker {
+    color: var(--ops-muted);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.steps__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+    margin-top: 2px;
+    color: var(--ops-muted);
+    font-size: 0.76rem;
+}
+
+.units,
+.evacuation {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.units > li,
+.evacuation > li {
+    display: grid;
+    gap: 4px;
+    padding: 8px 10px;
+    border: 1px solid var(--ops-line);
+    border-radius: 6px;
+    font-size: 0.84rem;
+}
+
+.units__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+}
+
+.units__time {
+    margin-left: auto;
+    color: var(--ops-muted);
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.units__tasks {
+    margin: 0;
+    padding-left: 1.1rem;
+    color: var(--ops-muted);
+    font-size: 0.8rem;
+}
+
+.evacuation > li {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 10px;
+}
+
+.evacuation__body {
+    display: grid;
+    gap: 1px;
+}
+
+.evacuation__body span {
+    font-size: 0.8rem;
+}
+
+.evacuation__call {
+    color: var(--ops-eco);
+    font-weight: 700;
+    font-size: 0.82rem;
+    white-space: nowrap;
+    text-decoration: none;
+}
+
+.caveats {
+    margin-top: 14px;
+    border-top: 1px solid var(--ops-line);
+    padding-top: 8px;
+}
+
+.caveats > summary {
+    color: var(--ops-muted);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.caveats[open] > summary {
+    margin-bottom: 4px;
+}
+
+.settlement-label {
+    display: block;
+    padding: 2px 8px;
+    border-radius: 5px;
+    background: rgba(13, 22, 38, 0.72);
+    color: #fff;
+    font-size: 0.86rem;
+    font-weight: 700;
+    white-space: nowrap;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+    pointer-events: none;
+}
+
+.settlement-label--affected { box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.7), 0 0 12px rgba(239, 68, 68, 0.45); }
+.settlement-label--risk     { box-shadow: 0 0 0 1px rgba(250, 204, 21, 0.7), 0 0 12px rgba(250, 204, 21, 0.4); }
+
+/* ===== Kinneret popup: just the advisory card, in the dashboard skin ===== */
+
+.kinneret-popup .mapboxgl-popup-content {
+    padding: 0;
+    border-radius: 8px;
+    background: var(--ops-glass);
+    color: var(--ops-text);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5), 0 0 18px rgba(59, 130, 246, 0.16);
+    font-family: "Plus Jakarta Sans", sans-serif;
+}
+
+.kinneret-popup.mapboxgl-popup-anchor-bottom .mapboxgl-popup-tip {
+    border-top-color: var(--ops-glass);
+}
+
+.kinneret-popup.mapboxgl-popup-anchor-top .mapboxgl-popup-tip {
+    border-bottom-color: var(--ops-glass);
+}
+
+/* Panel content ---------------------------------------------- */
 
 .event-modal__description {
     margin: -0.5rem 0 1.25rem;
@@ -701,16 +1328,16 @@
     margin-bottom: 0.65rem;
 }
 
-.event-modal__section {
-    margin-bottom: 1.25rem;
-}
-
 .event-modal__section h3 {
     margin: 0 0 0.45rem;
-    font-size: 0.74rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    opacity: 0.65;
+    color: var(--ops-muted);
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.event-modal__section {
+    margin-top: 0.9rem;
+    margin-bottom: 0;
 }
 
 .event-modal__section p,
@@ -809,15 +1436,23 @@
   height: 2rem;
   padding: 0;
   place-items: center;
-  border: 3px solid #fff;
+  border: 3px solid var(--allocation-color);
   border-radius: 50%;
-  background: var(--allocation-color);
-  color: #fff;
+  background: #fff;
+  color: var(--allocation-color);
   font-size: 0.72rem;
   font-weight: 800;
   cursor: pointer;
+  overflow: hidden;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--allocation-color) 35%, transparent), 0 4px 12px #0008;
   transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.allocation-station-marker img {
+  width: 76%;
+  height: 76%;
+  object-fit: contain;
+  pointer-events: none;
 }
 
 .allocation-station-marker:hover,
@@ -890,145 +1525,136 @@
   box-shadow: 0 4px 14px #0005;
 }
 
-.allocation-simulation-panel button {
-  border: 1px solid rgba(249, 115, 22, 0.5);
-  border-radius: 5px;
-  background: rgba(249, 115, 22, 0.14);
-  color: #fdba74;
-  min-width: 0;
-  padding: 0.15rem 0.24rem;
-  font: inherit;
-  font-size: 0.62rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.allocation-simulation-panel button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
 .allocation-simulation-panel {
-  position: absolute;
-  top: 180px;
-  left: 12px;
-  z-index: 5;
   display: grid;
-  box-sizing: border-box;
-  gap: 0.2rem;
-  width: 214px;
-  padding: 0.38rem 0.45rem;
-  border: 1px solid var(--ops-line-strong);
-  border-radius: 8px;
-  background: var(--ops-glass);
+  gap: 6px;
   color: var(--ops-text);
-  font-size: 0.63rem;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  font-size: 0.8rem;
 }
 
 .allocation-simulation-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.3rem;
-  min-width: 0;
+  gap: 6px 10px;
 }
 
-.allocation-simulation-controls,
-.allocation-simulation-vehicles > div {
-  display: grid;
-  align-items: center;
-  gap: 0.2rem;
+.allocation-simulation-note {
+  color: var(--ops-muted);
+  font-size: 0.74rem;
 }
 
 .allocation-simulation-controls {
-  grid-template-columns: auto auto auto minmax(0, 1fr);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.allocation-simulation-panel button {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--ops-line-strong);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ops-text);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.allocation-simulation-panel button:hover:not(:disabled) {
+  border-color: var(--hazard);
+}
+
+.allocation-simulation-panel button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .allocation-simulation-speed {
   display: flex;
   align-items: center;
-  gap: 0.15rem;
-  min-width: 0;
-  color: #cbd5e1;
+  gap: 6px;
+  color: var(--ops-muted);
 }
 
 .allocation-simulation-speed input {
-  min-width: 0;
-  width: 100%;
-  height: 0.75rem;
-  accent-color: #f97316;
+  width: 80px;
+  accent-color: var(--ops-eco);
 }
 
 .allocation-simulation-speed output {
-  min-width: 1.2rem;
-  color: #fff;
-  text-align: right;
+  min-width: 1.6rem;
+  color: var(--ops-text);
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 .allocation-simulation-vehicles {
   display: grid;
-  gap: 0;
-  max-height: 7.5rem;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  gap: 4px 12px;
+  max-height: 5.6rem;
   overflow-y: auto;
 }
 
 .allocation-simulation-vehicles > div {
-  grid-template-columns: 2.7rem minmax(0, 1fr) auto;
-  gap: 0.2rem;
-  padding: 0.12rem 0;
-  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  display: grid;
+  grid-template-columns: 6.2rem minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--ops-line);
 }
 
 .allocation-vehicle-type {
   overflow: hidden;
   color: var(--allocation-vehicle-color);
-  font-size: 0.58rem;
-  font-weight: 800;
-  text-overflow: ellipsis;
-}
-
-.allocation-simulation-error {
-  color: #fecaca !important;
+  font-size: 0.74rem;
   font-weight: 700;
-}
-
-.allocation-simulation-error-detail {
-  max-height: 2.4rem;
-  overflow-y: auto;
-  color: #fecaca;
-  font-size: 0.56rem;
-  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .allocation-vehicle-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #e2e8f0;
-}
-
-.allocation-simulation-model-status {
-  color: #86efac !important;
-  font-size: 0.56rem;
-  white-space: nowrap;
 }
 
 .allocation-vehicle-remaining {
-  color: #cbd5e1;
-  font-size: 0.58rem;
-  text-align: right;
+  color: var(--ops-muted);
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-@media (max-width: 720px) {
-  .allocation-simulation-panel {
-    top: 180px;
-    left: 12px;
-    width: 214px;
-  }
+.allocation-vehicle-eta {
+  color: var(--ops-eco);
+  font-size: 0.76rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
+
+.allocation-simulation-error {
+  color: #fecaca;
+  font-weight: 700;
+}
+
+.allocation-simulation-error-detail {
+  color: #fecaca;
+  font-size: 0.72rem;
+}
+
+.allocation-simulation-model-status {
+  color: var(--ops-muted);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
 
 .event-modal__actions li {
     margin-bottom: 0.4rem;
@@ -1244,20 +1870,20 @@
 .event-modal__stations { list-style: none; margin: 0.4rem 0 0; padding: 0; }
 .event-modal__stations li {
   display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline;
-  padding: 0.35rem 0; border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+  padding: 0.35rem 0; border-bottom: 1px solid var(--ops-line);
   font-size: 0.85rem;
 }
 .event-modal__stations li:last-child { border-bottom: none; }
 
 .event-modal__request-type {
   font-size: 0.74rem; padding: 0.1rem 0.4rem; border-radius: 3px;
-  background: rgba(0, 0, 0, 0.06);
+  background: rgba(148, 170, 200, 0.12);
 }
 
 /* The parallel out-of-district team is the detail most easily lost when a
    plan is skimmed, so it gets its own line rather than a suffix. */
 .event-modal__parallel {
-  flex-basis: 100%; font-size: 0.74rem; font-style: italic; color: #b45309;
+  flex-basis: 100%; font-size: 0.74rem; font-style: italic; color: #fbbf24;
 }
 
 .event-modal__evacuation { list-style: none; margin: 0.4rem 0 0; padding: 0; }
@@ -1283,12 +1909,12 @@
   display: inline-block; min-width: 5.5rem; font-size: 0.7rem;
   text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.75;
 }
-.event-modal__sites li[data-category='hazard'] .event-modal__site-category { color: #b91c1c; }
-.event-modal__sites li[data-category='life_safety'] .event-modal__site-category { color: #b45309; }
+.event-modal__sites li[data-category='hazard'] .event-modal__site-category { color: #fca5a5; }
+.event-modal__sites li[data-category='life_safety'] .event-modal__site-category { color: #fbbf24; }
 
 .event-modal__report {
   white-space: pre-wrap; font-family: inherit; font-size: 0.82rem;
-  line-height: 1.5; background: rgba(0, 0, 0, 0.03);
+  line-height: 1.5; background: rgba(148, 170, 200, 0.06);
   padding: 0.6rem 0.75rem; border-radius: 4px; margin: 0;
   max-height: 22rem; overflow-y: auto;
 }

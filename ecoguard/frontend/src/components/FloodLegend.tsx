@@ -7,10 +7,12 @@ const SEVERITY_LEVELS = [
   { label: '100-year', color: '#7f1d1d' },
 ]
 
+// Closed by default: a chip on the map until the operator asks for the key.
+// A native <details>, so opening it is a click or Enter with nothing to wire.
 function FloodLegend() {
   return (
-    <div style={containerStyle} aria-label="Flood map legend">
-      <div style={titleStyle}>Flood response</div>
+    <details className="flood-legend" style={containerStyle} aria-label="Flood map legend">
+      <summary className="flood-legend__summary">Flood response</summary>
 
       {SEVERITY_LEVELS.map((level) => (
         <div key={level.label} style={rowStyle}>
@@ -46,7 +48,7 @@ function FloodLegend() {
       </div>
 
       <div style={noteStyle}>Stream line is not an inundation boundary.</div>
-    </div>
+    </details>
   )
 }
 
@@ -55,8 +57,7 @@ const containerStyle: CSSProperties = {
   bottom: 36,
   left: 12,
   zIndex: 5,
-  minWidth: 198,
-  padding: '10px 12px',
+  padding: '8px 12px',
   borderRadius: 8,
   border: '1px solid rgba(148, 170, 200, 0.16)',
   background: 'rgba(8, 14, 26, 0.93)',
@@ -65,7 +66,6 @@ const containerStyle: CSSProperties = {
   fontSize: '0.8rem',
 }
 
-const titleStyle: CSSProperties = { fontWeight: 700, marginBottom: 8 }
 const rowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginTop: 5 }
 const labelStyle: CSSProperties = { flex: 1 }
 const rangeStyle: CSSProperties = { color: '#8594ab', fontSize: '0.72rem' }

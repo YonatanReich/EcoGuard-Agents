@@ -364,6 +364,34 @@ def get_police_stations():
         raise HTTPException(status_code=503, detail="Police station data is unavailable.")
 
 
+@app.get("/api/responsible-parties")
+def get_responsible_parties(
+    latitude: float = Query(ge=29.0, le=33.6, description="Event latitude, WGS84."),
+    longitude: float = Query(ge=34.0, le=36.0, description="Event longitude, WGS84."),
+):
+    """Who to call about a place: its authority, police, nearest fire and MDA.
+
+    Feeds the event panel's "responsible" box for every hazard type, including
+    those with no resource allocation of their own. The bounds are Israel's
+    service area with a margin; anything outside it has no one on file.
+
+    Returns:
+        dict: `authority` (with phone), `police_station` (with phone and a
+            `basis` of "responsible" or "nearest"), `nearest_fire_station` and
+            `nearest_mda_station`, each with a straight-line `distance_m`.
+
+    Raises:
+        HTTPException: 503 when the store cannot be reached.
+    """
+    from ecoguard.database.repositories.responsible_services import responsible_parties_at
+
+    try:
+        return responsible_parties_at(latitude=latitude, longitude=longitude)
+    except Exception as error:
+        logging.error("Responsible-parties lookup failed: %s", error, exc_info=True)
+        raise HTTPException(status_code=503, detail="Responsible-party data is unavailable.")
+
+
 @app.get("/api/towns/search")
 def search_towns_endpoint(
     q: str = Query(description="Part of a town name, in Hebrew or English."),
@@ -394,6 +422,36 @@ def search_towns_endpoint(
         return {"towns": search_towns(q, limit=limit)}
     except Exception as error:
         logging.error("Town search failed: %s", error, exc_info=True)
+        raise HTTPException(status_code=503, detail="Town data is unavailable.")
+
+
+# Declared before /api/towns/{town_id}, which would otherwise take "outlines"
+# for a town id.
+@app.get("/api/towns/outlines")
+def get_town_outlines(
+    id: list[str] = Query(default=[], description="Town ids, repeatable."),
+    name: list[str] = Query(default=[], description="Hebrew or English town names, repeatable."),
+):
+    """Outlines of the settlements an event touches, for the map's glow.
+
+    Returns:
+        dict: a GeoJSON FeatureCollection; each feature's properties carry
+            `town_id`, `name_he` and `name_en` so the caller can match it back
+            to whichever it asked by.
+
+    Raises:
+        HTTPException: 422 for more than 200 ids or names, 503 when the store
+            cannot be reached.
+    """
+    if len(id) > 200 or len(name) > 200:
+        raise HTTPException(status_code=422, detail="Ask for at most 200 towns at a time.")
+
+    from ecoguard.database.repositories.towns import town_outlines
+
+    try:
+        return town_outlines(ids=id, names=name)
+    except Exception as error:
+        logging.error("Town outline lookup failed: %s", error, exc_info=True)
         raise HTTPException(status_code=503, detail="Town data is unavailable.")
 
 

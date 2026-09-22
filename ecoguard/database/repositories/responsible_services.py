@@ -155,3 +155,124 @@ def district_station_coverage() -> list[dict[str, Any]]:
             )
         ).mappings().all()
     return [dict(row) for row in rows]
+
+
+
+# One statement, one round trip: the store is remote and each query costs a
+# network hop (~150 ms), so six separate lookups took over a second.
+#
+# The town is the one whose outline covers the point — the smallest, since
+# outlines overlap (a municipal boundary contains its neighbourhoods) — or,
+# when none does, the nearest. A fire in open forest belongs to no settlement,
+# but the nearest town's authority and police are still who the operator calls.
+_RESPONSIBLE_PARTIES_SQL = text(
+    """
+    WITH pt AS (
+        SELECT ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326) AS g
+    ),
+    covering AS (
+        SELECT t.town_id, t.name_he, t.name_en, t.authority, t.authority_type,
+               t.authority_phone, t.authority_address, t.authority_website,
+               t.fire_district, 0::float AS distance_m
+        FROM towns t, pt
+        WHERE ST_Covers(t.outline, pt.g::geography)
+        ORDER BY t.area_km2 ASC NULLS LAST, t.town_id
+        LIMIT 1
+    ),
+    nearest AS (
+        SELECT t.town_id, t.name_he, t.name_en, t.authority, t.authority_type,
+               t.authority_phone, t.authority_address, t.authority_website,
+               t.fire_district, ST_Distance(t.outline, pt.g::geography) AS distance_m
+        FROM towns t, pt
+        WHERE NOT EXISTS (SELECT 1 FROM covering)
+        ORDER BY t.outline <-> pt.g::geography
+        LIMIT 1
+    ),
+    town AS (SELECT * FROM covering UNION ALL SELECT * FROM nearest)
+    SELECT
+        (SELECT row_to_json(town) FROM town) AS town,
+        (SELECT row_to_json(x) FROM (
+            SELECT p.name, p.address, p.phone,
+                   ST_Distance(p.location::geography, pt.g::geography) AS distance_m
+            FROM town
+            JOIN town_police_stations tps ON tps.town_id = town.town_id
+            JOIN police_stations p ON p.id = tps.police_station_id, pt
+            ORDER BY tps.match_confidence DESC NULLS LAST
+            LIMIT 1) x) AS linked_police,
+        (SELECT row_to_json(x) FROM (
+            SELECT name, address, phone,
+                   ST_Distance(location::geography, pt.g::geography) AS distance_m
+            FROM police_stations, pt
+            ORDER BY location::geometry <-> pt.g
+            LIMIT 1) x) AS nearest_police,
+        (SELECT row_to_json(x) FROM (
+            SELECT name, address, tags->>'phone' AS phone,
+                   ST_Distance(location::geography, pt.g::geography) AS distance_m
+            FROM fire_stations, pt
+            WHERE location IS NOT NULL
+            ORDER BY location::geometry <-> pt.g
+            LIMIT 1) x) AS nearest_fire,
+        (SELECT row_to_json(x) FROM (
+            SELECT name, address, NULL AS phone,
+                   ST_Distance(location::geography, pt.g::geography) AS distance_m
+            FROM mda_stations, pt
+            WHERE location IS NOT NULL
+            ORDER BY location::geometry <-> pt.g
+            LIMIT 1) x) AS nearest_mda
+    """
+)
+
+
+def _station(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    return {
+        "name": row["name"],
+        "address": row["address"],
+        "phone": row["phone"],
+        "distance_m": round(row["distance_m"]) if row["distance_m"] is not None else None,
+    }
+
+
+def responsible_parties_at(*, latitude: float, longitude: float) -> dict[str, Any]:
+    """Who to call about a point: authority, police, nearest fire and MDA.
+
+    The authority and police are the *responsible* ones — the town at the point
+    (see the SQL above) and that town's linked police station. Fire and MDA are
+    simply the nearest by straight line; which crew actually goes is the
+    allocator's road-time answer, not this one.
+
+    `basis` says how the police station was reached, so the UI can tell "this
+    town's police station" from "the nearest one, because the town has no link".
+    """
+    with Session() as session:
+        row = session.execute(
+            _RESPONSIBLE_PARTIES_SQL, {"latitude": latitude, "longitude": longitude},
+        ).mappings().one()
+
+    town = row["town"]
+    authority = None
+    if town is not None:
+        authority = {
+            "town_name_he": town["name_he"],
+            "town_name_en": town["name_en"],
+            "name": town["authority"],
+            "type": town["authority_type"],
+            "phone": town["authority_phone"],
+            "address": town["authority_address"],
+            "website": town["authority_website"],
+            "fire_district": town["fire_district"],
+            # 0 inside the outline; otherwise how far the point is from it.
+            "distance_m": round(town["distance_m"] or 0),
+        }
+
+    police_station = _station(row["linked_police"] or row["nearest_police"])
+    if police_station is not None:
+        police_station["basis"] = "responsible" if row["linked_police"] else "nearest"
+
+    return {
+        "authority": authority,
+        "police_station": police_station,
+        "nearest_fire_station": _station(row["nearest_fire"]),
+        "nearest_mda_station": _station(row["nearest_mda"]),
+    }

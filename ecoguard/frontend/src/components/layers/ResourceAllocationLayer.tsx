@@ -1,15 +1,15 @@
-import { useMemo, useState, type CSSProperties } from 'react'
-import { Layer, Marker, Popup, Source } from 'react-map-gl/mapbox'
+import { useEffect, useState, type CSSProperties } from 'react'
+import { Layer, Marker, Popup, Source, useMap } from 'react-map-gl/mapbox'
 import type { AllocatedStation, EarthquakeEvent, FireEvent, FloodEvent } from '../../types/events'
-import { resourceAllocationSimulation } from '../../utils/resourceAllocationSimulation'
-import AllocationVehicleSimulation from './AllocationVehicleSimulation'
 
 const NO_ALLOCATED_STATIONS: readonly AllocatedStation[] = Object.freeze([])
 
-const RESOURCE_STYLE: Record<string, { color: string; label: string }> = {
-  fire_department: { color: '#ef4444', label: 'F' },
-  police: { color: '#3b82f6', label: 'P' },
-  medical_services: { color: '#22c55e', label: 'M' },
+// The service's own emblem, the same badge the station layers and the
+// "I want to see" bar use, ringed in the colour of its route.
+const RESOURCE_STYLE: Record<string, { color: string; label: string; logo?: string }> = {
+  fire_department: { color: '#ef4444', label: 'F', logo: '/FireDepIsrael.svg' },
+  police: { color: '#3b82f6', label: 'P', logo: '/Emblem_of_Israel_Police_Blue.svg' },
+  medical_services: { color: '#22c55e', label: 'M', logo: '/Mada_logo.svg' },
 }
 
 const RESOURCE_TYPE_LABEL: Record<string, string> = {
@@ -48,27 +48,16 @@ function ResourceAllocationLayer({
   event,
   onShowDirections,
   showLegend = false,
-  showSimulation = false,
 }: {
   event: FireEvent | EarthquakeEvent | FloodEvent
   onShowDirections: (stationKey: string) => void
   showLegend?: boolean
-  /**
-   * Mount the 3D vehicle simulation for this event. Only one may run at a
-   * time: the Three.js layer has a single map layer id and its panel a single
-   * position, so the dashboard passes true for the selected event alone.
-   */
-  showSimulation?: boolean
 }) {
   const stations = event.details.resource_allocation?.stations ?? NO_ALLOCATED_STATIONS
   // Every event owns separate Mapbox source/layer IDs, allowing all active
   // allocation routes to be rendered at the same time.
   const layerSuffix = event.id.replace(/[^a-zA-Z0-9_-]/g, '_')
   const [selectedStationKey, setSelectedStationKey] = useState<string | null>(null)
-  const simulationResources = useMemo(
-    () => resourceAllocationSimulation(stations),
-    [stations],
-  )
   const selectedStation = stations.find(
     (station) => stationKey(station) === selectedStationKey,
   ) ?? null
@@ -84,6 +73,27 @@ function ResourceAllocationLayer({
       geometry,
     }]
   })
+  // Frame the whole dispatch when it appears: the event, every assigned
+  // station and every route between them.
+  const { current: map } = useMap()
+  useEffect(() => {
+    if (!map) return
+    const points: number[][] = [
+      [event.longitude, event.latitude],
+      ...stations.map((station) => [station.longitude, station.latitude]),
+      ...stations.flatMap((station) => station.route?.geometry?.coordinates ?? []),
+    ]
+    const longitudes = points.map(([longitude]) => longitude)
+    const latitudes = points.map(([, latitude]) => latitude)
+    map.fitBounds(
+      [[Math.min(...longitudes), Math.min(...latitudes)], [Math.max(...longitudes), Math.max(...latitudes)]],
+      { padding: 80, duration: 1400, maxZoom: 14, essential: true },
+    )
+    // ponytail: frames once per event. Re-framing on every data refresh would
+    // yank the camera away from wherever the operator has since moved it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, event.id])
+
   const offroadFeatures = stations.flatMap((station) => {
     const segment = station.route?.offroad_segment
     if (!segment?.geometry) return []
@@ -105,6 +115,25 @@ function ResourceAllocationLayer({
           type="geojson"
           data={{ type: 'FeatureCollection', features: routeFeatures }}
         >
+          {/* The glow: a wide, blurred copy of each chosen road under its
+              core line. Emissive so Standard's night lighting leaves it lit. */}
+          <Layer
+            id={`resource-allocation-route-glow-${layerSuffix}`}
+            type="line"
+            slot="top"
+            layout={{
+              'line-cap': 'round',
+              'line-join': 'round',
+            }}
+            paint={{
+              'line-color': ['get', 'color'],
+              'line-width': 16,
+              'line-blur': 12,
+              'line-opacity': 0.55,
+              'line-emissive-strength': 1,
+            }}
+          />
+
           <Layer
             id={`resource-allocation-background-routes-${layerSuffix}`}
             type="line"
@@ -119,7 +148,8 @@ function ResourceAllocationLayer({
             paint={{
               'line-color': ['get', 'color'],
               'line-width': selectedStationKey ? 3 : 4,
-              'line-opacity': selectedStationKey ? 0.4 : 0.85,
+              'line-opacity': selectedStationKey ? 0.4 : 0.95,
+              'line-emissive-strength': 1,
             }}
           />
 
@@ -139,6 +169,7 @@ function ResourceAllocationLayer({
                 'line-color': ['get', 'color'],
                 'line-width': 7,
                 'line-opacity': 1,
+                'line-emissive-strength': 1,
               }}
             />
           )}
@@ -171,6 +202,7 @@ function ResourceAllocationLayer({
                 0.35,
               ] : 0.8,
               'line-dasharray': [2, 2],
+              'line-emissive-strength': 1,
             }}
           />
         </Source>
@@ -199,7 +231,7 @@ function ResourceAllocationLayer({
                 setSelectedStationKey(key)
               }}
             >
-              {style.label}
+              {style.logo ? <img src={style.logo} alt="" /> : style.label}
             </button>
           </Marker>
         )
@@ -248,9 +280,6 @@ function ResourceAllocationLayer({
         </div>
       )}
 
-      {showSimulation && simulationResources.length > 0 && (
-        <AllocationVehicleSimulation vehicles={simulationResources} />
-      )}
     </>
   )
 }
