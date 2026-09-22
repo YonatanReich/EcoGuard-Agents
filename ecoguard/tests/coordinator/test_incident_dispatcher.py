@@ -636,8 +636,21 @@ def test_settled_non_retryable_outcome_waits_the_window_too():
     settled = {"last_success_at": None, "last_attempt_at": recent, "retryable": False}
     assert module.plan_is_fresh("INC-1", now, lambda _: settled) is True
 
-    retryable = {"last_success_at": None, "last_attempt_at": recent, "retryable": True}
-    assert module.plan_is_fresh("INC-1", now, lambda _: retryable) is False
+    # A retryable failure is retried, but on a backoff rather than on the very
+    # next tick. Five minutes after the first attempt the base interval has not
+    # elapsed, so it waits; past it, it goes.
+    retryable = {
+        "last_success_at": None, "last_attempt_at": recent,
+        "retryable": True, "attempt_count": 1,
+    }
+    assert module.plan_is_fresh("INC-1", now, lambda _: retryable) is True
+
+    due = {
+        "last_success_at": None,
+        "last_attempt_at": now - timedelta(minutes=module.PLAN_RETRY_BASE_MINUTES),
+        "retryable": True, "attempt_count": 1,
+    }
+    assert module.plan_is_fresh("INC-1", now, lambda _: due) is False
 
     old = {"last_success_at": None, "last_attempt_at": stale, "retryable": False}
     assert module.plan_is_fresh("INC-1", now, lambda _: old) is False

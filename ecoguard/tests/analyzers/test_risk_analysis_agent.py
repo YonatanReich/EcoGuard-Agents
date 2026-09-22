@@ -806,9 +806,29 @@ def test_success_result_has_every_documented_key():
 # --------------------------------------------------------------------------
 
 
-def test_search_tool_is_offered_by_default():
+def test_no_search_tool_is_offered_by_default():
+    """Search is opt-in, because a server-side tool loop is billed per iteration.
+
+    Each pass of the API's own loop re-reads the whole accumulated context —
+    prompt, protocol excerpts and every result so far — so three searches is
+    one call billed several times over a growing context, not three small
+    additions. That is the shape behind this project's ~19.6M input tokens
+    against 450K output. The assessment is grounded in the retrieved corpus
+    either way; search only fills gaps collection could not.
+    """
     llm = FakeLLM(build_valid_assessment())
     agent = build_agent(llm=llm)
+
+    agent.analyze_event(detected_event())
+
+    assert llm.calls[0]["tools"] is None
+
+
+def test_search_tool_is_offered_when_explicitly_enabled():
+    llm = FakeLLM(build_valid_assessment())
+    agent = RiskAnalysisAgent(
+        llm_service=llm, retriever=FakeRetriever(), enable_web_search=True
+    )
 
     agent.analyze_event(detected_event())
 

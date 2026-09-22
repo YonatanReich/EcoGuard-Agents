@@ -19,7 +19,6 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
 
-from ecoguard.database.repositories import weak_events as weak_store
 from ecoguard.database.repositories.text_candidates import (
     mark_candidates_triaged,
     recent_candidates,
@@ -146,12 +145,20 @@ def reports_from_candidates(
     return located, unplaceable
 
 
-def signal_from(report: Report, basis: dict[str, Any]) -> CellSignal | None:
-    """A promoted or official report, as the signal the coordinator expects.
+def signal_from(
+    report: Report, basis: dict[str, Any], *, corroborated: bool = True
+) -> CellSignal | None:
+    """A triaged report, as the signal the coordinator expects.
 
     `rarity` is None and stays None: a claim has no baseline, and inventing a
     number here would let a rumour outrank a measurement in any comparison that
     sorts on it.
+
+    `corroborated` is carried in the evidence rather than encoded in the hazard
+    or the route, so an incident that starts as one uncorroborated report and
+    later gains a hotspot needs nothing rewritten — the new signal simply is not
+    a text report, and the incident stops qualifying as uncorroborated. See
+    ecoguard.coordinator.dispatcher.is_uncorroborated_report.
     """
     cell_id = cell_for(report.latitude, report.longitude)
     if cell_id is None:
@@ -172,10 +179,11 @@ def signal_from(report: Report, basis: dict[str, Any]) -> CellSignal | None:
             precision_m=report.precision_m,
             method="text_report_gazetteer",
         ),
-        # The reading here is a person's say-so. Officials are trusted to be
-        # reporting something real; a promoted unofficial report is trusted
-        # because something else agreed, and carries what agreed with it.
-        confidence=1.0 if report.official else 0.7,
+        # The reading here is a person's say-so. A corroborated report is
+        # trusted because something else agreed with it and carries what
+        # agreed; an uncorroborated one is carried at the lowest confidence in
+        # the system, because that is exactly what it is worth.
+        confidence=0.7 if corroborated else 0.3,
         evidence={
             "text_report": {
                 "tier": report.tier,
@@ -183,6 +191,7 @@ def signal_from(report: Report, basis: dict[str, Any]) -> CellSignal | None:
                 "observation_id": report.observation_id,
                 "claim": report.claim,
                 "location_text": report.location_text,
+                "corroborated": corroborated,
                 "basis": basis,
             }
         },
@@ -201,25 +210,19 @@ def run_text_triage(
         candidates.extend(recent_candidates(hazard, at=now, window=LOOKBACK))
 
     reports, unplaceable = reports_from_candidates(candidates)
-    open_weak = weak_store.open_weak_events()
 
-    # A completed candidate remains useful as corroborating context, but must
-    # not emit its own event again on every sweep. Reports already represented
-    # by an open weak event are the exception: they are reconsidered until
-    # corroboration arrives or the weak event expires.
+    # A candidate is triaged once. It stays readable as corroborating context
+    # for anything that lands later, but it does not emit its own signal twice —
+    # that re-emission, against a weak-event store that expired the report
+    # before an operator saw it, is what produced 70 rows from 3 messages.
     pending_ids = {
         int(candidate["id"])
         for candidate in candidates
         if candidate.get("triaged_at") is None
     }
-    open_candidate_to_weak: dict[int, str] = {}
-    for weak in open_weak:
-        for stored_report in weak.get("reports") or ():
-            candidate_id = stored_report.get("candidate_id")
-            if candidate_id is not None:
-                open_candidate_to_weak[int(candidate_id)] = str(weak["id"])
-    primary_ids = pending_ids | set(open_candidate_to_weak)
-    primary_reports = [report for report in reports if report.candidate_id in primary_ids]
+    primary_reports = [
+        report for report in reports if report.candidate_id in pending_ids
+    ]
 
     from ecoguard.coordinator import incidents as incident_store
 
@@ -227,80 +230,64 @@ def run_text_triage(
         primary_reports,
         supporting_reports=reports,
         open_incidents=incident_store.open_incidents(),
-        open_weak_events=open_weak,
         at=now,
     )
 
-    weak_store.expire_weak_events(outcome.expired, at=now)
-    completed_without_coordinator: set[int] = set()
-    for weak in outcome.weak_events:
-        new_reports = [
-            report for report in weak.get("reports") or ()
-            if report.candidate_id in pending_ids
-        ]
-        if not new_reports:
-            continue
-        weak_store.save_weak_event({**weak, "reports": new_reports}, at=now)
-        completed_without_coordinator.update(report.candidate_id for report in new_reports)
-
+    # Both kinds go to the coordinator. The difference travels in the signal's
+    # evidence, not in whether it is sent: an uncorroborated report is still
+    # something an operator must be told about, and the advisory planner is
+    # what tells them who to phone about it.
     signals = []
     signal_candidate_ids: list[int] = []
-    promoted_weak_events: dict[str, str] = {}
-    for entry in (*outcome.events, *outcome.promoted):
-        signal = signal_from(entry["report"], entry["basis"])
+    for entry in outcome.events:
+        signal = signal_from(entry["report"], entry["basis"], corroborated=True)
         if signal is not None:
             signals.append(signal)
             signal_candidate_ids.append(entry["report"].candidate_id)
-            weak_id = open_candidate_to_weak.get(entry["report"].candidate_id)
-            if weak_id is not None and entry in outcome.promoted:
-                promoted_weak_events[weak_id] = str(
-                    entry["basis"].get("kind") or "corroborated"
-                )
-        elif entry["report"].candidate_id in pending_ids:
-            completed_without_coordinator.add(entry["report"].candidate_id)
+    for entry in outcome.uncorroborated:
+        signal = signal_from(entry["report"], entry["basis"], corroborated=False)
+        if signal is not None:
+            signals.append(signal)
+            signal_candidate_ids.append(entry["report"].candidate_id)
 
+    # Everything triage finished with, whether or not it produced a signal. A
+    # report that could not be placed or was a repeat of an origin already seen
+    # is done; leaving it pending would re-read it every tick forever.
+    completed: set[int] = set(signal_candidate_ids)
     observation_to_candidates: dict[int, set[int]] = {}
     for candidate in candidates:
         observation_to_candidates.setdefault(
             int(candidate["observation_id"]), set()
         ).add(int(candidate["id"]))
     for item in (*unplaceable, *outcome.skipped):
-        completed_without_coordinator.update(
+        completed.update(
             observation_to_candidates.get(int(item["observation_id"]), set())
             & pending_ids
         )
-    completed_without_coordinator.update(
+    completed.update(
         entry["report"].candidate_id
         for entry in outcome.closed
         if entry["report"].candidate_id in pending_ids
     )
-
-    mark_candidates_triaged(completed_without_coordinator, at=now)
 
     coordinated = None
     if signals:
         if coordinate is None:
             from ecoguard.coordinator.agent import run as coordinate
         coordinated = coordinate(signals)
-        mark_candidates_triaged(signal_candidate_ids, at=now)
-        for weak_id, resolution in promoted_weak_events.items():
-            weak_store.resolve_weak_event(
-                weak_id,
-                status=weak_store.PROMOTED,
-                resolution=resolution,
-                at=now,
-            )
+
+    # Marked after the coordinator has taken the signals, so a coordinator
+    # failure leaves the candidates pending and the next tick retries them
+    # rather than losing the reports silently.
+    mark_candidates_triaged(completed, at=now)
 
     logger.info(
-        "text triage: %s events, %s promoted, %s weak, %s expired, %s unplaceable",
-        len(outcome.events), len(outcome.promoted), len(outcome.weak_events),
-        len(outcome.expired), len(unplaceable),
+        "text triage: %s corroborated, %s uncorroborated, %s unplaceable",
+        len(outcome.events), len(outcome.uncorroborated), len(unplaceable),
     )
     return {
         "events": len(outcome.events),
-        "promoted": len(outcome.promoted),
-        "weak_events": len(outcome.weak_events),
-        "expired": len(outcome.expired),
+        "uncorroborated": len(outcome.uncorroborated),
         "closed": len(outcome.closed),
         "unplaceable": unplaceable,
         "skipped": outcome.skipped,

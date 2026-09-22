@@ -1,19 +1,22 @@
-"""The six Phase 3 scenarios, and the edges either side of each.
+"""Corroboration, and the edges either side of it.
 
 Every one runs against `triage()` directly: it decides and does not write, so
-the whole of §4 is demonstrable without a database, a model or a network.
+the whole lane is demonstrable without a database, a model or a network.
 
-The pairs matter more than the cases. "Two reports promote" is only meaningful
-beside "ten forwards of one report do not", because a rule that promotes on
-count alone passes the first and fails the second — and fails it in production,
-on a rumour, at three in the morning.
+The pairs matter more than the cases. "Two reports corroborate" is only
+meaningful beside "ten forwards of one report do not", because a rule that
+counts reports passes the first and fails the second — and fails it in
+production, on a rumour, at three in the morning.
+
+There is no source tier here any more. Nothing is believed because of who
+posted it; a report is either corroborated by something independent or it is
+passed on labelled uncorroborated.
 """
 
 from datetime import datetime, timedelta, timezone
 
 from ecoguard.detectors.text.triage import (
     CORROBORATION_WINDOW,
-    WEAK_EVENT_TTL,
     Report,
     distinct_origins,
     near_duplicate,
@@ -57,7 +60,16 @@ def report(
     )
 
 
-def incident(hazard: str = "fire", *, at: datetime | None = None, location=HAIFA):
+def incident(
+    hazard: str = "fire", *, at: datetime | None = None, location=HAIFA,
+    signals=None,
+):
+    """An open incident. Instrument-backed unless told otherwise.
+
+    `signals` is load-bearing: only instrument evidence corroborates. An
+    incident built from text alone is itself an unconfirmed claim, and letting
+    it promote the next report would route straight around forward-dedup.
+    """
     return {
         "id": "INC-20260921-0001",
         "hazards": [hazard],
@@ -65,65 +77,33 @@ def incident(hazard: str = "fire", *, at: datetime | None = None, location=HAIFA
         "longitude": location[1],
         "precision_m": 375.0,
         "last_signal_at": at or AT,
+        "signals": [{"variable": "frp", "evidence": {}}] if signals is None else signals,
     }
 
 
-# --- 1. an official report creates an event --------------------------------
+# --- a lone report is uncorroborated, not parked ---------------------------
 
-def test_an_official_report_creates_an_event_with_no_corroboration():
-    outcome = triage([report(1, tier="authority")], at=AT)
-
-    assert len(outcome.events) == 1
-    assert outcome.events[0]["basis"] == {"kind": "official_source", "tier": "authority"}
-    assert outcome.weak_events == []
-
-
-def test_media_is_the_official_path_too():
-    # §3: an established outlet creates an event without confirmation. The
-    # tier stays distinct from authority so the card can say which.
-    outcome = triage([report(1, tier="media")], at=AT)
-
-    assert len(outcome.events) == 1
-    assert outcome.events[0]["basis"]["tier"] == "media"
-
-
-# --- 2. one unofficial report stays weak, and expires ----------------------
-
-def test_a_single_unofficial_report_stays_weak():
+def test_a_lone_report_is_passed_on_as_uncorroborated():
     outcome = triage([report(1)], at=AT)
 
     assert outcome.events == []
-    assert len(outcome.weak_events) == 1
-    assert outcome.weak_events[0]["expires_at"] == AT + WEAK_EVENT_TTL
-    assert outcome.promoted == []
+    assert len(outcome.uncorroborated) == 1
+    assert outcome.uncorroborated[0]["basis"]["kind"] == "uncorroborated_report"
 
 
-def test_a_weak_event_expires_when_its_window_passes():
-    stored = {
-        "id": "WEAK-1", "hazard": "fire",
-        "latitude": HAIFA[0], "longitude": HAIFA[1], "precision_m": 500.0,
-        "first_seen_at": AT - timedelta(hours=4),
-        "last_seen_at": AT - timedelta(hours=4),
-        "expires_at": AT - timedelta(hours=1),
-    }
+def test_the_source_tier_changes_nothing():
+    """What used to be the whole of rule one: an 'authority' post was an event.
 
-    outcome = triage([], open_weak_events=[stored], at=AT)
+    It is now treated exactly like any other claim, because a self-described
+    official channel is still just a channel — three of the four Telegram
+    sources on the allowlist describe themselves that way and none could be
+    verified.
+    """
+    for tier in ("authority", "media", "unofficial"):
+        outcome = triage([report(1, tier=tier)], at=AT)
+        assert outcome.events == [], tier
+        assert len(outcome.uncorroborated) == 1, tier
 
-    assert outcome.expired == ["WEAK-1"]
-
-
-def test_a_weak_event_inside_its_window_is_not_expired():
-    stored = {
-        "id": "WEAK-1", "hazard": "fire",
-        "latitude": HAIFA[0], "longitude": HAIFA[1], "precision_m": 500.0,
-        "first_seen_at": AT, "last_seen_at": AT,
-        "expires_at": AT + timedelta(hours=1),
-    }
-
-    assert triage([], open_weak_events=[stored], at=AT).expired == []
-
-
-# --- 3. two independent unofficial reports promote -------------------------
 
 def test_two_distinct_origins_promote_to_an_event():
     outcome = triage(
@@ -136,25 +116,27 @@ def test_two_distinct_origins_promote_to_an_event():
         at=AT,
     )
 
-    assert len(outcome.promoted) == 2
-    assert outcome.promoted[0]["basis"]["kind"] == "independent_reports"
-    assert outcome.weak_events == []
+    assert len(outcome.events) == 2
+    assert outcome.events[0]["basis"]["kind"] == "independent_reports"
+    assert outcome.uncorroborated == []
 
 
 def test_two_reports_too_far_apart_in_time_do_not_promote():
     # Same place, same hazard, three hours apart — outside the window, so they
-    # are two separate claims rather than two witnesses to one event.
+    # are two separate claims rather than two witnesses to one event. Different
+    # wording, so the near-duplicate collapse is not what separates them here.
     outcome = triage(
         [
             report(1, origin="message:-1001:11"),
             report(2, origin="message:-1002:22",
+                   text="עשן כבד נראה מכיוון הכרמל, תושבים מדווחים על ריח שרוף",
                    at=AT + CORROBORATION_WINDOW + timedelta(minutes=1)),
         ],
         at=AT,
     )
 
-    assert outcome.promoted == []
-    assert len(outcome.weak_events) == 2
+    assert outcome.events == []
+    assert len(outcome.uncorroborated) == 2
 
 
 def test_two_reports_of_different_hazards_do_not_corroborate_each_other():
@@ -167,8 +149,8 @@ def test_two_reports_of_different_hazards_do_not_corroborate_each_other():
         at=AT,
     )
 
-    assert outcome.promoted == []
-    assert len(outcome.weak_events) == 2
+    assert outcome.events == []
+    assert len(outcome.uncorroborated) == 2
 
 
 # --- 4. ten forwards of one message do not promote -------------------------
@@ -185,11 +167,14 @@ def test_ten_forwards_of_one_message_are_one_origin_and_do_not_promote():
 
     outcome = triage(forwards, at=AT)
 
-    assert outcome.promoted == []
+    assert outcome.events == []
     # And one weak event, not ten: the same rule that stops them promoting has
     # to stop them multiplying on the operator's map.
-    assert len(outcome.weak_events) == 1
-    assert len(outcome.weak_events[0]["reports"]) == 10
+    assert len(outcome.uncorroborated) == 1
+    # Nine of the ten are recorded as the same origin rather than silently lost.
+    assert [item["reason"] for item in outcome.skipped] == (
+        ["same_claim_already_reported"] * 9
+    )
 
 
 def test_a_retyped_copy_is_not_an_independent_origin():
@@ -206,8 +191,8 @@ def test_a_retyped_copy_is_not_an_independent_origin():
         at=AT,
     )
 
-    assert outcome.promoted == []
-    assert len(outcome.weak_events) == 1
+    assert outcome.events == []
+    assert len(outcome.uncorroborated) == 1
 
 
 def test_two_genuinely_different_wordings_remain_independent():
@@ -255,8 +240,8 @@ def test_an_open_incident_from_instrument_data_promotes_an_unofficial_report():
     # rumour" is asked of the store that already knows.
     outcome = triage([report(1)], open_incidents=[incident("fire")], at=AT)
 
-    assert len(outcome.promoted) == 1
-    basis = outcome.promoted[0]["basis"]
+    assert len(outcome.events) == 1
+    basis = outcome.events[0]["basis"]
     assert basis["kind"] == "structured_evidence"
     assert basis["incident_id"] == "INC-20260921-0001"
 
@@ -265,8 +250,8 @@ def test_an_incident_of_another_hazard_does_not_promote():
     # A flood incident in the same street says nothing about a fire.
     outcome = triage([report(1, hazard="fire")], open_incidents=[incident("flood")], at=AT)
 
-    assert outcome.promoted == []
-    assert len(outcome.weak_events) == 1
+    assert outcome.events == []
+    assert len(outcome.uncorroborated) == 1
 
 
 def test_a_distant_incident_does_not_promote():
@@ -276,51 +261,48 @@ def test_a_distant_incident_does_not_promote():
         at=AT,
     )
 
-    assert outcome.promoted == []
-
-
-def test_an_official_report_nearby_promotes_an_unofficial_one():
-    outcome = triage(
-        [
-            report(1, tier="unofficial", origin="message:-1001:11"),
-            report(2, tier="authority", origin="message:-1002:22",
-                   at=AT + timedelta(minutes=10)),
-        ],
-        at=AT,
-    )
-
-    assert len(outcome.events) == 1          # the official one
-    assert len(outcome.promoted) == 1        # the unofficial one, carried up
-    assert outcome.promoted[0]["basis"]["kind"] == "official_report"
-
-
-# --- 6. an official false alarm closes an event ----------------------------
-
-def test_an_official_false_alarm_closes():
-    outcome = triage([report(1, tier="authority", update_type="false_alarm")], at=AT)
-
-    assert len(outcome.closed) == 1
-    assert outcome.closed[0]["reason"] == "official_false_alarm"
     assert outcome.events == []
 
 
-def test_an_unofficial_retraction_does_not_close_an_event():
-    # Anyone can post "false alarm". Only the body responsible for saying so
-    # gets to end an event.
-    outcome = triage([report(1, tier="unofficial", update_type="false_alarm")], at=AT)
+def test_an_incident_built_only_from_text_does_not_corroborate():
+    """The self-corroboration trap, now that rumours become incidents too.
 
-    assert outcome.closed == []
-    assert outcome.weak_events == []
-    assert outcome.skipped[0]["reason"] == "unofficial_retraction_does_not_close"
+    Report A opens an incident; forward B lands nearby and sees "an open fire
+    incident". Counting that would promote B on the strength of A and route
+    straight around forward-dedup, so only instrument evidence counts.
+    """
+    rumour = incident("fire", signals=[
+        {"variable": "report", "evidence": {"text_report": {"corroborated": False}}},
+    ])
+
+    outcome = triage([report(1)], open_incidents=[rumour], at=AT)
+
+    assert outcome.events == []
+    assert len(outcome.uncorroborated) == 1
+
+
+# --- retractions ------------------------------------------------------------
+
+def test_a_retraction_is_recorded_but_never_closes_anything():
+    """Without tiers nothing can tell an authoritative retraction from any other
+    message, and auto-closing a live incident on an unverifiable say-so is the
+    one error in this lane that gets somebody hurt.
+    """
+    for tier in ("authority", "unofficial"):
+        outcome = triage([report(1, tier=tier, update_type="false_alarm")], at=AT)
+        assert outcome.closed == [], tier
+        assert outcome.events == [], tier
+        assert outcome.uncorroborated == [], tier
+        assert outcome.skipped[0]["reason"] == "retraction_recorded_not_acted_on"
 
 
 # --- the location floor ----------------------------------------------------
 
 def test_a_report_with_no_location_never_becomes_an_event():
-    # Not even from an authority. "A post without a place is useless to us" —
-    # there is nowhere to send anyone and nothing to put on a map.
-    outcome = triage([report(1, tier="authority", location=None)], at=AT)
+    # There is nowhere to send anyone, nothing to put on a map, and no town
+    # whose police station the advisory could name.
+    outcome = triage([report(1, location=None)], at=AT)
 
     assert outcome.events == []
-    assert outcome.weak_events == []
+    assert outcome.uncorroborated == []
     assert outcome.skipped[0]["reason"] == "no_resolvable_location"

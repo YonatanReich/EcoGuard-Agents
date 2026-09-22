@@ -321,6 +321,30 @@ def detect_and_coordinate():
     from ecoguard.detectors.flood import observation_processing as flood_processing
     from ecoguard.detectors.earthquake import observation_processing as earthquake_processing
 
+    # max_instances=1 above only guards this process. Two processes pointed at
+    # the same database — a local backend alongside the hosted one, or two
+    # replicas — each run their own copy of this wave, and because they read
+    # the same incidents and the same projections they both decide the same
+    # plans need rebuilding. Every model call in the pipeline is then paid
+    # twice. The collectors have had this lock since they were written; this
+    # job is the expensive one and did not.
+    with single_flight("detect_and_coordinate") as acquired:
+        if not acquired:
+            logger.info(
+                "detect_and_coordinate: another process holds the wave lock, skipping"
+            )
+            return []
+        return _detect_and_coordinate()
+
+
+def _detect_and_coordinate():
+    """The wave itself. Only ever called with the single-flight lock held."""
+    from ecoguard.coordinator.agent import run as coordinate
+    from ecoguard.detectors.air_pollution import observation_processing
+    from ecoguard.detectors.fire import satellite, weather
+    from ecoguard.detectors.flood import observation_processing as flood_processing
+    from ecoguard.detectors.earthquake import observation_processing as earthquake_processing
+
     signals = []
     for detector in (
         satellite,

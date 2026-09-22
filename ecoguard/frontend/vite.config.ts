@@ -18,13 +18,25 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
+    // Bind on all interfaces so a Pinggy tunnel (`ssh -p 443 -R0:localhost:5173
+    // a.pinggy.io`) can reach the dev server. Harmless locally; it only means
+    // the port is reachable from the machine's LAN address as well as
+    // 127.0.0.1.
+    host: true,
+    // A tunnel arrives with a Host header Vite does not recognise and would
+    // otherwise reject as a DNS-rebinding attempt. Pinggy hands out a fresh
+    // subdomain per session, so the suffixes are allowlisted rather than the
+    // hostnames.
+    allowedHosts: ['.pinggy.link', '.pinggy.io', '.pinggy.online'],
     proxy: {
       '/api': {
-        // The hosted backend on Railway, so `npm run dev` works without a local
-        // uvicorn. A local one would start a second scheduler against the
-        // shared Neon database. Set VITE_API_TARGET=http://127.0.0.1:8000 to
-        // point at a local backend anyway.
-        target: process.env.VITE_API_TARGET ?? 'https://ecoguard-agents-production.up.railway.app',
+        // A local backend, because the project is no longer hosted. This used
+        // to default to the Railway deployment, which meant `npm run dev`
+        // talked to a machine running its own scheduler against the shared Neon
+        // database — and if a local uvicorn was also up, both schedulers built
+        // plans for the same incidents and every model call was paid twice.
+        // Set VITE_API_TARGET to point somewhere else when you need to.
+        target: process.env.VITE_API_TARGET ?? 'http://127.0.0.1:8000',
         // Rewrite the Host header to match the target, so the backend sees a
         // request that looks like it was addressed to it directly.
         changeOrigin: true,

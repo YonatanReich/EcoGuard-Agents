@@ -103,6 +103,12 @@ app.include_router(demo_router)
 # Note: in normal use the frontend goes through Vite's /api proxy
 # (frontend/vite.config.ts) and is same-origin, so CORS is a fallback for
 # calling the backend directly.
+#
+# Testers reach the demo through a Pinggy tunnel, which gives the browser an
+# https://<random>.pinggy.link origin. That subdomain changes every session, so
+# it is matched by regex rather than listed. Requests still go through Vite's
+# /api proxy and are same-origin in the normal case; this is the fallback for
+# anyone calling the backend directly.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -111,6 +117,7 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         "http://127.0.0.1:5173",
     ],
+    allow_origin_regex=r"https://[a-z0-9-]+\.pinggy\.(link|io|online)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

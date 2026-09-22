@@ -79,6 +79,12 @@ class AirPollutionResponsePlanner:
 
         try:
             documents = getattr(self.retriever, "documents", {})
+            # Retrieve wide on purpose. BM25 here is local, in-memory and
+            # free, and the pollutant filter below discards most of what it
+            # ranks — the chunk carrying the only reviewed action for O3 or NO2
+            # sits below rank 15, so any fixed ceiling silently loses those
+            # pollutants their plan. What costs money is what gets *sent*, and
+            # that is narrowed after the reviewed actions are known.
             retrieval_limit = max(
                 self.top_k,
                 len(getattr(self.retriever, "chunks", [])),
@@ -99,6 +105,34 @@ class AirPollutionResponsePlanner:
                 )
             ]
             reviewed = self._reviewed_actions(chunks, documents)
+            # Send only the chunks that can actually ground an action.
+            #
+            # _actions_grounded requires every action to copy a reviewed action
+            # exactly AND to cite a chunk quoting it, so a chunk carrying no
+            # reviewed action cannot contribute to an accepted plan — it can
+            # only be cited wrongly, which fails the whole plan. Four of the ten
+            # corpus documents have no reviewed actions at all; sending their
+            # chunks was paying input tokens for text the grounding check was
+            # always going to reject.
+            #
+            # This is a narrowing, not a truncation: the ranked order is kept
+            # and top_k still bounds it, but the cut is made on what the
+            # verifier needs rather than on rank alone — trimming by rank could
+            # drop the single actionable chunk and fail the plan outright.
+            grounding_ids = {
+                chunk_id
+                for action in reviewed
+                for chunk_id in action["supporting_chunk_ids"]
+            }
+            chunks = [
+                chunk for chunk in chunks if chunk["chunk_id"] in grounding_ids
+            ][: self.top_k]
+            reviewed = [
+                action for action in reviewed
+                if set(action["supporting_chunk_ids"]).issubset(
+                    {chunk["chunk_id"] for chunk in chunks}
+                )
+            ]
             if not reviewed:
                 chunks = []
         except Exception:

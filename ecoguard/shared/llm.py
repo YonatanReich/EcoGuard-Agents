@@ -33,6 +33,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
+import time
+from collections import deque
 from urllib.parse import urlparse
 
 import anthropic
@@ -106,6 +109,100 @@ CLAUDE_ERROR_KINDS = frozenset(
 
 class ClaudeProviderError(RuntimeError):
     """Credential-safe Claude failure carrying a provider-level error category."""
+
+
+# --------------------------------------------------------------------------
+# Spend guard
+# --------------------------------------------------------------------------
+#
+# The last line of defence, and the one this system was missing.
+#
+# Every caller here is individually careful — the classifier batches, the
+# dispatcher has a freshness gate, the planners cap their attempts — and none
+# of that stopped 209 dispatch attempts against 25 incidents in a few hours,
+# because no single component could see the total. A budget only works where
+# every call passes, which is here.
+#
+# It counts calls rather than tokens deliberately: tokens are only known after
+# the response, so a token budget cannot refuse the request that breaks it. A
+# call ceiling refuses before spending anything, and a runaway loop is always a
+# call-rate problem first.
+#
+# This is per process and in memory, which is the right scope: a second process
+# is a second scheduler, and the fix for that is not to run one (see the
+# Dockerfile). Keep the ceiling well above steady-state so it never trips in
+# normal operation — it is a circuit breaker, not a throttle.
+CALL_BUDGET_PER_HOUR = int(os.getenv("ECOGUARD_CLAUDE_CALLS_PER_HOUR", "120"))
+CALL_BUDGET_WINDOW_SECONDS = 3600.0
+
+
+class CallBudget:
+    """A rolling-window ceiling on Claude calls for this process."""
+
+    def __init__(self, limit: int, window_seconds: float) -> None:
+        self._limit = limit
+        self._window = window_seconds
+        self._calls: deque[float] = deque()
+        self._lock = threading.Lock()
+        self._blocked = 0
+        self.input_tokens = 0
+        self.output_tokens = 0
+
+    def claim(self) -> bool:
+        """Take a slot, or report that the window is full. Never blocks."""
+        if self._limit <= 0:
+            return True
+        now = time.monotonic()
+        with self._lock:
+            cutoff = now - self._window
+            while self._calls and self._calls[0] < cutoff:
+                self._calls.popleft()
+            if len(self._calls) >= self._limit:
+                self._blocked += 1
+                if self._blocked == 1 or self._blocked % 25 == 0:
+                    logging.error(
+                        "Claude call budget exhausted: %s calls in the last hour "
+                        "(limit %s). %s call(s) refused. Something is looping — "
+                        "check event_projections.attempt_count for retry storms. "
+                        "Raise ECOGUARD_CLAUDE_CALLS_PER_HOUR only once you know why.",
+                        len(self._calls), self._limit, self._blocked,
+                    )
+                return False
+            self._calls.append(now)
+            return True
+
+    def record_usage(self, usage: dict | None) -> None:
+        """Accumulate what a completed call actually cost."""
+        if not usage:
+            return
+        with self._lock:
+            # Cache reads and writes are input tokens too, billed at different
+            # rates. Summed here so the running total is honest about volume;
+            # the per-call log line below keeps them separable.
+            for key in (
+                "input_tokens",
+                "cache_creation_input_tokens",
+                "cache_read_input_tokens",
+            ):
+                value = usage.get(key)
+                if isinstance(value, int):
+                    self.input_tokens += value
+            value = usage.get("output_tokens")
+            if isinstance(value, int):
+                self.output_tokens += value
+
+    def snapshot(self) -> dict[str, int]:
+        with self._lock:
+            return {
+                "calls_in_window": len(self._calls),
+                "limit": self._limit,
+                "refused": self._blocked,
+                "input_tokens": self.input_tokens,
+                "output_tokens": self.output_tokens,
+            }
+
+
+call_budget = CallBudget(CALL_BUDGET_PER_HOUR, CALL_BUDGET_WINDOW_SECONDS)
 
 
 class ClaudeLLMService:
@@ -234,6 +331,12 @@ class ClaudeLLMService:
         if self.client is None:
             raise ClaudeProviderError("missing credentials") from None
 
+        # Refused before the request is built, so a loop costs nothing. Reported
+        # as "rate limited" because that is what it is from a caller's point of
+        # view, and every caller already degrades gracefully on it.
+        if not call_budget.claim():
+            raise ClaudeProviderError("rate limited") from None
+
         messages: list[dict] = [{"role": "user", "content": user_text}]
 
         # Only present when tools were supplied, so the legacy call shape is
@@ -299,13 +402,26 @@ class ClaudeLLMService:
         self.last_usage = self.read_usage(response)
         self.last_server_tool_uses = count_server_tool_uses(response)
         self.last_web_searches = count_server_tool_uses(response, name="web_search")
+        call_budget.record_usage(self.last_usage)
 
+        # Input and output token counts belong in this line, not just the cache
+        # counter. Without them a pipeline burning the quota looks exactly like
+        # one doing its job, and the only place the difference shows up is the
+        # invoice — which is how 19.6M input tokens accumulated before anyone
+        # could say which lane produced them. `totals` is cumulative for this
+        # process, so one grep over a boot's worth of logs apportions the spend.
+        usage = self.last_usage or {}
         logging.info(
-            "Claude call complete: model=%s effort=%s cache_read=%s searches=%s",
+            "Claude call complete: model=%s effort=%s in=%s out=%s "
+            "cache_write=%s cache_read=%s searches=%s totals=%s",
             self.model,
             self.effort,
-            (self.last_usage or {}).get("cache_read_input_tokens"),
+            usage.get("input_tokens"),
+            usage.get("output_tokens"),
+            usage.get("cache_creation_input_tokens"),
+            usage.get("cache_read_input_tokens"),
             self.last_web_searches,
+            call_budget.snapshot(),
         )
 
         return parsed

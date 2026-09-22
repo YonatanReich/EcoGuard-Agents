@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import re
 from datetime import datetime, timezone
 
@@ -59,6 +60,25 @@ from ecoguard.shared.protocols import ProtocolRetriever, verify_citations
 AGENT_NAME = "RiskAnalysisAgent"
 
 DEFAULT_TOP_K = 5
+
+# Web search is off unless someone asks for it, and the reason is cost shape
+# rather than quality.
+#
+# A server-side tool runs inside the API's own sampling loop, and every
+# iteration of that loop re-reads the whole accumulated context: the prompt,
+# the protocol excerpts, and every search result returned so far. Three
+# searches is therefore not three cheap additions to one call, it is one call
+# billed several times over a context that grows each time. That is the shape
+# this project's usage actually has — roughly 19.6M input tokens against 450K
+# output over its life, a ratio no ordinary structured-output call produces.
+#
+# The assessment is grounded in the retrieved protocol corpus with or without
+# it; search only fills gaps the collection layer could not. So it is opt-in:
+# set ECOGUARD_FIRE_WEB_SEARCH=1 to demonstrate the capability, and leave it
+# unset for routine scheduled runs.
+WEB_SEARCH_ENABLED = os.getenv("ECOGUARD_FIRE_WEB_SEARCH", "").strip().lower() in {
+    "1", "true", "yes", "on",
+}
 
 # Disambiguates this score from FireRiskPredictionAgent's, which shares the
 # field names `risk_score` and `risk_level` but means something different and
@@ -279,7 +299,7 @@ class RiskAnalysisAgent:
         llm_service: object | None = None,
         retriever: object | None = None,
         top_k: int = DEFAULT_TOP_K,
-        enable_web_search: bool = True,
+        enable_web_search: bool = WEB_SEARCH_ENABLED,
         max_searches: int = DEFAULT_MAX_SEARCHES,
     ) -> None:
         self.llm_service = llm_service if llm_service is not None else ClaudeLLMService()

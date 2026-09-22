@@ -59,6 +59,7 @@ from ecoguard.shared.events import (
     FloodSourceContext,
     FloodStream,
     FireResponseAction,
+    GenericSharedEvent,
     GeographicPoint,
     MinistryAirQualityIndex,
     OfficialPollutantClassification,
@@ -74,7 +75,11 @@ ProjectionWriter = Callable[[EventProjectionWrite], dict[str, Any] | None]
 ProjectionReader = Callable[[str], dict[str, Any] | None]
 EventMapper = Callable[
     [IncidentProcessingResult, Mapping[str, Any]],
-    AirPollutionSharedEvent | EarthquakeSharedEvent | FireSharedEvent | FloodSharedEvent,
+    AirPollutionSharedEvent
+    | EarthquakeSharedEvent
+    | FireSharedEvent
+    | FloodSharedEvent
+    | GenericSharedEvent,
 ]
 
 
@@ -804,7 +809,63 @@ def default_mapper_registry() -> dict[tuple[str, str], EventMapper]:
         ("earthquake", "emergency"): earthquake_shared_event,
         ("fire", "emergency"): fire_processing_shared_event,
         ("flood", "emergency"): flood_shared_event,
+        # One mapper, every hazard. An unconfirmed report is projected the same
+        # way whatever it claims to be, because none of the hazard-specific
+        # detail exists for it — there is no analysis to project.
+        **{
+            (hazard, "uncorroborated"): uncorroborated_shared_event
+            for hazard in ("fire", "flood", "earthquake", "air_quality", "air_pollution")
+        },
     }
+
+
+def uncorroborated_shared_event(
+    result: IncidentProcessingResult,
+    incident: Mapping[str, Any],
+) -> GenericSharedEvent:
+    """Project an unverified report as its own event type.
+
+    Deliberately `type="other"` and `classification="advisory"` rather than a
+    fire or a flood. The map, the incident list and anything else reading this
+    feed keys off `type`, and a rumour rendered with the same marker as a
+    satellite-confirmed fire is the one presentation error in this system that
+    could send someone to the wrong place. The claimed hazard is carried inside
+    `details` where it cannot be mistaken for a confirmed one.
+    """
+    if result.route != "uncorroborated":
+        raise ValueError("not_an_uncorroborated_result")
+
+    plan = result.planner_result if isinstance(result.planner_result, Mapping) else {}
+    hazard = str(plan.get("hazard") or result.hazard)
+    place = plan.get("location_text") or "an unnamed location"
+
+    return GenericSharedEvent(
+        id=str(incident["id"]),
+        type="other",
+        title=f"Unverified {hazard.replace('_', ' ')} report — {place}",
+        description=str(
+            plan.get("summary")
+            or "An unverified public report. Nothing corroborates it yet."
+        ),
+        latitude=float(incident["latitude"]),
+        longitude=float(incident["longitude"]),
+        observed_at=incident.get("last_signal_at"),
+        classification="advisory",
+        # There was no analysis, and saying "success" here would claim one
+        # happened. `skipped` is the honest word and the handler sets it.
+        analysis_status=result.analysis_status or "skipped",
+        planning_status=result.planner_status or "skipped",
+        details={
+            "kind": "uncorroborated_report",
+            "claimed_hazard": hazard,
+            "corroborated": False,
+            "claim": plan.get("claim"),
+            "location_text": plan.get("location_text"),
+            "advisory": plan.get("actions") or [],
+            "contacts": plan.get("contacts") or {},
+            "limitations": plan.get("limitations") or [],
+        },
+    )
 
 
 def fire_processing_shared_event(
