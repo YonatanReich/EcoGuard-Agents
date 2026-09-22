@@ -26,7 +26,12 @@ from ecoguard.database.repositories.text_candidates import (
 )
 from ecoguard.detectors.fire.hebrew_location_extractor import locality_name_candidates
 from ecoguard.detectors.text.keywords import HAZARDS
-from ecoguard.detectors.text.triage import Report, origin_key, triage
+from ecoguard.detectors.text.triage import (
+    Report,
+    canonical_hazard,
+    origin_key,
+    triage,
+)
 from ecoguard.shared.cells import cell_for
 from ecoguard.shared.signals import CellLocation, CellSignal
 
@@ -159,7 +164,7 @@ def signal_from(report: Report, basis: dict[str, Any]) -> CellSignal | None:
     return CellSignal(
         cell_id=cell_id,
         observed_at=report.observed_at,
-        hazard=report.hazard,
+        hazard=canonical_hazard(report.hazard),
         variable=TEXT_VARIABLE,
         value=1.0,
         unit="report",

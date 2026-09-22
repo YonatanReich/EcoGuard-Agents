@@ -32,8 +32,10 @@ def _empty_flood_detector(monkeypatch):
     # classifying it. Its own tests cover it.
     from ecoguard.detectors.text import classifier, run as text_run
 
+    real_text_triage = text_run.run_text_triage
     monkeypatch.setattr(classifier, "classify_new_text", lambda **kwargs: None)
     monkeypatch.setattr(text_run, "run_text_triage", lambda **kwargs: None)
+    return real_text_triage
 
 
 def _fire_signal() -> CellSignal:
@@ -153,6 +155,94 @@ def test_text_processing_runs_classifier_then_triage(monkeypatch):
         "classification": {"messages": 1},
         "triage": {"events": 1},
     }
+
+
+def test_accepted_text_incidents_use_shared_downstream_exits(
+    monkeypatch, _empty_flood_detector
+):
+    """A text Coordinator result reaches dispatch, allocation, and projection."""
+    from contextlib import contextmanager
+
+    from ecoguard import scheduler as shared_runtime
+    from ecoguard.coordinator import agent, dispatcher, event_projection, incidents
+    from ecoguard.detectors.text import classifier, run
+    from ecoguard.detectors.text.triage import Report
+
+    coordination = agent.CoordinationResult(
+        created=["INC-AIR"], updated=["INC-FIRE"]
+    )
+    advisory = SimpleNamespace(incident_id="INC-AIR", route="non_emergency")
+    emergency = SimpleNamespace(incident_id="INC-FIRE", route="emergency")
+    dispatched = []
+    order = []
+    coordinated_signals = []
+    accepted_at = datetime(2026, 9, 22, 10, 0, tzinfo=timezone.utc)
+    candidate = {"id": 1, "observation_id": 10, "triaged_at": None}
+    accepted_report = Report(
+        candidate_id=1,
+        observation_id=10,
+        source_id="rss:official-test",
+        tier="authority",
+        hazard="fire",
+        observed_at=accepted_at,
+        text="Fire reported in Haifa",
+        origin_key="source:rss:official-test:10",
+        latitude=32.794,
+        longitude=34.989,
+        precision_m=500.0,
+        location_text="Haifa",
+    )
+
+    @contextmanager
+    def acquired(_name):
+        yield True
+
+    monkeypatch.setattr(shared_runtime, "single_flight", acquired)
+    monkeypatch.setattr(classifier, "classify_new_text", lambda: {"messages": 1})
+    monkeypatch.setattr(run, "run_text_triage", _empty_flood_detector)
+    monkeypatch.setattr(
+        run,
+        "recent_candidates",
+        lambda hazard, **_: [candidate] if hazard == "fire" else [],
+    )
+    monkeypatch.setattr(
+        run, "reports_from_candidates", lambda _rows: ([accepted_report], [])
+    )
+    monkeypatch.setattr(run.weak_store, "open_weak_events", lambda: [])
+    monkeypatch.setattr(run.weak_store, "expire_weak_events", lambda *_a, **_k: 0)
+    monkeypatch.setattr(run, "mark_candidates_triaged", lambda ids, **_: len(ids))
+    monkeypatch.setattr(incidents, "open_incidents", lambda: [])
+    monkeypatch.setattr(
+        agent,
+        "run",
+        lambda signals: coordinated_signals.extend(signals) or coordination,
+    )
+    monkeypatch.setattr(
+        dispatcher,
+        "dispatch_touched",
+        lambda identifiers: dispatched.extend(identifiers) or [advisory, emergency],
+    )
+    monkeypatch.setattr(
+        shared_runtime,
+        "allocate_resources",
+        lambda results: order.append(("allocate", [r.incident_id for r in results])),
+    )
+    monkeypatch.setattr(
+        event_projection,
+        "project_processing_results",
+        lambda results: order.append(("publish", [r.incident_id for r in results])),
+    )
+
+    result = shared_runtime.process_text_events()
+
+    assert result["triage"]["coordination"] is coordination
+    assert [signal.hazard for signal in coordinated_signals] == ["fire"]
+    assert dispatched == ["INC-AIR", "INC-FIRE"]
+    assert order == [
+        ("publish", ["INC-AIR"]),
+        ("allocate", ["INC-FIRE"]),
+        ("publish", ["INC-FIRE"]),
+    ]
 
 
 def test_text_classification_failure_is_isolated_and_triage_still_runs(monkeypatch):

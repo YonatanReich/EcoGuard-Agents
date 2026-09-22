@@ -225,7 +225,15 @@ def process_text_events() -> dict[str, object]:
             try:
                 from ecoguard.detectors.text.run import run_text_triage
 
-                result["triage"] = run_text_triage()
+                triage_result = run_text_triage()
+                result["triage"] = triage_result
+                coordination = (
+                    triage_result.get("coordination")
+                    if isinstance(triage_result, dict)
+                    else None
+                )
+                if coordination is not None:
+                    process_coordinated_incidents(coordination)
             except Exception:
                 logger.exception("text triage failed; collectors and detectors continue")
     except Exception:
@@ -280,15 +288,48 @@ def publish(results):
         )
 
 
+def process_coordinated_incidents(coordination):
+    """Run the shared post-Coordinator dispatch and delivery stages."""
+    if coordination is None:
+        return []
+
+    try:
+        from ecoguard.coordinator.dispatcher import dispatch_touched
+
+        processing_results = dispatch_touched(coordination.touched_ids)
+    except Exception:
+        # Coordination is already durable; downstream failure must not turn a
+        # successful collection/detection tick into lost incident evidence.
+        logger.exception("incident dispatch failed after coordination")
+        return []
+
+    emergency = [
+        result for result in processing_results
+        if getattr(result, "route", None) == "emergency"
+    ]
+    advisory = [
+        result for result in processing_results
+        if getattr(result, "route", None) != "emergency"
+    ]
+
+    publish(advisory)
+
+    try:
+        allocate_resources(emergency)
+    except Exception:
+        logger.exception(
+            "resource allocation failed; processing results are unaffected"
+        )
+
+    publish(emergency)
+    return processing_results
+
+
 def detect_and_coordinate():
     """One wave: every detector, one coordinator, the analysers, then publish.
 
-    Detectors and the media lane all run first and their candidates are
-    coordinated together in a single batch, so corroboration and deduplication
-    see the whole tick at once rather than one lane at a time. The coordinator
-    routes what it touched to the hazard analysers, and planning leaves by two
-    lines: advisory plans to the frontend, emergency plans through the resource
-    allocator and then to the frontend.
+    Structured detectors run in one batch. The separate text job reaches this
+    same post-Coordinator processing path through process_coordinated_incidents.
 
     The detectors intentionally emit separate hazard streams. Satellite
     hotspots emit ``fire`` signals for emergency routing, weather anomalies
@@ -336,56 +377,11 @@ def detect_and_coordinate():
                              detector.__name__)
 
     coordination = coordinate(signals)
-    if coordination is None:
-        return []
-
-    try:
-        from ecoguard.coordinator.dispatcher import dispatch_touched
-
-        processing_results = dispatch_touched(coordination.touched_ids)
-    except Exception:
-        # Incidents are already safely persisted. Analysis/planning is a
-        # downstream attempt and must never turn successful coordination into
-        # a failed detection tick.
-        logger.exception("incident dispatch failed after coordination")
-        return []
-
-    # Planning has two exits, not one. An advisory plan is finished the moment
-    # it is written — nobody is dispatched to it — so it goes straight to the
-    # frontend. An emergency plan is not finished until stations are committed
-    # against it, so it goes through the allocator first and is published with
-    # its allocation attached. Splitting them means a Mapbox round trip for one
-    # fire cannot hold up an air quality warning that is already written.
-    #
-    # getattr rather than .route: the allocator reads results the same way, and
-    # a result that cannot say which line it is on is not an emergency one.
-    emergency = [
-        result for result in processing_results
-        if getattr(result, "route", None) == "emergency"
-    ]
-    advisory = [
-        result for result in processing_results
-        if getattr(result, "route", None) != "emergency"
-    ]
-
-    publish(advisory)
-
-    try:
-        allocate_resources(emergency)
-    except Exception:
-        # Allocation is downstream of analysis and planning. A routing, DB, or
-        # Mapbox failure must not discard their completed results.
-        logger.exception(
-            "resource allocation failed; processing results are unaffected"
-        )
-
-    publish(emergency)
-    return processing_results
+    return process_coordinated_incidents(coordination)
 
 
-# Every ten minutes: one wave through the whole pipeline. Every detector and
-# the media lane run, their candidates are coordinated together, the analysers
-# report on what the coordinator touched, and the two planning lines publish.
+# Every ten minutes: one wave through the structured pipeline. The separate
+# three-minute text lane uses the same downstream helper after coordination.
 #
 # Ten rather than thirty because the fastest sources are the ones worth being
 # fast for — Telegram polls at five minutes, RSS at three, hydrometric at ten —
