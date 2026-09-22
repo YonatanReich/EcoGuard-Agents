@@ -68,6 +68,12 @@ INDEPENDENT_REPORTS_REQUIRED = 2
 NEAR_DUPLICATE_RATIO = 0.85
 
 OFFICIAL_TIERS = frozenset({"authority", "media"})
+CANONICAL_HAZARDS = {"air_quality": "air_pollution"}
+
+
+def canonical_hazard(hazard: str) -> str:
+    """Translate persisted text labels to the shared incident vocabulary."""
+    return CANONICAL_HAZARDS.get(hazard, hazard)
 
 
 @dataclass(frozen=True)
@@ -230,8 +236,13 @@ def corroboration_for(
             "source_id": official.source_id,
         }
 
+    report_hazard = canonical_hazard(report.hazard)
     for incident in open_incidents:
-        if report.hazard not in set(incident.get("hazards") or ()):
+        incident_hazards = {
+            canonical_hazard(hazard)
+            for hazard in incident.get("hazards") or ()
+        }
+        if report_hazard not in incident_hazards:
             continue
         if within_window(
             report,

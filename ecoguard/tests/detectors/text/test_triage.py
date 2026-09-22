@@ -261,6 +261,17 @@ def test_an_open_incident_from_instrument_data_promotes_an_unofficial_report():
     assert basis["incident_id"] == "INC-20260921-0001"
 
 
+def test_air_quality_report_matches_canonical_air_pollution_incident():
+    outcome = triage(
+        [report(1, hazard="air_quality")],
+        open_incidents=[incident("air_pollution")],
+        at=AT,
+    )
+
+    assert len(outcome.promoted) == 1
+    assert outcome.promoted[0]["basis"]["kind"] == "structured_evidence"
+
+
 def test_an_incident_of_another_hazard_does_not_promote():
     # A flood incident in the same street says nothing about a fire.
     outcome = triage([report(1, hazard="fire")], open_incidents=[incident("flood")], at=AT)

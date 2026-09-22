@@ -16,6 +16,7 @@ from ecoguard.detectors.text.run import (
     signal_from,
 )
 from ecoguard.detectors.text.triage import Report
+from ecoguard.coordinator.queues import NON_EMERGENCY, queue_for
 
 AT = datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc)
 HAIFA = (32.794, 34.989)
@@ -98,6 +99,17 @@ def test_a_text_signal_carries_no_rarity():
     assert signal.rarity is None
     assert signal.hazard == "fire"
     assert signal.location.method == "text_report_gazetteer"
+
+
+def test_air_quality_text_signal_uses_canonical_routable_hazard():
+    located, _ = reports_from_candidates(
+        [candidate(hazard="air_quality")], locator=stub_locator
+    )
+
+    signal = signal_from(located[0], {"kind": "official_report"})
+
+    assert signal.hazard == "air_pollution"
+    assert queue_for(signal.hazard) == NON_EMERGENCY
 
 
 def test_an_official_report_signals_more_confidently_than_a_promoted_rumour():
