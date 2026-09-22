@@ -552,3 +552,5 @@ Baselines are built on the ~15 km forecast subgrid, since climatology is a
 smooth regional field — the Negev and the Galilee differ, two adjacent 5 km
 cells do not. Any cell is answered by its nearest baseline cell, mapped by
 arithmetic rather than a query.
+
+<!-- vercel merge test -->
