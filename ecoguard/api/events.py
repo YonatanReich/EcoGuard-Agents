@@ -38,6 +38,18 @@ def manual_flood_test_enabled() -> bool:
     }
 
 
+def manual_fire_test_enabled() -> bool:
+    """Gate for the manual Fire harness in ecoguard/api/fire_manual_test.py.
+
+    Neither manual flag reaches the live feed: get_shared_events reads the
+    projection store regardless, so no environment variable can swap
+    production events for a test scenario.
+    """
+    return os.getenv("ECOGUARD_MANUAL_FIRE_TEST", "").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+
+
 def set_manual_test_feed(feed: SharedEventFeed) -> None:
     """Replace the in-memory feed used only in explicit manual-test mode."""
 

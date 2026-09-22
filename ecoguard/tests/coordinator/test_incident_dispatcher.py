@@ -618,3 +618,26 @@ def test_fresh_plan_is_not_rebuilt_by_a_routine_re_dispatch():
         [incident], registry=registry, at=now, projection_reader=lambda _: None
     )
     assert calls == ["INC-1", "INC-1"]
+
+
+def test_settled_non_retryable_outcome_waits_the_window_too():
+    """A partial-but-planned or policy-skipped result must not re-run every tick.
+
+    Such projections never get a last_success_at, so before this they were
+    re-dispatched on every sweep — deterministic work and a projection rewrite
+    for nineteen sub-threshold readings, ten times an hour.
+    """
+    from ecoguard.coordinator import dispatcher as module
+
+    now = datetime(2026, 9, 22, 3, 0, tzinfo=timezone.utc)
+    recent = now - timedelta(minutes=5)
+    stale = now - timedelta(minutes=module.PLAN_REFRESH_MINUTES + 1)
+
+    settled = {"last_success_at": None, "last_attempt_at": recent, "retryable": False}
+    assert module.plan_is_fresh("INC-1", now, lambda _: settled) is True
+
+    retryable = {"last_success_at": None, "last_attempt_at": recent, "retryable": True}
+    assert module.plan_is_fresh("INC-1", now, lambda _: retryable) is False
+
+    old = {"last_success_at": None, "last_attempt_at": stale, "retryable": False}
+    assert module.plan_is_fresh("INC-1", now, lambda _: old) is False

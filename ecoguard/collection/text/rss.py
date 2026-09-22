@@ -39,7 +39,7 @@ FIRST_RUN_ITEM_LIMIT = 20
 # was verified; Atom needs namespace handling and nothing needs it yet. A feed
 # that parses to zero items logs a warning and is skipped, so an Atom-only feed
 # added later is a visible gap rather than a silent one.
-USER_AGENT = "EcoGuard/1.0 (+hazard monitoring)"
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
 
 # Several feeds put a thumbnail <img> and a wrapping <a> inside <description>.

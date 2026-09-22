@@ -247,7 +247,8 @@ def test_signal_is_accepted_by_current_coordinator_contract(monkeypatch):
 
     monkeypatch.setattr(coordinator.store, "open_incidents", open_incidents)
     monkeypatch.setattr(coordinator.store, "create_incident", create_incident)
-    monkeypatch.setattr(coordinator, "_package", lambda _: [])
+    # coordinate() now threads an optional incident_store through to _package.
+    monkeypatch.setattr(coordinator, "_package", lambda _, **kwargs: [])
 
     result = coordinator.coordinate([signal], at=OBSERVED_AT)
 

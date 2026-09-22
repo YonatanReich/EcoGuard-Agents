@@ -43,11 +43,18 @@ def plan_is_fresh(
     now: datetime,
     reader: ProjectionReader,
 ) -> bool:
-    """Whether this incident already carries a recent successful plan.
+    """Whether this incident's last outcome is recent enough to stand.
 
-    Only a *successful* projection counts. A failed or never-planned incident
-    is dispatched immediately, so a new incident and a retry after an outage
-    are both unaffected.
+    A recent success stands. So does a recent outcome that is not retryable —
+    a partial analysis whose plan succeeded, or a plan skipped because policy
+    says the event is never shown: nothing about it changes on the next tick,
+    so re-running it every ten minutes only churns the projection. A retryable
+    failure (model outage, planning error) is dispatched again immediately, as
+    is an incident with no projection yet.
+
+    ponytail: retryable failures retry every tick with no backoff. A plan that
+    fails the same way forever is a model call per tick; add a backoff keyed on
+    attempt_count if that ever shows up in the bill.
     """
     try:
         projection = reader(incident_id)
@@ -59,11 +66,17 @@ def plan_is_fresh(
     if projection is None:
         return False
 
+    window = timedelta(minutes=PLAN_REFRESH_MINUTES)
+
     last_success = projection.get("last_success_at")
-    if last_success is None:
+    if last_success is not None and now - last_success < window:
+        return True
+
+    last_attempt = projection.get("last_attempt_at")
+    if projection.get("retryable") or last_attempt is None:
         return False
 
-    return now - last_success < timedelta(minutes=PLAN_REFRESH_MINUTES)
+    return now - last_attempt < window
 
 
 @dataclass(frozen=True)

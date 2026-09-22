@@ -98,6 +98,7 @@ CLAUDE_ERROR_KINDS = frozenset(
         "network error",
         "malformed response",
         "missing credentials",
+        "insufficient credit",
         "provider error",
     }
 )
@@ -369,6 +370,16 @@ class ClaudeLLMService:
         if isinstance(error, anthropic.RateLimitError):
             return "rate limited"
 
+        # An exhausted balance arrives as a 400, indistinguishable from a bad
+        # request unless the body is read. It is the one failure an operator
+        # can fix in a minute and the one that silently kills every model lane
+        # at once, so it gets its own word. The message text carries no
+        # credential material.
+        if isinstance(error, anthropic.BadRequestError) and "credit balance" in str(
+            getattr(error, "message", "") or error
+        ):
+            return "insufficient credit"
+
         if isinstance(error, (anthropic.BadRequestError, anthropic.NotFoundError)):
             return "invalid request"
 
@@ -567,3 +578,37 @@ def build_system_blocks(prompt: str) -> list[dict]:
             "cache_control": {"type": "ephemeral"},
         }
     ]
+
+
+def probe_model_reachability(timeout_seconds: float = 20.0) -> str:
+    """One four-token call, so a deploy log says outright whether the key works.
+
+    Every model-backed lane degrades silently — the classifier falls back to
+    keywords, planners report planner_status=failed with no reason projected —
+    so a dead key on a new host looks exactly like a quiet day. Called once at
+    startup; never raises.
+
+    Returns:
+        str: "ok", or a member of CLAUDE_ERROR_KINDS naming what failed.
+    """
+    service = ClaudeLLMService(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=4,
+        timeout_seconds=timeout_seconds,
+        max_retries=0,
+    )
+    if not service.available:
+        logging.warning("Claude reachable: no (missing credentials)")
+        return "missing credentials"
+    try:
+        service.client.messages.create(
+            model=service.model,
+            max_tokens=4,
+            messages=[{"role": "user", "content": "ping"}],
+        )
+    except Exception as error:
+        kind = service.sanitize_error(error)
+        logging.warning("Claude reachable: no (%s)", kind)
+        return kind
+    logging.info("Claude reachable: yes")
+    return "ok"
