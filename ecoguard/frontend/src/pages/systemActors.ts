@@ -37,6 +37,7 @@ export const STAGES: Array<{ id: StageId; name: string; summary: string }> = [
 ]
 
 const WAVE = 'Every pipeline wave, every 10 minutes.'
+const TEXT_LANE = 'Its own job, every 3 minutes — separate from the 10-minute wave.'
 
 export const ACTORS: Actor[] = [
   // ----- Detectors -----
@@ -139,7 +140,7 @@ export const ACTORS: Actor[] = [
       'Stores the labels. It never judges how trustworthy a source is; that comes from the source registry.',
     ],
     basedOn: ['RSS news feeds and Telegram channels', 'Claude Haiku 4.5'],
-    runs: WAVE,
+    runs: TEXT_LANE,
     wiredTo: 'detectors/text/classifier.py · classify_new_text',
   },
   {
@@ -156,24 +157,8 @@ export const ACTORS: Actor[] = [
       'An unofficial report becomes a weak event until an official report, a second independent source or other evidence agrees.',
     ],
     basedOn: ['Classifier labels', 'Source registry (authority, media, unofficial)', 'Settlement gazetteer'],
-    runs: WAVE,
+    runs: TEXT_LANE,
     wiredTo: 'detectors/text/run.py · run_text_triage',
-  },
-  {
-    id: 'detector.telegram_evidence',
-    stage: 'detectors',
-    name: 'Telegram evidence',
-    accent: '#29b6f6',
-    icon: 'send',
-    summary: 'Attaches matching Telegram posts to fire and flood signals.',
-    role: 'Adds Telegram messages as supporting evidence to fire and flood signals. It never creates a signal of its own.',
-    how: [
-      'Looks for Telegram posts near a signal in place and time.',
-      'Attaches the matches as evidence, and passes every signal through unchanged if anything fails.',
-    ],
-    basedOn: ['Stored Telegram messages', 'Fire and flood signals from this wave'],
-    runs: WAVE,
-    wiredTo: 'detectors/telegram/evidence.py · enrich_signals_with_telegram',
   },
 
   // ----- Coordinator -----
@@ -192,7 +177,7 @@ export const ACTORS: Actor[] = [
       'Routes each incident to its queue and hands what it touched to the analysers.',
     ],
     basedOn: ['Signals from every detector', 'The incident store'],
-    runs: 'Once per pipeline wave, after all the detectors.',
+    runs: 'After every 10-minute wave, and again whenever the text lane triages a report into a signal.',
     wiredTo: 'coordinator/agent.py · run',
   },
 

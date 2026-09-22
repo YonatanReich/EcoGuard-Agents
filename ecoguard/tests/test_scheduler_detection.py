@@ -85,25 +85,23 @@ def test_fire_and_air_pollution_share_one_coordinator_batch(monkeypatch):
     assert batches == [[fire, pollution]]
 
 
-def test_structured_signals_bypass_legacy_telegram_enrichment(monkeypatch):
+def test_structured_signals_go_straight_to_the_coordinator(monkeypatch):
+    """No enrichment step sits between a structured detector and the coordinator.
+
+    detect_and_coordinate hands detector output to the coordinator unchanged;
+    Telegram/RSS text goes through the separate process_text_events lane, and
+    the old Telegram evidence enricher this used to guard against is gone.
+    """
     from ecoguard import scheduler as shared_runtime
     from ecoguard.coordinator import agent
     from ecoguard.detectors.air_pollution import observation_processing
     from ecoguard.detectors.fire import satellite, weather
-    from ecoguard.detectors.telegram import evidence
 
     fire = _fire_signal()
     calls = []
     monkeypatch.setattr(satellite, "detect_new", lambda: [fire])
     monkeypatch.setattr(weather, "detect_new", lambda: [])
     monkeypatch.setattr(observation_processing, "detect_new", lambda: [])
-    monkeypatch.setattr(
-        evidence,
-        "enrich_signals_with_telegram",
-        lambda signals: (_ for _ in ()).throw(
-            AssertionError("legacy Telegram enrichment must not run automatically")
-        ),
-    )
     monkeypatch.setattr(
         agent,
         "run",

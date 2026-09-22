@@ -642,7 +642,7 @@ def assess_fire_risk(request: FireRiskRequest):
             },
             "actual_fire_detection": {
                 "included": False,
-                "semantics": "separate_firms_or_telegram_evidence",
+                "semantics": "separate_from_firms_detected_fire",
             },
         }
 
@@ -664,7 +664,7 @@ def assess_fire_risk(request: FireRiskRequest):
             },
             "actual_fire_detection": {
                 "included": False,
-                "semantics": "separate_firms_or_telegram_evidence",
+                "semantics": "separate_from_firms_detected_fire",
             },
         }
 
@@ -683,7 +683,7 @@ def assess_fire_risk(request: FireRiskRequest):
         },
         "actual_fire_detection": {
             "included": False,
-            "semantics": "separate_firms_or_telegram_evidence",
+            "semantics": "separate_from_firms_detected_fire",
         },
     }
 
