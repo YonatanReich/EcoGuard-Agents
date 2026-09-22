@@ -10,6 +10,8 @@ coordination to the shared runtime.
 
 from __future__ import annotations
 
+from ecoguard.shared.activity import live_actor
+
 import logging
 from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime, timezone
@@ -214,6 +216,7 @@ class AirPollutionObservationProcessor:
         return output
 
 
+@live_actor("detector.air_pollution")
 def detect_new(
     *,
     processor: AirPollutionObservationProcessor | None = None,

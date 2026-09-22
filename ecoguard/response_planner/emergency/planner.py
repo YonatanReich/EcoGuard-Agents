@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ecoguard.shared.activity import live_actor
+
 import json
 from datetime import datetime, timezone
 from typing import Callable
@@ -90,6 +92,7 @@ class EmergencyResponsePlanner:
         self.prompt_builder = prompt_builder
         self.proposal_model = proposal_model
 
+    @live_actor("planner.emergency")
     def plan_response(
         self, analysis: EmergencyResponsePlanInput | dict | None
     ) -> EmergencyResponsePlan:

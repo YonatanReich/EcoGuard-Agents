@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ecoguard.shared.activity import live_actor
+
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from typing import Any
@@ -32,6 +34,7 @@ class FloodRiskAnalyzer:
             raise ValueError("Flood risk analyzer clock must carry a UTC offset")
         return value.astimezone(timezone.utc)
 
+    @live_actor("analyzer.flood")
     def analyze(
         self, analysis: FloodEventAnalysis | Mapping[str, Any]
     ) -> FloodRiskAssessment:

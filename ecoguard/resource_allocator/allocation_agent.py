@@ -1,5 +1,6 @@
 """Select and reserve nearby stations for emergency response requests."""
 
+from ecoguard.shared.activity import live_actor
 import math
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
@@ -1368,6 +1369,7 @@ class ResourceAllocationAgent:
         allocated = [self._allocate_batch_request(item) for item in prepared]
         return [*allocated, *terminal_results]
 
+    @live_actor("allocator")
     def allocate_processing_results(self, processing_results):
         """Build and allocate every eligible emergency request in one batch.
 

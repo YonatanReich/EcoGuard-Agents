@@ -28,6 +28,8 @@ short neutral restatement for a human reading a card, never a replacement.
 
 from __future__ import annotations
 
+from ecoguard.shared.activity import live_actor
+
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Literal, Sequence
@@ -341,6 +343,7 @@ class TextClassifier:
         }
 
 
+@live_actor("detector.text_classifier")
 def classify_new_text(
     *,
     since: datetime | None = None,

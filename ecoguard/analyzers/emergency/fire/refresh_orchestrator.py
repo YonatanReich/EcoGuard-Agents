@@ -8,6 +8,8 @@ scores what is already stored.
 
 from __future__ import annotations
 
+from ecoguard.shared.activity import live_actor
+
 import json
 import os
 import threading
@@ -80,6 +82,7 @@ class CurrentRiskRefreshOrchestrator:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
+    @live_actor("analyzer.fire")
     def refresh(self, evaluation_time: datetime | None = None) -> dict[str, Any]:
         if not self._run_lock.acquire(blocking=False):
             return {"status": "skipped_overlap", "scan_updated": False}

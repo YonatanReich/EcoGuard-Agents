@@ -13,6 +13,8 @@ the ordinary path and nothing downstream needs to know where it came from.
 
 from __future__ import annotations
 
+from ecoguard.shared.activity import live_actor
+
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
@@ -184,6 +186,7 @@ def signal_from(report: Report, basis: dict[str, Any]) -> CellSignal | None:
     )
 
 
+@live_actor("detector.text_triage")
 def run_text_triage(
     *, at: datetime | None = None, coordinate=None
 ) -> dict[str, Any]:

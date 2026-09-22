@@ -1,5 +1,6 @@
 """Fail-closed, protocol-grounded non-emergency Air Pollution planner."""
 
+from ecoguard.shared.activity import live_actor
 import json
 
 from pydantic import ValidationError
@@ -58,6 +59,7 @@ class AirPollutionResponsePlanner:
         )
         self.top_k = top_k
 
+    @live_actor("planner.advisory")
     def plan_response(
         self, analysis: AirPollutionEventAnalysis
     ) -> AirPollutionPlanningResult:

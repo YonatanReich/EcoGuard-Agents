@@ -474,6 +474,14 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
         <EventLegend />
 
         <button
+          type="button"
+          className="logout-button"
+          onClick={() => navigate('/system', { state: { from: demo ? '/demo' : '/dashboard' } })}
+        >
+          System
+        </button>
+
+        <button
           className="logout-button"
           onClick={handleLogout}
         >

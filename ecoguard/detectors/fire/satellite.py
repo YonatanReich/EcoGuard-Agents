@@ -75,6 +75,8 @@ lives there, and that is the analysers' job.
 
 from __future__ import annotations
 
+from ecoguard.shared.activity import live_actor
+
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -396,6 +398,7 @@ def recent_detections(cells: list[str], at: datetime) -> dict[str, list[dict[str
     return history
 
 
+@live_actor("detector.fire_satellite")
 def detect_new(*, reportable_only: bool = True) -> list[CellSignal]:
     """Everything that arrived since this detector last finished. The live path.
 

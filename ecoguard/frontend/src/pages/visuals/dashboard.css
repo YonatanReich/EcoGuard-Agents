@@ -5,7 +5,8 @@
    mark incidents, eco green marks live and active states, red is reserved for
    emergencies. Everything else is neutral so the incidents are what you see. */
 
-.dashboard {
+.dashboard,
+.system {
     --ops-bg: #0d1626;
     --ops-surface: #132035;
     --ops-raised: #1a2940;
@@ -38,7 +39,8 @@
 }
 
 /* Thin, quiet scrollbars everywhere on the dashboard. */
-.dashboard * {
+.dashboard *,
+.system * {
     scrollbar-width: thin;
     scrollbar-color: rgba(148, 170, 200, 0.22) transparent;
 }

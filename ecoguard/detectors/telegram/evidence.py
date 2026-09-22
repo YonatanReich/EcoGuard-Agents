@@ -7,6 +7,8 @@ processing fails.
 
 from __future__ import annotations
 
+from ecoguard.shared.activity import live_actor
+
 import hashlib
 import logging
 import os
@@ -390,6 +392,7 @@ def _enrich(
     return output
 
 
+@live_actor("detector.telegram_evidence")
 def enrich_signals_with_telegram(
     signals: Sequence[CellSignal],
     *,

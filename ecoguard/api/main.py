@@ -364,6 +364,45 @@ def get_police_stations():
         raise HTTPException(status_code=503, detail="Police station data is unavailable.")
 
 
+@app.get("/api/system/actors")
+def get_system_actors():
+    """What every system actor is doing right now, for the System page.
+
+    Read from process memory, so it is cheap enough to poll every second or
+    two. An actor absent from `actors` has not run since this process started.
+
+    Returns:
+        dict: `actors` keyed by id, each with `live`, `runs`,
+            `last_started_at`, `last_finished_at` and `last_outcome`;
+            `pipeline` with whether the scheduler is running and when the next
+            detection wave is due; and `server_time`, so the page measures
+            "ran 3 minutes ago" on the server clock, not the browser one.
+    """
+    from datetime import datetime, timezone
+
+    from ecoguard.shared.activity import snapshot
+
+    pipeline = {"scheduler_running": False, "next_wave_at": None}
+    try:
+        from ecoguard.scheduler import scheduler
+
+        job = scheduler.get_job("detect_and_coordinate")
+        pipeline = {
+            "scheduler_running": bool(scheduler.running),
+            "next_wave_at": job.next_run_time.isoformat() if job and job.next_run_time else None,
+        }
+    except Exception:
+        # No DATABASE_URL, or the scheduler failed to import: the page shows
+        # the pipeline as stopped rather than the endpoint failing.
+        logging.debug("scheduler state unavailable", exc_info=True)
+
+    return {
+        "actors": snapshot(),
+        "pipeline": pipeline,
+        "server_time": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 @app.get("/api/responsible-parties")
 def get_responsible_parties(
     latitude: float = Query(ge=29.0, le=33.6, description="Event latitude, WGS84."),

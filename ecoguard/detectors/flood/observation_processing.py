@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ecoguard.shared.activity import live_actor
+
 import logging
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -38,6 +40,7 @@ def _source_station_ids(observations: list[dict[str, Any]]) -> list[int]:
     )
 
 
+@live_actor("detector.flood")
 def detect_new(
     *,
     agent: FloodDetectionAgent | None = None,

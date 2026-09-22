@@ -1,0 +1,357 @@
+/* The System page: the pipeline's actors, lane by lane, lit while they work.
+   Tokens and the page frame come from dashboard.css (.dashboard, .system). */
+
+.system__crumb {
+    margin-left: 4px;
+    padding-left: 12px;
+    border-left: 1px solid var(--ops-line-strong);
+    color: var(--ops-muted);
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+.system__pipeline {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 0 0 0 auto;
+    color: var(--ops-muted);
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.system__pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 3px 9px 3px 8px;
+    border: 1px solid var(--ops-line-strong);
+    border-radius: 6px;
+    color: var(--ops-muted);
+    font-weight: 600;
+}
+
+.system__pill::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--ops-muted);
+}
+
+.system__pill--up { color: var(--ops-text); }
+.system__pill--up::before { background: var(--ops-eco); box-shadow: 0 0 0 3px rgba(140, 198, 63, 0.2); }
+.system__pill--down { border-color: rgba(239, 68, 68, 0.45); color: #fca5a5; }
+.system__pill--down::before { background: var(--ops-alert); }
+
+.system__body {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+/* ===== Lanes: one per pipeline stage, joined by a spine ===== */
+
+.system__lanes {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 4px 12px;
+}
+
+.lane {
+    position: relative;
+    display: grid;
+    grid-template-columns: 15rem minmax(0, 1fr);
+    gap: 18px;
+    padding: 16px 0;
+}
+
+.lane + .lane {
+    border-top: 1px solid var(--ops-line);
+}
+
+/* The spine: a line through every step number, top lane to bottom. */
+.lane::before {
+    content: "";
+    position: absolute;
+    left: 15px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--ops-line-strong);
+}
+
+.lane:first-child::before { top: 32px; }
+.lane:last-child::before { bottom: calc(100% - 32px); }
+
+.lane__head {
+    position: relative;
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+    column-gap: 12px;
+    align-content: start;
+}
+
+.lane__step {
+    grid-row: 1 / span 2;
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border: 2px solid var(--ops-line-strong);
+    border-radius: 50%;
+    background: var(--ops-bg);
+    color: var(--ops-text);
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.lane__head h2 {
+    margin: 4px 0 0;
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.lane__head p {
+    margin: 2px 0 0;
+    color: var(--ops-muted);
+    font-size: 0.78rem;
+    line-height: 1.45;
+}
+
+.lane__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr));
+    gap: 10px;
+}
+
+/* ===== Actor boxes ===== */
+
+.actor {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px 14px;
+    border: 1px solid var(--ops-line);
+    border-radius: 10px;
+    background: var(--ops-surface);
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.2s ease, box-shadow 0.25s ease, transform 0.2s ease, background 0.25s ease;
+}
+
+.actor:hover {
+    border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+    box-shadow:
+        0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent),
+        0 0 22px color-mix(in srgb, var(--accent) 28%, transparent);
+    transform: translateY(-1px);
+}
+
+.actor:focus-visible {
+    outline: 2px solid var(--ops-eco);
+    outline-offset: 2px;
+}
+
+.actor--open {
+    border-color: var(--accent);
+}
+
+/* Working right now: lit in its own colour, breathing slowly. */
+.actor--live {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 9%, var(--ops-surface));
+    animation: actor-breathe 1.6s ease-in-out infinite;
+}
+
+@keyframes actor-breathe {
+    0%, 100% {
+        box-shadow:
+            0 0 0 1px color-mix(in srgb, var(--accent) 70%, transparent),
+            0 0 18px color-mix(in srgb, var(--accent) 30%, transparent);
+    }
+    50% {
+        box-shadow:
+            0 0 0 1px var(--accent),
+            0 0 34px color-mix(in srgb, var(--accent) 55%, transparent);
+    }
+}
+
+.actor__top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.actor__icon {
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    width: 30px;
+    height: 30px;
+    border: 1.5px solid var(--accent);
+    border-radius: 50%;
+    color: var(--accent);
+}
+
+.actor__icon .hazard-icon {
+    width: 16px;
+    height: 16px;
+}
+
+.actor__name {
+    min-width: 0;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.actor__live {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-left: auto;
+    padding: 1px 8px 1px 7px;
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+
+.actor__live::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: live-dot 1s ease-in-out infinite;
+}
+
+@keyframes live-dot {
+    50% { opacity: 0.3; }
+}
+
+.actor__summary {
+    color: #aab6c8;
+    font-size: 0.8rem;
+    line-height: 1.45;
+}
+
+.actor__status {
+    color: var(--ops-faint);
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.actor--live .actor__status {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.actor__status--error {
+    color: #fca5a5;
+}
+
+/* ===== The actor panel, docked from below ===== */
+
+.actor-panel {
+    height: min(38vh, 22rem);
+}
+
+.actor-panel .actor__live {
+    margin-left: 0;
+}
+
+.actor-panel__body {
+    flex: 1 1 auto;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    min-height: 0;
+    padding: 10px;
+    overflow-y: auto;
+}
+
+.actor-panel__body > section {
+    padding: 10px 12px;
+    border: 1px solid var(--ops-line);
+    border-radius: 8px;
+    background: var(--ops-raised);
+    overflow-y: auto;
+}
+
+.actor-panel__body h3 {
+    margin: 0 0 6px;
+    color: var(--ops-muted);
+    font-size: 0.76rem;
+    font-weight: 600;
+}
+
+.actor-panel__body p {
+    margin: 0;
+    font-size: 0.86rem;
+    line-height: 1.55;
+}
+
+.actor-panel__body ol,
+.actor-panel__body ul {
+    display: grid;
+    gap: 5px;
+    margin: 0;
+    padding-left: 1.2rem;
+    font-size: 0.84rem;
+    line-height: 1.45;
+}
+
+.actor-panel__now {
+    font-weight: 700;
+}
+
+.actor-panel__now--live {
+    color: var(--accent);
+}
+
+.actor-panel__facts {
+    display: grid;
+    gap: 6px;
+    margin: 10px 0 0;
+}
+
+.actor-panel__facts dt {
+    color: var(--ops-muted);
+    font-size: 0.7rem;
+}
+
+.actor-panel__facts dd {
+    margin: 0;
+    font-size: 0.8rem;
+}
+
+.actor-panel__facts code {
+    color: #cbd5e1;
+    font-size: 0.74rem;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 1100px) {
+    .actor-panel__body { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+    .lane { grid-template-columns: minmax(0, 1fr); }
+    .lane::before { display: none; }
+    .system__pipeline { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .actor,
+    .actor--live,
+    .actor__live::before {
+        animation: none;
+        transition: none;
+    }
+}

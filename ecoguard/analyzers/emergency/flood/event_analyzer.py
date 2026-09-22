@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ecoguard.shared.activity import live_actor
+
 import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -98,6 +100,7 @@ class FloodEventAnalyzer:
     ) -> None:
         self._clock = clock
 
+    @live_actor("analyzer.flood")
     def analyze(self, incident: Mapping[str, Any]) -> FloodEventAnalysis:
         """Return the current state and the change introduced by the latest signal."""
 
