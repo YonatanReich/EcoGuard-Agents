@@ -18,7 +18,6 @@ from ecoguard.analyzers.emergency.flood.risk_analysis_schemas import (
 )
 from ecoguard.coordinator import incidents as incident_store
 from ecoguard.coordinator.dispatcher import IncidentProcessingResult
-from ecoguard.coordinator.fire_event_projection import fire_shared_event
 from ecoguard.database.repositories.event_projections import (
     EventProjectionWrite,
     event_projection_by_incident,
@@ -55,7 +54,6 @@ from ecoguard.shared.events import (
     FloodRoad,
     FloodRoadVerification,
     FloodSharedEvent,
-    FireSharedEvent,
     FloodSourceContext,
     FloodStream,
     FireResponseAction,
@@ -74,7 +72,7 @@ ProjectionWriter = Callable[[EventProjectionWrite], dict[str, Any] | None]
 ProjectionReader = Callable[[str], dict[str, Any] | None]
 EventMapper = Callable[
     [IncidentProcessingResult, Mapping[str, Any]],
-    AirPollutionSharedEvent | EarthquakeSharedEvent | FireSharedEvent | FloodSharedEvent,
+    AirPollutionSharedEvent | EarthquakeSharedEvent | FloodSharedEvent,
 ]
 
 
@@ -802,50 +800,8 @@ def default_mapper_registry() -> dict[tuple[str, str], EventMapper]:
     return {
         ("air_pollution", "non_emergency"): air_pollution_shared_event,
         ("earthquake", "emergency"): earthquake_shared_event,
-        ("fire", "emergency"): fire_processing_shared_event,
         ("flood", "emergency"): flood_shared_event,
     }
-
-
-def fire_processing_shared_event(
-    result: IncidentProcessingResult,
-    incident: Mapping[str, Any],
-) -> FireSharedEvent:
-    """Project the shared Fire handler result, allocation and observation time."""
-
-    if result.hazard != "fire" or result.route != "emergency":
-        raise ValueError("not_a_fire_emergency_result")
-    if not isinstance(result.analysis_result, Mapping):
-        raise ValueError("fire_analysis_missing")
-    risk = (
-        result.risk_assessment
-        if isinstance(result.risk_assessment, Mapping)
-        else None
-    )
-    planner = (
-        result.planner_result
-        if isinstance(result.planner_result, Mapping)
-        else None
-    )
-    event = fire_shared_event(
-        result.analysis_result,
-        risk,
-        planner,
-        incident_id=result.incident_id,
-    )
-    details = event.details.model_copy(update={
-        "resource_allocation": _allocation_summary(
-            result.resource_allocation_result
-        ),
-    })
-    return event.model_copy(update={
-        "latitude": event.latitude,
-        "longitude": event.longitude,
-        "observed_at": incident.get("last_signal_at") or incident.get("first_seen_at"),
-        "analysis_status": result.risk_status or event.analysis_status,
-        "planning_status": result.planner_status or event.planning_status,
-        "details": details,
-    })
 
 
 def earthquake_shared_event(

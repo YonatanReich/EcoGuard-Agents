@@ -74,10 +74,7 @@ class CoordinationResult:
 
 
 def coordinate(
-    signals: Sequence[CellSignal],
-    *,
-    at: datetime | None = None,
-    incident_store=None,
+    signals: Sequence[CellSignal], *, at: datetime | None = None
 ) -> CoordinationResult:
     """Fold a batch of signals into incidents and return the two queues.
 
@@ -88,19 +85,15 @@ def coordinate(
         at: treat this as now. Defaults to the wall clock; passing it makes a
             run reproducible and lets tests drive the quiet-period logic
             without sleeping.
-        incident_store: Optional repository implementing the production
-            incident-store contract. The default remains PostgreSQL; the
-            explicit manual-test path supplies an in-memory implementation.
 
     Returns:
         CoordinationResult. The queues hold incident dicts, not signals — one
         entry per thing that is happening, which is the whole point.
     """
-    selected_store = incident_store or store
     now = at or datetime.now(timezone.utc)
     result = CoordinationResult()
 
-    result.closed = selected_store.close_quiet(now, quiet_period_for)
+    result.closed = store.close_quiet(now, quiet_period_for)
 
     for signal in sorted(signals, key=lambda s: s.observed_at):
         try:
@@ -113,19 +106,19 @@ def coordinate(
             result.skipped.append({"signal": signal, "reason": str(error)})
             continue
 
-        open_now = selected_store.open_incidents(hazards=[signal.hazard])
+        open_now = store.open_incidents(hazards=[signal.hazard])
         match = best_match(signal, open_now)
         if match is None:
-            incident_id = selected_store.next_incident_id(now)
-            selected_store.create_incident(incident_id, signal, queues)
+            incident_id = store.next_incident_id(now)
+            store.create_incident(incident_id, signal, queues)
             result.created.append(incident_id)
         else:
-            selected_store.attach_signal(match["id"], signal)
+            store.attach_signal(match["id"], signal)
             result.updated.append(match["id"])
 
-    result.linked = _package(now, incident_store=selected_store)
+    result.linked = _package(now)
 
-    for incident in selected_store.open_incidents():
+    for incident in store.open_incidents():
         if EMERGENCY in incident["queues"]:
             result.emergency.append(incident)
         if NON_EMERGENCY in incident["queues"]:
@@ -134,7 +127,7 @@ def coordinate(
     return result
 
 
-def _package(at: datetime, *, incident_store=None) -> list[dict[str, Any]]:
+def _package(at: datetime) -> list[dict[str, Any]]:
     """Merge every open incident that was plausibly caused by another.
 
     Quadratic over open incidents, which is fine: the country produces a
@@ -146,14 +139,11 @@ def _package(at: datetime, *, incident_store=None) -> list[dict[str, Any]]:
     and widens another — continuing against a stale list would try to absorb
     something already absorbed.
     """
-    selected_store = incident_store or store
     links: list[dict[str, Any]] = []
     merged: set[str] = set()
 
-    for _ in range(len(selected_store.open_incidents())):
-        candidates = [
-            i for i in selected_store.open_incidents() if i["id"] not in merged
-        ]
+    for _ in range(len(store.open_incidents())):
+        candidates = [i for i in store.open_incidents() if i["id"] not in merged]
         joined = False
         for cause in candidates:
             for effect in candidates:
@@ -162,7 +152,7 @@ def _package(at: datetime, *, incident_store=None) -> list[dict[str, Any]]:
                 link = causal_link(cause, effect)
                 if link is None:
                     continue
-                selected_store.merge_incidents(cause["id"], effect["id"], link)
+                store.merge_incidents(cause["id"], effect["id"], link)
                 merged.add(effect["id"])
                 links.append(link)
                 joined = True

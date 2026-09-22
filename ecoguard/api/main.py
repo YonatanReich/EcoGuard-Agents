@@ -49,6 +49,7 @@ from ecoguard.analyzers.emergency.fire.refresh_orchestrator import CurrentRiskRe
 from ecoguard.analyzers.emergency.fire.national_scan import NationalCurrentRiskScanService
 from ecoguard.api.fire_danger_surface import build_surface as build_fire_danger_surface
 from ecoguard.shared.protocols import ProtocolRetriever
+from ecoguard.api.events import router as events_router
 from ecoguard.api.weak_events import router as weak_events_router
 from ecoguard.api.demo import router as demo_router
 
@@ -65,7 +66,6 @@ async def lifespan(app: FastAPI):
     developer without DATABASE_URL set still gets a working API for the old
     request-scoped endpoints; only collection is missing, and loudly.
     """
-
     current_risk_refresh.start()
     collection_scheduler = None
     try:
