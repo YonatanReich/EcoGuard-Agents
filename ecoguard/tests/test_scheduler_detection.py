@@ -604,3 +604,24 @@ def test_paused_pipeline_skips_the_wave_without_touching_collectors(monkeypatch)
     collectors = [j for j in shared_runtime.scheduler.get_jobs()
                   if j.id.startswith("collect_")]
     assert collectors, "collectors must stay scheduled while the pipeline is paused"
+
+
+def test_the_pipeline_switch_reads_dotenv_rather_than_trusting_import_order():
+    """`ECOGUARD_PIPELINE=off` in .env must actually pause the pipeline.
+
+    It did not. The module read the environment at import and never loaded
+    .env, so whether the setting applied depended on whether something else had
+    loaded it first — and the failure was silent in the worst direction: the
+    setting was ignored and the pipeline ran, burning the retry budget it was
+    set to protect.
+    """
+    import inspect
+
+    from ecoguard import pipeline_switch
+
+    source = inspect.getsource(pipeline_switch)
+    assert "load_dotenv()" in source, (
+        "pipeline_switch must load .env itself; relying on import order makes "
+        "ECOGUARD_PIPELINE=off silently ineffective"
+    )
+    assert source.index("load_dotenv()") < source.index("_enabled = _from_environment()")

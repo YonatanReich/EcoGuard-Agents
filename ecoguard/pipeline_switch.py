@@ -25,6 +25,14 @@ import logging
 import os
 import threading
 
+from dotenv import load_dotenv
+
+# Loaded here rather than relied on from elsewhere. This module is imported
+# early and by things that touch no database, so whether `.env` had already
+# been read came down to import order - and the failure was silent in the worst
+# direction: ECOGUARD_PIPELINE=off was ignored and the pipeline ran.
+load_dotenv()
+
 logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
