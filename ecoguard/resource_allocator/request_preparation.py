@@ -458,6 +458,7 @@ class AllocationRequestPreparer:
         # calculation as Fire and Flood.
         return {
             "incident_id": incident_id,
+            "hazard": "earthquake",
             "response_plan": response_plan,
             "risk_score": risk_score,
             "risk_level": risk_level,

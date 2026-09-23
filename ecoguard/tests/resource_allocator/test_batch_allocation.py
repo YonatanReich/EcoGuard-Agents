@@ -838,6 +838,7 @@ def test_earthquake_policy_requests_one_station_per_supported_unit_type():
         )
     ], now=NOW)[0]
 
+    assert result["hazard"] == "earthquake"
     assert result["allocation_policy"] == "earthquake_minimum_response_v1"
     assert result["allocation_basis"] == "protocol_recommended_units"
     assert result["quantity_source"] == "ecoguard_minimum_response_policy"
