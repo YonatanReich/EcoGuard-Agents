@@ -20,9 +20,10 @@ from ecoguard.analyzers.flood.risk_analysis_schemas import (
     FloodRiskAssessment,
 )
 from ecoguard.resource_allocator.allocation_routing import AllocationRoutingService
-from ecoguard.resource_allocator.geo import haversine_distance
-from ecoguard.resource_allocator.mapbox_client import MapboxClient, RoutingError
+from ecoguard.resource_allocator.geo import coordinates
+from ecoguard.resource_allocator.mapbox_client import MapboxClient
 from ecoguard.resource_allocator.flood_road_targets import FloodRoadTargetAgent
+from ecoguard.resource_allocator.station_selection import StationSelectionService
 
 RISK_LEVELS = frozenset({"low", "medium", "high", "critical"})
 
@@ -101,6 +102,11 @@ class ResourceAllocationAgent:
         self.police_responsibility_reader = (
             police_responsibility_reader or responsible_police_stations
         )
+        self.station_selector = StationSelectionService(
+            allocation_repository=self.allocation_repository,
+            police_responsibility_reader=self.police_responsibility_reader,
+            routing_service=self.routing_service,
+        )
         self.town_reader = town_reader or town_at_location
         self.flood_target_agent = flood_target_agent or FloodRoadTargetAgent(
             mapbox_client=self.routing_client
@@ -121,81 +127,6 @@ class ResourceAllocationAgent:
                 self._station_catalog_errors[recommended_unit] = error
             for station in stations:
                 self._stations_by_key[station["resource_key"]] = station
-
-    @staticmethod
-    def _coordinates(location):
-        """Validate a location and return its coordinates."""
-        if not isinstance(location, dict):
-            raise ValueError("location must be an object")
-
-        latitude = location.get("latitude")
-        longitude = location.get("longitude")
-
-        for value in (latitude, longitude):
-            if (
-                not isinstance(value, (int, float))
-                or isinstance(value, bool)
-                or not math.isfinite(value)
-            ):
-                raise ValueError("location must contain valid coordinates")
-
-        if not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
-            raise ValueError("coordinates are outside their valid ranges")
-
-        return float(latitude), float(longitude)
-
-    def _rank_stations(self, stations, event_lat, event_lon):
-        """Return valid, unique stations sorted by straight-line distance."""
-        unique = {}
-
-        for source in stations:
-            try:
-                station_lat, station_lon = self._coordinates(source)
-            except ValueError:
-                continue
-
-            distance = haversine_distance(
-                event_lat, event_lon, station_lat, station_lon
-            )
-            station = source.copy()
-            station["straight_line_distance_km"] = distance
-
-            resource_key = station["resource_key"]
-            existing = unique.get(resource_key)
-            if (
-                existing is None
-                or distance < existing["straight_line_distance_km"]
-            ):
-                unique[resource_key] = station
-
-        return sorted(
-            unique.values(),
-            key=lambda item: item["straight_line_distance_km"],
-        )
-
-    def _available_candidates(
-        self,
-        candidates,
-        incident_id,
-        recommended_unit,
-    ):
-        """Exclude stations currently claimed by another incident in the DB."""
-        if recommended_unit == "police":
-            # A police allocation assigns the responsible station, not one of
-            # its vehicles. The station may receive several incidents.
-            return candidates
-
-        occupied = {
-            allocation["station_id"]
-            for allocation in self.allocation_repository.active_allocations()
-            if allocation["recommended_unit"] == recommended_unit
-            and allocation["incident_id"] != incident_id
-        }
-        return [
-            candidate
-            for candidate in candidates
-            if candidate["database_id"] not in occupied
-        ]
 
     @staticmethod
     def _resource_key(recommended_unit, properties):
@@ -486,88 +417,6 @@ class ResourceAllocationAgent:
         prepared["allocation_target"] = allocation_target
         return prepared
 
-    def _police_candidates_for_event(self, stations, event_location):
-        """Prefer the event town's responsible police stations."""
-
-        fallback = [
-            station
-            for station in stations
-            if (station.get("kind") or "station") == "station"
-        ]
-        try:
-            responsibility = self.police_responsibility_reader(
-                latitude=event_location["latitude"],
-                longitude=event_location["longitude"],
-            )
-        except Exception as error:
-            return (
-                fallback,
-                {
-                    "status": "fallback",
-                    "reason": "responsibility_lookup_unavailable",
-                    "town_id": None,
-                    "town_name": None,
-                    "responsible_station_ids": [],
-                },
-                str(error),
-            )
-
-        if responsibility is not None:
-            responsible_ids = set(
-                responsibility.get("police_station_ids") or []
-            )
-            responsible = [
-                station
-                for station in stations
-                if station["database_id"] in responsible_ids
-            ]
-            if responsible:
-                selection_reason = (
-                    "responsible_for_area"
-                    if len(responsible) == 1
-                    else "nearest_responsible_station"
-                )
-                return (
-                    responsible,
-                    {
-                        "status": "matched",
-                        "reason": selection_reason,
-                        "town_id": responsibility.get("town_id"),
-                        "town_name": responsibility.get("town_name"),
-                        "responsible_station_ids": sorted(responsible_ids),
-                    },
-                    None,
-                )
-
-            fallback_reason = (
-                "town_has_no_mapped_police_station"
-                if not responsible_ids
-                else "responsible_station_not_in_catalog"
-            )
-            return (
-                fallback,
-                {
-                    "status": "fallback",
-                    "reason": fallback_reason,
-                    "town_id": responsibility.get("town_id"),
-                    "town_name": responsibility.get("town_name"),
-                    "responsible_station_ids": sorted(responsible_ids),
-                },
-                None,
-            )
-
-        return (
-            fallback,
-            {
-                "status": "fallback",
-                "reason": "event_outside_town",
-                "town_id": None,
-                "town_name": None,
-                "responsible_station_ids": [],
-            },
-            None,
-        )
-
     def _prepare_batch_request(self, item, now):
         """Validate one Planner response before allocation starts."""
         if not isinstance(item, dict):
@@ -754,8 +603,8 @@ class ResourceAllocationAgent:
             if not isinstance(feature, dict):
                 continue
             geometry = feature.get("geometry") or {}
-            coordinates = geometry.get("coordinates") or []
-            if geometry.get("type") != "Point" or len(coordinates) < 2:
+            point_coordinates = geometry.get("coordinates") or []
+            if geometry.get("type") != "Point" or len(point_coordinates) < 2:
                 continue
 
             properties = feature.get("properties") or {}
@@ -769,14 +618,14 @@ class ResourceAllocationAgent:
                 continue
             station = {
                 **properties,
-                "latitude": coordinates[1],
-                "longitude": coordinates[0],
+                "latitude": point_coordinates[1],
+                "longitude": point_coordinates[0],
                 "unit_type": station_type,
                 "recommended_unit": recommended_unit,
                 "resource_key": resource_key,
             }
             try:
-                ResourceAllocationAgent._coordinates(station)
+                coordinates(station)
             except ValueError:
                 continue
             stations.append(station)
@@ -874,7 +723,7 @@ class ResourceAllocationAgent:
     def _allocate_batch_request(self, request):
         """Allocate stations for one request."""
         response_plan = request["response_plan"]
-        event_lat, event_lon = self._coordinates(response_plan.get("location"))
+        event_lat, event_lon = coordinates(response_plan.get("location"))
         event_location = {
             "latitude": event_lat,
             "longitude": event_lon,
@@ -952,82 +801,36 @@ class ResourceAllocationAgent:
                 continue
 
             station_type, output_key = mapping
-            unit_routing_failure = None
             catalog_error = self._station_catalog_errors.get(recommended_unit)
             stations = self._station_catalogs.get(recommended_unit, [])
-            selection_reason = "shortest_road_travel_time"
-            if recommended_unit == "police":
-                stations, responsibility, responsibility_error = (
-                    self._police_candidates_for_event(
-                        stations,
-                        event_location,
-                    )
-                )
-                result["police_responsibility"] = responsibility
-                selection_reason = (
-                    responsibility["reason"]
-                    if responsibility["status"] == "matched"
-                    else "nearest_police_station_fallback"
-                )
-                if responsibility_error is not None:
-                    result["errors"].append(
-                        {
-                            "station_type": station_type,
-                            "reason": "police_responsibility_lookup_failed",
-                            "message": responsibility_error,
-                        }
-                    )
-            # Every located station is eligible, including coarse points.
-            candidates = self._rank_stations(
-                stations,
-                event_lat,
-                event_lon,
+            selection = self.station_selector.choose(
+                stations=stations,
+                event_location=event_location,
+                incident_id=request["incident_id"],
+                recommended_unit=recommended_unit,
+                required_count=required_count,
             )
-            try:
-                candidates = self._available_candidates(
-                    candidates,
-                    request["incident_id"],
-                    recommended_unit,
+            candidates = selection.candidates
+            if selection.police_responsibility is not None:
+                result["police_responsibility"] = selection.police_responsibility
+            if selection.police_responsibility_error is not None:
+                result["errors"].append(
+                    {
+                        "station_type": station_type,
+                        "reason": "police_responsibility_lookup_failed",
+                        "message": selection.police_responsibility_error,
+                    }
                 )
-                candidates, road_access = self.routing_service.rank_stations_by_road(
-                    candidates,
-                    event_location,
-                    required_count,
-                    selection_reason,
-                )
-                if result["road_access"] is None and road_access is not None:
-                    result["road_access"] = road_access
-            except RoutingError as error:
-                unit_routing_failure = str(error)
+            if selection.routing_failure is not None:
                 result["errors"].append(
                     {
                         "station_type": station_type,
                         "reason": "road_ranking_unavailable",
-                        "message": unit_routing_failure,
+                        "message": selection.routing_failure,
                     }
                 )
-                candidates = [
-                    {
-                        **candidate,
-                        "distance_km": candidate["straight_line_distance_km"],
-                        "_routing_metric": None,
-                        "selection_reason": (
-                            "straight_line_fallback"
-                            if selection_reason
-                            == "shortest_road_travel_time"
-                            else f"{selection_reason}_straight_line_fallback"
-                        ),
-                    }
-                    for candidate in candidates
-                ]
-
-            for candidate in candidates:
-                metric = candidate.get("_routing_metric") or {}
-                candidate["distance_km"] = (
-                    metric["distance_m"] / 1000
-                    if metric.get("distance_m") is not None
-                    else candidate["straight_line_distance_km"]
-                )
+            if result["road_access"] is None and selection.road_access is not None:
+                result["road_access"] = selection.road_access
 
             try:
                 assigned = self._claim_stations(
@@ -1057,7 +860,7 @@ class ResourceAllocationAgent:
                     candidates,
                     event_location,
                     request["allocation_time"],
-                    unit_routing_failure,
+                    selection.routing_failure,
                 )
                 if (
                     (request.get("allocation_target") or {}).get("target_type")

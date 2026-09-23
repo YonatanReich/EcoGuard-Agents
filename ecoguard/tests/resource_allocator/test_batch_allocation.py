@@ -14,6 +14,7 @@ from ecoguard.resource_allocator.allocation_agent import ResourceAllocationAgent
 from ecoguard.resource_allocator.allocation_agent import (
     EARTHQUAKE_MINIMUM_RESPONSE_POLICY,
 )
+from ecoguard.resource_allocator.geo import coordinates
 from ecoguard.resource_allocator.mapbox_client import RoutingError
 
 
@@ -321,9 +322,7 @@ def earthquake_allocation_request(incident_id, *, units, risk_score=60):
 @pytest.mark.parametrize("latitude", [float("nan"), float("inf"), 91, True])
 def test_invalid_coordinates_are_rejected(latitude):
     with pytest.raises(ValueError):
-        ResourceAllocationAgent._coordinates(
-            {"latitude": latitude, "longitude": 35}
-        )
+        coordinates({"latitude": latitude, "longitude": 35})
 
 
 def test_coordinator_incident_id_owns_allocation_and_release():
