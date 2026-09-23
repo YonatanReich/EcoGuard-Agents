@@ -512,7 +512,7 @@ and they are not interchangeable:
 | `risk_score` | Float **0.0-1.0** (calibrated probability) | Integer **0-100** (operational severity) |
 | `risk_level` | `low` \| `medium` \| `high` | `low` \| `medium` \| `high` \| `critical` |
 | `risk_semantics` | `"estimated_fire_risk"` | `"detected_event_operational_risk"` |
-| Endpoint | `POST /api/fire-risk`, `GET /api/fire-risk/national-scan` | `GET /api/detected-events` |
+| Endpoint | `POST /api/fire-risk`
 
 **Every consumer must branch on `risk_semantics`, never on the score alone.**
 Reading a `0.85` probability as an `85` severity — or vice versa — is a
@@ -595,44 +595,6 @@ Attached to both the assessment and the plan.
 * **`unverified_citation_count`** (Integer): How many citations were discarded.
   A non-zero value on a successful result means the model cited loosely but at
   least one citation held.
-
-### 5.6 GET /api/detected-events
-
-| Parameter | Type | Default | Range | Description |
-|---|---|---|---|---|
-| `latitude` | Float | 31.783333 | 29.45-33.35 | Within Israel's borders. |
-| `longitude` | Float | 35.216667 | 34.26-35.90 | Within Israel's borders. |
-| `radius_km` | Float | 5.0 | 1-50 | Hotspot relevance radius. |
-| `day_range` | Integer | 2 | 1-10 | Recent days of satellite data. |
-| `include_analysis` | Boolean | true | — | False skips both model calls. |
-
-Responses:
-
-* **`200 OK`** — Always returned when the pipeline ran, including when nothing
-  was detected (`events: []`) and when satellite detection failed
-  (`events: []`, `collection_status: "failed"`). This differs from
-  `/api/environmental-data`, which returns 502 on provider failure. The
-  difference is intentional: this endpoint is fetched on dashboard load with no
-  user-visible error path, so a 5xx would silently blank the map.
-* **`422 Unprocessable Entity`** — A parameter outside the ranges above.
-* **`500 Internal Server Error`** — Unexpected internal error. The detail is
-  masked and the exception logged server-side.
-
-The response carries `metadata` (with a per-service status breakdown covering
-`detection`, `risk_analysis`, `response_planning` and `protocols`), the `query`
-that produced it, and an `events` array of zero or one event. Each event
-flattens the detection, assessment and plan into one object, with
-`response_plan` as flattened action strings and `response_actions` retaining
-unit and timeframe. Event `id` is a stable hash of the hotspot, so repeated
-scans of the same fire produce the same id.
-
-**Performance.** The full pipeline typically takes 20-90 seconds: the
-OpenStreetMap Overpass lookup alone can take 30 seconds under load, and each
-model call adds several more. Pass `include_analysis=false` for a
-detection-only response. A background-job endpoint would be the proper fix and
-is not implemented.
-
----
 
 ## 6. Flood Detector and Incident Lifecycle Contract
 

@@ -17,10 +17,10 @@ stored the same seven variables in two different places.
                             |
                 observations (source='weather')   <- Postgres, one row per cell-hour
                             |
-        +-------------------+--------------------+
-        |                   |                    |
-  StoredWeatherFeatures  WeatherDataAgent   summarize_area
-  (fire-risk model)      (/api/environmental-  (/api/area-summary)
+        +-------------------+
+        |                   |
+  StoredWeatherFeatures  WeatherDataAgent
+  (fire-risk model)      (/api/environmental-
                           data, detection)
 ```
 

@@ -10,7 +10,7 @@ and the developer-only collector trigger.
 
 | File | What it serves |
 |---|---|
-| `main.py` | Application startup, map reference data (stations, towns, fire danger), and the older single-point fire query |
+| `main.py` | Application startup and map reference data (stations and towns) |
 | `events.py` | The event feed the dashboard map reads |
 | `scenario.py` | Start, stop and grade a controlled demo scenario |
 | `demo.py` | Pre-made example events from a separate database, for screenshots |
