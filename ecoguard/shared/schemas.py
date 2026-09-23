@@ -1,31 +1,12 @@
-"""
-Risk Analysis Schemas
+"""The shapes the model is required to answer in.
 
-Responsible for the structured shapes the language model must produce, and for
-deriving the operational risk band from a score.
+Validation at the one boundary where a model's answer enters the system.
+Everything past that boundary is plain data.
 
-This is the ONLY module in the project that defines Pydantic models, and that is
-deliberate. The rest of the codebase passes plain dicts between agents, with the
-shape documented in a Google-style ``Returns:`` block and pinned by tests. The
-models here exist for one narrow job: validating a language model's answer at
-the boundary where it enters the system. No BaseModel instance is allowed to
-cross an agent's public boundary — the agents call ``model_dump(mode="json")``
-and return plain dicts, and their tests assert ``json.dumps(result)`` succeeds.
-
-Grounding is enforced structurally, not requested politely. ``protocol_citations``
-has ``min_length=1`` on both output models, so an answer that cites nothing fails
-validation before any code inspects it, and the agent reports "failed" rather
-than passing an ungrounded assessment downstream.
-
-A note on the tension in this design: Pydantic guarantees a value is *in range*,
-while this repo's house rule is that failures must produce ``None`` rather than a
-plausible default. Those pull in opposite directions. The resolution is that
-these models are only ever constructed when the model actually answered. Every
-failure path in the agents builds no model at all and reports ``risk_score:
-None``. There is deliberately no ``default=50`` anywhere in this file.
-
-Consumed by: ecoguard.analyzers.emergency.fire.risk_analysis_agent, ecoguard.response_planner.fire.planning_agent
-"""
+Grounding is enforced by shape, not by asking: an answer citing no protocol
+fails validation, and the agent reports a failure rather than passing an
+ungrounded assessment on. There is deliberately no default score anywhere in
+here - a failure produces nothing, never a plausible-looking number."""
 
 from __future__ import annotations
 

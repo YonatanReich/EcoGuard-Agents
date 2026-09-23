@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from ecoguard.analyzers.emergency.fire.spread_analyzer import (
+from ecoguard.analyzers.fire.spread_analyzer import (
     EVACUATE_NOW,
     PREPARE,
     STANDBY,

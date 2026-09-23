@@ -1,15 +1,10 @@
-"""Which system actors are running right now, for the System page.
+"""Which parts of the system are running right now, for the System page.
 
-Each actor's entry point — a detector's `detect_new`, an analyser's `analyze`,
-a planner's `plan_response` — carries `@live_actor("<id>")`. While any call is
-in flight the actor counts as live. `runs` counts every start, so a poller
-that missed a sub-second run between two looks can still tell one happened.
+Each detector, analyzer and planner marks itself live while it works, and the
+count of past runs is kept, so a page that looked a moment too late can still
+tell that a run happened.
 
-In-process only. The scheduler, the pipeline and the API share one process, so
-this sees everything that process runs; another developer's app writing to the
-same shared database is not visible here, and should not be — it is not this
-system doing the work.
-"""
+Covers this process only."""
 
 from __future__ import annotations
 
@@ -27,6 +22,7 @@ _state: dict[str, dict[str, Any]] = {}
 
 
 def _now() -> datetime:
+    """The current time, in UTC."""
     return datetime.now(timezone.utc)
 
 
@@ -62,8 +58,11 @@ def live_actor(actor: str) -> Callable[[F], F]:
     """Decorator form of `active`, for an actor's entry point."""
 
     def decorate(function: F) -> F:
+        """Wrap the function so it counts as live while it runs."""
+
         @functools.wraps(function)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
+            """Mark the actor live for the length of one call."""
             with active(actor):
                 return function(*args, **kwargs)
 
@@ -76,6 +75,7 @@ def snapshot() -> dict[str, dict[str, Any]]:
     """Every actor that has run since the process started, as JSON-ready data."""
 
     def iso(value: datetime | None) -> str | None:
+        """A time as text, or None when it has not happened yet."""
         return value.isoformat() if value else None
 
     with _lock:

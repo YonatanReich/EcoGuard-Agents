@@ -39,10 +39,12 @@ class TextSource:
 
     @property
     def official(self) -> bool:
+        """Whether this source is an official body."""
         return self.tier in OFFICIAL_TIERS
 
     @property
     def never_polled(self) -> bool:
+        """Whether this source has been read yet."""
         return self.last_polled_at is None
 
     def conditional_headers(self) -> dict[str, str]:
@@ -56,6 +58,7 @@ class TextSource:
 
 
 def _row(row) -> TextSource:
+    """One database row as a text source."""
     return TextSource(
         source_id=row["source_id"],
         kind=row["kind"],

@@ -34,6 +34,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add reports nobody has corroborated yet, kept apart from incidents."""
     op.execute(
         """
         CREATE TABLE weak_events (
@@ -83,4 +84,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove reports nobody has corroborated yet, kept apart from incidents."""
     op.execute("DROP TABLE weak_events")

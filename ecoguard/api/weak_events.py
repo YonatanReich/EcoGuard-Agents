@@ -1,12 +1,9 @@
-"""The uncorroborated lane, as the operator's map consumes it.
+"""Reports nothing has corroborated, as the operator sees them.
 
-Served separately from `/api/events` rather than merged into it, and that is
-the point rather than an omission. Every consumer of a shared event — the
-analyser, the planner, the allocator, the incident card — is built on the
-premise that an event is something believed to be happening. A weak event is
-not, and the only safe way to say so is a different endpoint with a different
-shape, so nothing can read one as the other by forgetting to check a flag.
-"""
+Served on their own route rather than mixed into the main feed. Everything
+downstream of an event assumes it is believed to be happening; one of these is
+not, and a separate shape is the only way to say so that cannot be lost by
+forgetting to check a flag."""
 
 from __future__ import annotations
 
@@ -68,6 +65,7 @@ class OperatorDecision(BaseModel):
 
 
 def _would_confirm(hazard: str) -> list[str]:
+    """What evidence would turn this report into a confirmed event."""
     instrument = {
         "fire": "a satellite hotspot in the same area",
         "flood": "a gauge or rainfall exceedance in the same area",
@@ -82,6 +80,7 @@ def _would_confirm(hazard: str) -> list[str]:
 
 
 def as_weak_event(row: dict[str, Any], *, now: datetime) -> WeakEvent:
+    """One stored row in the shape the operator's list reads."""
     reports = []
     for report in row.get("reports") or ():
         if not isinstance(report, dict):
@@ -156,6 +155,7 @@ def dismiss_weak_event(weak_event_id: str, decision: OperatorDecision) -> WeakEv
 def _decide(
     weak_event_id: str, *, status: str, resolution: str, operator: str
 ) -> WeakEvent:
+    """Record an operator's decision on one report."""
     now = datetime.now(timezone.utc)
     try:
         current = {row["id"]: row for row in store.open_weak_events()}

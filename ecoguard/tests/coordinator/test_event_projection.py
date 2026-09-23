@@ -6,8 +6,8 @@ import pytest
 from sqlalchemy import text
 
 from ecoguard.coordinator.dispatcher import IncidentProcessingResult, dispatch_incidents
-from ecoguard.analyzers.emergency.flood.event_analyzer import FloodEventAnalyzer
-from ecoguard.analyzers.emergency.flood.risk_analyzer import FloodRiskAnalyzer
+from ecoguard.analyzers.flood.event_analyzer import FloodEventAnalyzer
+from ecoguard.analyzers.flood.risk_analyzer import FloodRiskAnalyzer
 from ecoguard.coordinator.incidents import signal_as_json
 from ecoguard.coordinator.event_projection import (
     air_pollution_shared_event,
@@ -20,7 +20,7 @@ from ecoguard.detectors.air_pollution.cell_signal_adapter import (
 from ecoguard.detectors.air_pollution.correlation import PollutionCorrelationCandidate
 from ecoguard.database.repositories import event_projections as repository
 from ecoguard.database.repositories.event_projections import EventProjectionWrite
-from ecoguard.response_planner.air_pollution.schemas import (
+from ecoguard.planners.air_pollution.schemas import (
     AirPollutionPlanningResult,
     AirPollutionResponsePlan,
 )

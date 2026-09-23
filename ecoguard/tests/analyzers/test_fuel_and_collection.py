@@ -19,9 +19,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from ecoguard.collection.fire.firms.collector import group_hotspots
-from ecoguard.collection.shared.open_meteo.forecast import WeatherForecastCollector, forecast_cells
-from ecoguard.analyzers.emergency.fire.fuel_models import FUEL_MODELS, NON_BURNABLE, blend
+from ecoguard.collectors.fire.firms.collector import group_hotspots
+from ecoguard.collectors.shared.open_meteo.forecast import WeatherForecastCollector, forecast_cells
+from ecoguard.analyzers.fire.fuel_models import FUEL_MODELS, NON_BURNABLE, blend
 
 
 # --- fuel models -----------------------------------------------------------
@@ -140,7 +140,7 @@ def test_a_forecast_row_is_stamped_with_the_hour_it_describes():
 
 
 def test_the_forecast_grid_is_a_strided_subset_of_the_service_area():
-    from ecoguard.collection.base import service_area_cells
+    from ecoguard.collectors.base import service_area_cells
 
     coarse = forecast_cells(3)
 

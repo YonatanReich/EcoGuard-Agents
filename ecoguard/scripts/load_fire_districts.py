@@ -1,21 +1,4 @@
-"""Load the seven fire district polygons, so a footprint can be placed in one.
-
-    python -m ecoguard.scripts.load_fire_districts
-
-Dispatch is territorial before it is proximate: each district handles events in
-its own sector, and a neighbouring district assists only by exception. That rule
-cannot be applied without knowing which district the fire is in, and until now
-the polygons existed only as a committed GeoJSON file that nothing read.
-
-A full reload. District boundaries are reference data published once, not a
-feed, and a half-replaced set of polygons would place fires in the wrong
-sector without failing.
-
-Note the name spelling: this file says `יו"ש`, matching `towns.fire_district`,
-while `fire_stations.district` says `יהודה ושומרון`. That mismatch already cost
-122 towns their responsible stations once; `responsible_services` owns the
-alias and everything here goes through it.
-"""
+"""Loading the seven fire district outlines, so an incident can be placed in one."""
 
 from __future__ import annotations
 
@@ -41,6 +24,7 @@ CREATE INDEX IF NOT EXISTS fire_districts_boundary
 
 
 def load() -> int:
+    """Load the fire district outlines into the database."""
     payload = json.loads(SOURCE.read_text(encoding="utf-8"))
     rows = []
     for feature in payload.get("features", ()):
@@ -83,6 +67,7 @@ def load() -> int:
 
 
 def main() -> None:
+    """Load the districts from the command line."""
     count = load()
     with Session() as session:
         summary = session.execute(

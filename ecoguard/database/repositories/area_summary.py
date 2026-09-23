@@ -1,21 +1,15 @@
-"""Aggregate everything we store over one user-drawn polygon.
+"""Everything we store, summarized over an area drawn on the map.
 
-This is the read side of the drawing tool: the user encloses an area on the
-map and gets back what is inside it — how many people, what the weather is
-doing, how dangerous the fire weather is, which emergency stations are in
-reach. Every number comes from data already in the store, so drawing an area
-costs one round trip and no upstream API calls.
+The read side of the drawing tool: enclose an area and get back how many people
+are inside it, what the weather is doing, how dangerous the fire weather is,
+and which stations are in reach. All of it comes from data already stored, so
+drawing an area costs one query and no outside calls.
 
-The two aggregations are deliberately different, because the two datasets are:
-
-  * population_cells is a fine grid of counts, so it is summed with area
-    weighting — a cell half inside the polygon contributes half its people.
-  * observations sit on the 5 km service-area grid, one sample per cell, and a
-    sample is a point measurement rather than a quantity spread over the cell.
-    Those are averaged, over every cell within half a grid step of the polygon
-    so that a polygon smaller than one cell still resolves to the cell it is
-    drawn inside instead of returning nothing.
-"""
+Population and readings are combined differently on purpose. Population is a
+count spread over the ground, so a cell half inside the area contributes half
+its people. A reading is a measurement at a point, so readings are averaged,
+and an area smaller than one cell still resolves to the cell it sits in rather
+than returning nothing."""
 
 from __future__ import annotations
 
@@ -273,6 +267,7 @@ def _area_km2(session, geojson: str) -> float:
 
 
 def _rounded(value: float | None) -> float | None:
+    """A number at reporting precision, or None when there is none."""
     return None if value is None else round(float(value), 1)
 
 

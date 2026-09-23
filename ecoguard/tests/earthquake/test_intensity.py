@@ -9,7 +9,7 @@ import math
 
 import pytest
 
-from ecoguard.analyzers.emergency.earthquake.intensity import (
+from ecoguard.analyzers.earthquake.intensity import (
     epicentral_radius_for_mmi,
     intensity_rings,
     mmi_at,

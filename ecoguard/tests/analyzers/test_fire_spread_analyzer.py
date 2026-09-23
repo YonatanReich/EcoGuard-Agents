@@ -29,13 +29,13 @@ import json
 
 import pytest
 
-from ecoguard.analyzers.emergency.fire.spread import (
+from ecoguard.analyzers.fire.spread import (
     FT_MIN_TO_M_MIN,
     rate_of_spread,
     spread_rings,
     wind_adjustment_factor,
 )
-from ecoguard.analyzers.emergency.fire.spread_analyzer import analyze, compass_point
+from ecoguard.analyzers.fire.spread_analyzer import analyze, compass_point
 from ecoguard.paths import EVALUATION
 
 CASES_PATH = EVALUATION / "fire_spread_cases.json"

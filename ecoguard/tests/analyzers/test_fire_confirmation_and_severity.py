@@ -12,8 +12,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from ecoguard.analyzers.emergency.fire import confirmation, infrastructure
-from ecoguard.analyzers.emergency.fire.spread_analyzer import analyze
+from ecoguard.analyzers.fire import confirmation, infrastructure
+from ecoguard.analyzers.fire.spread_analyzer import analyze
 
 WHEN = datetime(2026, 8, 14, 13, 40, tzinfo=timezone.utc)
 

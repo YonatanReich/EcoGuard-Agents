@@ -14,6 +14,7 @@ from ecoguard.detectors.air_pollution.baseline_import import build_import_plan
 
 
 def main(argv=None) -> int:
+    """Import the baselines, reporting what would change unless told to apply it."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path,
                         default=REPO_ROOT / "venv/phase2-output/national-baseline-v2")

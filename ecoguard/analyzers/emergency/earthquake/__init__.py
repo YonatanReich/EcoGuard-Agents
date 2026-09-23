@@ -1,1 +1,0 @@
-"""Deterministic earthquake impact screening."""

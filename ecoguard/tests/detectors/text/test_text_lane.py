@@ -100,14 +100,31 @@ def test_a_text_signal_carries_no_rarity():
     assert signal.location.method == "text_report_gazetteer"
 
 
-def test_an_official_report_signals_more_confidently_than_a_promoted_rumour():
-    official, _ = reports_from_candidates(
+def test_confidence_follows_corroboration_not_the_source_tier():
+    """What used to key off `tier`. An 'authority' badge now buys nothing.
+
+    A corroborated report carries 0.7 and an uncorroborated one 0.3 — the
+    lowest confidence in the system, which is what an unconfirmed claim is
+    worth — regardless of who posted it.
+    """
+    authority, _ = reports_from_candidates(
         [candidate(tier="authority")], locator=stub_locator
     )
     unofficial, _ = reports_from_candidates([candidate()], locator=stub_locator)
 
-    assert signal_from(official[0], {}).confidence == 1.0
-    assert signal_from(unofficial[0], {}).confidence == 0.7
+    for located in (authority, unofficial):
+        assert signal_from(located[0], {}, corroborated=True).confidence == 0.7
+        assert signal_from(located[0], {}, corroborated=False).confidence == 0.3
+
+
+def test_the_signal_says_whether_anything_corroborated_it():
+    located, _ = reports_from_candidates([candidate()], locator=stub_locator)
+
+    corroborated = signal_from(located[0], {}, corroborated=True)
+    bare = signal_from(located[0], {}, corroborated=False)
+
+    assert corroborated.evidence["text_report"]["corroborated"] is True
+    assert bare.evidence["text_report"]["corroborated"] is False
 
 
 def test_the_basis_for_promotion_travels_with_the_signal():
@@ -225,7 +242,7 @@ def _runtime_report(item):
     )
 
 
-def _wire_runtime(monkeypatch, candidates, open_weak=()):
+def _wire_runtime(monkeypatch, candidates):
     from ecoguard.coordinator import incidents
 
     monkeypatch.setattr(
@@ -236,13 +253,10 @@ def _wire_runtime(monkeypatch, candidates, open_weak=()):
         text_run, "reports_from_candidates",
         lambda rows: ([_runtime_report(row) for row in rows], []),
     )
-    monkeypatch.setattr(text_run.weak_store, "open_weak_events", lambda: list(open_weak))
-    monkeypatch.setattr(text_run.weak_store, "expire_weak_events", lambda *_args, **_kwargs: 0)
-    monkeypatch.setattr(text_run.weak_store, "save_weak_event", lambda *_args, **_kwargs: "WEAK")
     monkeypatch.setattr(incidents, "open_incidents", lambda: [])
 
 
-def test_repeated_triage_does_not_send_an_official_candidate_twice(monkeypatch):
+def test_repeated_triage_does_not_send_a_candidate_twice(monkeypatch):
     item = _runtime_candidate(1, tier="media", source_id="https://ynet.test/rss")
     candidates = [item]
     coordinated = []
@@ -265,103 +279,30 @@ def test_repeated_triage_does_not_send_an_official_candidate_twice(monkeypatch):
     assert item["triaged_at"] == AT
 
 
-def test_promoted_open_weak_event_is_resolved_after_coordinator_handoff(monkeypatch):
-    old = _runtime_candidate(1, tier="unofficial", triaged_at=AT - timedelta(minutes=5))
-    official = _runtime_candidate(2, tier="media", source_id="https://ynet.test/rss")
-    candidates = [old, official]
-    open_weak = [{
-        "id": "WEAK-TEST-1", "hazard": "fire", "status": "open",
-        "reports": [{"candidate_id": old["id"]}],
-        "latitude": HAIFA[0], "longitude": HAIFA[1], "precision_m": 2000.0,
-        "last_seen_at": AT, "expires_at": AT + timedelta(hours=1),
-    }]
-    resolved = []
-    marked = []
+def test_an_uncorroborated_report_still_reaches_the_coordinator(monkeypatch):
+    """The whole point of the change: it is passed on, not parked.
 
-    _wire_runtime(monkeypatch, candidates, open_weak)
-    monkeypatch.setattr(
-        text_run, "mark_candidates_triaged",
-        lambda ids, **_: marked.extend(ids) or len(ids),
-    )
-    monkeypatch.setattr(
-        text_run.weak_store, "resolve_weak_event",
-        lambda weak_id, **kwargs: resolved.append((weak_id, kwargs)),
-    )
-
+    Under the old model a lone report became a weak event and expired three
+    hours later without an operator ever seeing it. It now leaves on the same
+    tick, labelled, so the advisory planner can say who to phone.
+    """
+    item = _runtime_candidate(1, tier="unofficial")
+    candidates = [item]
     coordinated = []
+
+    _wire_runtime(monkeypatch, candidates)
+    monkeypatch.setattr(text_run, "mark_candidates_triaged", lambda ids, **_: len(ids))
+
     outcome = text_run.run_text_triage(
         at=AT, coordinate=lambda signals: coordinated.append(signals)
     )
 
-    assert outcome["promoted"] == 1
+    assert outcome["uncorroborated"] == 1
+    assert outcome["events"] == 0
     assert len(coordinated) == 1
-    assert resolved == [("WEAK-TEST-1", {
-        "status": "promoted", "resolution": "official_report", "at": AT,
-    })]
-    assert official["id"] in marked
-
-
-def test_source_hazard_allowlist_is_enforced_when_candidates_are_stored(database):
-    source = "text_hazard_policy_test"
-    cell_id = "telegram-hazard-policy-test"
-    observation_id = None
-    try:
-        upsert_observations(source, [{
-            "cell_id": cell_id,
-            "observed_at": AT,
-            "payload": {
-                "source_id": "telegram:-1001581748447",
-                "raw_text": "שריפה והצפה",
-            },
-        }])
-        with database.connect() as connection:
-            observation_id = connection.execute(
-                text(
-                    "SELECT id FROM observations "
-                    "WHERE source = :source AND cell_id = :cell_id"
-                ),
-                {"source": source, "cell_id": cell_id},
-            ).scalar_one()
-
-        result = {
-            "observation_id": observation_id,
-            "source_id": "telegram:-1001581748447",
-            "observed_at": AT,
-            "hazards": ["fire", "flood"],
-            "relevant": True,
-            "literal": True,
-            "in_israel": True,
-            "update_type": "new",
-            "location_text": "חיפה",
-            "claim": "שריפה והצפה",
-            "details": {},
-            "classified_by": "model",
-            "model_version": "test",
-            "keyword_hazards": [],
-        }
-        assert store_candidates([result]) == 1
-
-        with database.connect() as connection:
-            hazards = connection.execute(
-                text(
-                    "SELECT hazard FROM text_candidates "
-                    "WHERE observation_id = :observation_id"
-                ),
-                {"observation_id": observation_id},
-            ).scalars().all()
-        assert hazards == ["flood"]
-    finally:
-        if observation_id is not None:
-            with database.connect() as connection:
-                connection.execute(
-                    text("DELETE FROM text_candidates WHERE observation_id = :id"),
-                    {"id": observation_id},
-                )
-                connection.execute(
-                    text("DELETE FROM observations WHERE id = :id"),
-                    {"id": observation_id},
-                )
-                connection.commit()
+    signal = coordinated[0][0]
+    assert signal.evidence["text_report"]["corroborated"] is False
+    assert signal.confidence == 0.3
 
 
 def test_db_backed_telegram_and_y_net_pipeline_hands_off_only_once(database):
@@ -376,6 +317,13 @@ def test_db_backed_telegram_and_y_net_pipeline_hands_off_only_once(database):
     observation_ids = []
 
     class ControlledClassifier:
+        """Two witnesses, two wordings.
+
+        The claims must differ: identical text from two channels is one claim
+        retyped, and triage collapses it on purpose. Two people describing one
+        fire in their own words is the case that should corroborate.
+        """
+
         def classify(self, messages):
             return [{
                 "observation_id": item["observation_id"],
@@ -387,7 +335,11 @@ def test_db_backed_telegram_and_y_net_pipeline_hands_off_only_once(database):
                 "in_israel": True,
                 "update_type": "new",
                 "location_text": "חיפה",
-                "claim": "שריפה דווחה בחיפה",
+                "claim": (
+                    "שריפה דווחה בחיפה"
+                    if str(item["source_id"]).startswith("telegram:")
+                    else "עשן כבד נראה מעל חיפה, כוחות כיבוי הוזעקו למקום"
+                ),
                 "details": {},
                 "classified_by": "model",
                 "model_version": "controlled-test",
@@ -435,10 +387,13 @@ def test_db_backed_telegram_and_y_net_pipeline_hands_off_only_once(database):
             at=AT, coordinate=lambda signals: coordinator_calls.append(list(signals))
         )
 
-        assert first["events"] == 1
-        assert first["promoted"] == 1
+        # Two distinct origins describing the same fire in the same place
+        # corroborate each other. That used to depend on one of them being a
+        # "media" source; it now depends only on them being independent.
+        assert first["events"] == 2
+        assert first["uncorroborated"] == 0
         assert second["events"] == 0
-        assert second["promoted"] == 0
+        assert second["uncorroborated"] == 0
         assert len(coordinator_calls) == 1
         assert {signal.source for signal in coordinator_calls[0]} == set(source_ids.values())
         telegram_signal = next(
@@ -446,8 +401,9 @@ def test_db_backed_telegram_and_y_net_pipeline_hands_off_only_once(database):
             if signal.source == source_ids["telegram"]
         )
         assert telegram_signal.evidence["text_report"]["basis"]["kind"] == (
-            "official_report"
+            "independent_reports"
         )
+        assert telegram_signal.evidence["text_report"]["corroborated"] is True
 
         with database.connect() as connection:
             markers = connection.execute(

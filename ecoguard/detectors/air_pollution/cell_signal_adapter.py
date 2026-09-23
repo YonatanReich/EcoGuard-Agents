@@ -24,6 +24,7 @@ class AirPollutionCellSignalAdapterError(ValueError):
     """A qualified anomaly cannot safely enter the shared Coordinator."""
 
     def __init__(self, reason: str) -> None:
+        """Carry the reason a candidate could not become a signal."""
         self.reason = reason
         super().__init__(reason)
 
@@ -73,6 +74,7 @@ def _candidate_to_signal(
     *,
     detection_evidence: dict[str, Any] | None = None,
 ) -> CellSignal:
+    """Turn one confirmed anomaly into the signal the coordinator expects."""
     anomaly = candidate.anomaly
     latitude = anomaly.location.latitude
     longitude = anomaly.location.longitude

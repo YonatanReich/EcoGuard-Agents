@@ -1,26 +1,16 @@
-"""What has burned here before, read straight out of the FIRMS observations.
+"""What has burned here before, and what only looks like it.
 
-Two questions, one table, no new storage. Both are answered by counting stored
-hotspots inside a radius and a time window, which the observations GiST index
-on `location` already supports — so this is a repository of queries rather than
-a table that has to be built, refreshed and kept honest.
+Both answers come from counting stored satellite detections in a radius and a
+time window, so there is no extra table to build or keep honest.
 
-The first question is fire history: a cell that has burned repeatedly is a cell
-where fires start, and it is one of the strongest cheap predictors there is.
+The first is fire history: a place that has burned repeatedly is a place fires
+start, and that is one of the strongest cheap predictors there is.
 
-The second is the one that decides whether a detector is usable at all.
-
-  Quarries, industrial flares, solar thermal plants and landfills trip thermal
-  sensors on a schedule. Over weeks they produce a hotspot record that looks
-  exactly like a fire-prone area and is nothing of the kind. Without a way to
-  recognise them, an alerting detector raises the same handful of sites
-  forever, and the people reading it learn to ignore it — which costs more
-  than the false alerts, because it costs the true ones too.
-
-  `persistence` separates them by *regularity*, not by count. A bad fire season
-  puts many detections in one cell too; what it does not do is put them there
-  on most days, month after month. An industrial source does.
-"""
+The second decides whether the detector is usable at all. Quarries, industrial
+flares and landfills trip heat sensors on a schedule, and over weeks they look
+exactly like a fire-prone area. They are told apart by regularity rather than
+count: a bad fire season puts many detections in one place too, but it does not
+put them there on most days, month after month."""
 
 from __future__ import annotations
 
@@ -165,6 +155,7 @@ def persistence(cell_id: str, at: datetime | None = None) -> dict[str, Any]:
 
 
 def _verdict(persistent: bool, distinct_days: int, span_days: int, reason: str) -> dict[str, Any]:
+    """Whether a place's hotspots look like an industrial source, and why."""
     return {
         "persistent": persistent,
         "distinct_days": distinct_days,

@@ -14,6 +14,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add observations (source, observed_at) index."""
     # Everything that reads observations filters by source and a time *range*:
     # the collector asking which hours it is missing, the area summary taking
     # the newest reading per cell, the fire danger surface.
@@ -30,4 +31,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove observations (source, observed_at) index."""
     op.execute("DROP INDEX IF EXISTS observations_source_observed_at_idx")

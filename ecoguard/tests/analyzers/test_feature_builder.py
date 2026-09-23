@@ -3,10 +3,10 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
-from ecoguard.research.datasets.build_historical_environmental_features import PriorFirmsIndex
-from ecoguard.research.training.train_fire_prediction_landcover_terrain_models import FULL_FEATURES
-from ecoguard.analyzers.emergency.fire.feature_builder import CurrentRiskFeatureBuilder
-from ecoguard.analyzers.emergency.fire.static_feature_store import STATIC_MODEL_FEATURES
+from ecoguard.analyzers.fire.ml.build_historical_environmental_features import PriorFirmsIndex
+from ecoguard.analyzers.fire.ml.train_fire_prediction_landcover_terrain_models import FULL_FEATURES
+from ecoguard.analyzers.fire.feature_builder import CurrentRiskFeatureBuilder
+from ecoguard.analyzers.fire.static_feature_store import STATIC_MODEL_FEATURES
 from ecoguard.shared.weather_features import FEATURE_FIELDS
 
 

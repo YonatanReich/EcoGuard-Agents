@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import AwareDatetime, BaseModel, Field, TypeAdapter
 from sqlalchemy import text
 
-from ecoguard.analyzers.emergency.flood.incident_handler import FloodRoadIncidentHandler
+from ecoguard.analyzers.flood.incident_handler import FloodRoadIncidentHandler
 from ecoguard.api.events import manual_flood_test_enabled, set_manual_test_feed
 from ecoguard.coordinator.agent import coordinate
 from ecoguard.coordinator.dispatcher import dispatch_touched
@@ -25,7 +25,7 @@ from ecoguard.detectors.flood.station_rules import HYDROMETRIC_SOURCE
 from ecoguard.resource_allocator.allocation_agent import ResourceAllocationAgent
 from ecoguard.resource_allocator.flood_road_targets import FloodRoadTargetAgent
 from ecoguard.resource_allocator.mapbox_client import MapboxClient
-from ecoguard.response_planner.emergency.schemas import (
+from ecoguard.planners.shared.schemas import (
     EmergencyResponsePlan,
     EmergencyResponsePlanInput,
 )
@@ -88,6 +88,7 @@ STATION_QUERY = text(
 
 
 def _jsonable(value: Any) -> Any:
+    """A value in a form that can be printed as JSON, whatever shape it arrived in."""
     if isinstance(value, BaseModel):
         return value.model_dump(mode="json")
     if isinstance(value, CellSignal):
@@ -104,6 +105,7 @@ def _jsonable(value: Any) -> Any:
 
 
 def _show(name: str, value: Any) -> None:
+    """Print one stage's output, so the walkthrough can be followed as it runs."""
     print(f"\n{'=' * 22} {name} {'=' * 22}", flush=True)
     print(json.dumps(_jsonable(value), ensure_ascii=False, indent=2), flush=True)
 
@@ -121,6 +123,7 @@ class ManualFloodRunRequest(BaseModel):
 
 
 def _station(source_station_id: int | None = None) -> dict[str, Any]:
+    """A real gauge to run the walkthrough against."""
     with Session() as session:
         row = session.execute(
             STATION_QUERY, {"source_station_id": source_station_id}
@@ -136,10 +139,12 @@ def _station(source_station_id: int | None = None) -> dict[str, Any]:
 
 
 def _quarter(low: float, high: float) -> float:
+    """A value a quarter of the way between two thresholds."""
     return round(low + (high - low) * 0.25, 6)
 
 
 def _sample_values(scenario: str, thresholds: list[float]) -> list[tuple[int, float]]:
+    """The readings that make up one named walkthrough."""
     q2, q5, q10, q20, q50, _ = thresholds
     noise = round(q2 * 0.5, 6)
     low = _quarter(q2, q5)
@@ -167,6 +172,7 @@ def _observations(
     start: datetime,
     measurements: list[ManualFloodMeasurement] | None = None,
 ) -> list[dict[str, Any]]:
+    """The readings as stored observations, so the detector sees what it normally sees."""
     rows = []
     supplied = measurements or []
     sample_rows = (
@@ -211,14 +217,17 @@ class MemoryIncidentStore:
     """The production coordinator repository contract, backed only by memory."""
 
     def __init__(self) -> None:
+        """Build the in-memory stand-in, so the walkthrough never touches live data."""
         self.rows: dict[str, dict[str, Any]] = {}
         self.sequence = 0
 
     def next_incident_id(self, at: datetime) -> str:
+        """The next identifier in this run."""
         self.sequence += 1
         return f"INC-TEST-{at.strftime('%Y%m%d')}-{self.sequence:04d}"
 
     def open_incidents(self, hazards=None) -> list[dict[str, Any]]:
+        """The incidents this run has opened."""
         rows = [row for row in self.rows.values() if row["status"] == "open"]
         if hazards is not None:
             wanted = set(hazards)
@@ -226,10 +235,12 @@ class MemoryIncidentStore:
         return sorted(deepcopy(rows), key=lambda row: row["last_signal_at"], reverse=True)
 
     def incident_by_id(self, incident_id: str) -> dict[str, Any] | None:
+        """One incident by its identifier."""
         row = self.rows.get(incident_id)
         return deepcopy(row) if row is not None else None
 
     def create_incident(self, incident_id: str, signal: CellSignal, queues) -> dict[str, Any]:
+        """Open an incident from one detection."""
         location = signal.location
         row = {
             "id": incident_id,
@@ -254,6 +265,7 @@ class MemoryIncidentStore:
         return deepcopy(row)
 
     def attach_signal(self, incident_id: str, signal: CellSignal) -> dict[str, Any]:
+        """Add another detection to an incident already open."""
         row = self.rows[incident_id]
         if signal.cell_id not in row["cells"]:
             row["cells"].append(signal.cell_id)
@@ -273,9 +285,11 @@ class MemoryIncidentStore:
         return deepcopy(row)
 
     def merge_incidents(self, cause_id: str, effect_id: str, link: dict[str, Any]):
+        """Refused: a flood-only walkthrough cannot produce a mixed-hazard incident."""
         raise AssertionError("Flood-only manual tests cannot create causal hybrids")
 
     def close_quiet(self, at: datetime, period_for) -> list[str]:
+        """Close the incidents that have gone quiet for long enough."""
         closed = []
         for row in self.rows.values():
             if row["status"] != "open":
@@ -289,13 +303,16 @@ class MemoryIncidentStore:
 
 class MemoryAllocationRepository:
     def __init__(self) -> None:
+        """Build the in-memory store, so the walkthrough never touches live allocations."""
         self.rows: list[dict[str, Any]] = []
         self.next_id = 1
 
     def active_allocations(self):
+        """The stations currently held."""
         return deepcopy([row for row in self.rows if row["released_at"] is None])
 
     def claim_stations(self, **claim):
+        """Hold stations against an incident."""
         active = [
             row for row in self.rows
             if row["incident_id"] == claim["incident_id"]
@@ -330,6 +347,7 @@ class MemoryAllocationRepository:
         return deepcopy(active)
 
     def release_incident(self, incident_id, *, released_at, reason):
+        """Release everything held against one incident."""
         released = []
         for row in self.rows:
             if row["incident_id"] == incident_id and row["released_at"] is None:
@@ -343,9 +361,11 @@ class SyntheticPlanner:
     """Schema-valid planner replacement that cannot call Claude."""
 
     def __init__(self) -> None:
+        """Build the stand-in for this walkthrough."""
         self.last_input: EmergencyResponsePlanInput | None = None
 
     def plan_response(self, analysis) -> EmergencyResponsePlan:
+        """Return the plan this walkthrough is meant to produce."""
         validated = EmergencyResponsePlanInput.model_validate(analysis)
         self.last_input = validated
         risk = validated.risk_context or {}
@@ -408,25 +428,30 @@ class SyntheticPlanner:
 
 class RecordingRoadTargeter:
     def __init__(self, targeter: FloodRoadTargetAgent) -> None:
+        """Wrap the real road targeter, keeping its last result for the report."""
         self.targeter = targeter
         self.last_output = None
 
     def identify(self, incident):
+        """Identify the affected roads, keeping a copy of the result for the report."""
         self.last_output = self.targeter.identify(incident)
         return deepcopy(self.last_output)
 
 
 class RecordingAllocator(ResourceAllocationAgent):
     def __init__(self, **kwargs) -> None:
+        """Wrap the real allocator, keeping its last input for the report."""
         self.last_batch_input = None
         super().__init__(**kwargs)
 
     def allocate_batch(self, requests, now=None):
+        """Allocate for several requests, keeping a copy of the input for the report."""
         self.last_batch_input = deepcopy(requests)
         return super().allocate_batch(requests, now=now)
 
 
 def _require_mode() -> None:
+    """Hide these routes entirely unless the walkthrough is switched on."""
     if not manual_flood_test_enabled():
         raise HTTPException(
             status_code=404,
@@ -436,12 +461,14 @@ def _require_mode() -> None:
 
 @router.get("")
 def scenarios() -> dict[str, str]:
+    """The walkthroughs available to run."""
     _require_mode()
     return SCENARIOS
 
 
 @router.get("/latest")
 def latest() -> dict[str, Any]:
+    """The report from the last walkthrough that ran."""
     _require_mode()
     if _latest_report is None:
         raise HTTPException(status_code=404, detail="No manual Flood test has run")
@@ -452,6 +479,7 @@ def latest() -> dict[str, Any]:
 def run_scenario(
     scenario: str, request: ManualFloodRunRequest | None = None
 ) -> dict[str, Any]:
+    """Run one walkthrough end to end and report what each stage did."""
     global _latest_report
     _require_mode()
     if scenario not in SCENARIOS:

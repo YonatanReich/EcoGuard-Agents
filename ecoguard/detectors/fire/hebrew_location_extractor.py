@@ -101,6 +101,7 @@ def normalize_location_name(value: str) -> str:
 
 
 def _empty_result() -> dict:
+    """The 'found nothing' answer, in the same shape as a match."""
     return {
         "location_text": None,
         "city": None,
@@ -113,6 +114,7 @@ def _empty_result() -> dict:
 
 
 def _tokenize(text: str) -> list[_Token]:
+    """Split Hebrew text into comparable words, dropping punctuation."""
     tokens = []
     for match in _TOKEN_PATTERN.finditer(text):
         normalized = normalize_location_name(match.group())
@@ -156,6 +158,7 @@ def locality_name_candidates(text: str | None, *, max_words: int = 4) -> list[st
 
 
 def _open_cache() -> sqlite3.Connection | None:
+    """Open the local place-name database, or None when it is absent."""
     if not CACHE_PATH.is_file():
         return None
     try:
@@ -171,6 +174,7 @@ def _open_cache() -> sqlite3.Connection | None:
 
 
 def _locality_candidates(connection: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Every known settlement name, for matching against."""
     return connection.execute(
         """
         SELECT locality_names.locality_code,
@@ -187,6 +191,7 @@ def _match_locality(
     tokens: list[_Token],
     connection: sqlite3.Connection,
 ) -> _LocalityMatch | None:
+    """Find the settlement a piece of text refers to, if any."""
     matches = []
     for row in _locality_candidates(connection):
         name_tokens = row["normalized_name"].split()
@@ -217,6 +222,7 @@ def _match_locality(
         return None
 
     def evidence_score(match: _LocalityMatch) -> int:
+        """How strong a match is, used to choose between competing ones."""
         previous = (
             tokens[match.start_token - 1].normalized
             if match.start_token > 0
@@ -260,6 +266,7 @@ def _street_names(
     connection: sqlite3.Connection,
     locality_code: int,
 ) -> dict[str, str]:
+    """Known street names within one settlement."""
     rows = connection.execute(
         """
         SELECT street_names.normalized_name, streets.canonical_name
@@ -280,6 +287,7 @@ def _validated_street(
     end: int,
     names: dict[str, str],
 ) -> tuple[str, int, int] | None:
+    """A street name only when it belongs to the settlement already matched."""
     if start >= end:
         return None
     for candidate_end in range(end, start, -1):
@@ -291,6 +299,7 @@ def _validated_street(
 
 
 def _original_span(text: str, tokens: list[_Token], start: int, end: int) -> str:
+    """The matched words as they appeared in the original text."""
     return text[tokens[start].start : tokens[end - 1].end].strip()
 
 

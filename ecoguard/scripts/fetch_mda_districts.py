@@ -1,19 +1,4 @@
-"""Fetch the Magen David Adom region map from govmap, once, into the repo.
-
-MDA's regions are not published as a file anyone can download. govmap serves
-them, but only as rendered WMS tiles: WFS and GetFeatureInfo both answer 403 on
-that layer, so there is no way to get the polygons themselves and bundle them
-the way data/reference/fire_districts.geojson is bundled.
-
-What is left is the picture. This renders the whole country in a single GetMap
-and writes it next to the other reference data, so the dashboard ships the
-image and never talks to govmap at run time. Boundaries that change about once
-a decade have no business being fetched per pan.
-
-Run it again only when MDA redraws its regions:
-
-    python -m ecoguard.scripts.fetch_mda_districts
-"""
+"""Fetching the ambulance service region map, once, into the repository."""
 
 import math
 from pathlib import Path
@@ -91,6 +76,7 @@ def fetch() -> bytes:
 
 
 def main() -> None:
+    """Fetch the ambulance region map from the command line."""
     png = fetch()
     OUTPUT.write_bytes(png)
     print(f"Wrote {len(png):,} bytes to {OUTPUT}")

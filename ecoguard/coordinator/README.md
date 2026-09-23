@@ -1,67 +1,32 @@
-# coordinator/
+# Coordinator
 
-Detectors fire independently and will report the same event more than once: two
-satellite hotspots or repeated station readings can all describe one event.
-Telegram and RSS reports can arrive as text-pipeline signals after an official
-report or explicit corroboration; uncorroborated reports remain separate weak
-events and never reach this stage. This is where duplicates are merged into a
-single incident, candidates
-from different sources are correlated, and one event gets one identity before
-anything downstream analyses it.
+The step that turns signals into *things that are happening*.
 
-It sits between `detectors/` and `analyzers/` because analysing the same fire
-four times is both wasteful and misleading — four assessments look like four
-fires to whoever is reading.
+Detectors produce a stream of signals, and the same event usually produces
+several — three satellite passes over one fire, a gauge reading every ten
+minutes, two people posting about the same smoke. The coordinator folds all of
+that into one incident per event, so an operator sees one fire rather than
+eleven readings.
 
-## The contract it consumes
+It also decides which queue an incident belongs in: emergency (fire, flood,
+earthquake) or advisory (air quality, fire weather, lake level).
 
-Everything here speaks one language, defined in `ecoguard/shared/`:
+## What is here
 
-- **`cells.py`** — the cell. Deliberately coarser than every source, because
-  its job is to be *shared*, not precise. It is the spatial join key that makes
-  "same place" answerable across hazards.
-- **`signals.py`** — `CellSignal`, the only shape this stage consumes. A
-  detector for any hazard emits these and nothing else.
+| File | What it does |
+|---|---|
+| `agent.py` | One pass: close what has gone quiet, fold new signals into incidents, route them |
+| `incidents.py` | Reading and writing incidents, including merging and closing them |
+| `matching.py` | Whether a new signal belongs to an incident already open, and how long each hazard stays open after its last signal |
+| `dispatcher.py` | Hands each touched incident to the right handler, and decides when a plan is stale enough to redo |
+| `event_projection.py` | Turns a finished result into the event the dashboard reads |
+| `queues.py` | Which queue each hazard belongs to |
 
-Both live in `shared/` rather than here because detectors *produce* them and
-this stage *consumes* them — two stages, so one level up, per the rule in
-`shared/README.md`.
+## Things worth knowing
 
-## The idea that makes hazards comparable
+A plan is not rebuilt just because a new signal arrived. Air quality episodes
+can produce hundreds of signals in a day, and rebuilding the advice for each
+one costs real money for no new information.
 
-Not magnitude, **rarity**. Kelvin, millimetres and micrograms cannot be
-compared; "a 1-in-500 reading for this cell at this time of year" can, and
-means the same thing for all three.
-
-Rarity is kept strictly apart from **severity**. 25 °C in a Negev January is
-extremely rare and harmless; 40 °C in a Negev August is statistically dull and
-is what burns the country down. Detectors answer rarity. Analysers answer
-severity. Collapsing them loses one case or the other.
-
-## Why corroboration is the whole point
-
-A rarity threshold is a false-alarm budget. At 0.999 across 1,174 cells checked
-hourly, chance alone yields ~28 signals a day per variable. That is only
-workable because agreement multiplies: two *independent* sources at 0.999 in
-the same cell is a one-in-a-million coincidence.
-
-So `corroborates()` deliberately does **not** filter on `reportable`. Two weak
-signals agreeing is evidence; discarding them individually first throws away
-exactly what this stage exists to find.
-
-## What runs
-
-`agent.coordinate()` is the entry point: signals in, two queues of incidents
-out. One run closes what has gone quiet, matches each signal to an open
-incident or opens a new one, merges causally linked incidents into hybrids, and
-queues the result. `incidents.py` is the store, `matching.py` the dedup rules,
-`packaging.py` the causal merge, `queues.py` the routing.
-
-## Not built yet
-
-Corroboration is not yet *required*. `coordinate()` opens an incident for every
-signal it is handed, so the "two weak sources agreeing" case the section above
-describes is unreachable from here — detectors filter on `reportable` before
-calling, and a pair of sub-threshold signals never arrives to be combined.
-Closing that gap means letting detectors emit below the bar and having this
-stage promote only what corroborates.
+An incident resting only on unconfirmed reports is routed differently from one
+backed by an instrument, and it says so.

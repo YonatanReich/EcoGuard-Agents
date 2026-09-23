@@ -14,6 +14,7 @@ from ecoguard.detectors.air_pollution.observation_processing import (
 
 
 def main() -> int:
+    """Re-run detection over stored readings, to check the active baselines behave."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--since-minutes", type=int, default=240,

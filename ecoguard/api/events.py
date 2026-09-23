@@ -10,12 +10,12 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import TypeAdapter, ValidationError
 
-from ecoguard.analyzers.non_emergency.air_pollution.event_qualification import (
+from ecoguard.analyzers.air_pollution.event_qualification import (
     MatchingOfficialPollutantIndex,
     ProjectedAirPollutionIdentity,
     qualify_air_pollution_event,
 )
-from ecoguard.analyzers.non_emergency.air_pollution.official_classification import (
+from ecoguard.analyzers.air_pollution.official_classification import (
     classify_official_pollutant_sub_index,
 )
 from ecoguard.shared.events import (
@@ -33,6 +33,7 @@ _manual_test_feed = SharedEventFeed(events=[])
 
 
 def manual_flood_test_enabled() -> bool:
+    """Whether the manual flood walkthrough is switched on for this deployment."""
     return os.getenv("ECOGUARD_MANUAL_FLOOD_TEST", "").strip().lower() in {
         "1", "true", "yes", "on"
     }
@@ -191,6 +192,7 @@ def get_shared_events(
 ) -> SharedEventFeed:
 
 
+    """The current events, newest first."""
     try:
         return shared_event_feed(read_projected_events(limit=limit))
     except Exception as error:

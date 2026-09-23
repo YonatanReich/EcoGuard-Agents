@@ -13,6 +13,7 @@ MAX_ERROR_LENGTH = 2000
 
 
 def log_start(source: str) -> int:
+    """Record that a collector has begun, and return the run to close later."""
     with Session() as session:
         run = CollectorRun(
             source=source,
@@ -59,6 +60,7 @@ def log_finish(
     rows_written: int | None = None,
     error: str | None = None,
 ) -> None:
+    """Record how a collector run ended and what it wrote."""
     with Session() as session:
         run = session.get(CollectorRun, run_id)
         if run is None:

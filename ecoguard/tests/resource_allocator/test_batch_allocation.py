@@ -6,7 +6,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from ecoguard.analyzers.emergency.flood.risk_analysis_schemas import (
+from ecoguard.analyzers.flood.risk_analysis_schemas import (
     FloodRiskAssessment,
 )
 from ecoguard.shared.schemas import risk_level_for_score

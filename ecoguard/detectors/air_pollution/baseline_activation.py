@@ -18,6 +18,7 @@ class BaselineActivationError(RuntimeError):
 
 
 def require_target_family(family: str) -> None:
+    """Refuse a baseline built for a different purpose than this detector's."""
     if family != TARGET_BASELINE_FAMILY:
         raise ValueError(
             f"activation family must be exactly {TARGET_BASELINE_FAMILY!r}"

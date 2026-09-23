@@ -15,6 +15,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add road geometry used to locate flood response sites."""
     op.execute(
         """
         CREATE TABLE road_segments (
@@ -50,4 +51,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove road geometry used to locate flood response sites."""
     op.execute("DROP TABLE IF EXISTS road_segments")

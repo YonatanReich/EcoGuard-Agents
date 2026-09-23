@@ -70,6 +70,7 @@ JSON_COLUMNS = ("geocode", "tags", "source")
 
 
 def upgrade() -> None:
+    """Seed the fire, police and ambulance station rosters."""
     if not SEED_PATH.exists():
         # Nothing to seed is not a failure: an operator running migrations from
         # somewhere without the data file still gets the schema.
@@ -89,6 +90,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove the seeded station rosters."""
     # Only the seeded rows go. A station added later by hand is not this
     # migration's to remove, but the tables are dropped by 0002/0004/0005
     # anyway, so a full downgrade loses nothing extra.

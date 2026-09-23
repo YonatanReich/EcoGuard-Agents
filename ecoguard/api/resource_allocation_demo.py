@@ -21,11 +21,13 @@ class DemoAllocationRepository:
     """Keep demo claims local so a frontend preview cannot occupy DB stations."""
 
     def __init__(self) -> None:
+        """Build the in-memory store, so the demo never touches live allocations."""
         self._lock = Lock()
         self._rows: list[dict[str, Any]] = []
         self._next_id = 1
 
     def active_allocations(self) -> list[dict[str, Any]]:
+        """The stations currently held."""
         with self._lock:
             return [row.copy() for row in self._rows if row["released_at"] is None]
 
@@ -40,6 +42,7 @@ class DemoAllocationRepository:
         risk_level,
         allocated_at,
     ) -> list[dict[str, Any]]:
+        """Hold stations against an incident."""
         with self._lock:
             active = [
                 row for row in self._rows
@@ -72,6 +75,7 @@ class DemoAllocationRepository:
             return [row.copy() for row in active]
 
     def release_incident(self, incident_id, *, released_at, reason):
+        """Release everything held against one incident."""
         with self._lock:
             released = []
             for row in self._rows:
@@ -113,6 +117,7 @@ def _fixed_response_plan(now: datetime) -> dict[str, Any]:
 
 
 def _allocation_summary(result: dict[str, Any]) -> dict[str, Any]:
+    """A short summary of which stations one allocation used."""
     stations = [
         station
         for group in result.get("allocated_units", {}).values()

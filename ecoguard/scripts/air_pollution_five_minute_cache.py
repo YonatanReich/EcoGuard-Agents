@@ -1,22 +1,8 @@
-#!/usr/bin/env python
-"""
-Download and cache official Ministry/Envista five-minute Air Pollution history
-for the exact EcoGuard completed_hour profile identities already present in DB.
+"""Downloading the five-minute air-quality history, once, onto disk.
 
-Design goals:
-- READ-ONLY database access (used only to get the existing 388 profile identities).
-- No baseline generation and no DB writes.
-- Month-level cache with atomic writes.
-- Safe resume: completed month files are skipped on rerun.
-- Raw provider point payloads are preserved (JSON, gzip compressed) so later
-  baseline policies can be changed without re-downloading the historical API.
-
-Run from the repository root:
-    python -m ecoguard.scripts.air_pollution_five_minute_cache
-
-Optional smoke test:
-    ... air_pollution_five_minute_cache.py --max-targets 1 --start-year 2025 --end-year 2025
-"""
+Kept as month files so an interrupted download resumes rather than restarting,
+and so the baseline builder can read one month at a time instead of holding
+years in memory."""
 
 from __future__ import annotations
 
@@ -50,6 +36,7 @@ DEFAULT_CACHE_DIR = (
 
 
 def _as_dict(obj: Any) -> dict[str, Any]:
+    """A value as a plain dictionary, whatever shape it arrived in."""
     if hasattr(obj, "to_dict"):
         return obj.to_dict()
     if isinstance(obj, dict):
@@ -58,6 +45,7 @@ def _as_dict(obj: Any) -> dict[str, Any]:
 
 
 def _safe_slug(value: str) -> str:
+    """A name safe to use as a filename."""
     out = []
     for ch in str(value):
         out.append(ch.lower() if ch.isalnum() else "_")
@@ -100,6 +88,7 @@ def load_profile_identities() -> list[dict[str, str]]:
 
 
 def target_key(target: Any) -> tuple[str, str, str]:
+    """What makes one station-and-pollutant series distinct."""
     return (
         str(target.station_id),
         str(target.channel_id),
@@ -113,6 +102,7 @@ def cache_file(
     year: int,
     month: int,
 ) -> Path:
+    """Where one month of one series is kept."""
     station = _safe_slug(str(target.station_id))
     channel = _safe_slug(str(target.channel_id))
     pollutant = _safe_slug(normalize_pollutant(target.pollutant))
@@ -125,6 +115,7 @@ def cache_file(
 
 
 def cache_is_complete(path: Path) -> bool:
+    """Whether a cached month was fully downloaded."""
     if not path.exists():
         return False
     try:
@@ -136,6 +127,7 @@ def cache_is_complete(path: Path) -> bool:
 
 
 def write_cache_atomic(path: Path, payload: dict[str, Any]) -> None:
+    """Write a cache file in one step, so a crash cannot leave it half written."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     try:
@@ -159,6 +151,7 @@ def normalize_points(response: Any) -> list[dict[str, Any]]:
 
 
 async def main() -> None:
+    """Download the history cache from the command line."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--start-year", type=int, default=2021)
     parser.add_argument("--end-year", type=int, default=2025)

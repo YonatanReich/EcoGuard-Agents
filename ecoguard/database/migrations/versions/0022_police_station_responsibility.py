@@ -25,6 +25,7 @@ CROSSWALK_PATH = (
 
 
 def upgrade() -> None:
+    """Add connect towns to their responsible police stations."""
     # A town can be served by several stations, and one station serves many
     # towns. Keep that relationship normalized instead of storing DB keys in
     # a comma-separated or array column on towns.
@@ -110,6 +111,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove connect towns to their responsible police stations."""
     op.execute(
         "DROP INDEX IF EXISTS resource_allocations_active_incident_police_idx"
     )

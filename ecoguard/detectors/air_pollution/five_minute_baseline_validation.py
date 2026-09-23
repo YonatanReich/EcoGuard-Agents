@@ -31,17 +31,21 @@ EXPECTED_COVERAGE_POLICY = {
 
 
 def _integer(value: Any, minimum: int = 0) -> bool:
+    """Whether this is a whole number at or above the minimum."""
     return type(value) is int and value >= minimum
 
 
 def _number(value: Any) -> bool:
+    """Whether this is a real, finite number."""
     return type(value) in (int, float) and math.isfinite(value)
 
 
 def validate_profile(profile: Any) -> list[str]:
+    """Every structural problem with a baseline profile, as a list of messages."""
     errors: list[str] = []
 
     def check(condition: bool, message: str) -> None:
+        """Record a message when the condition fails."""
         if not condition:
             errors.append(message)
 

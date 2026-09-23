@@ -113,15 +113,24 @@ def test_structured_signals_go_straight_to_the_coordinator(monkeypatch):
     assert calls == [("coordinate", [fire])]
 
 
-def test_text_processing_job_is_registered_exactly_once():
-    from ecoguard.scheduler import scheduler
+def test_the_text_lane_runs_inside_the_detection_wave():
+    """It used to be a separate three-minute job, and that was the bug.
 
-    jobs = [job for job in scheduler.get_jobs() if job.id == "process_text_events"]
+    That job called the coordinator itself and discarded the result, so text
+    incidents were created and never dispatched - the uncorroborated advisory
+    lane could not fire at all, and a Telegram report could never corroborate a
+    satellite hotspot in the pass they both arrived in.
+    """
+    import inspect
 
-    assert len(jobs) == 1
-    assert jobs[0].trigger.interval.total_seconds() == 3 * 60
-    assert jobs[0].max_instances == 1
-    assert jobs[0].coalesce is True
+    from ecoguard import scheduler as shared_runtime
+
+    assert not [
+        job for job in shared_runtime.scheduler.get_jobs()
+        if job.id == "process_text_events"
+    ]
+    source = inspect.getsource(shared_runtime._detect_and_coordinate)
+    assert "process_text_events(coordinate=" in source
 
 
 def test_text_processing_runs_classifier_then_triage(monkeypatch):
@@ -143,7 +152,7 @@ def test_text_processing_runs_classifier_then_triage(monkeypatch):
     )
     monkeypatch.setattr(
         run, "run_text_triage",
-        lambda: calls.append("triage") or {"events": 1},
+        lambda **_: calls.append("triage") or {"events": 1},
     )
 
     result = shared_runtime.process_text_events()
@@ -174,7 +183,7 @@ def test_text_classification_failure_is_isolated_and_triage_still_runs(monkeypat
     )
     monkeypatch.setattr(
         run, "run_text_triage",
-        lambda: calls.append("triage") or {"events": 0},
+        lambda **_: calls.append("triage") or {"events": 0},
     )
 
     result = shared_runtime.process_text_events()
@@ -240,7 +249,7 @@ def test_shared_detection_job_is_registered_exactly_once():
 
 
 def test_flood_collection_runs_every_ten_minutes_without_a_dedicated_detector_job():
-    from ecoguard.collection.flood.hydrometric_observations import SOURCE
+    from ecoguard.collectors.flood.hydrometric_observations import SOURCE
     from ecoguard.scheduler import scheduler
 
     collector = scheduler.get_job(f"collect_{SOURCE}")

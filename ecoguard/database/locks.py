@@ -28,8 +28,23 @@ if "-pooler" in (make_url(DATABASE_URL).host or ""):
 
 
 def lock_key(name: str) -> int:
-    """Map a worker name onto the signed 64-bit integer advisory locks take."""
-    digest = hashlib.blake2b(name.encode("utf-8"), digest_size=8).digest()
+    """Map a worker name onto the signed 64-bit integer advisory locks take.
+
+    Scoped to the active sandbox schema, because advisory locks belong to the
+    *database* and a scenario shares one with the live pipeline. Unscoped, a
+    scenario's coordinator run silently lost the `coordinate_coordinator` lock
+    to whichever live wave happened to be mid-tick, skipped coordination, and
+    produced no incidents — with no failed row anywhere to say why, since
+    `single_flight` returning False is a normal outcome and not an error.
+
+    A scenario that cannot coordinate is worse than one that fails loudly: it
+    grades as "the system detected nothing".
+    """
+    from ecoguard.database.engine import sandbox_schema
+
+    schema = sandbox_schema()
+    scoped = f"{schema}:{name}" if schema else name
+    digest = hashlib.blake2b(scoped.encode("utf-8"), digest_size=8).digest()
     return int.from_bytes(digest, "big", signed=True)
 
 

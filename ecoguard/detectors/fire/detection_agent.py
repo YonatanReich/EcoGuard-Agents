@@ -1,66 +1,17 @@
-"""
-Fire Detection Agent
+"""Fire detection for the single-point query, fetched live.
 
-Responsible for detecting outdoor/environmental fire events by combining
-multiple independent environmental data sources.
-
-NASA FIRMS provides the primary satellite evidence used to identify thermal
-hotspots. Once a hotspot is found, the agent enriches that hotspot with:
-
-    - GWIS/EFFIS Fire Weather Index (FWI) danger information.
-    - Current and forecast weather from Open-Meteo.
-    - Nearby geographic context from OpenStreetMap / Overpass API.
-
-How it works:
-    1. Query NASA FIRMS for thermal hotspots around a requested coordinate.
-    2. If no hotspots are found, return an explicit no-fire-event result.
-    3. If hotspots are found, select the most recent hotspot.
-    4. Use the selected hotspot coordinate as the detected event location.
-    5. Query GWIS/EFFIS, Open-Meteo and OpenStreetMap around that location.
-    6. Combine the collected evidence into one DetectedFireEvent.
-
-Important:
-    A NASA FIRMS hotspot represents a satellite-detected thermal anomaly.
-    It is used as the primary detection signal, but should not be interpreted
-    by itself as absolute proof of a wildfire.
-
-    Fire detection, fire-weather danger and downstream risk analysis are
-    intentionally kept as separate concepts:
-
-        - NASA FIRMS provides the primary detection evidence.
-        - NASA confidence describes the quality/category of that satellite
-          detection.
-        - GWIS/EFFIS FWI describes the surrounding fire-weather danger.
-        - Weather and geospatial sources provide additional environmental
-          and exposure context.
-        - RiskAnalysisAgent later combines the detected-event evidence with
-          protocol-grounded reasoning to determine overall operational risk.
-
-    Therefore this agent does not invent a combined risk score.
-
-Failure behaviour:
-    NASA FIRMS is the primary detection source. If the FIRMS request fails,
-    the detection operation cannot determine whether a hotspot exists and
-    returns a failed detection result.
-
-    GWIS/EFFIS, weather and geospatial context are enrichment sources.
-    Failure of one enrichment source does not discard the satellite
-    detection. Instead, that section is returned with unavailable/failed
-    information so downstream agents can still process a partial event.
-
-Consumed by:
-    RiskAnalysisAgent
-    Coordinator
-"""
+Asks the satellite provider directly rather than reading stored observations,
+and returns one event for one coordinate. Used by the older endpoint; the
+scheduled pipeline uses the satellite detector instead."""
 
 from datetime import datetime, timezone
 import math
 
 import requests
 
-from ecoguard.collection.fire.firms.client import FirmsDataAgent
-from ecoguard.collection.fire.firms.client import FirmsProviderError
-from ecoguard.collection.fire.effis.danger import FireDangerAgent
+from ecoguard.collectors.fire.firms.client import FirmsDataAgent
+from ecoguard.collectors.fire.firms.client import FirmsProviderError
+from ecoguard.collectors.fire.effis.danger import FireDangerAgent
 from ecoguard.shared.weather_reader import WeatherDataAgent
 from ecoguard.shared.geospatial_context import GeospatialContextAgent
 
@@ -79,6 +30,7 @@ class FireDetectionAgent:
     """
 
     def __init__(self):
+        """Build the agent and its provider client."""
         self.firms_agent = FirmsDataAgent()
         self.fire_danger_agent = FireDangerAgent()
         self.weather_agent = WeatherDataAgent()
@@ -140,6 +92,7 @@ class FireDetectionAgent:
             return None
 
         def hotspot_datetime(hotspot: dict):
+            """The time a hotspot was seen, from the provider's date and time fields."""
             acquisition_date = hotspot.get(
                 "acquisition_date",
                 "1970-01-01"

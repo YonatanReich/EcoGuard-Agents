@@ -4,26 +4,26 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from ecoguard.analyzers.non_emergency.air_pollution.event_analysis_schemas import (
+from ecoguard.analyzers.air_pollution.event_analysis_schemas import (
     AirPollutionTrendPrediction,
     AnalysisComponent,
 )
-from ecoguard.analyzers.non_emergency.air_pollution.additional_verification import (
+from ecoguard.analyzers.air_pollution.additional_verification import (
     AirPollutionAdditionalVerificationService,
 )
-from ecoguard.analyzers.non_emergency.air_pollution.event_analyzer import (
+from ecoguard.analyzers.air_pollution.event_analyzer import (
     AirPollutionNonEmergencyAnalyzer,
 )
-from ecoguard.analyzers.non_emergency.air_pollution.incident_handler import (
+from ecoguard.analyzers.air_pollution.incident_handler import (
     AirPollutionIncidentHandler,
 )
-from ecoguard.analyzers.non_emergency.air_pollution.population_analysis import (
+from ecoguard.analyzers.air_pollution.population_analysis import (
     AirPollutionPopulationAnalysisService,
 )
-from ecoguard.analyzers.non_emergency.air_pollution.transport_schemas import (
+from ecoguard.analyzers.air_pollution.transport_schemas import (
     TransportEvidenceReference,
 )
-from ecoguard.analyzers.non_emergency.air_pollution.wind_evidence_service import (
+from ecoguard.analyzers.air_pollution.wind_evidence_service import (
     PersistedFirstWindEvidenceService,
 )
 from ecoguard.coordinator.agent import CoordinationResult
@@ -36,9 +36,9 @@ from ecoguard.detectors.air_pollution.correlation import PollutionCorrelationCan
 from ecoguard.detectors.air_pollution.spatial_schemas import (
     SpatiallyEnrichedAirPollutionAnomaly,
 )
-from ecoguard.response_planner.air_pollution.schemas import AirPollutionPlanningResult
+from ecoguard.planners.air_pollution.schemas import AirPollutionPlanningResult
 from ecoguard.shared.signals import FIRE, HIGH, CellSignal
-from ecoguard.tests.analyzers.non_emergency.air_pollution.test_event_analyzer import (
+from ecoguard.tests.analyzers.air_pollution.test_event_analyzer import (
     GENERATED_AT,
     OBSERVED_AT,
     _candidate,
@@ -46,7 +46,7 @@ from ecoguard.tests.analyzers.non_emergency.air_pollution.test_event_analyzer im
     _transport_service,
     _wind,
 )
-from ecoguard.tests.response_planner.air_pollution.test_planner import (
+from ecoguard.tests.planners.air_pollution.test_planner import (
     CHUNK,
     _planner,
     _proposal,
@@ -636,8 +636,21 @@ def test_settled_non_retryable_outcome_waits_the_window_too():
     settled = {"last_success_at": None, "last_attempt_at": recent, "retryable": False}
     assert module.plan_is_fresh("INC-1", now, lambda _: settled) is True
 
-    retryable = {"last_success_at": None, "last_attempt_at": recent, "retryable": True}
-    assert module.plan_is_fresh("INC-1", now, lambda _: retryable) is False
+    # A retryable failure is retried, but on a backoff rather than on the very
+    # next tick. Five minutes after the first attempt the base interval has not
+    # elapsed, so it waits; past it, it goes.
+    retryable = {
+        "last_success_at": None, "last_attempt_at": recent,
+        "retryable": True, "attempt_count": 1,
+    }
+    assert module.plan_is_fresh("INC-1", now, lambda _: retryable) is True
+
+    due = {
+        "last_success_at": None,
+        "last_attempt_at": now - timedelta(minutes=module.PLAN_RETRY_BASE_MINUTES),
+        "retryable": True, "attempt_count": 1,
+    }
+    assert module.plan_is_fresh("INC-1", now, lambda _: due) is False
 
     old = {"last_success_at": None, "last_attempt_at": stale, "retryable": False}
     assert module.plan_is_fresh("INC-1", now, lambda _: old) is False

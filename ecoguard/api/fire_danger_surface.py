@@ -1,14 +1,9 @@
-"""Turn the FWI point samples into a smooth, georeferenced image.
+"""Turning the fire-danger samples into a smooth map layer.
 
-The dashboard needs a continuous surface; the data is 620 samples on a 5 km
-grid. Every attempt to bridge that gap in the browser fails for the same
-reason — Mapbox has no interpolating layer type, so heatmaps, circles and fills
-all render one mark per sample and the grid shows through.
-
-Interpolating here instead is both smoother and more honest: a Gaussian-weighted
-average is a stated method with a stated bandwidth, rather than a rendering
-artefact that happens to look continuous.
-"""
+The dashboard needs a continuous surface and the data is a few hundred samples
+on a grid. Averaging them here is both smoother and more honest than any
+browser-side trick: it is a stated method with a stated radius, rather than a
+drawing artefact that happens to look continuous."""
 
 from __future__ import annotations
 

@@ -29,6 +29,7 @@ BATCH_CHUNK_SIZE = 1000
 
 
 def _result_columns():
+    """The columns a baseline lookup returns."""
     return (
         AirPollutionStationCatalog.station_id.label("catalog_station_id"),
         AirPollutionStationCatalog.station_name.label("station_name"),

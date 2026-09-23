@@ -191,9 +191,11 @@ class FloodRoadTargetRepository:
     """Resolve one station's stream and spatial road candidates."""
 
     def __init__(self, session_factory=Session) -> None:
+        """Build the repository. The session factory is injectable for testing."""
         self.session_factory = session_factory
 
     def stream_identity(self, source_station_id: int) -> dict[str, Any] | None:
+        """The stream one gauge sits on, or None when it is not mapped to one."""
         with self.session_factory() as session:
             row = session.execute(
                 STREAM_IDENTITY,
@@ -207,6 +209,7 @@ class FloodRoadTargetRepository:
         water_source_id: int,
         road_classes: Sequence[str],
     ) -> list[dict[str, Any]]:
+        """Where roads cross this stream, downstream of the gauge."""
         with self.session_factory() as session:
             rows = session.execute(
                 STREAM_ROAD_CANDIDATES,
@@ -224,6 +227,7 @@ class FloodRoadTargetRepository:
         radius_m: float,
         road_classes: Sequence[str],
     ) -> list[dict[str, Any]]:
+        """The roads within reach of a gauge, when its stream is not mapped."""
         with self.session_factory() as session:
             rows = session.execute(
                 STATION_ROAD_CANDIDATES,

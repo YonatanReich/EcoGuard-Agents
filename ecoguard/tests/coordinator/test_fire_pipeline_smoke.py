@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from ecoguard.analyzers.emergency.fire.incident_handler import FireIncidentHandler
+from ecoguard.analyzers.fire.incident_handler import FireIncidentHandler
 from ecoguard.api.events import shared_event_feed
 from ecoguard.coordinator.dispatcher import default_handler_registry, dispatch_incidents
 from ecoguard.coordinator.event_projection import project_processing_results
 from ecoguard.resource_allocator.allocation_agent import ResourceAllocationAgent
-from ecoguard.response_planner.emergency.schemas import EmergencyResponsePlan
+from ecoguard.planners.shared.schemas import EmergencyResponsePlan
 
 
 NOW = datetime(2026, 9, 22, 9, 0, tzinfo=timezone.utc)

@@ -125,6 +125,7 @@ INACTIVE_SEED = (
 
 
 def upgrade() -> None:
+    """Add the list of text sources that may be read."""
     op.execute(
         """
         CREATE TABLE text_sources (
@@ -189,4 +190,5 @@ def _q(value: str | None) -> str:
 
 
 def downgrade() -> None:
+    """Remove the list of text sources."""
     op.execute("DROP TABLE text_sources")

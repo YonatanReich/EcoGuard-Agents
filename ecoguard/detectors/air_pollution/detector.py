@@ -39,11 +39,18 @@ class AirPollutionAnomalyDetector:
         rule_version: str = DETECTOR_RULE_VERSION,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
+        """Build a detector. The comparison rule is injectable for testing."""
         self._rule = rule
         self._rule_version = rule_version
         self._clock = clock
 
     def detect(self, context: LiveBaselineContextResult) -> AirPollutionDetectionResult:
+        """Decide whether one reading is above its own baseline.
+
+        Returns a result either way: an anomaly, a reasoned no, or a statement
+        that it could not be evaluated. It never guesses when the baseline is
+        missing or incomplete.
+        """
         if not isinstance(context, LiveBaselineContextResult):
             return self._not_evaluated("invalid_observation")
         if context.status != "available" or not context.comparison_eligible:
@@ -120,6 +127,7 @@ class AirPollutionAnomalyDetector:
         reason: str,
         context: LiveBaselineContextResult | None = None,
     ) -> AirPollutionDetectionResult:
+        """A result saying the reading could not be judged, and why."""
         return AirPollutionDetectionResult(
             status="NOT_EVALUATED",
             reason=reason,
@@ -130,6 +138,7 @@ class AirPollutionAnomalyDetector:
 
     @staticmethod
     def _unavailable_reason(context: LiveBaselineContextResult) -> str:
+        """Why no baseline was usable for this reading."""
         if context.status == "insufficient_history":
             return "insufficient_history"
         if context.status in {
@@ -146,6 +155,7 @@ class AirPollutionAnomalyDetector:
         evidence: AirPollutionBaselineEvidence,
         detected_at: datetime,
     ) -> AirPollutionAnomaly:
+        """The anomaly record, carrying the reading and the baseline it beat."""
         live = context.live_observation
         material = "|".join(
             (

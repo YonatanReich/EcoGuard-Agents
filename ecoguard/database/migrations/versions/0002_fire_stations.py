@@ -14,6 +14,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add fire_stations."""
     # Raw SQL for the same reason as 0001: the geography column and its GiST
     # index read exactly as they will exist in the database.
     #
@@ -44,4 +45,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove fire_stations."""
     op.execute("DROP TABLE IF EXISTS fire_stations")

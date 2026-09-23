@@ -17,6 +17,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add firms_baselines — how often each cell lights up, so a fire can be told from a furnace."""
     # A satellite hotspot has no magnitude to place on a distribution. It is a
     # yes, and the only sensible baseline is how often this cell says yes —
     # which is what `rarity_from_rate` in shared/signals.py was written for and
@@ -62,4 +63,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove firms_baselines — how often each cell lights up, so a fire can be told from a furnace."""
     op.execute("DROP TABLE IF EXISTS firms_baselines")

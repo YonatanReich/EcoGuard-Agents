@@ -44,7 +44,7 @@ EVALUATION = DATA / "evaluation"
 # retrieves from it rather than under DATA, because the protocols and the agent
 # that cites them are one thing: a protocol added without a planner change is
 # invisible, and a planner change without the corpus is ungrounded.
-PROTOCOLS = PACKAGE_ROOT / "response_planner" / "protocols"
+PROTOCOLS = DATA / "protocols"
 
 # The predefined scan locations. A single committed file, read at startup.
 ISRAEL_LOCATIONS = DATA / "israel_locations.json"

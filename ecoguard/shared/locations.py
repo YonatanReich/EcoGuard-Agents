@@ -1,17 +1,4 @@
-"""
-Location Loader
-
-Responsible for reading the list of predefined Israeli scan locations from
-disk and filtering it down to the ones currently switched on.
-
-This is the standalone read-only version of the same load that
-MultiLocationCollectionService.load_locations performs internally. It exists
-so callers can inspect or count the configured locations without spinning up
-the collection service and its agents.
-
-Each location record in the JSON file carries: name, region_type, latitude,
-longitude, scan_radius_km and enabled.
-"""
+"""The list of places that are scanned, and which of them are switched on."""
 
 import json
 from pathlib import Path

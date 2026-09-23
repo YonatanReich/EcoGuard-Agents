@@ -35,6 +35,35 @@ ProcessingStatus = Literal["success", "partial", "failed", "skipped"]
 # this; port it per hazard and the clock stops mattering.
 PLAN_REFRESH_MINUTES = int(os.getenv("ECOGUARD_PLAN_REFRESH_MINUTES", "60"))
 
+# What a retryable failure costs, and why it is now bounded.
+#
+# Until this existed, a retryable failure was dispatched again on the very next
+# tick, forever. That is not a theoretical hazard: on 2026-09-22 the projection
+# table held 25 air-pollution incidents with 209 dispatch attempts between them,
+# 205 of those retryable and 19 incidents that had never once succeeded after up
+# to 19 attempts each. One tick at 05:53:30 dispatched 13 incidents at once.
+# Every one of those attempts was a paid Sonnet call describing a situation that
+# had not changed, for a plan that could not succeed.
+#
+# The loop closed because nothing in it was self-limiting. A pollution station
+# re-signals every few minutes, so the incident is "touched" on every tick; the
+# incident stays open for its 18-hour quiet period; and a failed plan set
+# retryable=True, which was the one flag that bypassed the freshness gate
+# entirely. Signal rate drove model spend directly, which is exactly the
+# coupling the freshness gate exists to break.
+#
+# So retries now back off geometrically from the tick interval and stop after a
+# handful. Both numbers are read from the projection row the writer already
+# maintains — attempt_count and last_attempt_at — so this needs no new state.
+PLAN_RETRY_BASE_MINUTES = int(os.getenv("ECOGUARD_PLAN_RETRY_BASE_MINUTES", "10"))
+
+# After this many failed attempts the incident is left alone until it closes.
+# A plan that has failed six times is failing for a structural reason — an
+# ungroundable corpus, a schema the model cannot satisfy, a dead key — and none
+# of those are fixed by a seventh identical call. Six attempts under the backoff
+# below spans roughly five hours, which is most of an incident's useful life.
+PLAN_MAX_RETRY_ATTEMPTS = int(os.getenv("ECOGUARD_PLAN_MAX_RETRY_ATTEMPTS", "6"))
+
 ProjectionReader = Callable[[str], dict[str, Any] | None]
 
 
@@ -48,13 +77,12 @@ def plan_is_fresh(
     A recent success stands. So does a recent outcome that is not retryable —
     a partial analysis whose plan succeeded, or a plan skipped because policy
     says the event is never shown: nothing about it changes on the next tick,
-    so re-running it every ten minutes only churns the projection. A retryable
-    failure (model outage, planning error) is dispatched again immediately, as
-    is an incident with no projection yet.
+    so re-running it every ten minutes only churns the projection.
 
-    ponytail: retryable failures retry every tick with no backoff. A plan that
-    fails the same way forever is a model call per tick; add a backoff keyed on
-    attempt_count if that ever shows up in the bill.
+    A retryable failure (model outage, planning error) is dispatched again, but
+    on a geometric backoff and only PLAN_MAX_RETRY_ATTEMPTS times — see the
+    constants above for what an unbounded retry actually cost. An incident with
+    no projection yet has never been attempted and is always dispatched.
     """
     try:
         projection = reader(incident_id)
@@ -73,10 +101,57 @@ def plan_is_fresh(
         return True
 
     last_attempt = projection.get("last_attempt_at")
-    if projection.get("retryable") or last_attempt is None:
+
+    if projection.get("retryable"):
+        # Never attempted, or a writer that did not record when: dispatch and
+        # let this same gate bound the next one.
+        if last_attempt is None:
+            return False
+        return not _retry_is_due(incident_id, projection, now, last_attempt)
+
+    if last_attempt is None:
         return False
 
     return now - last_attempt < window
+
+
+def _retry_is_due(
+    incident_id: str,
+    projection: dict[str, Any],
+    now: datetime,
+    last_attempt: datetime,
+) -> bool:
+    """Whether a retryable failure has waited long enough to be worth paying for.
+
+    The delay doubles per attempt from PLAN_RETRY_BASE_MINUTES, so a plan that
+    keeps failing costs a call at roughly 10, 20, 40, 80 and 160 minutes rather
+    than one every tick. After PLAN_MAX_RETRY_ATTEMPTS it is never due again and
+    the incident rides out its quiet period on whatever it last projected.
+    """
+    attempts = projection.get("attempt_count")
+    attempts = int(attempts) if isinstance(attempts, (int, float)) else 0
+
+    if attempts >= PLAN_MAX_RETRY_ATTEMPTS:
+        logger.warning(
+            "incident %s abandoned after %s failed attempts (%s); "
+            "no further model calls until it closes",
+            incident_id,
+            attempts,
+            projection.get("failure_reason") or projection.get("planner_status"),
+        )
+        return False
+
+    # attempts is 1 after the first write, so the first retry waits one base
+    # interval rather than none.
+    delay = timedelta(minutes=PLAN_RETRY_BASE_MINUTES * 2 ** max(attempts - 1, 0))
+    due = now - last_attempt >= delay
+
+    if not due:
+        logger.debug(
+            "incident %s retry %s not due: waiting %s from %s",
+            incident_id, attempts + 1, delay, last_attempt,
+        )
+    return due
 
 
 @dataclass(frozen=True)
@@ -129,7 +204,13 @@ class IncidentHandler(Protocol):
         self,
         incident: Mapping[str, Any],
         context: IncidentDispatchContext,
-    ) -> IncidentProcessingResult: ...
+    ) -> IncidentProcessingResult:
+        """Analyse and plan for one incident, and report what happened.
+
+        Never raises: a handler that fails returns a result saying so, because
+        one broken hazard must not stop the others in the same wave.
+        """
+        ...
 
 
 HandlerRegistry = Mapping[tuple[str, str], IncidentHandler]
@@ -137,26 +218,74 @@ IncidentReader = Callable[[str], dict[str, Any] | None]
 
 
 def _utc(value: datetime | None = None) -> datetime:
+    """Normalise a time to UTC, refusing one that carries no timezone.
+
+    A naive datetime here would silently compare wrong against stored times,
+    so it is rejected rather than assumed to be UTC.
+    """
     supplied = value or datetime.now(timezone.utc)
     if supplied.tzinfo is None or supplied.utcoffset() is None:
         raise ValueError("dispatch time must carry a UTC offset")
     return supplied.astimezone(timezone.utc)
 
 
+# The variable every text-derived signal carries; anything else is an
+# instrument reading. Duplicated from the triage module rather than imported,
+# so the coordinator does not take a dependency on a detector.
+TEXT_VARIABLE = "report"
+
+# Registry key for the one handler that takes uncorroborated reports of any
+# hazard. Not a (hazard, route) pair, because the whole point is that it does
+# not vary by either.
+UNCORROBORATED_ROUTE = ("*", "uncorroborated")
+
+
+def is_uncorroborated_report(incident: Mapping[str, Any]) -> bool:
+    """Whether this incident rests entirely on claims nobody has confirmed.
+
+    True when every signal is a text report and none of them was corroborated.
+    A single hotspot, gauge reading or second independent claim flips it false,
+    which is what makes the upgrade automatic: nothing rewrites the incident, it
+    simply stops meeting this test and the next dispatch sends it down the
+    ordinary analyse-then-plan path.
+
+    An incident with no readable signals is not treated as uncorroborated — it
+    is not evidence of a rumour either, and the hazard handler is still the
+    right place to decide what to do with it.
+    """
+    signals = [
+        signal for signal in incident.get("signals") or ()
+        if isinstance(signal, Mapping)
+    ]
+    if not signals:
+        return False
+
+    for signal in signals:
+        if signal.get("variable") != TEXT_VARIABLE:
+            return False
+        report = (signal.get("evidence") or {}).get("text_report")
+        if not isinstance(report, Mapping) or report.get("corroborated"):
+            return False
+    return True
+
+
 def default_handler_registry() -> dict[tuple[str, str], IncidentHandler]:
     """Production handlers, imported lazily so unsupported hazards stay cheap."""
 
-    from ecoguard.analyzers.non_emergency.air_pollution.incident_handler import (
+    from ecoguard.analyzers.air_pollution.incident_handler import (
         configured_air_pollution_incident_handler,
     )
-    from ecoguard.analyzers.emergency.earthquake.incident_handler import (
+    from ecoguard.analyzers.earthquake.incident_handler import (
         EarthquakeIncidentHandler,
     )
-    from ecoguard.analyzers.emergency.flood.incident_handler import (
+    from ecoguard.analyzers.flood.incident_handler import (
         configured_flood_road_incident_handler,
     )
-    from ecoguard.analyzers.emergency.fire.incident_handler import (
+    from ecoguard.analyzers.fire.incident_handler import (
         configured_fire_incident_handler,
+    )
+    from ecoguard.planners.uncorroborated.incident_handler import (
+        UncorroboratedReportHandler,
     )
 
     return {
@@ -165,6 +294,7 @@ def default_handler_registry() -> dict[tuple[str, str], IncidentHandler]:
         ("earthquake", "emergency"): EarthquakeIncidentHandler(),
         ("fire", "emergency"): configured_fire_incident_handler(),
         ("flood", "emergency"): configured_flood_road_incident_handler(),
+        UNCORROBORATED_ROUTE: UncorroboratedReportHandler(),
     }
 
 
@@ -236,7 +366,15 @@ def dispatch_incidents(
                 )
                 continue
 
-            handler = handlers.get((hazard, route))
+            # An uncorroborated report is handled the same way whatever it
+            # claims to be, so it is matched before the hazard registry. There
+            # is nothing to analyse in an unconfirmed claim, and a risk score
+            # computed from one would be presented to an operator with exactly
+            # the same weight as a score computed from a satellite.
+            if is_uncorroborated_report(incident):
+                handler = handlers.get(UNCORROBORATED_ROUTE)
+            else:
+                handler = handlers.get((hazard, route))
             if handler is None:
                 results.append(IncidentProcessingResult(
                     incident_id=incident_id,

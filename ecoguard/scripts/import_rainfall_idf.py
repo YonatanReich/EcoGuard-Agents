@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import argparse
 
-from ecoguard.collection.flood.rainfall_idf import (
+from ecoguard.collectors.flood.rainfall_idf import (
     import_rainfall_idf_csv,
     parse_rainfall_idf_csv,
 )
 
 
 def main() -> None:
+    """Import the rainfall intensity table from the command line."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("csv_path", help="UTF-8 flat IDF CSV exported from IMS data")
     parser.add_argument(

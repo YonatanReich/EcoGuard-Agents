@@ -1,43 +1,16 @@
-"""
-Protocol Retrieval Service
+"""Finding the passages of the emergency protocols a question relates to.
 
-Responsible for the retrieval half of the project's RAG pipeline: it loads one
-hazard-scoped protocol corpus, splits it into chunks, and ranks those chunks
-against a query using BM25.
+The retrieval half of the grounding: it loads one hazard's protocol documents,
+splits them into passages, and ranks them against a query. The agents may cite
+only text this returned, and every citation is checked back against the passage
+it claims to quote.
 
-This is what makes the risk and planning agents "protocol-grounded" rather than
-reliant on the model's general knowledge. The agents may only cite text that
-this service actually returned, and verify_citations() checks every citation the
-model produces against the chunk it claims to quote.
+Ranking is done by keyword overlap rather than a model, because the corpus is
+three documents: it is deterministic, needs no network and runs in
+milliseconds.
 
-Why BM25 by hand rather than a library or embeddings:
-    The corpus is three documents. BM25 is roughly thirty lines of textbook
-    arithmetic, is fully deterministic, needs no model download, no API key and
-    no network, and runs in single-digit milliseconds. rank_bm25 would pull in
-    numpy for the same result. Keyword overlap is genuinely effective here
-    because protocol language is consistent and technical: a query mentioning
-    "defensible space" or "escape route" matches the section that defines it.
-
-Why no on-disk index:
-    Deliberate. Chunking three markdown files takes a few milliseconds at
-    import, so the process-lifetime in-memory index built in __init__ is
-    sufficient. A SQLite index in ecoguard/data/generated/ would be ceremony. Revisit
-    only if the corpus grows by an order of magnitude.
-
-Swap seam:
-    Anything exposing `.retrieve(query, top_k) -> list[dict]`, where the dicts
-    carry chunk_id / text / document_title / score, can be injected into either
-    agent in place of this class. Replacing BM25 with embeddings therefore
-    touches this file alone; no abstract base class is needed.
-
-Language:
-    The corpus is English-only and the tokenizer matches ``[a-z0-9]+``. A Hebrew
-    protocol document would tokenise to nothing and be silently unretrievable.
-    Adding one requires extending TOKEN_PATTERN to cover ``\\u0590-\\u05FF``
-    first, and revisiting the stopword list.
-
-Consumed by: ecoguard.analyzers.emergency.fire.risk_analysis_agent, ecoguard.response_planner.fire.planning_agent
-"""
+Known limit: the tokenizer is English-only, so a Hebrew protocol document would
+be silently unfindable."""
 
 from __future__ import annotations
 
@@ -288,6 +261,7 @@ class ProtocolRetriever:
         max_chunk_chars: int = DEFAULT_MAX_CHUNK_CHARS,
         chunk_overlap_chars: int = DEFAULT_CHUNK_OVERLAP_CHARS,
     ) -> None:
+        """Load and index one hazard's protocol corpus."""
         self.hazard = hazard
 
         # An explicit path wins over the hazard, which is what lets tests point
@@ -469,6 +443,7 @@ class ProtocolRetriever:
         current_slug = "preamble"
 
         def flush() -> None:
+            """Write out the passage being assembled."""
             body = "\n".join(current_lines).strip()
             if body:
                 sections.append(

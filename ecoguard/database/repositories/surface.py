@@ -1,17 +1,11 @@
-"""Read the static ground out of the store: its shape, and what grows on it.
+"""The static ground: its shape, and what grows on it.
 
-Two callers, one aggregate. The drawn-area summary asks about a polygon the
-operator traced; a risk analyser asks about the ground around a fire it has
-just been handed a coordinate for. Both want the same facts, so the SELECT
-lives here once and each caller supplies the `area` CTE it reads from.
+Two callers want the same facts - the drawn-area summary, and an analyzer
+looking at the ground around a fire - so the query lives here once.
 
-Why shape and cover together: they are the two static legs of the fire
-behaviour triangle (the third, weather, is a feed and lives in observations).
-Neither answers anything alone. A 25 degree slope of bare Negev rock is not a
-fire; the same slope in Carmel pine is the 2010 one. So the analyser gets
-steepness and the bearing a fire would run, alongside how much of the cell can
-actually burn and how much of it is somebody's house.
-"""
+Shape and cover belong together because neither answers anything alone. A steep
+slope of bare Negev rock is not a fire; the same slope in Carmel pine is the
+2010 one."""
 
 from __future__ import annotations
 
@@ -185,10 +179,12 @@ def shape_fuel(row) -> dict[str, Any]:
 
 
 def _rounded(value: float | None) -> float | None:
+    """A number at reporting precision, or None when there is none."""
     return None if value is None else round(float(value), 1)
 
 
 def _rounded_fraction(value: float | None) -> float | None:
+    """A proportion at reporting precision, or None when there is none."""
     # Three places: a thousandth of a 270 m cell is a single WorldCover pixel,
     # which is already finer than the source claims to be right about.
     return None if value is None else round(float(value), 3)

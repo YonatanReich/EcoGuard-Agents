@@ -1,77 +1,12 @@
-"""The detector that can actually see a fire.
+"""Finding fires in stored satellite hotspot data.
 
-Everything else in this package infers. A FIRMS hotspot is a measurement of
-something burning right now: the instrument registered radiative power at a
-place, at a time. That is why this is the originating detector and the weather
-sweep is a corroborator - no threshold on temperature or humidity will ever
-tell you a fire has started, because the weather feed is a numerical model that
-has no knowledge one exists.
+Emits a signal for a cell where hotspots are unusual, carrying the real
+location of the pixels, the strongest heat reading, and how confident the
+satellite was.
 
-The one thing that makes this hard
-----------------------------------
-The satellite is indiscriminate. It sees the fire in the Galilee and it sees a
-steel works in the Rishon LeZion industrial belt, which lights on most nights,
-always between 22:52 and 00:33, always at 0.5-2.0 MW. Reported naively that is
-an emergency incident every night forever, and a queue that cries wolf nightly
-is worse than no queue at all, because people stop reading it.
-
-So every detection is weighed against how often *that cell* lights up anyway,
-from `firms_baselines`. This is `rarity_from_rate` in shared/signals.py finally
-having something to read: a cell that has never lit in a year scores 1.0, and
-a cell that lights half the time scores 0.5 and stays out of the queue.
-
-Why the reporting bar is not REPORTING_RARITY
----------------------------------------------
-0.999 is calibrated in shared/signals.py for a continuous variable sampled
-hourly across 1,174 cells - 28,176 draws a day, where a one-in-a-thousand bar
-still lets 28 through. None of that describes this source. FIRMS produces a
-handful of detections a day nationally, and the question is not "how extreme is
-this number" but "is this cell a known furnace". Applied here, 0.999 would
-demand a cell with *zero* prior detections in the whole window, which would
-suppress any cell that had a single fire last year - the exact opposite of what
-the baseline is for.
-
-The bar is therefore the persistence question stated plainly: a cell that lights
-on more than one day in twenty is somebody's industry, and anything quieter than
-that is worth a look.
-
-Why the rate is not the whole answer
-------------------------------------
-Because a persistent cell is still a place, and places burn. Over a year that
-bar suppresses 17 cells out of 1,174 — and then never looks at them again. The
-worst lights on 71% of days. Somewhere inside it is ground that can catch, and
-a fire there could not be reported at all.
-
-So the rate no longer decides alone. `signature.py` fits each cell's own
-history — what hour it usually lights, at what power, across how many pixels,
-how far they scatter — and a detection is only suppressed when the cell is
-persistent *and* this overpass is what that cell normally does. The steel works
-at 1.2 MW on one pixel at 23:10 stays out of the queue; 60 MW across nine
-pixels at 14:00 in the same cell does not, and the signal carries which axis
-broke so the decision can be argued with.
-
-What travels downstream
------------------------
-The coordinator dedupes these against each other and against the weather sweep,
-then routes to the analysers for severity and spread. Both of those need things
-a bare "there is a fire in cell X" cannot give, so each signal carries:
-
-  * a real **location** - the FRP-weighted centroid of the actual pixels, not
-    the cell centroid, with a precision that widens to cover their spread. A
-    crew is dispatched to a point; four pixels strung over two kilometres is a
-    two-kilometre fire and must not be drawn as a confident dot.
-  * **peak FRP** as the value, in megawatts - the intensity term any spread
-    model starts from.
-  * the **recent overpass history** in evidence, so the analyser can see
-    4.7 -> 18.6 -> 71.6 MW and know the fire is growing rather than guess from
-    a single frame.
-  * **confidence** from the instrument's own flag and how many satellites
-    agree, kept separate from rarity because "the pixel may be noise" and "this
-    cell burns every night" are different doubts and have different remedies.
-
-Severity stays None. How dangerous this is depends on what is downwind and who
-lives there, and that is the analysers' job.
-"""
+A cell that burns most days is suppressed unless this particular detection
+looks different from what that place normally does - a flare stack should not
+raise an alert every night, but a fire next to one still should."""
 
 from __future__ import annotations
 

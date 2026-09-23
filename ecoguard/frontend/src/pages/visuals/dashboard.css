@@ -2078,3 +2078,90 @@
     text-transform: none;
     letter-spacing: normal;
 }
+
+/* ---------------------------------------------------------------------------
+   Scenario control
+
+   Sits in the header beside the Live badge, because that badge is the thing it
+   contradicts: while a scenario runs the dashboard is not showing the country.
+   The running state is styled as a warning rather than a success for the same
+   reason — it is a state someone must remember to leave.
+   --------------------------------------------------------------------------- */
+
+.scenario {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: 10px;
+}
+
+.scenario__button {
+    padding: 4px 11px;
+    border: 1px solid var(--ops-line-strong);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ops-muted);
+    font: inherit;
+    font-size: 0.74rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
+}
+
+.scenario__button:hover:not(:disabled) {
+    border-color: var(--ops-accent, #6aa9ff);
+    color: var(--ops-text, #e8eef6);
+}
+
+.scenario__button:disabled {
+    opacity: 0.55;
+    cursor: progress;
+}
+
+.scenario__button--stop {
+    border-color: #d08a2c;
+    color: #f0b457;
+    background: rgba(208, 138, 44, 0.12);
+}
+
+.scenario__banner {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 10px;
+    border: 1px solid #d08a2c;
+    border-radius: 6px;
+    background: rgba(208, 138, 44, 0.14);
+    color: #f0b457;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.scenario__dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #f0b457;
+    animation: scenario-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes scenario-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.25; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .scenario__dot { animation: none; }
+}
+
+.scenario__counts {
+    color: rgba(240, 180, 87, 0.78);
+    font-weight: 500;
+}
+
+.scenario__error {
+    color: #e2686b;
+    font-size: 0.72rem;
+}

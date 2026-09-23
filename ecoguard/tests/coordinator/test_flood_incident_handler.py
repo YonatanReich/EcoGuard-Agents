@@ -2,10 +2,10 @@
 
 from datetime import datetime, timedelta, timezone
 
-from ecoguard.analyzers.emergency.flood.event_analyzer import FloodEventAnalyzer
-from ecoguard.analyzers.emergency.flood.incident_handler import FloodRoadIncidentHandler
+from ecoguard.analyzers.flood.event_analyzer import FloodEventAnalyzer
+from ecoguard.analyzers.flood.incident_handler import FloodRoadIncidentHandler
 from ecoguard.coordinator.dispatcher import dispatch_incidents
-from ecoguard.response_planner.emergency.schemas import EmergencyResponsePlan
+from ecoguard.planners.shared.schemas import EmergencyResponsePlan
 
 
 AT = datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc)

@@ -1,36 +1,11 @@
-"""
-Geospatial Context Agent
+"""What is near a coordinate: roads, settlements, hospitals, police and fire stations.
 
-Responsible for collecting basic geospatial context around a given
-coordinate using OpenStreetMap through the Overpass API: nearby main roads,
-settlements, hospitals, police stations and fire stations.
+Read from OpenStreetMap in one request rather than five. The public service is
+free and queued, so this is the slowest part of the endpoint that uses it.
 
-How it works:
-    1. build_combined_context_query builds one Overpass QL query covering
-       every layer, so a single HTTP round trip replaces five.
-    2. execute_overpass_query POSTs it to the public Overpass instance.
-    3. categorize_overpass_elements splits the flat element list by tag.
-    4. normalize_* dedupe each layer, since OpenStreetMap stores the same
-       real-world object as multiple nodes, ways and relations.
-    5. build_structured_context assembles the unified output.
-
-Performance note: the public overpass-api.de instance is a shared free
-service with a job queue, and this query has been measured at 30+ seconds
-under load. It is the dominant cost of the /api/environmental-data
-endpoint. Caching results per rounded coordinate is the intended fix.
-
-Failure behaviour: like WeatherDataAgent, this agent never raises. On error
-it returns the same structure with collection_status "failed", empty layers
-and an "error" key.
-
-The per-layer build_*_query methods (build_roads_query,
-build_settlements_query, and so on) predate the combined query and are no
-longer called by fetch_nearby_context. They are kept because the
-corresponding normalize_* methods are still used, and because they are
-useful for querying a single layer in isolation while debugging.
-
-Consumed by: ecoguard.api.main.get_environmental_data
-"""
+Never raises: on failure it returns the same shape with empty layers and a
+status saying so, so a caller merging several sources does not have to
+special-case it."""
 
 from datetime import datetime, timezone
 
@@ -49,6 +24,7 @@ class GeospatialContextAgent:
     """
 
     def __init__(self):
+        """Build the agent. Nothing is fetched until it is asked."""
         self.source_name = "OpenStreetMap / Overpass API"
         self.overpass_url = "https://overpass-api.de/api/interpreter"
 

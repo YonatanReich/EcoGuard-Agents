@@ -44,6 +44,7 @@ class AirPollutionBaselineEvidence(AnomalyContract):
 
     @model_validator(mode="after")
     def _require_detector_family(self) -> "AirPollutionBaselineEvidence":
+        """Reject evidence built from a baseline this detector does not use."""
         if self.identity.baseline_family != DETECTOR_BASELINE_FAMILY:
             raise ValueError("detector evidence requires five_minute_observation baseline")
         return self
@@ -71,6 +72,7 @@ class AirPollutionAnomaly(AnomalyContract):
 
     @model_validator(mode="after")
     def _validate_evidence_identity(self) -> "AirPollutionAnomaly":
+        """Reject an anomaly whose evidence describes a different reading."""
         identity = self.baseline_evidence.identity
         if (
             self.provider,
@@ -125,6 +127,7 @@ class AirPollutionDetectionResult(AnomalyContract):
 
     @model_validator(mode="after")
     def _event_matches_status(self) -> "AirPollutionDetectionResult":
+        """Reject a result that claims an anomaly its status does not allow."""
         if (self.status == "SUSPECTED_ANOMALY") != (self.anomaly is not None):
             raise ValueError("only SUSPECTED_ANOMALY may contain an anomaly")
         return self

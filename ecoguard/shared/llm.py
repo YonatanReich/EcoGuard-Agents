@@ -1,38 +1,24 @@
-"""
-Claude LLM Service
+"""The one thing the agents cannot do offline: a structured model call.
 
-Responsible for the one thing the agents cannot do offline: running a structured
-Claude call and returning a schema-validated result. It knows nothing about
-fires — it takes system blocks, a user message and a Pydantic model, and returns
-an instance of that model or raises a sanitized error.
+Knows nothing about any hazard. It takes instructions, a message and the shape
+of the answer, and returns that shape or raises.
 
-Failure handling follows the newer house convention (see
-ecoguard/collection/fire/firms/client.py): this is a leaf provider client, so it RAISES a typed
-error whose message comes from a closed vocabulary, and the orchestrating agents
-catch it and translate it into a "failed" status. It never invents a result.
+Two guards live here because nothing downstream can see the whole picture: a
+cap on how many calls may be made per hour, and a cap on how large one prompt
+may be. Both exist because a single runaway caller can otherwise spend real
+money very quickly.
 
-Credential safety:
-    Every raise uses ``from None``. The Anthropic key travels in a header rather
-    than a URL, so the leak vector is weaker than the FIRMS one — but a
-    BadRequestError body can echo the prompt back, and the prompt contains event
-    data and retrieved protocol text. The SDK's exception ``__str__`` includes
-    response bodies. Suppressing the cause chain bounds what can escape to
-    exactly one word from CLAUDE_ERROR_KINDS.
-
-Testability:
-    ``client`` is injectable, following the pattern in
-    ecoguard/shared/geocoding.py. Tests pass a fake exposing
-    ``.messages.parse(**kwargs)``; ``anthropic.Anthropic`` is never constructed
-    in the test suite.
-
-Consumed by: ecoguard.analyzers.emergency.fire.risk_analysis_agent, ecoguard.response_planner.fire.planning_agent
-"""
+Failures are raised as one word from a fixed list, never the provider's own
+message, because that message can echo the prompt back."""
 
 from __future__ import annotations
 
 import json
 import logging
 import os
+import threading
+import time
+from collections import deque
 from urllib.parse import urlparse
 
 import anthropic
@@ -108,6 +94,135 @@ class ClaudeProviderError(RuntimeError):
     """Credential-safe Claude failure carrying a provider-level error category."""
 
 
+# --------------------------------------------------------------------------
+# Spend guard
+# --------------------------------------------------------------------------
+#
+# The last line of defence, and the one this system was missing.
+#
+# Every caller here is individually careful — the classifier batches, the
+# dispatcher has a freshness gate, the planners cap their attempts — and none
+# of that stopped 209 dispatch attempts against 25 incidents in a few hours,
+# because no single component could see the total. A budget only works where
+# every call passes, which is here.
+#
+# It counts calls rather than tokens deliberately: tokens are only known after
+# the response, so a token budget cannot refuse the request that breaks it. A
+# call ceiling refuses before spending anything, and a runaway loop is always a
+# call-rate problem first.
+#
+# This is per process and in memory, which is the right scope: a second process
+# is a second scheduler, and the fix for that is not to run one (see the
+# Dockerfile). Keep the ceiling well above steady-state so it never trips in
+# normal operation — it is a circuit breaker, not a throttle.
+CALL_BUDGET_PER_HOUR = int(os.getenv("ECOGUARD_CLAUDE_CALLS_PER_HOUR", "120"))
+CALL_BUDGET_WINDOW_SECONDS = 3600.0
+
+# The ceiling a single prompt may not cross, and the reason it exists.
+#
+# A call budget counts calls, so it cannot see the failure that actually
+# happened: twelve calls — well inside a 120/hour limit — carrying 1,066,014
+# input tokens between them, one of them 254,405 on its own. That was $2.76 in
+# about four minutes, and nothing refused it.
+#
+# The cause was a planner serialising an entire analysis into its prompt. An
+# air-pollution signal carries ~43 KB of detector internals, an incident
+# accumulates one per reading for its whole 18-hour life, and the prompt grew
+# with it. So the guard that matters is on prompt *size*, checked before the
+# request leaves.
+#
+# 60,000 is deliberately far above any legitimate prompt here: a grounded plan
+# is a few protocol excerpts and an analysis summary, which measured in the
+# low thousands. Anything approaching this ceiling is a serialisation bug, not
+# a big day.
+MAX_PROMPT_TOKENS = int(os.getenv("ECOGUARD_CLAUDE_MAX_PROMPT_TOKENS", "60000"))
+
+# Characters per token, used only to size a prompt before sending it. Four is
+# right for English; Hebrew runs worse, so this under-estimates and the guard
+# trips later than a true count would rather than earlier. Good enough for a
+# circuit breaker, and it costs no round trip.
+CHARS_PER_TOKEN = 4
+
+
+def estimate_prompt_tokens(system_blocks: list[dict], user_text: str) -> int:
+    """Roughly how large this prompt is, without asking the API."""
+    system_chars = sum(
+        len(str(block.get("text", ""))) for block in system_blocks or []
+    )
+    return (system_chars + len(user_text or "")) // CHARS_PER_TOKEN
+
+
+class CallBudget:
+    """A rolling-window ceiling on Claude calls for this process."""
+
+    def __init__(self, limit: int, window_seconds: float) -> None:
+        """Build the budget, or the client with its model and injectable transport."""
+        self._limit = limit
+        self._window = window_seconds
+        self._calls: deque[float] = deque()
+        self._lock = threading.Lock()
+        self._blocked = 0
+        self.input_tokens = 0
+        self.output_tokens = 0
+
+    def claim(self) -> bool:
+        """Take a slot, or report that the window is full. Never blocks."""
+        if self._limit <= 0:
+            return True
+        now = time.monotonic()
+        with self._lock:
+            cutoff = now - self._window
+            while self._calls and self._calls[0] < cutoff:
+                self._calls.popleft()
+            if len(self._calls) >= self._limit:
+                self._blocked += 1
+                if self._blocked == 1 or self._blocked % 25 == 0:
+                    logging.error(
+                        "Claude call budget exhausted: %s calls in the last hour "
+                        "(limit %s). %s call(s) refused. Something is looping — "
+                        "check event_projections.attempt_count for retry storms. "
+                        "Raise ECOGUARD_CLAUDE_CALLS_PER_HOUR only once you know why.",
+                        len(self._calls), self._limit, self._blocked,
+                    )
+                return False
+            self._calls.append(now)
+            return True
+
+    def record_usage(self, usage: dict | None) -> None:
+        """Accumulate what a completed call actually cost."""
+        if not usage:
+            return
+        with self._lock:
+            # Cache reads and writes are input tokens too, billed at different
+            # rates. Summed here so the running total is honest about volume;
+            # the per-call log line below keeps them separable.
+            for key in (
+                "input_tokens",
+                "cache_creation_input_tokens",
+                "cache_read_input_tokens",
+            ):
+                value = usage.get(key)
+                if isinstance(value, int):
+                    self.input_tokens += value
+            value = usage.get("output_tokens")
+            if isinstance(value, int):
+                self.output_tokens += value
+
+    def snapshot(self) -> dict[str, int]:
+        """How much of the hourly call budget is currently used."""
+        with self._lock:
+            return {
+                "calls_in_window": len(self._calls),
+                "limit": self._limit,
+                "refused": self._blocked,
+                "input_tokens": self.input_tokens,
+                "output_tokens": self.output_tokens,
+            }
+
+
+call_budget = CallBudget(CALL_BUDGET_PER_HOUR, CALL_BUDGET_WINDOW_SECONDS)
+
+
 class ClaudeLLMService:
     """
     Thin, testable wrapper around one structured Claude call.
@@ -133,6 +248,7 @@ class ClaudeLLMService:
         max_retries: int = DEFAULT_MAX_RETRIES,
         client: object | None = None,
     ) -> None:
+        """Build the client. Transport, model and limits are injectable for testing."""
         self._api_key = os.getenv("ANTHROPIC_API_KEY") if api_key is None else api_key
 
         # Identity-linked API keys are scoped to a workspace and the API rejects
@@ -234,6 +350,28 @@ class ClaudeLLMService:
         if self.client is None:
             raise ClaudeProviderError("missing credentials") from None
 
+        # Size first, and before the budget: an oversized prompt is a bug in the
+        # caller, and spending one of the hour's call slots to discover that
+        # would be the wrong trade. Refused rather than truncated — cutting a
+        # prompt down would send the model an analysis missing the half that
+        # mattered and return a confident plan built on it.
+        estimated = estimate_prompt_tokens(system_blocks, user_text)
+        if MAX_PROMPT_TOKENS and estimated > MAX_PROMPT_TOKENS:
+            logging.error(
+                "Refusing a %s-token prompt (ceiling %s). Nothing here should "
+                "be that large; a caller is serialising raw evidence into its "
+                "prompt. Raise ECOGUARD_CLAUDE_MAX_PROMPT_TOKENS only after "
+                "finding out what grew.",
+                f"{estimated:,}", f"{MAX_PROMPT_TOKENS:,}",
+            )
+            raise ClaudeProviderError("invalid request") from None
+
+        # Refused before the request is built, so a loop costs nothing. Reported
+        # as "rate limited" because that is what it is from a caller's point of
+        # view, and every caller already degrades gracefully on it.
+        if not call_budget.claim():
+            raise ClaudeProviderError("rate limited") from None
+
         messages: list[dict] = [{"role": "user", "content": user_text}]
 
         # Only present when tools were supplied, so the legacy call shape is
@@ -299,13 +437,26 @@ class ClaudeLLMService:
         self.last_usage = self.read_usage(response)
         self.last_server_tool_uses = count_server_tool_uses(response)
         self.last_web_searches = count_server_tool_uses(response, name="web_search")
+        call_budget.record_usage(self.last_usage)
 
+        # Input and output token counts belong in this line, not just the cache
+        # counter. Without them a pipeline burning the quota looks exactly like
+        # one doing its job, and the only place the difference shows up is the
+        # invoice — which is how 19.6M input tokens accumulated before anyone
+        # could say which lane produced them. `totals` is cumulative for this
+        # process, so one grep over a boot's worth of logs apportions the spend.
+        usage = self.last_usage or {}
         logging.info(
-            "Claude call complete: model=%s effort=%s cache_read=%s searches=%s",
+            "Claude call complete: model=%s effort=%s in=%s out=%s "
+            "cache_write=%s cache_read=%s searches=%s totals=%s",
             self.model,
             self.effort,
-            (self.last_usage or {}).get("cache_read_input_tokens"),
+            usage.get("input_tokens"),
+            usage.get("output_tokens"),
+            usage.get("cache_creation_input_tokens"),
+            usage.get("cache_read_input_tokens"),
             self.last_web_searches,
+            call_budget.snapshot(),
         )
 
         return parsed

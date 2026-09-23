@@ -1,4 +1,4 @@
-"""Immutable policy shared by Air Pollution Trend training and inference."""
+"""The settings the trend model is trained and used with, fixed in one place so the two cannot disagree."""
 
 from __future__ import annotations
 
@@ -41,6 +41,7 @@ class TrendSGDConfiguration:
     alpha: float = 0.0001
 
     def __post_init__(self) -> None:
+        """Reject settings that do not describe a usable model."""
         if self.epochs < 1 or self.learning_rate not in {
             "optimal",
             "constant",
@@ -51,6 +52,7 @@ class TrendSGDConfiguration:
             raise ValueError("constant/invscaling schedules require eta0")
 
     def classifier(self) -> SGDClassifier:
+        """The model these settings describe."""
         return SGDClassifier(
             loss="log_loss",
             penalty="l2",

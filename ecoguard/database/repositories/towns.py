@@ -1,16 +1,9 @@
-"""Reading the towns reference table.
+"""Reading the towns reference list.
 
-Written by migration 0014 from scripts/build_towns.py. Two readers so far: the
-operator's search box, which needs a name to become a camera target and a
-contact card, and — later — the spread analyser, which needs the outlines
-themselves.
-
-Search is ranked rather than filtered. An operator typing "בית" means one of
-forty places and wants the obvious one first, so a prefix match outranks a
-match in the middle of the name, and a larger population outranks a smaller
-one. Returning forty rows in arbitrary order would be technically correct and
-useless.
-"""
+Search is ranked rather than filtered: an operator typing a few letters means
+one of forty places and wants the obvious one first, so a match at the start of
+a name outranks one in the middle, and a larger town outranks a smaller one.
+Forty rows in arbitrary order would be correct and useless."""
 
 from __future__ import annotations
 

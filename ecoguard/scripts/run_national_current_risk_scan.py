@@ -7,10 +7,11 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from ecoguard.analyzers.emergency.fire.national_scan import DEFAULT_OUTPUT_PATH, NationalCurrentRiskScanService
+from ecoguard.analyzers.fire.national_scan import DEFAULT_OUTPUT_PATH, NationalCurrentRiskScanService
 
 
 def main() -> int:
+    """Run one national risk snapshot from the command line."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--evaluation-time", type=datetime.fromisoformat)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_PATH)

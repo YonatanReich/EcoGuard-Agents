@@ -1,4 +1,7 @@
-"""Stable serialized contracts for Air Pollution Trend ML artifacts."""
+"""The trained trend model and the inputs it expects.
+
+Kept apart from training so the shape the model was trained on and the shape it
+is used with cannot drift."""
 
 from __future__ import annotations
 
@@ -27,6 +30,7 @@ class IdentityVocabulary:
 
     @classmethod
     def fit(cls, identities: Iterable[AirPollutionSeriesIdentity]) -> "IdentityVocabulary":
+        """Learn the set of stations and pollutants the model will see."""
         items = tuple(sorted(set(identities)))
         if not items:
             raise ValueError("identity vocabulary requires training identities")
@@ -40,10 +44,12 @@ class IdentityVocabulary:
 
     @property
     def sparse_width(self) -> int:
+        """How many columns the identity part of the input occupies."""
         return len(self.station_ids) + len(self.channel_ids) + len(self.series_ids) + 3
 
     @property
     def feature_names(self) -> tuple[str, ...]:
+        """The input column names, in order."""
         return (
             *(f"station={value}" for value in self.station_ids),
             "station=<UNKNOWN>",
@@ -54,6 +60,7 @@ class IdentityVocabulary:
         )
 
     def _indexes(self, identity: AirPollutionSeriesIdentity) -> tuple[int, int, int]:
+        """Where one station-and-pollutant lands in the identity columns."""
         stations = {value: index for index, value in enumerate(self.station_ids)}
         channels = {value: index for index, value in enumerate(self.channel_ids)}
         series = {value: index for index, value in enumerate(self.series_ids)}
@@ -70,6 +77,7 @@ class IdentityVocabulary:
     def sparse_one_hot(
         self, identity: AirPollutionSeriesIdentity, rows: int
     ) -> sparse.csr_matrix:
+        """One identity as the columns the model reads."""
         indexes = self._indexes(identity)
         row = np.repeat(np.arange(rows, dtype=np.int64), 3)
         column = np.tile(np.asarray(indexes, dtype=np.int64), rows)
@@ -95,6 +103,7 @@ class IdentityVocabulary:
         return np.repeat(codes[np.newaxis, :], rows, axis=0)
 
     def to_dict(self) -> dict[str, Any]:
+        """The vocabulary as plain data, so it can be stored with the model."""
         return {
             "version": self.version,
             "station_categories": len(self.station_ids),
@@ -131,6 +140,7 @@ class FinalSGDModelBundle:
         values: np.ndarray,
         identity: AirPollutionSeriesIdentity,
     ) -> sparse.csr_matrix:
+        """Readings as the matrix the model takes."""
         numeric = self.scaler.transform(values)
         numeric = np.nan_to_num(numeric, nan=0.0, posinf=0.0, neginf=0.0)
         return sparse.hstack(
@@ -146,6 +156,7 @@ class FinalSGDModelBundle:
         values: np.ndarray,
         identity: AirPollutionSeriesIdentity,
     ) -> np.ndarray:
+        """How likely each outcome is, for these readings."""
         if identity.pollutant != self.pollutant:
             raise ValueError("model bundle pollutant identity mismatch")
         return self.classifier.predict_proba(self.transform(values, identity))

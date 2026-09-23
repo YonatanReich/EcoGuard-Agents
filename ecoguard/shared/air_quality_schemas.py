@@ -1,8 +1,7 @@
-"""Storage-independent schemas for collected air-quality data.
+"""The shape of a collected air-quality reading.
 
-These records sit between a provider adapter and the future shared repository.
-They are observations, not anomaly detections or incident decisions.
-"""
+An observation and nothing more: whether a reading is unusual, and whether that
+matters, are decided further down the line."""
 
 from __future__ import annotations
 
@@ -80,6 +79,7 @@ class PollutantObservation(ContractModel):
     @field_validator("pollutant")
     @classmethod
     def _normalize_pollutant(cls, value: str) -> str:
+        """One spelling per pollutant, so comparisons work."""
         normalized = _POLLUTANT_ALIASES.get(value.upper(), value)
         if normalized.upper() in _NON_POLLUTANT_CONTEXT_IDS:
             raise ValueError("weather context cannot be a pollutant observation")
@@ -88,6 +88,7 @@ class PollutantObservation(ContractModel):
     @field_validator("unit", mode="before")
     @classmethod
     def _normalize_unit(cls, value: object) -> object:
+        """One spelling per unit."""
         if value == "ng/m3":
             return "ng/m³"
         return value
@@ -95,6 +96,7 @@ class PollutantObservation(ContractModel):
     @field_validator("provider_pollutant_id", "provider_unit", "source_id")
     @classmethod
     def _strip_optional_source_id(cls, value: str | None) -> str | None:
+        """Trim the source identifier, treating a blank as absent."""
         if value is None:
             return None
         stripped = value.strip()
@@ -161,6 +163,7 @@ class AirQualityObservation(PollutantObservation):
 
     @model_validator(mode="after")
     def _provenance(self):
+        """Reject a reading that does not say where it came from."""
         if self.value == -9999:
             raise ValueError("provider sentinel is not a measurement")
         if self.unit_source == "reading":
@@ -175,6 +178,7 @@ class AirQualityObservation(PollutantObservation):
     @field_validator("observed_at")
     @classmethod
     def _to_utc(cls, value: AwareDatetime) -> AwareDatetime:
+        """Store the time in UTC."""
         return value.astimezone(timezone.utc)
 
 
@@ -233,6 +237,7 @@ class AirQualityCollectionResult(ContractModel):
     @field_validator("collected_at")
     @classmethod
     def _collection_time_to_utc(cls, value: AwareDatetime) -> AwareDatetime:
+        """Store the collection time in UTC."""
         return value.astimezone(timezone.utc)
 
 
@@ -273,10 +278,12 @@ class MinistryAirQualityIndexEvidence(ContractModel):
     @field_validator("provider_timestamp", "retrieved_at")
     @classmethod
     def _index_times_to_utc(cls, value: AwareDatetime) -> AwareDatetime:
+        """Store the index time in UTC."""
         return value.astimezone(timezone.utc)
 
     @model_validator(mode="after")
     def _index_identity_and_unit(self):
+        """Reject an official index that does not match the reading it accompanies."""
         if self.monitor_id != self.resolved_channel_id:
             raise ValueError("MonitorId must resolve exactly to channel_id")
         if self.unit_source == "station_metadata":
@@ -296,6 +303,7 @@ class MinistryAirQualityIndexLookupResult(ContractModel):
 
     @model_validator(mode="after")
     def _coherent_result(self):
+        """Reject a result whose parts contradict each other."""
         if self.status == "available":
             if self.evidence is None or self.reason is not None:
                 raise ValueError("available index lookup requires evidence only")

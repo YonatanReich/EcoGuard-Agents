@@ -15,6 +15,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add materialized topology derived from the Water Authority stream layer."""
     op.execute(
         """
         CREATE TABLE stream_network_metadata (
@@ -87,6 +88,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove materialized topology derived from the Water Authority stream layer."""
     op.execute("DROP TABLE IF EXISTS stream_network_edges")
     op.execute("DROP TABLE IF EXISTS stream_network_nodes")
     op.execute("DROP TABLE IF EXISTS stream_network_metadata")

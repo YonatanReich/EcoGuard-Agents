@@ -14,6 +14,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add durable emergency-station allocations."""
     op.execute(
         """
         CREATE TABLE resource_allocations (
@@ -80,4 +81,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove durable emergency-station allocations."""
     op.execute("DROP TABLE IF EXISTS resource_allocations")

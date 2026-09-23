@@ -1,30 +1,11 @@
-"""One classifier, four hazards, batched over stored text.
+"""Labelling stored messages: what hazard, where, and is it real.
 
-The question asked of every message is identical whatever its hazard — is this
-a report of something happening, where, and of what — so there is one prompt
-and one call, not four. A single message may report several hazards at once: a
-factory fire is a fire and an air-quality event, and splitting the prompt per
-hazard would make that two half-answers nobody joins back up.
+One prompt for all four hazards, because the question is the same whatever the
+message reports and a single message can report more than one.
 
-What this does not do
----------------------
-It does not fetch. Collection already stored the text; this reads rows.
-
-It does not decide tier. That comes from `text_sources` by source id, and the
-model is never shown it — a model told "this is the police" will read the same
-sentence more generously, which is precisely the bias the allowlist exists to
-keep out of the judgement.
-
-It does not decide whether something is an event. It labels messages; triage
-decides events.
-
-It does not geocode. It copies out the location as written. Resolving that to a
-cell needs the gazetteer and the service-area grid, and a model asked for
-coordinates will supply plausible ones for a town it has never heard of.
-
-It does not rewrite. The stored text stays the source of truth; `claim` is a
-short neutral restatement for a human reading a card, never a replacement.
-"""
+It does not decide whether something is happening - triage does that. It does
+not resolve places to coordinates either, since a model asked for coordinates
+will supply plausible ones for a town it has never heard of."""
 
 from __future__ import annotations
 
@@ -215,6 +196,7 @@ def is_classifiable(text: str | None) -> bool:
 
 
 def batched(items: Sequence[Any], size: int) -> Iterable[Sequence[Any]]:
+    """Split a list into fixed-size batches."""
     for start in range(0, len(items), size):
         yield items[start:start + size]
 
@@ -229,6 +211,7 @@ class TextClassifier:
         model: str = DEFAULT_MODEL,
         batch_size: int = DEFAULT_BATCH_SIZE,
     ) -> None:
+        """Build the classifier. The model and batch size are both injectable."""
         self._llm = llm if llm is not None else ClaudeLLMService(model=model)
         self._model = model
         self._batch_size = batch_size
@@ -246,6 +229,11 @@ class TextClassifier:
         return results
 
     def _classify_batch(self, batch: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Label one batch of messages.
+
+        The keyword net runs whether or not the model does, so a model outage
+        degrades to keyword matching rather than losing the batch.
+        """
         # The net runs whether or not the model does — as the fallback when it
         # fails, and as the standing recall check when it succeeds.
         keyword_hits = [hazards_in(message.get("text")) for message in batch]
@@ -291,6 +279,7 @@ class TextClassifier:
         keyword_hazards: dict[str, list[str]],
         failure: str | None,
     ) -> dict[str, Any]:
+        """One message's labels, from the model or from the keyword fallback."""
         if label is not None:
             hazards = [hazard for hazard in label.hazards if hazard in HAZARDS]
             return {

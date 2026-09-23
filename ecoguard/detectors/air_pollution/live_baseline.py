@@ -1,4 +1,9 @@
-"""Live reading to exact baseline context; no scoring, fallback, or writes."""
+"""Finding the baseline that applies to a reading.
+
+Exact match only: the right station, the right pollutant, the right season and
+hour. A reading with no matching baseline is reported as having none, rather
+than compared against a near-enough one, because a wrong baseline produces a
+confident answer about nothing."""
 
 from __future__ import annotations
 
@@ -28,6 +33,7 @@ class AirPollutionLiveBaselineContextService:
     """Resolve exact context for one preliminary five-minute live reading."""
 
     def __init__(self, baseline_lookup: AirPollutionBaselineLookupService | None = None):
+        """Build the service. The baseline lookup is injectable for testing."""
         self.baseline_lookup = baseline_lookup or AirPollutionBaselineLookupService()
 
     def lookup(self, observation: AirQualityObservation | Mapping[str, Any]):
@@ -63,6 +69,7 @@ class AirPollutionLiveBaselineContextService:
 
     @staticmethod
     def _invalid(mode: str, reason: str) -> LiveBaselineContextResult:
+        """A result saying no baseline applies, and why."""
         return LiveBaselineContextResult(
             status="invalid_live_observation",
             reason=reason,
@@ -71,6 +78,7 @@ class AirPollutionLiveBaselineContextService:
         )
 
     def _resolve(self, observation, *, mode, baseline_version_id):
+        """The baseline that applies to one reading."""
         prepared = self._prepare(observation, mode=mode)
         if isinstance(prepared, LiveBaselineContextResult):
             return prepared
@@ -88,6 +96,7 @@ class AirPollutionLiveBaselineContextService:
         )
 
     def _resolve_batch(self, observations, *, mode):
+        """The baselines that apply to several readings, in one lookup."""
         supplied = list(observations)
         results: list[LiveBaselineContextResult | None] = [None] * len(supplied)
         prepared_items = []
@@ -121,6 +130,7 @@ class AirPollutionLiveBaselineContextService:
         return cast(list[LiveBaselineContextResult], results)
 
     def _prepare(self, observation, *, mode):
+        """One reading in the form the lookup expects."""
         raw = (
             observation.model_dump(mode="python")
             if isinstance(observation, AirQualityObservation)
@@ -180,6 +190,7 @@ class AirPollutionLiveBaselineContextService:
     def _context_result(
         *, mode, live_context, identity, month, hour, lookup,
     ) -> LiveBaselineContextResult:
+        """An empty result, to be filled in as the lookup answers."""
         comparison_eligible = lookup.status == "available"
         reason = lookup.reason
         return LiveBaselineContextResult(

@@ -25,6 +25,7 @@ class NearbyGeographicFeature(AnomalyContract):
 
     @model_validator(mode="after")
     def _coordinate_pair(self) -> "NearbyGeographicFeature":
+        """Reject a feature whose coordinates are incomplete."""
         if (self.latitude is None) != (self.longitude is None):
             raise ValueError("feature coordinates must be supplied together")
         return self
@@ -46,6 +47,7 @@ class SettlementContextStatus(AnomalyContract):
 
     @model_validator(mode="after")
     def _coherent_status(self) -> "SettlementContextStatus":
+        """Reject a settlement result whose status and contents disagree."""
         succeeded = self.outcome in {"SUCCESS_WITH_RESULTS", "SUCCESS_EMPTY"}
         if (self.status == "success") != succeeded:
             raise ValueError("settlement status must match repository outcome")
@@ -85,6 +87,7 @@ class SpatiallyEnrichedAirPollutionAnomaly(AnomalyContract):
 
     @model_validator(mode="after")
     def _same_location(self) -> "SpatiallyEnrichedAirPollutionAnomaly":
+        """Reject enrichment attached to a different place than the anomaly."""
         if self.spatial_context.location != self.anomaly.location:
             raise ValueError("spatial context must belong to the anomaly location")
         return self

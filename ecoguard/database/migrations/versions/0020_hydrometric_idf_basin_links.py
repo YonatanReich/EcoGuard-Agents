@@ -15,6 +15,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add link hydrometric stations to IDF rain stations in the same basin."""
     op.execute(
         """
         CREATE TABLE hydrometric_station_idf_links (
@@ -50,4 +51,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove link hydrometric stations to IDF rain stations in the same basin."""
     op.execute("DROP TABLE IF EXISTS hydrometric_station_idf_links")

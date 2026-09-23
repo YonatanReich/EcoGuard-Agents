@@ -22,7 +22,7 @@ import json
 
 import pytest
 
-from ecoguard.analyzers.emergency.fire.risk_analysis_agent import (
+from ecoguard.analyzers.fire.risk_analysis_agent import (
     RiskAnalysisAgent,
     build_evidence_summary,
     render_excerpts,
@@ -603,7 +603,7 @@ def test_section_helper_tolerates_explicit_none():
 )
 def test_population_tag_parsing(tag, expected):
     """A junk tag yields None, never 0 — it is unparseable, not empty."""
-    from ecoguard.analyzers.emergency.fire.risk_analysis_agent import parse_population_tag
+    from ecoguard.analyzers.fire.risk_analysis_agent import parse_population_tag
 
     assert parse_population_tag(tag) == expected
 
@@ -618,7 +618,7 @@ def test_absent_geospatial_yields_null_counts_not_zero(geospatial):
     "there are no settlements nearby" — which, in a response plan, is the
     difference between evacuating a town and not knowing it is there.
     """
-    from ecoguard.analyzers.emergency.fire.risk_analysis_agent import build_situational_facts
+    from ecoguard.analyzers.fire.risk_analysis_agent import build_situational_facts
 
     facts = build_situational_facts({"geospatial_context": geospatial})
 
@@ -634,7 +634,7 @@ def test_absent_geospatial_yields_null_counts_not_zero(geospatial):
 
 def test_geospatial_that_ran_and_found_nothing_yields_zero():
     """The other half of the distinction: a real empty result is 0, not None."""
-    from ecoguard.analyzers.emergency.fire.risk_analysis_agent import build_situational_facts
+    from ecoguard.analyzers.fire.risk_analysis_agent import build_situational_facts
 
     facts = build_situational_facts(
         {"geospatial_context": {"nearby_settlements": [], "nearby_roads": []}}
@@ -648,7 +648,7 @@ def test_geospatial_that_ran_and_found_nothing_yields_zero():
 
 
 def test_situational_facts_count_and_summarise():
-    from ecoguard.analyzers.emergency.fire.risk_analysis_agent import build_situational_facts
+    from ecoguard.analyzers.fire.risk_analysis_agent import build_situational_facts
 
     facts = build_situational_facts(detected_event())
 
@@ -660,7 +660,7 @@ def test_situational_facts_count_and_summarise():
 
 def test_tagged_population_sums_only_what_parsed():
     """Settlements without a usable tag are excluded from both the sum and the count."""
-    from ecoguard.analyzers.emergency.fire.risk_analysis_agent import build_situational_facts
+    from ecoguard.analyzers.fire.risk_analysis_agent import build_situational_facts
 
     facts = build_situational_facts(
         {
@@ -748,7 +748,7 @@ def test_report_evidence_is_absent_for_a_satellite_event():
 
 
 def test_report_evidence_tolerates_partial_fields():
-    from ecoguard.analyzers.emergency.fire.risk_analysis_agent import render_report_evidence
+    from ecoguard.analyzers.fire.risk_analysis_agent import render_report_evidence
 
     rendered = render_report_evidence(
         {"report_evidence": {"source": "Telegram", "reports_count": 2}}
@@ -806,9 +806,29 @@ def test_success_result_has_every_documented_key():
 # --------------------------------------------------------------------------
 
 
-def test_search_tool_is_offered_by_default():
+def test_no_search_tool_is_offered_by_default():
+    """Search is opt-in, because a server-side tool loop is billed per iteration.
+
+    Each pass of the API's own loop re-reads the whole accumulated context —
+    prompt, protocol excerpts and every result so far — so three searches is
+    one call billed several times over a growing context, not three small
+    additions. That is the shape behind this project's ~19.6M input tokens
+    against 450K output. The assessment is grounded in the retrieved corpus
+    either way; search only fills gaps collection could not.
+    """
     llm = FakeLLM(build_valid_assessment())
     agent = build_agent(llm=llm)
+
+    agent.analyze_event(detected_event())
+
+    assert llm.calls[0]["tools"] is None
+
+
+def test_search_tool_is_offered_when_explicitly_enabled():
+    llm = FakeLLM(build_valid_assessment())
+    agent = RiskAnalysisAgent(
+        llm_service=llm, retriever=FakeRetriever(), enable_web_search=True
+    )
 
     agent.analyze_event(detected_event())
 
@@ -980,7 +1000,7 @@ def test_risk_semantics_distinguishes_this_score_from_the_ml_prediction():
     four-level scale. A consumer that mistook 0.85 for 85 would be wrong by two
     orders of magnitude, so both agents must label their semantics.
     """
-    from ecoguard.analyzers.emergency.fire.risk_analysis_agent import RISK_SEMANTICS
+    from ecoguard.analyzers.fire.risk_analysis_agent import RISK_SEMANTICS
 
     agent = build_agent()
     result = agent.analyze_event(detected_event())
@@ -1018,7 +1038,7 @@ def test_assessment_carries_a_stable_event_id():
 
 def test_event_id_changes_with_the_hotspot():
     """Two different fires must not collide onto one id."""
-    from ecoguard.analyzers.emergency.fire.risk_analysis_agent import build_event_id
+    from ecoguard.analyzers.fire.risk_analysis_agent import build_event_id
 
     other = detected_event()
     other["satellite_evidence"] = {
@@ -1035,7 +1055,7 @@ def test_event_id_changes_with_the_hotspot():
 
 def test_event_id_tolerates_the_no_event_and_failed_shapes():
     """Those shapes have no hotspot; deriving an id must not raise."""
-    from ecoguard.analyzers.emergency.fire.risk_analysis_agent import build_event_id
+    from ecoguard.analyzers.fire.risk_analysis_agent import build_event_id
 
     assert isinstance(build_event_id(no_event()), str)
     assert isinstance(build_event_id(failed_detection()), str)

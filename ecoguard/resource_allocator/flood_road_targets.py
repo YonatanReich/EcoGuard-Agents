@@ -9,7 +9,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 
-from ecoguard.collection.flood.road_network import ROAD_CLASSES
+from ecoguard.collectors.flood.road_network import ROAD_CLASSES
 from ecoguard.database.repositories.flood_road_targets import (
     FloodRoadTargetRepository,
 )
@@ -37,6 +37,7 @@ STREAM_ACCESS_ADVISORY = {
 
 
 def base_road_class(road_class: object) -> str:
+    """A road class without its slip-road suffix, so a ramp counts as its road."""
     value = str(road_class or "").strip()
     return value[:-5] if value.endswith("_link") else value
 
@@ -77,6 +78,7 @@ class FloodRoadTargetAgent:
         mapbox_verification_radius_m: float | None = None,
         duplicate_distance_m: float | None = None,
     ) -> None:
+        """Build the agent. The repository, routing client and radii are injectable for testing."""
         self.repository = repository or FloodRoadTargetRepository()
         self.mapbox_client = mapbox_client or MapboxClient()
         self.primary_station_radius_m = self._positive(
@@ -106,6 +108,7 @@ class FloodRoadTargetAgent:
 
     @staticmethod
     def _positive(value: float | None, environment: str, default: float) -> float:
+        """A setting that must be a positive number, from the argument or the environment."""
         selected = float(
             value if value is not None else os.getenv(environment, str(default))
         )
@@ -115,6 +118,7 @@ class FloodRoadTargetAgent:
 
     @staticmethod
     def _timestamp(value: object) -> float:
+        """A time as a number, so two readings can be compared."""
         if isinstance(value, datetime):
             parsed = value
         if isinstance(value, str):
@@ -167,6 +171,7 @@ class FloodRoadTargetAgent:
 
     @staticmethod
     def _distance_m(first: Mapping[str, Any], second: Mapping[str, Any]) -> float:
+        """Distance between two coordinates, in metres."""
         lat1 = math.radians(float(first["latitude"]))
         lat2 = math.radians(float(second["latitude"]))
         delta_lat = lat2 - lat1
@@ -179,6 +184,7 @@ class FloodRoadTargetAgent:
 
     @staticmethod
     def _road_identity(candidate: Mapping[str, Any]) -> tuple[str, str]:
+        """A stable identity for one road, preferring its official number."""
         road_ref = str(candidate.get("road_ref") or "").strip().casefold()
         if road_ref:
             return "ref", road_ref
@@ -222,6 +228,7 @@ class FloodRoadTargetAgent:
     def _station_candidates(
         self, state: Mapping[str, Any]
     ) -> tuple[str, dict[str, Any] | None, list[dict[str, Any]]]:
+        """The road crossings near one gauge, and how they were found."""
         station_id = int(state["source_station_id"])
         stream = self.repository.stream_identity(station_id)
         if stream is not None and stream.get("has_geometry") is True:
@@ -259,6 +266,7 @@ class FloodRoadTargetAgent:
         station_id: int,
         candidate: Mapping[str, Any],
     ) -> str:
+        """A stable identifier for one flooded road site."""
         identity = "|".join(
             [
                 incident_id,
@@ -280,6 +288,7 @@ class FloodRoadTargetAgent:
         stream: Mapping[str, Any] | None,
         candidate: Mapping[str, Any],
     ) -> dict[str, Any]:
+        """Check a candidate crossing against the road network before reporting it."""
         crossing_location = {
             "latitude": float(candidate["latitude"]),
             "longitude": float(candidate["longitude"]),

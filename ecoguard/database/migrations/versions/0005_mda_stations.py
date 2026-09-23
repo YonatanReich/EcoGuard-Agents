@@ -14,6 +14,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add mda_stations."""
     # Same shape as fire_stations and police_stations: a geography(Point, 4326)
     # under a GiST index, so a "nearest responder" query reads identically
     # against any of the three and they union without casting.
@@ -39,4 +40,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove mda_stations."""
     op.execute("DROP TABLE IF EXISTS mda_stations")

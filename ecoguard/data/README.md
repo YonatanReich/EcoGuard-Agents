@@ -1,18 +1,21 @@
-# data/
+# Data
 
-Content, not code.
+Everything the system reads but does not produce itself.
 
-- `reference/` — committed: the operational service-area polygon and the
-  station rosters an alembic migration seeds from.
-- `evaluation/` — committed hand-written planner cases. Inputs, not output,
-  which is why they are not under `generated/`.
-- `generated/` — gitignored. Rasters, SQLite caches, trained models, derived
-  CSVs. Nothing here is a source of truth; everything is rebuildable by some
-  script in `scripts/`.
-- `israel_locations.json` — the predefined scan roster.
+## What is here
 
-Never reference these by relative path. `ecoguard/paths.py` resolves them from
-`__file__`, so code works regardless of the working directory.
+| Folder | What it holds |
+|---|---|
+| `protocols/` | The written emergency guidance the planners must cite, one folder per hazard, plus the tools that split it into quotable passages |
+| `reference/` | Committed reference data: the service area, town boundaries and population, station rosters |
+| `evaluation/` | Hand-written test cases used to check the fire analysis |
+| `generated/` | Machine output: trained models, cached rasters, derived files. Everything here can be rebuilt by a script, and none of it is a source of truth |
 
-The protocol corpus is deliberately *not* here — it lives next to the planner
-that cites it, in `response_planner/protocols/`.
+## Things worth knowing
+
+`generated/` is ignored by version control on purpose. If something in there is
+missing, a script under `ecoguard/scripts` rebuilds it.
+
+The protocol corpus is the reason plans can be checked. A planner may only quote
+passages that actually appear here, and every quotation is verified against the
+original text before the plan is accepted.

@@ -26,6 +26,7 @@ _GENERIC_STREAM_NAME_TOKENS = frozenset(
 
 
 def _name_tokens(value: Any) -> tuple[str, ...]:
+    """A name split into comparable words."""
     if not isinstance(value, str):
         return ()
     normalized = unicodedata.normalize("NFKC", value).casefold()
@@ -39,6 +40,7 @@ def _name_tokens(value: Any) -> tuple[str, ...]:
 def _stream_name_matches_station(
     candidate: Mapping[str, Any], station: Mapping[str, Any]
 ) -> bool:
+    """Whether a stream's name matches the gauge's, allowing for spelling."""
     stream_tokens = _name_tokens(candidate.get("name_he"))
     if not stream_tokens:
         return False
@@ -50,6 +52,7 @@ def _stream_name_matches_station(
 
 
 def _stream_identity(candidate: Mapping[str, Any]) -> tuple[str, Any]:
+    """A stable key for one stream, used to remove duplicates."""
     if candidate.get("water_source_id") is not None:
         return "water_source_id", candidate["water_source_id"]
     name = _name_tokens(candidate.get("name_he"))
@@ -59,6 +62,7 @@ def _stream_identity(candidate: Mapping[str, Any]) -> tuple[str, Any]:
 
 
 def unavailable_stream_context(reason: str) -> dict[str, Any]:
+    """A stream result saying why nothing could be determined."""
     return {
         "association": "unavailable",
         "matched": False,
@@ -196,10 +200,12 @@ def build_stream_context(
 
 
 def _public_stream(candidate: Mapping[str, Any]) -> dict[str, Any]:
+    """One stream reduced to the fields the frontend is given."""
     return {**dict(candidate), "distance_m": round(float(candidate["distance_m"]), 1)}
 
 
 def unavailable_downstream_route(reason: str) -> dict[str, Any]:
+    """A downstream result saying why nothing could be determined."""
     return {
         "status": "unavailable",
         "confidence": "unavailable",

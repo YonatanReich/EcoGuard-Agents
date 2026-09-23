@@ -1,23 +1,7 @@
-"""
-Claude smoke check.
+"""One small model call, to answer "is the API actually working?".
 
-The one part of the risk analysis pipeline that cannot be verified offline: that
-a real Claude call works, that the structured output validates, that citations
-verify against the retrieved corpus, and that prompt caching actually engages.
-
-Everything else in this feature is covered by `pytest` with no credentials.
-Run this before a demo, or after changing a prompt or a schema.
-
-Usage:
-    python scripts/claude_smoke_check.py
-
-Requires ANTHROPIC_API_KEY in the environment or in a .env file at the repo
-root. Makes two identical-prefix calls and costs a fraction of a cent.
-
-Exit codes:
-    0  Everything worked.
-    1  Something failed. The reason is printed.
-"""
+Worth running before a demo: an exhausted account fails quietly, and every
+model-backed lane simply produces nothing."""
 
 from __future__ import annotations
 
@@ -26,8 +10,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ecoguard.response_planner.fire.planning_agent import ResponsePlanningAgent
-from ecoguard.analyzers.emergency.fire.risk_analysis_agent import RiskAnalysisAgent
+from ecoguard.planners.fire.planning_agent import ResponsePlanningAgent
+from ecoguard.analyzers.fire.risk_analysis_agent import RiskAnalysisAgent
 from ecoguard.shared.llm import ClaudeLLMService
 from ecoguard.shared.protocols import ProtocolRetriever
 
@@ -104,6 +88,7 @@ def report(label: str, ok: bool, detail: str = "") -> bool:
 
 
 def main() -> int:
+    """Make one small model call, to confirm the key and the credit still work."""
     print("EcoGuard — Claude smoke check\n")
 
     retriever = ProtocolRetriever()

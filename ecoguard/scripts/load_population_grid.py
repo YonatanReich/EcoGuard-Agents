@@ -1,28 +1,7 @@
-"""Load a population-count raster into the population_cells table.
+"""Loading a population raster into the database.
 
-The raster this is written against is WorldPop's constrained, UN-adjusted
-100 m grid for Israel — one float per pixel, and that float is *people*, not a
-density, so cells can simply be summed:
-
-    https://data.worldpop.org/GIS/Population/Global_2000_2020_Constrained/2020/BSGM/ISR/isr_ppp_2020_UNadj_constrained.tif
-
-Any other single-band, north-up, EPSG:4326 count raster works the same way;
-the checks below refuse anything else rather than silently loading a density
-grid and reporting a population that is off by the area of a pixel.
-
-"Constrained" matters for accuracy: it places people only where buildings were
-actually mapped, so a polygon drawn over open scrub reads zero instead of
-inheriting a smear of the nearest town's population.
-
-Run as a module, like the other scripts here — the repository root has to be
-on the path for `ecoguard` and `services` to import:
-
-    python -m ecoguard.scripts.load_population_grid ecoguard/data/generated/isr_ppp_2020_UNadj_constrained.tif
-    python -m ecoguard.scripts.load_population_grid raster.tif --coarsen 2   # 200 m cells
-
-This is a full reload: population_cells is emptied first. It is reference data
-published once a year, not a feed.
-"""
+Stored per grid cell so an area drawn on the map can be answered by summing
+what falls inside it, with a partly covered cell contributing its share."""
 
 from __future__ import annotations
 
@@ -70,9 +49,11 @@ def cells_from_raster(path: Path, coarsen: int):
             raise SystemExit(f"{path} is not north-up; rotated rasters are not supported")
 
         def x_of(column: int) -> float:
+            """The longitude of one raster column."""
             return transform.c + column * transform.a
 
         def y_of(row: int) -> float:
+            """The latitude of one raster row."""
             return transform.f + row * transform.e
 
         column_starts = np.arange(0, raster.width, coarsen)
@@ -106,6 +87,7 @@ def cells_from_raster(path: Path, coarsen: int):
 
 
 def load(path: Path, coarsen: int) -> tuple[int, float]:
+    """Load a population raster into the database."""
     written = 0
     total = 0.0
     chunk: list[dict] = []
@@ -129,6 +111,7 @@ def load(path: Path, coarsen: int) -> tuple[int, float]:
 
 
 def main() -> None:
+    """Load the population grid from the command line."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("raster", type=Path, help="single-band EPSG:4326 population count GeoTIFF")
     parser.add_argument(

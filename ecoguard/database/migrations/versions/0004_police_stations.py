@@ -14,6 +14,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add police_stations."""
     # Deliberately the same shape as fire_stations: a geography(Point, 4326)
     # under a GiST index. A later "nearest responder to this event" query then
     # reads identically whichever table it runs against, and the two can be
@@ -45,4 +46,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove police_stations."""
     op.execute("DROP TABLE IF EXISTS police_stations")

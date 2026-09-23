@@ -15,6 +15,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add persist IMS radar frame watermarks for outage catch-up."""
     op.execute(
         """
         CREATE TABLE radar_frame_cache (
@@ -43,4 +44,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove persist IMS radar frame watermarks for outage catch-up."""
     op.execute("DROP TABLE IF EXISTS radar_frame_cache")

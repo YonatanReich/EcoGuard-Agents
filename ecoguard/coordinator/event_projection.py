@@ -7,13 +7,13 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from ecoguard.analyzers.non_emergency.air_pollution.incident_handler import (
+from ecoguard.analyzers.air_pollution.incident_handler import (
     pollution_candidates_from_incident,
 )
-from ecoguard.analyzers.emergency.flood.event_analysis_schemas import (
+from ecoguard.analyzers.flood.event_analysis_schemas import (
     FloodEventAnalysis,
 )
-from ecoguard.analyzers.emergency.flood.risk_analysis_schemas import (
+from ecoguard.analyzers.flood.risk_analysis_schemas import (
     FloodRiskAssessment,
 )
 from ecoguard.coordinator import incidents as incident_store
@@ -59,6 +59,7 @@ from ecoguard.shared.events import (
     FloodSourceContext,
     FloodStream,
     FireResponseAction,
+    GenericSharedEvent,
     GeographicPoint,
     MinistryAirQualityIndex,
     OfficialPollutantClassification,
@@ -74,7 +75,11 @@ ProjectionWriter = Callable[[EventProjectionWrite], dict[str, Any] | None]
 ProjectionReader = Callable[[str], dict[str, Any] | None]
 EventMapper = Callable[
     [IncidentProcessingResult, Mapping[str, Any]],
-    AirPollutionSharedEvent | EarthquakeSharedEvent | FireSharedEvent | FloodSharedEvent,
+    AirPollutionSharedEvent
+    | EarthquakeSharedEvent
+    | FireSharedEvent
+    | FloodSharedEvent
+    | GenericSharedEvent,
 ]
 
 
@@ -87,6 +92,11 @@ class ProjectionOutcome:
 
 
 def _analysis_candidate(result, incident):
+    """The pollution reading this event should be shown as.
+
+    Prefers a detection the analysis actually cited, falls back to the newest
+    one it looked at, and finally to the newest on the incident itself.
+    """
     analysis = result.analysis_result
     if analysis is not None:
         state = analysis.current_state.result
@@ -110,6 +120,11 @@ def _analysis_candidate(result, incident):
 
 
 def _component_gaps(result) -> list[ComponentUnavailableReason]:
+    """Everything the analysis could not determine, with its reason.
+
+    Collected so the card can say what is missing instead of leaving a blank
+    that reads like a zero.
+    """
     gaps = []
     analysis = result.analysis_result
     if analysis is not None:
@@ -397,6 +412,11 @@ def _flood_station_sources(
     incident: Mapping[str, Any],
     analysis: FloodEventAnalysis | None = None,
 ) -> list[dict[str, Any]]:
+    """The gauges behind a flood event, with their readings and thresholds.
+
+    Reads the targeting result first and falls back to the incident's own
+    signals, so a card still names its source when targeting was unavailable.
+    """
     sources = targeting.get("hydrometric_sources")
     if isinstance(sources, list) and sources:
         return [dict(item) for item in sources if isinstance(item, Mapping)]
@@ -461,6 +481,11 @@ def _flood_station_sources(
 
 
 def _flood_stream(value: Any) -> FloodStream | None:
+    """One stream's drawable geometry, or None if it is not usable.
+
+    Accepts a single line or a set of lines and rejects anything else, so a
+    malformed shape is dropped rather than breaking the whole map layer.
+    """
     if not isinstance(value, Mapping) or not isinstance(value.get("geometry"), Mapping):
         return None
     geometry = value["geometry"]
@@ -480,6 +505,11 @@ def _flood_stream(value: Any) -> FloodStream | None:
 
 
 def _allocation_summary(value: Any) -> ResourceAllocationSummary | None:
+    """What the allocator reserved, flattened for the event card.
+
+    Turns the per-unit-type groups into one station list and keeps the
+    shortages, so the card can show what was asked for and what was missing.
+    """
     if not isinstance(value, Mapping):
         return None
     stations = []
@@ -799,12 +829,69 @@ def _preserve_flood_operational_response(
 
 
 def default_mapper_registry() -> dict[tuple[str, str], EventMapper]:
+    """Which function turns each hazard and route into a dashboard event."""
     return {
         ("air_pollution", "non_emergency"): air_pollution_shared_event,
         ("earthquake", "emergency"): earthquake_shared_event,
         ("fire", "emergency"): fire_processing_shared_event,
         ("flood", "emergency"): flood_shared_event,
+        # One mapper, every hazard. An unconfirmed report is projected the same
+        # way whatever it claims to be, because none of the hazard-specific
+        # detail exists for it — there is no analysis to project.
+        **{
+            (hazard, "uncorroborated"): uncorroborated_shared_event
+            for hazard in ("fire", "flood", "earthquake", "air_quality", "air_pollution")
+        },
     }
+
+
+def uncorroborated_shared_event(
+    result: IncidentProcessingResult,
+    incident: Mapping[str, Any],
+) -> GenericSharedEvent:
+    """Project an unverified report as its own event type.
+
+    Deliberately `type="other"` and `classification="advisory"` rather than a
+    fire or a flood. The map, the incident list and anything else reading this
+    feed keys off `type`, and a rumour rendered with the same marker as a
+    satellite-confirmed fire is the one presentation error in this system that
+    could send someone to the wrong place. The claimed hazard is carried inside
+    `details` where it cannot be mistaken for a confirmed one.
+    """
+    if result.route != "uncorroborated":
+        raise ValueError("not_an_uncorroborated_result")
+
+    plan = result.planner_result if isinstance(result.planner_result, Mapping) else {}
+    hazard = str(plan.get("hazard") or result.hazard)
+    place = plan.get("location_text") or "an unnamed location"
+
+    return GenericSharedEvent(
+        id=str(incident["id"]),
+        type="other",
+        title=f"Unverified {hazard.replace('_', ' ')} report — {place}",
+        description=str(
+            plan.get("summary")
+            or "An unverified public report. Nothing corroborates it yet."
+        ),
+        latitude=float(incident["latitude"]),
+        longitude=float(incident["longitude"]),
+        observed_at=incident.get("last_signal_at"),
+        classification="advisory",
+        # There was no analysis, and saying "success" here would claim one
+        # happened. `skipped` is the honest word and the handler sets it.
+        analysis_status=result.analysis_status or "skipped",
+        planning_status=result.planner_status or "skipped",
+        details={
+            "kind": "uncorroborated_report",
+            "claimed_hazard": hazard,
+            "corroborated": False,
+            "claim": plan.get("claim"),
+            "location_text": plan.get("location_text"),
+            "advisory": plan.get("actions") or [],
+            "contacts": plan.get("contacts") or {},
+            "limitations": plan.get("limitations") or [],
+        },
+    )
 
 
 def fire_processing_shared_event(
@@ -959,6 +1046,12 @@ def earthquake_shared_event(
 
 
 def _retryable(result: IncidentProcessingResult) -> bool:
+    """Whether this failure is worth attempting again later.
+
+    True for anything that failed in analysis or planning, since those can
+    succeed on a later pass. The dispatcher decides when, and gives up after a
+    few tries.
+    """
     return bool(
         result.status == "failed"
         or result.failure_stage

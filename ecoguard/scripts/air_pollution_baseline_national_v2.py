@@ -1,26 +1,11 @@
-#!/usr/bin/env python3
-"""
-EcoGuard - National Air Pollution Baseline Builder v2
+"""Building the national air-quality baselines.
 
-Adds a lightweight historical preflight before downloading the full 2021-2025
-history for every station/channel/pollutant profile.
+Downloads years of history for every station and pollutant, groups it by season
+and hour, and writes one profile per series. Those profiles are what makes
+"unusual for here, at this time of year" answerable at all.
 
-Key rules:
-- Official Ministry/Envista API only.
-- Read-only: no PostgreSQL writes.
-- No raw historical backfill.
-- Excludes inactive monitors by default.
-- Excludes clearly mobile/temporary station names by default.
-- Preflight checks 3 distinct years before a full build.
-- A profile passes preflight only if at least 3 distinct years have a probe day
-  with >= 12 accepted hourly values.
-- If the first probe day in a year is weak, a second season is tried.
-- All preflight rules are DATA-COVERAGE rules only, not health/anomaly thresholds.
-- Full baseline still uses 5-minute -> hourly -> month/hour buckets.
-- Full-profile quality rule: >=9 valid 5-minute measurements per accepted hour.
-- Baseline bucket coverage rule: >=3 distinct years and >=30 distinct days.
-- Existing completed full-profile JSONs are resume-safe and skipped unless --force.
-"""
+Long-running and run rarely: a station is sampled first to check it is worth
+downloading in full."""
 
 from __future__ import annotations
 
@@ -70,6 +55,7 @@ class Target:
 
 
 def slug(text: str) -> str:
+    """A name safe to use as a filename."""
     out = []
     for ch in text:
         out.append(ch if (ch.isalnum() or ch in "-_") else "_")
@@ -77,6 +63,7 @@ def slug(text: str) -> str:
 
 
 def normalize_pollutant(name: Any) -> str:
+    """One spelling per pollutant."""
     p = str(name or "").upper().replace(" ", "")
     if p in {"PM2_5", "PM25"}:
         return "PM2.5"
@@ -84,6 +71,7 @@ def normalize_pollutant(name: Any) -> str:
 
 
 def percentile(values: list[float], p: float) -> float | None:
+    """The value below which this share of readings falls."""
     if not values:
         return None
     xs = sorted(values)
@@ -99,10 +87,12 @@ def percentile(values: list[float], p: float) -> float | None:
 
 
 def r4(x: float | None) -> float | None:
+    """A number at storage precision, or None when there is none."""
     return None if x is None else round(float(x), 4)
 
 
 async def discover_targets(client: SvivaAirClient) -> list[Target]:
+    """Every station and pollutant a baseline can be built for."""
     regions = await client.get_regions()
     found: dict[tuple[int, int, str], Target] = {}
 
@@ -136,6 +126,7 @@ async def discover_targets(client: SvivaAirClient) -> list[Target]:
 
 
 def exclusion_reason(target: Target, include_mobile: bool, include_inactive: bool) -> str | None:
+    """Why this station is being skipped, or None when it is not."""
     if not include_inactive and target.active is False:
         return "inactive_monitor"
 
@@ -160,6 +151,7 @@ async def fetch_range(
     retries: int,
     retry_backoff_seconds: float,
 ) -> Any:
+    """One station's readings between two dates."""
     for attempt in range(1, retries + 1):
         try:
             return await client.get_station_average(
@@ -180,6 +172,7 @@ def extract_hourly(
     target: Target,
     min_valid_points_per_hour: int,
 ) -> tuple[list[dict[str, Any]], dict[str, int], set[str]]:
+    """The hourly readings out of a provider response."""
     by_hour: dict[tuple[int, int, int, int], dict[str, float]] = defaultdict(dict)
     units: set[str] = set()
     counters = {
@@ -252,6 +245,7 @@ def extract_hourly(
 
 
 def choose_preflight_years(start_year: int, end_year: int) -> list[int]:
+    """The years to sample first, to check a station is worth downloading in full."""
     years = list(range(start_year, end_year + 1))
     if len(years) <= 3:
         return years
@@ -366,6 +360,7 @@ async def fetch_month(
     month: int,
     args: argparse.Namespace,
 ) -> Any:
+    """One station's readings for one month."""
     start = date(year, month, 1)
     end = date(year, month, calendar.monthrange(year, month)[1])
     return await fetch_range(
@@ -383,6 +378,7 @@ def build_buckets(
     min_distinct_years_per_bucket: int,
     min_distinct_days_per_bucket: int,
 ) -> list[dict[str, Any]]:
+    """Group readings by season and hour, which is what a baseline compares against."""
     grouped: dict[tuple[int, int], list[dict[str, Any]]] = defaultdict(list)
     for row in hourly_rows:
         grouped[(row["month"], row["hour"])].append(row)
@@ -435,6 +431,7 @@ def build_buckets(
 
 
 def profile_path(profiles_dir: Path, target: Target, args: argparse.Namespace) -> Path:
+    """Where one station's baseline is written."""
     name = (
         f"station_{target.station_id}_channel_{target.channel_id}_"
         f"{slug(target.pollutant.lower())}_{args.start_year}_{args.end_year}.json"
@@ -449,6 +446,7 @@ async def build_full_profile(
     args: argparse.Namespace,
     profiles_dir: Path,
 ) -> dict[str, Any]:
+    """Download a station's history and build its baseline."""
     out = profile_path(profiles_dir, target, args)
 
     if out.exists() and not args.force:
@@ -588,10 +586,12 @@ async def build_full_profile(
 
 
 def write_json(path: Path, payload: Any) -> None:
+    """Write a JSON file."""
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def write_csv(path: Path, rows: list[dict[str, Any]], columns: list[str]) -> None:
+    """Write a CSV file."""
     with path.open("w", encoding="utf-8-sig", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=columns)
         writer.writeheader()
@@ -600,6 +600,7 @@ def write_csv(path: Path, rows: list[dict[str, Any]], columns: list[str]) -> Non
 
 
 async def main() -> None:
+    """Build the national baselines from the command line."""
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--start-year", type=int, default=2021)

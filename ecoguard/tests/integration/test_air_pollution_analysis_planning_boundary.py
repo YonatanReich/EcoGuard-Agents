@@ -4,22 +4,22 @@ from unittest.mock import Mock
 
 import pytest
 
-from ecoguard.analyzers.non_emergency.air_pollution.event_analysis_schemas import (
+from ecoguard.analyzers.air_pollution.event_analysis_schemas import (
     AirPollutionTrendPrediction,
     AnalysisComponent,
 )
-from ecoguard.analyzers.non_emergency.air_pollution.event_analyzer import (
+from ecoguard.analyzers.air_pollution.event_analyzer import (
     AirPollutionNonEmergencyAnalyzer,
 )
-from ecoguard.analyzers.non_emergency.air_pollution.population_analysis import (
+from ecoguard.analyzers.air_pollution.population_analysis import (
     AirPollutionPopulationAnalysisService,
 )
-from ecoguard.analyzers.non_emergency.air_pollution.transport_schemas import (
+from ecoguard.analyzers.air_pollution.transport_schemas import (
     TransportEvidenceReference,
 )
 from ecoguard.detectors.air_pollution.correlation import PollutionCorrelationCandidate
-from ecoguard.response_planner.air_pollution.planner import AirPollutionResponsePlanner
-from ecoguard.tests.analyzers.non_emergency.air_pollution.test_event_analyzer import (
+from ecoguard.planners.air_pollution.planner import AirPollutionResponsePlanner
+from ecoguard.tests.analyzers.air_pollution.test_event_analyzer import (
     GENERATED_AT,
     OBSERVED_AT,
     _analysis_input,
@@ -27,7 +27,7 @@ from ecoguard.tests.analyzers.non_emergency.air_pollution.test_event_analyzer im
     _index_lookup,
     _transport_service,
 )
-from ecoguard.tests.response_planner.air_pollution.test_planner import (
+from ecoguard.tests.planners.air_pollution.test_planner import (
     CHUNK,
     _planner,
     _proposal,

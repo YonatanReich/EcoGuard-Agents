@@ -14,6 +14,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add extensions, observations and collector_runs."""
     # Extensions come first: observations.location is a PostGIS type, so
     # creating the table before postgis exists fails. vector is unused today
     # but enabling it now costs nothing and saves a migration later.
@@ -56,6 +57,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove extensions, observations and collector_runs."""
     op.execute("DROP TABLE IF EXISTS collector_runs")
     op.execute("DROP TABLE IF EXISTS observations")
     # The extensions are left installed: other databases in the same cluster

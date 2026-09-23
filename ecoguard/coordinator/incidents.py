@@ -1,15 +1,11 @@
-"""Reading and writing incidents — the only stateful thing the coordinator owns.
+"""Reading and writing incidents, the coordinator's only stored state.
 
-Raw SQL and a session per call, like every other repository here. Returns plain
-dicts rather than rows, so the rest of the coordinator never imports SQLAlchemy.
+Returns plain dictionaries rather than database rows, so nothing else in the
+coordinator has to know how they are stored.
 
-One deliberate shape: signals live in a jsonb array on the incident rather than
-in a child table. The array is bounded because the incident closes after its
-quiet period; every read this table gets is incident-level (`status`, `cells`,
-`last_signal_at`) and never reaches inside the array; and the read-modify-write
-that appending would otherwise race on is already serialised by the
-`single_flight` lock around the whole run. A child table would buy a cheaper
-append and cost a join on the common path.
+Signals are kept in a list on the incident itself rather than a separate table.
+The list stays bounded because an incident closes once it goes quiet, and every
+query here reads the incident as a whole.
 """
 
 from __future__ import annotations
@@ -52,6 +48,11 @@ def signal_as_json(signal: CellSignal) -> dict[str, Any]:
 
 
 def _row(row) -> dict[str, Any]:
+    """One database row as a plain incident dict.
+
+    Normalises the array columns to lists so callers never have to care which
+    driver returned them.
+    """
     incident = dict(row)
     # jsonb comes back parsed; text[] comes back as a list. Normalise the
     # array columns to lists so callers never see a tuple from one driver and
@@ -95,6 +96,7 @@ def open_incidents(hazards: Iterable[str] | None = None) -> list[dict[str, Any]]
 
 
 def incident_by_id(incident_id: str) -> dict[str, Any] | None:
+    """One incident by id, or None when there is no such row."""
     with Session() as session:
         row = session.execute(
             text(f"SELECT {_COLUMNS} FROM incidents WHERE id = :id"),
@@ -273,6 +275,11 @@ def merge_incidents(
 
 
 def close_incident(incident_id: str, at: datetime) -> None:
+    """Close one open incident and release the stations held against it.
+
+    Does nothing when the incident is already closed, so repeating the call is
+    safe.
+    """
     with Session() as session:
         with session.begin():
             closed_id = session.execute(

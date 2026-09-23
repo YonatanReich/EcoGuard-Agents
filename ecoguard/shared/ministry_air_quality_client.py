@@ -1,9 +1,12 @@
-"""Read-only client for Israel's National Air Monitoring Network.
+"""The Ministry of Environmental Protection's air-quality service.
 
-The client implements the public website's guest cookie flow and normalizes
-provider readings. It makes no anomaly, emergency, or response decisions and
-has no persistence dependency.
-"""
+Supplies both the readings and the Ministry's own published index for a
+station, which is what lets an event say the official view rather than only
+ours.
+
+Requires a login; the token is reused until it expires. Failures are raised as
+one word from a fixed list, so a provider message can never carry credentials
+into a log."""
 
 from __future__ import annotations
 
@@ -89,12 +92,14 @@ class MinistryAirQualityError(RuntimeError):
     """Credential-safe provider failure."""
 
     def __init__(self, category: str, *, transient: bool):
+        """Carry the category of a failure, and whether retrying could help."""
         super().__init__(category)
         self.category = category
         self.transient = transient
 
 
 def _text(value: object | None) -> str | None:
+    """A value as text, or None when absent or blank."""
     if value is None:
         return None
     stripped = str(value).strip()
@@ -102,6 +107,7 @@ def _text(value: object | None) -> str | None:
 
 
 def _parse_provider_timestamp(value: object) -> tuple[datetime, str]:
+    """A provider timestamp as a time, with the format it was written in."""
     raw = _text(value)
     if raw is None:
         raise ValueError("timestamp missing")
@@ -115,6 +121,7 @@ def _parse_provider_timestamp(value: object) -> tuple[datetime, str]:
 
 
 def _provider_id(value: object | None) -> str | None:
+    """An identifier as the provider writes it."""
     if value is None or isinstance(value, bool):
         return None
     return _text(value)
@@ -130,6 +137,7 @@ def _first_present(values: Mapping[str, Any], *keys: str) -> object | None:
 
 
 def _canonical_unit(value: object | None) -> str | None:
+    """One spelling per unit, so readings compare."""
     provider_unit = _text(value)
     if provider_unit is None:
         return None
@@ -146,6 +154,7 @@ def _mapping_value(values: Mapping[str, Any], *keys: str) -> object | None:
 
 
 def _finite_index_number(value: object | None) -> float | None:
+    """An index value as a real number, or None when it is not one."""
     if isinstance(value, bool) or value is None:
         return None
     if isinstance(value, str) and value.strip().lower() == "no index":
@@ -160,6 +169,7 @@ def _finite_index_number(value: object | None) -> float | None:
 
 
 def _parse_index_timestamp(value: object | None) -> tuple[datetime, str] | None:
+    """The time an official index refers to, or None when it does not say."""
     raw = _text(value)
     if raw is None:
         return None
@@ -188,6 +198,7 @@ class MinistryAirQualityClient:
         monotonic: Callable[[], float] = time.monotonic,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
+        """Build the client. Transport, cache and clock are injectable for testing."""
         if timeout <= 0 or reference_ttl_seconds < 0:
             raise ValueError("timeout must be positive and cache TTL non-negative")
         self.session = session or requests.Session()
@@ -202,6 +213,7 @@ class MinistryAirQualityClient:
         self._cache: dict[str, tuple[float, Any]] = {}
 
     def _headers(self, *, authenticated: bool = False) -> dict[str, str]:
+        """The request headers, with the access token when one is needed."""
         if self._request_verification_token is None:
             raise MinistryAirQualityError("authentication_required", transient=False)
         headers = {
@@ -222,6 +234,7 @@ class MinistryAirQualityClient:
         return headers
 
     def _start_authentication_lifecycle(self) -> None:
+        """Begin a fresh login, so two callers cannot log in at once."""
         self._authenticated = False
         self._request_verification_token = str(uuid.uuid4())
         self._access_credential = None
@@ -234,6 +247,7 @@ class MinistryAirQualityClient:
 
     @staticmethod
     def _response_json(response: Any) -> Any:
+        """The response as JSON, failing clearly when it is not."""
         try:
             return response.json()
         except (TypeError, ValueError):
@@ -243,6 +257,7 @@ class MinistryAirQualityClient:
 
     @staticmethod
     def _raise_for_status(response: Any, *, authentication: bool = False) -> None:
+        """Turn an error response into a typed failure with no secrets in it."""
         status = int(getattr(response, "status_code", 0))
         if status < 400:
             return
@@ -254,6 +269,7 @@ class MinistryAirQualityClient:
         )
 
     def _authenticate(self, *, force: bool = False) -> None:
+        """Log in and keep the access token, reusing it until it expires."""
         with self._auth_lock:
             if self._authenticated and not force:
                 return
@@ -304,6 +320,7 @@ class MinistryAirQualityClient:
     def _get_json(
         self, endpoint: str, *, params: Mapping[str, Any] | None = None
     ) -> Any:
+        """Make one request and return its JSON, logging in again once if the token expired."""
         self._authenticate()
         for attempt in range(2):
             try:
@@ -326,6 +343,7 @@ class MinistryAirQualityClient:
         raise MinistryAirQualityError("authentication_failed", transient=True)
 
     def _cached_get(self, key: str, endpoint: str) -> Any:
+        """A reference list, fetched once and kept, since it changes very rarely."""
         cached = self._cache.get(key)
         now = self.monotonic()
         if cached is not None and cached[0] > now:
@@ -335,12 +353,15 @@ class MinistryAirQualityClient:
         return payload
 
     def get_pollutants(self) -> list[dict[str, Any]]:
+        """The pollutants the provider reports."""
         return self._reference_list("pollutants", "pollutants")
 
     def get_units(self) -> list[dict[str, Any]]:
+        """The units the provider reports in."""
         return self._reference_list("units", "data/units")
 
     def get_statuses(self) -> list[dict[str, Any]]:
+        """The reading statuses the provider uses."""
         return self._reference_list("statuses", "data/status")
 
     def get_station_index_evidence(
@@ -401,6 +422,7 @@ class MinistryAirQualityClient:
         pollutant: str,
         event_time: datetime,
     ) -> MinistryAirQualityIndexLookupResult:
+        """Find the part of a response that describes the station and pollutant asked for."""
         rows: list[Mapping[str, Any]] = []
         if isinstance(payload, Mapping):
             data = _mapping_value(payload, "data")
@@ -590,12 +612,14 @@ class MinistryAirQualityClient:
         )
 
     def _reference_list(self, key: str, endpoint: str) -> list[dict[str, Any]]:
+        """One reference list by name."""
         payload = self._cached_get(key, endpoint)
         if not isinstance(payload, list):
             raise MinistryAirQualityError("malformed_response", transient=False)
         return [dict(item) for item in payload if isinstance(item, Mapping)]
 
     def get_station_metadata(self) -> StationCollectionResult:
+        """Every monitoring station, with the pollutants each one measures."""
         payload = self._cached_get("regions", "regions")
         if not isinstance(payload, list):
             raise MinistryAirQualityError("malformed_response", transient=False)
@@ -628,6 +652,7 @@ class MinistryAirQualityClient:
 
     @staticmethod
     def _canonical_pollutant(raw_name: object) -> str | None:
+        """One spelling per pollutant, or None when it is not one we track."""
         name = _text(raw_name)
         if name is None or name.upper() not in RECOGNIZED_POLLUTANTS:
             return None
@@ -635,6 +660,7 @@ class MinistryAirQualityClient:
 
     @classmethod
     def _normalize_monitor(cls, raw: Mapping[str, Any]) -> AirQualityMonitor | None:
+        """One station's measurement channel, or None when it is unusable."""
         pollutant = cls._canonical_pollutant(raw.get("name"))
         channel_id = _provider_id(_first_present(raw, "channelId", "id"))
         provider_unit = _text(raw.get("units"))
@@ -663,6 +689,7 @@ class MinistryAirQualityClient:
     def _normalize_station(
         cls, raw: object, fallback_region_id: object = None
     ) -> AirQualityStation:
+        """One station, or None when it is unusable."""
         if not isinstance(raw, Mapping):
             raise TypeError("station must be an object")
         location = raw.get("location")
@@ -705,6 +732,7 @@ class MinistryAirQualityClient:
     def collect_latest(
         self, *, region_ids: Sequence[int] = tuple(range(16)), hours_back: int = 4
     ) -> AirQualityCollectionResult:
+        """The most recent reading from every station channel."""
         collected_at = self.clock().astimezone(timezone.utc)
         if not region_ids or hours_back < 1:
             raise ValueError(
@@ -778,6 +806,7 @@ class MinistryAirQualityClient:
         observations: list[AirQualityObservation],
         excluded: list[ExcludedAirQualityReading],
     ) -> None:
+        """One station's readings, dropping any that cannot be trusted."""
         if not isinstance(raw, Mapping):
             excluded.append(ExcludedAirQualityReading(reason="malformed_channel"))
             return
@@ -818,6 +847,7 @@ class MinistryAirQualityClient:
         observations: list[AirQualityObservation],
         excluded: list[ExcludedAirQualityReading],
     ) -> None:
+        """One channel's reading, or None with the reason it was dropped."""
         channel_id = _provider_id(_first_present(channel, "id", "channelId"))
         monitor = next(
             (
@@ -852,6 +882,7 @@ class MinistryAirQualityClient:
         )
 
         def reject(reason: str) -> None:
+            """Record why this reading was dropped."""
             excluded.append(
                 ExcludedAirQualityReading(
                     reason=reason,

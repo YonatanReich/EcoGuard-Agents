@@ -1,4 +1,4 @@
-from ecoguard.tests.response_planner.emergency.test_planner import analyzed, planner
+from ecoguard.tests.planners.shared.test_planner import analyzed, planner
 
 
 def test_shared_plan_exposes_future_allocation_requirements_without_allocating():

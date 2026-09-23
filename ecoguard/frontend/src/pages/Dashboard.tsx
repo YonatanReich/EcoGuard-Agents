@@ -12,6 +12,7 @@
  */
 
 import {
+  useCallback,
   useState,
   useEffect,
   useMemo,
@@ -33,6 +34,7 @@ import FireRiskLayer from '../components/layers/FireRiskLayer'
 import FloodLegend from '../components/FloodLegend'
 import FireRiskAlert from '../components/FireRiskAlert'
 import KinneretLevelCard from '../components/KinneretLevelCard'
+import ScenarioControl from '../components/ScenarioControl'
 import { clusterHighRiskCells, type FireRiskCluster } from '../components/fireRiskClusters'
 import { normalizeNationalRiskScanResponse, type NationalRiskScan } from '../components/fireRiskScan'
 import FireDistrictsLayer from '../components/layers/FireDistrictsLayer'
@@ -336,10 +338,11 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
   // Detected events
   // =========================================================
 
-  useEffect(() => {
-    // No setIsLoadingEvents(true) here: the state already initializes to true
-    // and this effect runs once on mount, so setting it again would only
-    // trigger a cascading render.
+  // Refetched on mount and again whenever a scenario starts, stops or lands a
+  // new wave. A scenario repoints the detectors at authored observations while
+  // this page stays open, so the feed has to be re-read rather than loaded once
+  // — otherwise the map would keep showing the world the dashboard booted in.
+  const loadProjectedEvents = useCallback(() => {
     // An empty list is a valid answer — the pipeline ran and nothing is
     // burning — so this assigns unconditionally rather than only on a truthy
     // list, which would leave stale events on the map after a clean tick.
@@ -351,11 +354,15 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
       .then((data) => setProjectedEvents(data.events ?? []))
       .catch((error) => console.error('Error fetching projected events:', error))
       .finally(() => setIsLoadingEvents(false))
+  }, [demo])
+
+  useEffect(() => {
+    loadProjectedEvents()
 
     // Unverified reports are an operator decision queue. There is nothing to
     // decide in a demo, and a confirm click would write to the live store.
     if (!demo) void loadWeakEvents()
-  }, [demo])
+  }, [demo, loadProjectedEvents])
 
   const loadWeakEvents = () =>
     fetch('/api/weak-events')
@@ -469,6 +476,14 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
             <span className="dashboard__eco">Eco</span>Guard
           </h1>
           {!demo && <span className="dashboard__status">Live</span>}
+          {!demo && (
+            <ScenarioControl
+              onStateChange={() => {
+                loadProjectedEvents()
+                void loadWeakEvents()
+              }}
+            />
+          )}
         </div>
 
         <EventLegend />

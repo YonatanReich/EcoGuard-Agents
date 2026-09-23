@@ -1,18 +1,21 @@
-"""Candidates in, events and weak events out.
+"""Candidates in, corroborated and uncorroborated reports out.
 
-The whole of §4 lives here, and it is two rules:
+Every placeable report leaves here as something the coordinator can act on.
+The only question is whether anything else agrees with it:
 
-**An official report is an event.** Authority and media both. No corroboration,
-because waiting for a second source to agree with the police is how a system
-learns about a fire from the news.
+**Corroborated.** Something independent supports the claim, so it takes the
+ordinary path — analyser, then the hazard's planner, then the allocator.
 
-**An unofficial report is a weak event until something agrees with it.** It
-goes on the map looking different, it never reaches the allocator, and it
-expires quietly if nothing corroborates it.
+**Uncorroborated.** Nothing supports it yet, so it is passed on *labelled as
+such*. It skips the analyser entirely — there is nothing to analyse in a claim
+nobody has confirmed, and running a risk model over a rumour produces a number
+that looks like evidence — and goes to the advisory planner, which tells the
+operator who to phone: the police station responsible for that town and the
+local authority. If evidence arrives later it attaches to the same incident and
+the incident stops being uncorroborated on its own.
 
-Three things can corroborate, and the third is the interesting one:
+Two things can corroborate, and the second is the interesting one:
 
-  official      any authority or media report of the same hazard nearby
   independence  two or more distinct origins, after forwards are collapsed
   structured    an open incident of the same hazard nearby
 
@@ -23,11 +26,25 @@ incident. So "is there instrument evidence near this rumour" is "is there an
 open incident of this hazard near this rumour", asked of the store that already
 holds the answer.
 
+No source tiers
+---------------
+There is deliberately no authority/media/unofficial distinction. Judging a
+claim by the badge of whoever posted it meant a self-described official channel
+was believed outright while the same sentence from anyone else waited three
+hours and then expired unseen. Every report is now treated as a claim and
+corroboration is the only thing that raises it — so the question the system
+answers is "does anything support this", not "do we like the source".
+
+One consequence is deliberate: a retraction no longer closes anything by
+itself, because without tiers nothing distinguishes an authoritative "it was a
+false alarm" from any other message. Retractions are recorded and left to the
+operator.
+
 Why forward-dedup is not optional
 ---------------------------------
 Ten operational channels forwarding one message is one person's claim ten
-times. Without collapsing them, the unofficial tier corroborates itself on the
-second repost and every rumour on Telegram becomes an event within a minute.
+times. Without collapsing them, reports corroborate themselves on the second
+repost and every rumour on Telegram becomes a confirmed event within a minute.
 Telegram gives us the original channel and post id on a forward, which is an
 exact answer; for a message retyped rather than forwarded, near-identical text
 is the fallback.
@@ -41,6 +58,7 @@ from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from typing import Any, Mapping, Sequence
 
+from ecoguard.shared.cells import cell_for
 from ecoguard.shared.grid import (
     LATITUDE_KM_PER_DEGREE,
     LONGITUDE_KM_PER_DEGREE_AT_EQUATOR,
@@ -52,9 +70,13 @@ logger = logging.getLogger(__name__)
 CORROBORATION_RADIUS_KM = 2.0
 CORROBORATION_WINDOW = timedelta(hours=2)
 
-# How long an uncorroborated report stays on the map. Long enough that a
-# satellite overpass or an official statement has a chance to arrive, short
-# enough that the map is not a list of yesterday's rumours.
+# Retained only so existing callers and migrations that import it keep working.
+# Nothing in this module waits any more: a report that is not corroborated on
+# the tick it is read is passed on as uncorroborated immediately, and upgrades
+# in place if evidence arrives later. The three-hour hold this used to impose
+# delayed every genuine report by up to three hours and, because corroboration
+# effectively never arrived, ended in silent expiry rather than in anything an
+# operator saw.
 WEAK_EVENT_TTL = timedelta(hours=3)
 
 # Two distinct origins promote. Not three: on a fast-moving fire the second
@@ -67,6 +89,8 @@ INDEPENDENT_REPORTS_REQUIRED = 2
 # else, and collapsing those would be worse than missing a copy-paste.
 NEAR_DUPLICATE_RATIO = 0.85
 
+# Kept for the few readers that still display a source's provenance. Triage
+# itself no longer branches on it — see "No source tiers" above.
 OFFICIAL_TIERS = frozenset({"authority", "media"})
 
 
@@ -89,19 +113,15 @@ class Report:
     update_type: str = "new"
     claim: str | None = None
 
-    @property
-    def official(self) -> bool:
-        return self.tier in OFFICIAL_TIERS
-
 
 @dataclass
 class TriageOutcome:
     """What one triage run did, without querying to find out."""
 
+    # Something independent agrees: the ordinary analyse-then-plan path.
     events: list[dict[str, Any]] = field(default_factory=list)
-    weak_events: list[dict[str, Any]] = field(default_factory=list)
-    promoted: list[dict[str, Any]] = field(default_factory=list)
-    expired: list[str] = field(default_factory=list)
+    # Nothing agrees yet: passed on labelled, straight to the advisory planner.
+    uncorroborated: list[dict[str, Any]] = field(default_factory=list)
     closed: list[dict[str, Any]] = field(default_factory=list)
     skipped: list[dict[str, Any]] = field(default_factory=list)
 
@@ -201,16 +221,45 @@ def within_window(
     ) <= reach
 
 
+# The variable every text-derived signal carries. A signal with this variable
+# is somebody's say-so; anything else came from an instrument.
+TEXT_VARIABLE = "report"
+
+
+def has_instrument_evidence(incident: Mapping[str, Any]) -> bool:
+    """Whether anything other than a text report supports this incident.
+
+    An incident with no signals at all is treated as having none, which is the
+    fail-closed reading: an incident nobody can show evidence for must not be
+    the thing that corroborates the next rumour.
+    """
+    return any(
+        signal.get("variable") != TEXT_VARIABLE
+        for signal in incident.get("signals") or ()
+        if isinstance(signal, Mapping)
+    )
+
+
 def corroboration_for(
     report: Report,
     *,
     supporting: Sequence[Report],
     open_incidents: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any] | None:
-    """Whether anything agrees with this unofficial report, and what.
+    """Whether anything agrees with this report, and what.
 
     Returns the reason rather than a boolean, because the reason is what the
-    operator's card shows and what makes a promotion arguable afterwards.
+    operator's card shows and what makes the judgement arguable afterwards.
+
+    The `structured_evidence` test deliberately ignores incidents that are
+    themselves nothing but text reports. Uncorroborated reports now become
+    incidents, so without that filter a rumour would corroborate the next copy
+    of itself: report A opens an incident, forward B lands nearby, sees "an open
+    incident of this hazard", and is promoted on the strength of A. Forward
+    dedup exists precisely to stop that, and reading it back out of the incident
+    store would route straight around it. Only instrument evidence — a hotspot,
+    a gauge, a seismometer — counts here; a second *independent* claim is the
+    `independent_reports` case below, which does collapse forwards.
     """
     nearby = [
         other for other in supporting
@@ -222,16 +271,10 @@ def corroboration_for(
         )
     ]
 
-    official = next((other for other in nearby if other.official), None)
-    if official is not None:
-        return {
-            "kind": "official_report",
-            "detail": f"{official.tier} source reported the same hazard nearby",
-            "source_id": official.source_id,
-        }
-
     for incident in open_incidents:
         if report.hazard not in set(incident.get("hazards") or ()):
+            continue
+        if not has_instrument_evidence(incident):
             continue
         if within_window(
             report,
@@ -262,29 +305,48 @@ def triage(
     *,
     supporting_reports: Sequence[Report] | None = None,
     open_incidents: Sequence[Mapping[str, Any]] = (),
-    open_weak_events: Sequence[Mapping[str, Any]] = (),
     at: datetime | None = None,
-    ttl: timedelta = WEAK_EVENT_TTL,
+    **_legacy: Any,
 ) -> TriageOutcome:
-    """Sort this tick's reports into events, weak events and promotions.
+    """Sort this tick's reports into corroborated events and uncorroborated ones.
 
-    Pure: it decides, it does not write. The caller persists the outcome, which
-    is what lets all six of §9's Phase 3 scenarios be driven without a database
-    or a model.
+    Pure: it decides, it does not write. The caller persists the outcome and
+    hands the signals to the coordinator, which is what lets the whole lane be
+    driven without a database or a model.
+
+    Nothing is held back. A report that cannot be corroborated on this pass is
+    returned as `uncorroborated` rather than parked, because parking it was
+    worth nothing: corroboration effectively never arrived inside the old
+    three-hour window, and the report expired without an operator ever seeing
+    it. If evidence turns up later it lands on the same incident and the
+    incident stops being uncorroborated by itself.
+
+    ``**_legacy`` absorbs the retired ``open_weak_events`` and ``ttl`` keywords
+    so an older caller does not crash on the way past; both are ignored.
     """
     now = at or datetime.now(timezone.utc)
     outcome = TriageOutcome()
-
-    # Expiry first, so a report arriving after a long silence is judged against
-    # what is still live rather than against a rumour from this morning.
-    live_weak = []
-    for weak in open_weak_events:
-        if weak.get("expires_at") and weak["expires_at"] <= now:
-            outcome.expired.append(weak["id"])
-        else:
-            live_weak.append(weak)
-
     support = reports if supporting_reports is None else supporting_reports
+
+    # One advisory per claim, not one per repost. The coordinator would merge
+    # co-located signals anyway, but collapsing here keeps the count in the log
+    # honest and means a ten-channel forward storm makes one advisory rather
+    # than ten identical ones racing to be merged.
+    #
+    # Deliberately the same two-part test `distinct_origins` uses — the forward
+    # key *and* near-duplicate text — because the case that defeats a key-only
+    # check is the one that actually happens: a channel that retypes another's
+    # post rather than forwarding it has its own origin key and is still the
+    # same person's claim.
+    seen_origins: list[str] = []
+    seen_texts: list[str] = []
+
+    def already_reported(item: Report) -> bool:
+        """Whether this claim has already been seen this pass, by origin or wording."""
+        if item.origin_key in seen_origins:
+            return True
+        return any(near_duplicate(item.text, seen) for seen in seen_texts)
+
     for report in sorted(reports, key=lambda item: item.observed_at):
         if report.latitude is None or report.longitude is None:
             # A report with no place is not actionable and never becomes an
@@ -298,27 +360,15 @@ def triage(
             })
             continue
 
-        # A retraction applies to what is already open, whoever sent it — but
-        # only an official one closes an event outright.
+        # Without source tiers nothing here can tell an authoritative
+        # retraction from anyone else typing "false alarm", and auto-closing a
+        # live incident on an unverifiable say-so is the one error in this lane
+        # that gets someone hurt. Recorded, and left to the operator.
         if report.update_type == "false_alarm":
-            if report.official:
-                outcome.closed.append({
-                    "hazard": report.hazard,
-                    "report": report,
-                    "reason": "official_false_alarm",
-                })
-            else:
-                outcome.skipped.append({
-                    "observation_id": report.observation_id,
-                    "reason": "unofficial_retraction_does_not_close",
-                })
-            continue
-
-        if report.official:
-            outcome.events.append({
-                "hazard": report.hazard,
-                "report": report,
-                "basis": {"kind": "official_source", "tier": report.tier},
+            outcome.skipped.append({
+                "observation_id": report.observation_id,
+                "reason": "retraction_recorded_not_acted_on",
+                "location_text": report.location_text,
             })
             continue
 
@@ -326,86 +376,35 @@ def triage(
             report, supporting=support, open_incidents=open_incidents
         )
         if corroboration is not None:
-            outcome.promoted.append({
+            outcome.events.append({
                 "hazard": report.hazard,
                 "report": report,
                 "basis": corroboration,
             })
             continue
 
-        # Not corroborated. It joins an existing weak event if one is already
-        # describing this, and starts one otherwise.
-        #
-        # Grouping is not tidiness. Ten channels forwarding one message
-        # correctly fail to promote — they are one origin — and if each of
-        # them also filed its own weak event, the operator would see the same
-        # unconfirmed fire ten times on the map. The rule that stops them
-        # promoting has to be the rule that stops them multiplying.
-        existing = _matching_weak_event(report, live_weak, outcome.weak_events)
-        if existing is not None:
-            existing["reports"].append(report)
-            existing["last_seen_at"] = max(existing["last_seen_at"], report.observed_at)
+        if already_reported(report):
+            outcome.skipped.append({
+                "observation_id": report.observation_id,
+                "reason": "same_claim_already_reported",
+                "location_text": report.location_text,
+            })
             continue
+        seen_origins.append(report.origin_key)
+        seen_texts.append(report.text)
 
-        outcome.weak_events.append({
+        outcome.uncorroborated.append({
             "hazard": report.hazard,
-            "reports": [report],
-            "latitude": report.latitude,
-            "longitude": report.longitude,
-            "precision_m": report.precision_m,
-            "location_text": report.location_text,
-            "first_seen_at": report.observed_at,
-            "last_seen_at": report.observed_at,
-            "expires_at": report.observed_at + ttl,
+            "report": report,
+            "basis": {
+                "kind": "uncorroborated_report",
+                "detail": (
+                    "No independent report and no instrument evidence supports "
+                    "this claim yet."
+                ),
+                "cell_id": cell_for(report.latitude, report.longitude),
+                "observed_at": report.observed_at.isoformat(),
+            },
         })
 
     return outcome
-
-
-def _matching_weak_event(
-    report: Report,
-    persisted: Sequence[Mapping[str, Any]],
-    pending: list[dict[str, Any]],
-) -> dict[str, Any] | None:
-    """The weak event this report continues, from this tick or an earlier one.
-
-    A match against a stored row is hydrated into `pending` on the way out, so
-    the caller has one list to persist and an update to an existing weak event
-    cannot be silently dropped on the floor.
-    """
-    for candidate in pending:
-        if candidate["hazard"] != report.hazard:
-            continue
-        if within_window(
-            report,
-            candidate["latitude"], candidate["longitude"],
-            candidate["last_seen_at"], candidate["precision_m"],
-        ):
-            return candidate
-
-    for stored in persisted:
-        if stored.get("hazard") != report.hazard:
-            continue
-        if within_window(
-            report,
-            stored.get("latitude"), stored.get("longitude"),
-            stored.get("last_seen_at"), stored.get("precision_m"),
-        ):
-            # Same shape as a pending one, carrying the id of the row to
-            # update, and added to the pending list so the new report lands
-            # somewhere the caller will actually write.
-            hydrated = {
-                "id": stored.get("id"),
-                "hazard": stored.get("hazard"),
-                "reports": [],
-                "latitude": stored.get("latitude"),
-                "longitude": stored.get("longitude"),
-                "precision_m": stored.get("precision_m"),
-                "location_text": stored.get("location_text"),
-                "first_seen_at": stored.get("first_seen_at"),
-                "last_seen_at": stored.get("last_seen_at"),
-                "expires_at": stored.get("expires_at"),
-            }
-            pending.append(hydrated)
-            return hydrated
-    return None

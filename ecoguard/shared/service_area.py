@@ -1,4 +1,7 @@
-"""Runtime EcoGuard operational service-area geometry."""
+"""The outline of the area this system covers.
+
+Used to decide whether a coordinate is ours to act on, and to cut a grid or a
+raster down to the part that matters."""
 
 from __future__ import annotations
 
@@ -25,6 +28,7 @@ class ServiceAreaError(RuntimeError):
 
 
 def _point_on_segment(x: float, y: float, start: list[float], end: list[float]) -> bool:
+    """Whether a point lies exactly on a line segment."""
     x1, y1 = float(start[0]), float(start[1])
     x2, y2 = float(end[0]), float(end[1])
     cross = (x - x1) * (y2 - y1) - (y - y1) * (x2 - x1)
@@ -34,6 +38,7 @@ def _point_on_segment(x: float, y: float, start: list[float], end: list[float]) 
 
 
 def _ring_contains_or_touches(ring: list[list[float]], longitude: float, latitude: float) -> tuple[bool, bool]:
+    """Whether a point is inside or on one closed ring."""
     inside = False
     for index in range(len(ring) - 1):
         start, end = ring[index], ring[index + 1]
@@ -49,6 +54,7 @@ def _ring_contains_or_touches(ring: list[list[float]], longitude: float, latitud
 
 
 def _polygon_contains_or_touches(polygon: list[list[list[float]]], longitude: float, latitude: float) -> bool:
+    """Whether a point is inside a polygon, allowing for holes."""
     outer_inside, outer_boundary = _ring_contains_or_touches(polygon[0], longitude, latitude)
     if outer_boundary:
         return True
@@ -66,11 +72,13 @@ def _polygon_contains_or_touches(polygon: list[list[list[float]]], longitude: fl
 def _clip_ring_to_rectangle(
     ring: list[list[float]], left: float, bottom: float, right: float, top: float,
 ) -> list[tuple[float, float]]:
+    """The part of a ring that falls inside a rectangle."""
     points = [(float(point[0]), float(point[1])) for point in ring]
     if points and points[0] == points[-1]:
         points.pop()
 
     def clip(points, inside, intersect):
+        """Keep the part of a shape on the inside of one edge."""
         if not points:
             return []
         output = []
@@ -88,13 +96,17 @@ def _clip_ring_to_rectangle(
         return output
 
     def vertical(x_value):
+        """How to cut an edge at a given longitude."""
         def intersection(start, end):
+            """Where an edge crosses this longitude."""
             portion = (x_value - start[0]) / (end[0] - start[0])
             return x_value, start[1] + portion * (end[1] - start[1])
         return intersection
 
     def horizontal(y_value):
+        """How to cut an edge at a given latitude."""
         def intersection(start, end):
+            """Where an edge crosses this latitude."""
             portion = (y_value - start[1]) / (end[1] - start[1])
             return start[0] + portion * (end[0] - start[0]), y_value
         return intersection
@@ -106,6 +118,7 @@ def _clip_ring_to_rectangle(
 
 
 def _ring_area(points: list[tuple[float, float]]) -> float:
+    """The area enclosed by a ring."""
     if len(points) < 3:
         return 0.0
     return abs(sum(
@@ -119,6 +132,7 @@ class ServiceArea:
     """A GeoJSON Polygon/MultiPolygon used only as an operational area."""
 
     def __init__(self, path: Path | str = DEFAULT_SERVICE_AREA_PATH):
+        """Load the service area outline from disk."""
         self.path = Path(path)
         try:
             collection: dict[str, Any] = json.loads(self.path.read_text(encoding="utf-8"))

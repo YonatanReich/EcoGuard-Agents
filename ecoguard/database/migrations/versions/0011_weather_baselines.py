@@ -17,6 +17,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add weather_baselines — what normal looks like, per cell, per month, per hour."""
     # A table rather than more rows in observations, because this is not an
     # observation. Every other row in that table answers "what happened at this
     # place at this moment"; a row here answers "what usually happens at this
@@ -70,4 +71,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove weather_baselines — what normal looks like, per cell, per month, per hour."""
     op.execute("DROP TABLE IF EXISTS weather_baselines")

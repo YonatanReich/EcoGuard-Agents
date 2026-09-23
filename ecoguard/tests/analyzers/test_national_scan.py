@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
-from ecoguard.analyzers.emergency.fire.national_scan import NationalCurrentRiskScanService
+from ecoguard.analyzers.fire.national_scan import NationalCurrentRiskScanService
 from ecoguard.shared.service_area import ServiceArea
 from ecoguard.api.fire_risk_schemas import NationalRiskScanResponse
 

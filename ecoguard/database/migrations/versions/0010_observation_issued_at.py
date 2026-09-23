@@ -19,6 +19,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add observations.issued_at — the second time axis a forecast needs."""
     # A measurement has one time: when it was taken. A forecast has two: when
     # it is *for*, and when it was *made*. The same hour is predicted over and
     # over as the run it came from gets newer, and those predictions disagree —
@@ -64,6 +65,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove observations.issued_at — the second time axis a forecast needs."""
     op.execute("DROP INDEX IF EXISTS observations_forecast_idx")
     op.execute("ALTER TABLE observations DROP CONSTRAINT observations_identity")
     op.execute("DELETE FROM observations WHERE issued_at IS NOT NULL")

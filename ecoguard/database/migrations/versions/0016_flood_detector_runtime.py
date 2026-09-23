@@ -15,6 +15,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add runtime state and materialized context for the flood detector."""
     # A station's grid cell changes only when either the catalog coordinates or
     # the national grid changes. Store it once instead of spatially joining on
     # every detector tick.
@@ -359,6 +360,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove runtime state and materialized context for the flood detector."""
     op.execute("DROP TABLE IF EXISTS flood_candidates")
     op.execute("DROP TABLE IF EXISTS radar_cell_mappings")
     op.execute("DROP TABLE IF EXISTS flood_station_baselines")

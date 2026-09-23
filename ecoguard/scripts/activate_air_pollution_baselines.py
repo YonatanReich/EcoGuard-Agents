@@ -19,6 +19,7 @@ from ecoguard.detectors.air_pollution.baseline_activation import (  # noqa: E402
 
 
 def audit(family: str):
+    """Report whether a baseline set is complete enough to switch to."""
     from ecoguard.database.repositories.air_pollution_baseline_activation import (
         audit_baseline_family_activation,
     )
@@ -28,6 +29,7 @@ def audit(family: str):
 
 
 def activate(family: str):
+    """Switch the detectors over to a baseline set."""
     from ecoguard.database.repositories.air_pollution_baseline_activation import (
         activate_baseline_family,
     )
@@ -37,6 +39,7 @@ def activate(family: str):
 
 
 def readiness_summary(report):
+    """A short summary of what is and is not ready."""
     return {
         "family": report["family"],
         "ready": report["ready"],
@@ -47,6 +50,7 @@ def readiness_summary(report):
 
 
 def main(argv=None) -> int:
+    """Run the audit or the switch from the command line."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--family", required=True, choices=[TARGET_BASELINE_FAMILY],

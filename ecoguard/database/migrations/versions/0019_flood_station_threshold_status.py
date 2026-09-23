@@ -15,6 +15,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Record explicitly which gauges are eligible, and drop the stale flood history."""
     op.execute(
         """
         ALTER TABLE hydrometric_stations
@@ -167,6 +168,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Undo the eligibility column and restore the old flood history."""
     op.execute("DROP TABLE IF EXISTS rain_station_idf_values")
     op.execute(
         """

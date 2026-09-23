@@ -1,44 +1,20 @@
 """The cell: the one place every hazard agrees to meet.
 
-Nothing in this system observes a cell. Satellites observe 375 m pixels, air
-quality stations observe a point on a roof, gauges observe a river section,
-weather models observe a ~10 km grid of their own. A cell is not any of those
-resolutions — it is deliberately coarser than all of them, because its job is
-not to be precise. Its job is to be **shared**.
+Nothing here observes a cell. Satellites see 375 m pixels, stations see a point
+on a roof, gauges see a river section, weather models see a 10 km grid. A cell
+is coarser than all of them on purpose, because its job is not to be precise -
+its job is to be shared.
 
-That is what makes "anomalous brightness in cell 0087-0029" and "anomalous
-PM2.5 in cell 0087-0029" comparable statements. They are not comparable because
-brightness and PM2.5 are alike; they are comparable because both have been
-resolved onto the same ground. Without a common spatial key a coordinator
-cannot tell whether two detectors are describing one event or two, and that is
-the entire question it exists to answer.
+That is what makes "unusual brightness in cell 0087-0029" and "unusual PM2.5 in
+cell 0087-0029" comparable. Without a common place, the coordinator cannot tell
+one event from two, which is the whole question it exists to answer.
 
-So every source maps onto the cell from wherever it naturally lives:
+Two properties the rest of the system depends on: an id resolves to ground with
+no lookup, and ids are never renumbered, because a quarter of a million stored
+rows carry them.
 
-    finer than a cell   VIIRS pixels, 250 m surface cells   -> aggregate up
-    a point             stations, gauges, a Telegram report -> `cell_for`
-    coarser than a cell the 15 km forecast subgrid          -> nearest cell
-
-Properties the rest of the system relies on:
-
-  * **Deterministic.** An id resolves to ground with no lookup and no database.
-    `risk-05000m-r0002-c0013` is row 2, column 13 of the 5 km grid, forever.
-  * **Stable.** Ids are stored on a quarter-million observation rows. The
-    layout may be extended; existing ids may never be renumbered.
-  * **Square-ish on the ground, not in degrees.** The longitude step is
-    recomputed per row, so a cell is 5.00 km wide at Eilat and at Metula. A
-    fixed degree step would leave northern cells visibly squashed.
-
-One wart, stated rather than fixed: the `risk-` prefix is historical, from when
-the grid served only fire-risk scanning. The cell is hazard-neutral; the prefix
-is not, and renaming it would invalidate every stored row for no gain.
-
-Known limit worth carrying: a square is the wrong shape for water. Flood
-behaviour follows drainage basins, and "anomalous rainfall in cell Y" is a
-weaker statement than "anomalous brightness in cell Y" because the water does
-not stay in the square. Basin-shaped hazards should resolve a basin to the set
-of cells it covers rather than pretend a basin is a cell.
-"""
+Known limit: a square is the wrong shape for water, which follows drainage
+basins rather than a grid."""
 
 from __future__ import annotations
 
@@ -75,11 +51,13 @@ def service_area_cells() -> tuple[GridCell, ...]:
 
 @lru_cache(maxsize=1)
 def _cells_by_position() -> dict[tuple[int, int], GridCell]:
+    """The grid indexed by row and column, built once."""
     return {(cell.grid_row, cell.grid_col): cell for cell in service_area_cells()}
 
 
 @lru_cache(maxsize=1)
 def _cells_by_id() -> dict[str, GridCell]:
+    """The grid indexed by cell id, built once."""
     return {cell.cell_id: cell for cell in service_area_cells()}
 
 

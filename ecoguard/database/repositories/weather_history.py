@@ -1,20 +1,13 @@
 """The one place anything reads stored weather.
 
-Before this module there were three Open-Meteo callers: the scheduled
-collector writing Postgres, a rolling SQLite cache feeding the fire-risk
-model, and WeatherDataAgent calling the provider live on every HTTP request.
-Three fetch paths meant three rate-limiter states that could not see each
-other, two copies of the same seven variables, and a per-request provider call
-on the hot path of an endpoint that already took thirty seconds.
+There were once three separate paths to the weather provider, with three rate
+limits that could not see each other and a live provider call on the hot path
+of an already slow request. Now the collector is the only thing that talks to
+the provider, and everything else reads here.
 
-Now the collector is the only thing that talks to Open-Meteo, and everything
-else reads here. The three consumers want three different shapes of the same
-rows, which is what the three public functions are:
-
-  * `missing_hours`   — the collector asking what it still has to fetch
-  * `hourly_for_cell` — the fire-risk model's 168-hour feature window
-  * `current_for_point` — one coordinate's latest reading, for the API
-"""
+Three consumers want three shapes of the same rows, which is what the three
+functions are: what the collector still has to fetch, a week of history for the
+fire model, and one coordinate's latest reading for the dashboard."""
 
 from __future__ import annotations
 
@@ -25,7 +18,7 @@ from typing import Any, Iterable, Sequence
 from sqlalchemy import text
 
 from ecoguard.database.engine import Session
-from ecoguard.collection.shared.open_meteo.client import HOURLY_VARIABLES
+from ecoguard.collectors.shared.open_meteo.client import HOURLY_VARIABLES
 
 SOURCE = "weather"
 
@@ -48,6 +41,7 @@ CELL_REACH_M = 5_000
 
 
 def _hour(value: datetime) -> datetime:
+    """A time snapped to the hour, which is the resolution weather is stored at."""
     moment = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
     return moment.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
 
@@ -155,6 +149,7 @@ _VALUE_COLUMNS = ", ".join(
 
 
 def _empty_series() -> dict[str, list[Any]]:
+    """An empty result in the shape a caller expects, so absence needs no special case."""
     return {"time": [], **{variable: [] for variable in HOURLY_VARIABLES}}
 
 

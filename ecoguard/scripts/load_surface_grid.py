@@ -1,47 +1,7 @@
-"""Load elevation, slope and land cover into the surface_cells table.
+"""Loading elevation, slope and land cover into the database.
 
-Why this is in the store at all: a fire's rate of spread is not a property of
-the weather alone. The same wind and humidity produce a slow creep on a flat
-plain of bare rock and a run through pine on a slope, because flames lean into
-the ground ahead of them and preheat it, and because something has to burn. A
-risk analyser that cannot see slope and fuel cannot tell those two fires apart,
-so both have to be answerable from the store in the same round trip as
-population and weather.
-
-Two sources, one grid, one pass:
-
-  * Copernicus DEM GLO-90 — a 90 m global surface model, free, unauthenticated.
-    https://copernicus-dem-90m.s3.amazonaws.com/
-  * ESA WorldCover 2021 v200 — 10 m land cover in eleven classes.
-    https://esa-worldcover.s3.eu-central-1.amazonaws.com/
-
-Both are already used by the historical feature builders in research/; this
-brings them into Postgres on the grid the drawn-area summary reads.
-
-Four deliberate choices:
-
-  * Slope and aspect are computed on the *native 90 m* mosaic, before
-    coarsening. Deriving them from an already-averaged surface would smooth
-    away the gradient that is the whole point - a canyon averaged to 270 m is
-    flat.
-  * The DEM mosaic is built before the derivative, not tile by tile, so there
-    is no seam: a 3x3 neighbourhood straddling two tiles is an ordinary read.
-  * Land cover is stored as the *fraction* of each cell in each class, not as
-    one dominant label. A 270 m cell holds some nine hundred WorldCover pixels
-    and is almost never pure, and the mixture of scrub and houses is exactly
-    the wildland-urban interface a single label would erase.
-  * WorldCover is read in horizontal strips. The country at 10 m is a gigabyte
-    of pixels, but it reduces to one number per class per cell, so only the
-    strip needs to be in memory.
-
-Run as a module, like the other scripts here:
-
-    python -m ecoguard.scripts.load_surface_grid                # ~270 m cells
-    python -m ecoguard.scripts.load_surface_grid --coarsen 1    # native 90 m
-
-This is a full reload: surface_cells is emptied first. The ground does not
-move, so this runs once and then only when a source publishes a new version.
-"""
+Sampled once per grid cell so the analyzers can read terrain with a query
+instead of opening raster files on every request."""
 
 from __future__ import annotations
 
@@ -58,7 +18,7 @@ from sqlalchemy import text
 
 from ecoguard.database.engine import Session
 from ecoguard.database.repositories.surface import COVER_COLUMNS, bearing_degrees
-from ecoguard.research.datasets.build_historical_landcover_terrain_features import (
+from ecoguard.analyzers.fire.ml.build_historical_landcover_terrain_features import (
     DEM_VERSION,
     LAND_COVER_CLASSES,
     WORLDCOVER_VERSION,
@@ -75,7 +35,7 @@ from ecoguard.shared.grid import (
 from ecoguard.shared.service_area import DEFAULT_SERVICE_AREA_PATH, ServiceArea
 from ecoguard.paths import GENERATED
 
-# The same layout ecoguard/analyzers/emergency/fire/static_feature_store.py already reads, so the tiles
+# The same layout ecoguard/analyzers/fire/static_feature_store.py already reads, so the tiles
 # are downloaded once and shared with the offline risk grid.
 SOURCE_DIRECTORY = GENERATED / "static_environmental_sources"
 DEM_SUBDIRECTORY = "copernicus_dem_glo90"
@@ -260,6 +220,7 @@ def terrain_blocks(elevation: np.ndarray, valid: np.ndarray, transform, coarsen:
     starts = (np.arange(0, height, coarsen), np.arange(0, width, coarsen))
 
     def masked(values: np.ndarray, fill: float) -> np.ndarray:
+        """A raster with its no-data pixels replaced, so they cannot be read as values."""
         return np.where(valid, values, fill)
 
     radians = np.radians(aspect)
@@ -391,6 +352,7 @@ def load(
     source_directory: Path,
     service_area_path: Path,
 ) -> tuple[int, dict[str, float]]:
+    """Load elevation, slope and land cover into the database."""
     elevation, transform = build_elevation(bounds, source_directory)
     land = geometry_mask(
         [ServiceArea(service_area_path).geometry],
@@ -442,6 +404,7 @@ def load(
 
 
 def main() -> None:
+    """Load the terrain grid from the command line."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--coarsen",

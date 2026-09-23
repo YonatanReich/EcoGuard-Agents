@@ -14,6 +14,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add add explicit air pollution baseline family."""
     # Preserve every profile ID and all dependent versions/buckets. The only
     # existing artifacts are the audited national-v2 completed-hour profiles.
     op.execute("""
@@ -46,6 +47,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove add explicit air pollution baseline family."""
     # Once two families coexist, removing the dimension may create duplicate
     # five-column identities and destroy scientific provenance.
     raise RuntimeError(

@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from ecoguard.analyzers.emergency.fire.environment import (
+from ecoguard.analyzers.fire.environment import (
     WEATHER_MAX_AGE_HOURS,
     _incident_time,
     environment_for,

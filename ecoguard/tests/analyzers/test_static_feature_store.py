@@ -5,15 +5,15 @@ import sqlite3
 import pytest
 from rasterio.transform import from_origin
 
-from ecoguard.research.datasets.build_historical_landcover_terrain_features import LAND_COVER_FEATURES, slope_from_neighborhood
+from ecoguard.analyzers.fire.ml.build_historical_landcover_terrain_features import LAND_COVER_FEATURES, slope_from_neighborhood
 from ecoguard.shared.grid import generate_grid
-from ecoguard.analyzers.emergency.fire.static_feature_store import (
+from ecoguard.analyzers.fire.static_feature_store import (
     STATIC_MODEL_FEATURES,
     StaticSample,
     build_static_grid_database,
     select_representative_land_pixel,
 )
-from ecoguard.research.training.train_fire_prediction_landcover_terrain_models import FULL_FEATURES
+from ecoguard.analyzers.fire.ml.train_fire_prediction_landcover_terrain_models import FULL_FEATURES
 
 
 class FakeSampler:

@@ -51,10 +51,12 @@ def percentile(values: list[float], fraction: float) -> float:
 
 
 def _r4(value: float) -> float:
+    """Round to four decimal places, so stored baselines compare exactly."""
     return round(float(value), 4)
 
 
 def _input_digest(month_files: list[dict[str, Any]]) -> str:
+    """A fingerprint of the input files, so an unchanged rebuild is detectable."""
     stable = [
         {key: row[key] for key in ("year", "month", "cache_file", "content_sha256", "point_count")}
         for row in sorted(month_files, key=lambda row: (row["year"], row["month"]))
@@ -70,6 +72,7 @@ def discover_cache_profiles(cache_dir: str | Path) -> list[list[Path]]:
 
 
 def _statistics(values: list[float]) -> dict[str, float]:
+    """The median, spread and percentiles describing one bucket of readings."""
     center = statistics.median(values)
     return {
         "mean": _r4(statistics.fmean(values)),

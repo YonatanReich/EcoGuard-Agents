@@ -19,6 +19,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add firms_baselines gains a per-cell detection signature, so a persistent cell is not blind."""
     # `detection_days / days_observed` answers "does this cell light up often?"
     # It cannot answer "is this particular detection the thing it normally
     # does?", and that second question is the one that decides whether a fire
@@ -71,6 +72,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove firms_baselines gains a per-cell detection signature, so a persistent cell is not blind."""
     op.execute(
         "ALTER TABLE firms_baselines "
         "DROP CONSTRAINT IF EXISTS firms_baselines_signature_sane"

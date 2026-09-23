@@ -1,31 +1,17 @@
-"""Is this reading unusual *for here, for this time of year*?
+"""Is this reading unusual for here, at this time of year?
 
-The detector's missing denominator. A trailing window can only say whether an
-hour differs from the week behind it, and the week behind it drifts along with
-whatever is happening — a heatwave that builds over six days never looks
-unusual on any single one of them, and by day ten of a khamsin the khamsin is
-the baseline. Both are exactly the slow, persistent conditions fire cares about.
+The comparison a rolling window cannot make. A window only says whether an hour
+differs from the week behind it, and that week drifts with whatever is
+happening: a heatwave that builds over six days never looks unusual on any one
+of them. Those slow, persistent conditions are exactly what fire cares about.
 
-A climatological bucket does not drift. It is the same distribution every
-September regardless of what this September is doing, so an hour can be
-compared against a decade instead of against itself.
+A seasonal baseline does not drift. September is compared against every
+September on record, not against itself.
 
-Two statistics, and the choice between them matters:
-
-  * The **modified z-score** (median and MAD) is the primary test. The classic
-    mean-and-standard-deviation z-score assumes a roughly symmetric
-    distribution, which temperature obeys and precipitation flatly does not —
-    a month of dry hours and three storm hours produce a mean and a sigma that
-    no actual hour ever sat near.
-  * MAD is zero whenever more than half a bucket's samples are identical, which
-    is the *normal* state of precipitation: it does not rain in most hours. A
-    z-score is undefined there, so the fallback is the percentile band, which
-    stays meaningful — "above p95" is a fact about rank, not about spread.
-
-Baselines exist on a coarse subgrid (climatology is a smooth regional field),
-so any cell is answered by its nearest baseline cell. That mapping is pure
-arithmetic over the known grid, not a database lookup.
-"""
+Spread is measured in a way that survives a variable like rainfall, where most
+hours are zero and the average describes an hour that never happened; where
+even that fails, the answer falls back to rank - "higher than 95% of hours
+here" is a fact that stays true regardless of the shape of the data."""
 
 from __future__ import annotations
 

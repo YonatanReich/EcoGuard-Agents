@@ -32,6 +32,7 @@ def next_weak_event_id(at: datetime) -> str:
 
 
 def _report_json(report: Any) -> dict[str, Any]:
+    """One report as plain data."""
     record = asdict(report) if is_dataclass(report) else dict(report)
     observed_at = record.get("observed_at")
     if isinstance(observed_at, datetime):
@@ -40,6 +41,7 @@ def _report_json(report: Any) -> dict[str, Any]:
 
 
 def open_weak_events(hazard: str | None = None) -> list[dict[str, Any]]:
+    """The uncorroborated reports still awaiting a decision."""
     query = "SELECT * FROM weak_events WHERE status = 'open'"
     params: dict[str, Any] = {}
     if hazard is not None:

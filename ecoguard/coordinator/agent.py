@@ -1,27 +1,13 @@
-"""The coordinator: signals in, two queues of incidents out.
+"""One pass of the coordinator: signals in, incidents out.
 
-Every detector for every hazard feeds this one entry point, which is what makes
-it event-agnostic — it knows `CellSignal` and nothing about fire, floods or
-smog. Adding a hazard means adding a detector and a row in the queue table, not
-touching anything here.
+Every detector feeds this one entry point, so it knows about signals and
+nothing about fire, floods or smog. Each run closes what has gone quiet, folds
+new signals into open incidents or starts new ones, links incidents that caused
+each other, and sorts the result into the emergency and advisory queues.
 
-One run, five steps, in this order for reasons:
-
-  1. **Close what has gone quiet.** Before matching, so a signal arriving after
-     a long silence starts a new incident rather than resurrecting a stale one.
-  2. **Load what is open.**
-  3. **Match or create**, per signal. This is the deduplication: a fire raging
-     for three days lands forty signals on one incident instead of forty
-     incidents.
-  4. **Package** causally linked incidents into hybrids — a fire and the
-     pollution downwind of it become one event with two hazards.
-  5. **Queue.** Emergency and advisory, built last so a hybrid created in step
-     four lands in both.
-
-Packaging runs after matching, not during, because a link can only be judged
-once both sides exist as incidents. A pollution signal arriving before the fire
-is seen is not yet linkable to anything; it becomes its own incident and is
-absorbed on a later run, when the fire it belongs to exists.
+The order matters: quiet incidents close first so a signal after a long silence
+starts a new one, and linking happens last because a link can only be judged
+once both sides exist.
 """
 
 from __future__ import annotations

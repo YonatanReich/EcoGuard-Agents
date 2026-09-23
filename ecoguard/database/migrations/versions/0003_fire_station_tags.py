@@ -14,6 +14,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add fire_stations.tags."""
     # What OpenStreetMap knows about the station beyond where it is: phone,
     # website, opening_hours, operator, street address. Only a handful of
     # stations carry each, which is exactly why this is a jsonb rather than
@@ -22,4 +23,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove fire_stations.tags."""
     op.execute("ALTER TABLE fire_stations DROP COLUMN IF EXISTS tags")

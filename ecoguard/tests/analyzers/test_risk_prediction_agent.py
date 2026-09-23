@@ -5,9 +5,9 @@ import json
 
 import numpy as np
 
-from ecoguard.analyzers.emergency.fire.risk_prediction_agent import FireRiskPredictionAgent
-from ecoguard.research.training.calibrate_fire_risk_levels import OUTPUT_PATH
-from ecoguard.research.training.train_fire_prediction_landcover_terrain_models import DATASET_PATH, load_dataset
+from ecoguard.analyzers.fire.risk_prediction_agent import FireRiskPredictionAgent
+from ecoguard.analyzers.fire.ml.calibrate_fire_risk_levels import OUTPUT_PATH
+from ecoguard.analyzers.fire.ml.train_fire_prediction_landcover_terrain_models import DATASET_PATH, load_dataset
 
 
 def _payload() -> dict[str, float]:

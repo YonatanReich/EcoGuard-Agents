@@ -5,20 +5,20 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from ecoguard.analyzers.emergency.earthquake.impact import (
+from ecoguard.analyzers.earthquake.impact import (
     LIMITATION,
     estimate_impact,
     estimated_impact_radius_km,
 )
-from ecoguard.response_planner.emergency.adapters import build_earthquake_plan_input
+from ecoguard.planners.shared.adapters import build_earthquake_plan_input
 from ecoguard.api import events as event_api
 from ecoguard.api.events import shared_event_feed
-from ecoguard.analyzers.emergency.earthquake import incident_handler as earthquake_handler
+from ecoguard.analyzers.earthquake import incident_handler as earthquake_handler
 from ecoguard.coordinator.dispatcher import IncidentDispatchContext
 from ecoguard.coordinator.dispatcher import IncidentProcessingResult
 from ecoguard.coordinator.event_projection import earthquake_shared_event
-from ecoguard.analyzers.emergency.earthquake.risk_scale import earthquake_operational_risk
-from ecoguard.collection.earthquake.gsi import normalize_fdsn_text
+from ecoguard.analyzers.earthquake.risk_scale import earthquake_operational_risk
+from ecoguard.collectors.earthquake.gsi import normalize_fdsn_text
 from ecoguard.resource_allocator.allocation_agent import ResourceAllocationAgent
 from ecoguard.database.repositories.towns import (
     TownIntersection,

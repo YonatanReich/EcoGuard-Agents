@@ -108,6 +108,7 @@ def upsert_event_projection(record: EventProjectionWrite) -> dict[str, Any] | No
 
 
 def event_projection_by_incident(incident_id: str) -> dict[str, Any] | None:
+    """The event built for one incident, or None when there is none."""
     with Session() as session:
         row = session.execute(
             text(

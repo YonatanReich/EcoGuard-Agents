@@ -22,6 +22,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add surface_cells."""
     # The static ground, on the same footprint-per-cell pattern as
     # population_cells and for the same reason: a fire polygon half over a
     # ridge should read half the ridge, and a cell-sized step in the answer as
@@ -86,4 +87,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove surface_cells."""
     op.execute("DROP TABLE IF EXISTS surface_cells")

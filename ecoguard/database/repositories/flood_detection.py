@@ -48,6 +48,7 @@ def load_window(
     observed_since: datetime,
     observed_through: datetime,
 ) -> list[dict[str, Any]]:
+    """The readings a flood detector needs for one run."""
     if not cell_ids:
         return []
     with Session() as session:

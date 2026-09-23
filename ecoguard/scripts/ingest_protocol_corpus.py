@@ -1,23 +1,4 @@
-"""Embed the 84 procedures into `protocol_chunks` and make them searchable.
-
-    python -m ecoguard.scripts.ingest_protocol_corpus
-
-Runs after `extract_protocol_corpus` and `classify_protocol_corpus`. A full
-reload: the table is truncated first, because this is a corpus rather than a
-feed and a half-replaced corpus is worse than either version of it.
-
-The embedding is local. `fastembed` runs the model on onnxruntime with no torch,
-which is what makes it deployable — a 2.5 GB torch dependency is usually what
-stops a local embedder from being hostable at all. One model, used for both the
-stored passages and the live queries, because two models do not share a vector
-space and mixing them produces confident nonsense rather than an error.
-
-The tsvector channel is built with `simple`, not a language configuration.
-Postgres has no Hebrew stemmer, and `english` would stem Hebrew as though it
-were English. `simple` does no stemming at all, which is the honest option: this
-channel exists to catch exact procedure numbers like `201.02.003`, and those
-need no stemming.
-"""
+"""Loading the procedures into the database and making them searchable."""
 
 from __future__ import annotations
 
@@ -28,13 +9,13 @@ from sqlalchemy import text
 
 from ecoguard.database.engine import Session
 from ecoguard.paths import PACKAGE_ROOT
-from ecoguard.response_planner.protocols.clause_chunker import (
+from ecoguard.data.protocols.clause_chunker import (
     chunk,
     header_metadata,
     procedure_number,
     related_procedures,
 )
-from ecoguard.response_planner.protocols.corpus_schema import (
+from ecoguard.data.protocols.corpus_schema import (
     DDL,
     EMBEDDING_MODEL,
     PASSAGE_PREFIX,
@@ -48,6 +29,7 @@ EMBED_BATCH = 32
 
 
 def document_text(key: str) -> str:
+    """One procedure's full text."""
     return "\n".join(
         (page.extract_text() or "")
         for page in PdfReader(RAW / key).pages
@@ -108,6 +90,7 @@ def build_rows() -> tuple[list[dict], list[tuple[str, str]]]:
 
 
 def embed(contents: list[str]) -> list[list[float]]:
+    """Turn passages into the form the search compares against."""
     from fastembed import TextEmbedding
 
     model = TextEmbedding(EMBEDDING_MODEL)
@@ -121,6 +104,7 @@ def embed(contents: list[str]) -> list[list[float]]:
 
 
 def store(rows: list[dict], edges: list[tuple[str, str]]) -> None:
+    """Write the passages and their links to the database."""
     with Session() as session:
         for statement in DDL.split(";"):
             if statement.strip():
@@ -159,6 +143,7 @@ def store(rows: list[dict], edges: list[tuple[str, str]]) -> None:
 
 
 def main() -> None:
+    """Load the corpus from the command line."""
     print("building chunks...")
     rows, edges = build_rows()
     print(f"  {len(rows)} chunks from {len({r['document_key'] for r in rows})} documents")

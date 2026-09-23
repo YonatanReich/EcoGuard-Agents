@@ -15,6 +15,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add water Authority static hydrology reference data."""
     # One row per upstream source records exactly which version is represented
     # in the reference tables. checked_at advances even when its checksum is
     # unchanged; loaded_at advances only when rows were actually synchronized.
@@ -207,6 +208,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove water Authority static hydrology reference data."""
     op.execute("DROP TABLE IF EXISTS hydrometric_station_rain_links")
     op.execute("DROP TABLE IF EXISTS hydrometric_stations")
     op.execute("DROP TABLE IF EXISTS water_authority_station_owners")

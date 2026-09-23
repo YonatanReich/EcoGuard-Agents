@@ -1,39 +1,19 @@
-"""What "an anomalous reading of X in cell Y" means, for every X.
+"""What "an unusual reading of X in cell Y" means, for every X.
 
-A coordinator that merges candidates from independent detectors has to compare
-claims made in different units on different scales. Brightness is kelvin, rain
-is millimetres, PM2.5 is micrograms per cubic metre, and a satellite hotspot is
-not a measurement at all — it is a yes. None of those can be compared directly,
-and picking one as the reference unit only moves the problem.
+The coordinator has to compare claims made in different units: brightness in
+kelvin, rain in millimetres, PM2.5 in micrograms, and a satellite hotspot that
+is not a measurement at all. None of those compare directly.
 
-The unification is to stop comparing **magnitudes** and start comparing
-**rarity**. Not "how hot" but "how unusual is this for this cell, at this time
-of year, compared with everything this cell has done before". That question has
-the same answer type for every variable: a number between 0 and 1. A 1-in-500
-brightness reading and a 1-in-500 PM2.5 reading are the same strength of claim,
-and a coordinator can weigh them against each other without knowing what either
-measures.
+The trick is to stop comparing magnitudes and compare rarity instead - not "how
+hot" but "how unusual is this, here, at this time of year". That question has
+the same answer for every variable: a number between 0 and 1. A one-in-500
+brightness reading and a one-in-500 PM2.5 reading are the same strength of
+claim.
 
-Two things are kept deliberately apart, because collapsing them is the classic
-error in this domain:
-
-  **rarity** — how far this departs from normal. Statistical, needs a baseline,
-  and says nothing about danger. 25 C in a Negev January is extremely rare and
-  entirely harmless.
-
-  **severity** — how dangerous the reading is. Domain judgement, needs no
-  baseline. 40 C in a Negev August is utterly unremarkable statistically and is
-  exactly the condition that burns the country down.
-
-A system with only rarity misses every seasonal-normal disaster. A system with
-only severity cannot detect anything novel and cannot compare across hazards.
-Detectors are responsible for rarity; severity is the analysers' job and is
-left None here until one fills it in.
-
-`confidence` is a third, separate axis: how much the *reading itself* can be
-trusted, before asking what it means. A low-confidence VIIRS pixel and a
-baseline built from eleven samples are both weak evidence of a strong claim.
-"""
+Rarity and severity are kept apart on purpose. 25 degrees in a Negev January is
+extremely rare and entirely harmless; 40 degrees in a Negev August is
+statistically dull and is what burns the country down. Detectors supply rarity;
+severity is the analyzers' job."""
 
 from __future__ import annotations
 
