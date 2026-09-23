@@ -13,6 +13,8 @@ It only runs for emergencies. An advisory never reserves anyone.
 | File | What it does |
 |---|---|
 | `allocation_agent.py` | Matches required unit types to real stations and commits the reservation |
+| `allocation_routing.py` | Ranks station candidates by road travel and attaches full routes after reservation |
+| `geo.py` | Provides shared geographic distance calculations |
 | `flood_road_targets.py` | Works out which road sites a flood response needs to cover |
 
 ## Things worth knowing
