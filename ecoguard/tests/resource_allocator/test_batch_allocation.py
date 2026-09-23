@@ -457,7 +457,7 @@ def test_flood_uses_shared_0_to_100_risk_scale(
     severity, risk_score, risk_level
 ):
     agent = allocation_agent({})
-    prepared = agent._prepare_batch_request(
+    prepared = agent.request_preparer.prepare(
         {
             "incident_id": "INC-FLOOD-1",
             "hazard": "flood",
@@ -479,14 +479,14 @@ def test_flood_uses_shared_0_to_100_risk_scale(
 
 def test_fire_and_flood_receive_the_same_level_for_the_same_score():
     agent = allocation_agent({})
-    fire = agent._prepare_batch_request(
+    fire = agent.request_preparer.prepare(
         allocation_request(
             "INC-FIRE-1",
             response_plan("fire-event", risk_score=60, risk_level="high"),
         ),
         NOW,
     )
-    flood = agent._prepare_batch_request(
+    flood = agent.request_preparer.prepare(
         {
             "incident_id": "INC-FLOOD-1",
             "hazard": "flood",
@@ -510,7 +510,7 @@ def test_flood_allocator_rejects_targeting_that_disagrees_with_risk_analyzer():
         ValueError,
         match="risk severity does not match targeting evidence",
     ):
-        agent._prepare_batch_request(
+        agent.request_preparer.prepare(
             {
                 "incident_id": "INC-FLOOD-1",
                 "hazard": "flood",
@@ -528,7 +528,7 @@ def test_flood_allocator_requires_risk_analyzer_output():
     agent = allocation_agent({})
 
     with pytest.raises(ValueError, match="flood_risk_assessment is required"):
-        agent._prepare_batch_request(
+        agent.request_preparer.prepare(
             {
                 "incident_id": "INC-FLOOD-1",
                 "hazard": "flood",
@@ -546,7 +546,7 @@ def test_flood_allocator_selects_the_highest_priority_verified_road():
     street = _flood_site(4, "street", "street-target")
     motorway = _flood_site(4, "motorway", "motorway-target")
 
-    prepared = agent._prepare_batch_request(
+    prepared = agent.request_preparer.prepare(
         {
             "incident_id": "INC-FLOOD-1",
             "hazard": "flood",
@@ -569,7 +569,7 @@ def test_flood_allocator_selects_the_highest_priority_verified_road():
 def test_flood_allocator_assigns_police_to_gauge_when_no_site_was_verified():
     agent = allocation_agent({})
 
-    prepared = agent._prepare_batch_request(
+    prepared = agent.request_preparer.prepare(
         {
             "incident_id": "INC-FLOOD-1",
             "hazard": "flood",

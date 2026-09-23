@@ -1,9 +1,7 @@
 """Select and reserve nearby stations for emergency response requests."""
 
 from ecoguard.shared.activity import live_actor
-import math
 from copy import deepcopy
-from datetime import datetime, timezone
 
 from ecoguard.database.repositories.resource_allocations import (
     ResourceAllocationRepository,
@@ -13,9 +11,6 @@ from ecoguard.database.repositories.towns import (
     town_at_location,
 )
 from ecoguard.coordinator import incidents as incident_store
-from ecoguard.analyzers.flood.risk_analysis_schemas import (
-    FloodRiskAssessment,
-)
 from ecoguard.resource_allocator.allocation_routing import AllocationRoutingService
 from ecoguard.resource_allocator.geo import coordinates
 from ecoguard.resource_allocator.mapbox_client import MapboxClient
@@ -26,29 +21,11 @@ from ecoguard.resource_allocator.station_catalog import (
     StationCatalog,
 )
 from ecoguard.resource_allocator.station_selection import StationSelectionService
-
-RISK_LEVELS = frozenset({"low", "medium", "high", "critical"})
-
-EARTHQUAKE_MINIMUM_RESPONSE_POLICY = "earthquake_minimum_response_v1"
-EARTHQUAKE_ALLOCATION_BASIS = "protocol_recommended_units"
-EARTHQUAKE_QUANTITY_SOURCE = "ecoguard_minimum_response_policy"
-
-TIMEFRAME_PRIORITY = {
-    "ongoing": 0,
-    "within_6_hours": 1,
-    "within_1_hour": 2,
-    "immediate": 3,
-}
-
-FLOOD_ROAD_PRIORITY = {
-    "motorway": 6,
-    "trunk": 5,
-    "primary": 4,
-    "secondary": 3,
-    "tertiary": 2,
-    "street": 1,
-    "street_limited": 1,
-}
+from ecoguard.resource_allocator.request_preparation import (
+    AllocationRequestPreparer,
+    EARTHQUAKE_MINIMUM_RESPONSE_POLICY,
+    normalize_utc,
+)
 
 SETTLEMENT_FIELDS = (
     "population",
@@ -98,34 +75,7 @@ class ResourceAllocationAgent:
             police_responsibility_reader=self.police_responsibility_reader,
             routing_service=self.routing_service,
         )
-
-    @staticmethod
-    def _utc(value=None):
-        """Normalize a datetime or ISO string to an aware UTC datetime."""
-        if value is None:
-            return datetime.now(timezone.utc)
-        if isinstance(value, str):
-            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        if not isinstance(value, datetime) or value.tzinfo is None:
-            raise ValueError("queued_at must be an ISO timestamp with a UTC offset")
-        return value.astimezone(timezone.utc)
-
-    @staticmethod
-    def _planning_status(response_plan):
-        """Whether the plan this request came from succeeded."""
-        return str((response_plan.get("metadata") or {}).get("planning_status") or "")
-
-    @staticmethod
-    def _urgency(response_plan):
-        """Use the most urgent planner action only as a priority tie-breaker."""
-        return max(
-            (
-                TIMEFRAME_PRIORITY.get(str(action.get("timeframe") or ""), -1)
-                for action in response_plan.get("response_actions") or []
-                if isinstance(action, dict)
-            ),
-            default=-1,
-        )
+        self.request_preparer = AllocationRequestPreparer()
 
     @staticmethod
     def _required_station_count(
@@ -175,356 +125,6 @@ class ResourceAllocationAgent:
         # where they came from; when none of them applies, one station and the
         # station's own judgement beats a number nobody can source.
         return 1
-
-    @staticmethod
-    def _flood_site_priority(site):
-        """How urgent one flooded road site is, relative to the others."""
-        road = site.get("road") or {}
-        verification = site.get("mapbox_verification") or {}
-        snap_distance = verification.get("mapbox_snap_distance_m")
-        return (
-            int(site.get("severity_level") or 0),
-            FLOOD_ROAD_PRIORITY.get(str(road.get("base_class") or ""), 0),
-            int(site.get("urban") is True),
-            (
-                -float(snap_distance)
-                if isinstance(snap_distance, (int, float))
-                else -math.inf
-            ),
-            str(site.get("target_id") or ""),
-        )
-
-    def _prepare_flood_batch_request(self, item, now):
-        """Convert Flood targets, or its gauge fallback, to a station request."""
-
-        incident_id = str(item.get("incident_id") or "").strip()
-        if not incident_id:
-            raise ValueError("incident_id is required")
-        targeting = item.get("flood_targeting")
-        if not isinstance(targeting, dict):
-            raise ValueError("flood_targeting must be an object")
-        try:
-            risk = FloodRiskAssessment.model_validate(item.get("risk_assessment"))
-        except (TypeError, ValueError, AttributeError) as error:
-            raise ValueError("flood_risk_assessment is required") from error
-        if (
-            risk.event_id != incident_id
-            or risk.metadata.analysis_status not in {"success", "partial"}
-            or risk.risk_score is None
-            or risk.risk_level is None
-        ):
-            raise ValueError("flood_risk_assessment is unavailable")
-        ready_sites = [
-            site
-            for site in targeting.get("allocation_ready_sites") or []
-            if isinstance(site, dict)
-            and site.get("allocation_eligible") is True
-            and isinstance(site.get("allocation_location"), dict)
-        ]
-        if ready_sites:
-            primary = max(ready_sites, key=self._flood_site_priority)
-            severity = max(
-                3,
-                min(
-                    6,
-                    max(int(site.get("severity_level") or 3) for site in ready_sites),
-                ),
-            )
-            requirements = {"police": 1}
-            location = primary["allocation_location"]
-            allocation_target = {
-                "target_id": primary.get("target_id"),
-                "target_type": "verified_road_site",
-                "road": dict(primary.get("road") or {}),
-                "allocation_location": dict(location),
-                "covered_response_site_ids": [
-                    site.get("target_id") for site in ready_sites
-                ],
-            }
-            primary_target_id = primary.get("target_id")
-            fallback_reason = None
-        else:
-            sources = [
-                source
-                for source in targeting.get("hydrometric_sources") or []
-                if isinstance(source, dict)
-                and isinstance(source.get("station"), dict)
-            ]
-            if not sources:
-                return {
-                    "terminal": {
-                        "incident_id": incident_id,
-                        "event_id": f"{incident_id}:flood-station-fallback",
-                        "hazard": "flood",
-                        "status": "skipped",
-                        "reason": "hydrometric_station_location_unavailable",
-                        "allocated_units": {},
-                        "requirements": {"police": {
-                            "requested": 1,
-                            "assigned": 0,
-                            "shortfall": 1,
-                        }},
-                        "shortages": {"police_station": 1},
-                        "unsupported_units": [],
-                        "errors": [],
-                        "allocation_target": None,
-                    }
-                }
-            primary_source = max(
-                sources,
-                key=lambda source: int(
-                    (source.get("station") or {}).get("severity_level") or 3
-                ),
-            )
-            station = primary_source["station"]
-            severity = max(3, min(6, int(station.get("severity_level") or 3)))
-            requirements = {"police": 1}
-            location = {
-                "latitude": float(station["latitude"]),
-                "longitude": float(station["longitude"]),
-            }
-            primary_target_id = f"hydrometric-station-{station.get('id')}"
-            allocation_target = {
-                "target_id": primary_target_id,
-                "target_type": "hydrometric_station_fallback",
-                "source_station_id": station.get("id"),
-                "allocation_location": dict(location),
-                "covered_response_site_ids": [],
-                "requires_road_access_resolution": True,
-            }
-            fallback_reason = "no_verified_flood_response_site"
-
-        if risk.hydrologic_severity_level != severity:
-            raise ValueError("flood risk severity does not match targeting evidence")
-        risk_score = risk.risk_score
-        risk_level = risk.risk_level
-        event_id = (
-            f"{incident_id}:flood-road-target"
-            if ready_sites
-            else f"{incident_id}:flood-station-fallback"
-        )
-        planner_plan = item.get("response_plan")
-        planner_succeeded = (
-            isinstance(planner_plan, dict)
-            and self._planning_status(planner_plan) == "success"
-        )
-        if planner_succeeded:
-            response_plan = deepcopy(planner_plan)
-            planned_risk = response_plan.get("responding_to") or {}
-            if (
-                planned_risk.get("risk_score") != risk_score
-                or str(planned_risk.get("risk_level") or "").lower() != risk_level
-            ):
-                raise ValueError("flood response plan does not match risk analyzer")
-            # Road targeting owns the dispatch destination. The planner owns
-            # the units and instructions, but must not replace that verified
-            # operational location with the gauge centroid.
-            response_plan["event_id"] = event_id
-            response_plan["location"] = {
-                "latitude": float(location["latitude"]),
-                "longitude": float(location["longitude"]),
-            }
-            response_plan["responding_to"] = {
-                **planned_risk,
-                "primary_target_id": primary_target_id,
-                "fallback_reason": fallback_reason,
-            }
-        else:
-            response_plan = {
-                "metadata": {
-                    "planning_status": "success",
-                    "timestamp": self._utc(item.get("queued_at") or now).isoformat(),
-                    "agent": "deterministic_flood_station_fallback",
-                },
-                "event_id": event_id,
-                "location": {
-                    "latitude": float(location["latitude"]),
-                    "longitude": float(location["longitude"]),
-                },
-                "responding_to": {
-                    "risk_semantics": "detected_event_operational_risk",
-                    "risk_score": risk_score,
-                    "risk_level": risk_level,
-                    "severity_level": severity,
-                    "risk_confidence": risk.confidence,
-                    "primary_target_id": primary_target_id,
-                    "fallback_reason": fallback_reason,
-                },
-                "recommended_units": list(requirements),
-                "response_actions": [
-                    {
-                        "action": "Secure access to the identified flood response site.",
-                        "timeframe": "immediate",
-                        "responsible_unit": unit,
-                    }
-                    for unit in requirements
-                ],
-            }
-        prepared = self._prepare_batch_request(
-            {
-                "incident_id": incident_id,
-                "hazard": "prepared_flood",
-                "queued_at": item.get("queued_at"),
-                "response_plan": response_plan,
-            },
-            now,
-        )
-        prepared["hazard"] = "flood"
-        prepared["allocation_target"] = allocation_target
-        return prepared
-
-    def _prepare_batch_request(self, item, now):
-        """Validate one Planner response before allocation starts."""
-        if not isinstance(item, dict):
-            raise ValueError("allocation request must be an object")
-
-        if item.get("hazard") == "flood":
-            return self._prepare_flood_batch_request(item, now)
-
-        # The Coordinator wrapper adds its canonical incident identity and
-        # queue time without changing the Planner response.
-        response_plan = item.get("response_plan", item)
-        if not isinstance(response_plan, dict):
-            raise ValueError("response_plan must be an object")
-
-        # The Coordinator owns the incident lifecycle. Planner event_id is
-        # only a fallback for callers that pass a standalone plan.
-        incident_id = str(
-            item.get("incident_id") or response_plan.get("event_id") or ""
-        ).strip()
-        if not incident_id:
-            raise ValueError("incident_id is required")
-
-        planning_status = self._planning_status(response_plan)
-        if planning_status not in {"success", "failed", "skipped"}:
-            raise ValueError("response plan has an invalid planning_status")
-
-        if planning_status != "success":
-            metadata = response_plan.get("metadata") or {}
-            planner_error = response_plan.get("error")
-            return {
-                "terminal": {
-                    "incident_id": incident_id,
-                    "event_id": response_plan.get("event_id"),
-                    "status": planning_status,
-                    "reason": f"response_plan_{planning_status}",
-                    "planner_status": planning_status,
-                    "planner_reason": metadata.get("reason"),
-                    "planner_error": planner_error,
-                    "allocated_units": {},
-                    "requirements": {},
-                    "shortages": {},
-                    "unsupported_units": [],
-                    "errors": [planner_error] if planner_error else [],
-                }
-            }
-
-        allocation_policy = item.get("allocation_policy")
-        if allocation_policy is not None:
-            if allocation_policy != EARTHQUAKE_MINIMUM_RESPONSE_POLICY:
-                raise ValueError("unsupported allocation policy")
-            if response_plan.get("hazard_type") != "earthquake":
-                raise ValueError("earthquake allocation policy requires an earthquake plan")
-            metadata = response_plan.get("metadata") or {}
-            queued_at = self._utc(
-                item.get("queued_at") or metadata.get("timestamp") or now
-            )
-            # The policy still governs how MANY stations go (one per unit
-            # type); what it no longer governs is WHERE the incident sits in
-            # the queue. That is now the same derived 0-100 score Fire and
-            # Flood carry, so an M6.0 under a city outranks a brush fire and a
-            # small tremor in open desert does not.
-            responding_to = response_plan.get("responding_to") or {}
-            risk_score = responding_to.get("risk_score")
-            if (
-                not isinstance(risk_score, (int, float))
-                or isinstance(risk_score, bool)
-                or not math.isfinite(risk_score)
-                or not 0 <= risk_score <= 100
-            ):
-                raise ValueError("operational risk score must be between 0 and 100")
-            risk_level = str(responding_to.get("risk_level") or "").lower()
-            if risk_level not in RISK_LEVELS:
-                raise ValueError("operational risk level is unavailable")
-            waited_seconds = max(0, (now - queued_at).total_seconds())
-            return {
-                "incident_id": incident_id,
-                "response_plan": response_plan,
-                "risk_score": float(risk_score),
-                "risk_level": risk_level,
-                "queued_at": queued_at,
-                "allocation_time": now,
-                "urgency": self._urgency(response_plan),
-                "effective_priority": float(risk_score) + int(waited_seconds // 300),
-                "allocation_policy": EARTHQUAKE_MINIMUM_RESPONSE_POLICY,
-                "allocation_basis": EARTHQUAKE_ALLOCATION_BASIS,
-                "quantity_source": EARTHQUAKE_QUANTITY_SOURCE,
-            }
-
-        responding_to = response_plan.get("responding_to") or {}
-        if responding_to.get("risk_semantics") != "detected_event_operational_risk":
-            raise ValueError("response plan does not contain operational risk")
-
-        risk_score = responding_to.get("risk_score")
-        if (
-            not isinstance(risk_score, (int, float))
-            or isinstance(risk_score, bool)
-            or not math.isfinite(risk_score)
-            or not 0 <= risk_score <= 100
-        ):
-            raise ValueError("operational risk score must be between 0 and 100")
-
-        risk_level = str(responding_to.get("risk_level") or "").lower()
-        if risk_level not in RISK_LEVELS:
-            raise ValueError("operational risk level is unavailable")
-
-        recommended_units = list(
-            dict.fromkeys(response_plan.get("recommended_units") or [])
-        )
-        response_actions = response_plan.get("response_actions") or []
-        if not isinstance(response_actions, list):
-            raise ValueError("response_actions must be a list")
-        action_units = set()
-        for action in response_actions:
-            if not isinstance(action, dict):
-                raise ValueError("each response action must be an object")
-            responsible_unit = str(action.get("responsible_unit") or "").strip()
-            if responsible_unit not in recommended_units:
-                raise ValueError(
-                    "each response action must name a recommended responsible unit"
-                )
-            if not str(action.get("action") or "").strip():
-                raise ValueError("each response action must contain an instruction")
-            if action.get("timeframe") not in TIMEFRAME_PRIORITY:
-                raise ValueError("each response action must contain a valid timeframe")
-            action_units.add(responsible_unit)
-        missing_action_units = set(recommended_units) - action_units
-        if missing_action_units:
-            raise ValueError(
-                "each recommended unit must have at least one response action"
-            )
-        metadata = response_plan.get("metadata") or {}
-        queued_at = self._utc(
-            item.get("queued_at") or metadata.get("timestamp") or now
-        )
-        waited_seconds = max(0, (now - queued_at).total_seconds())
-        aging_bonus = int(waited_seconds // 300)
-
-        return {
-            "incident_id": incident_id,
-            "hazard": str(item.get("hazard") or "fire"),
-            "response_plan": response_plan,
-            "risk_score": float(risk_score),
-            "risk_level": risk_level,
-            "queued_at": queued_at,
-            "allocation_time": now,
-            "urgency": self._urgency(response_plan),
-            # Aging adds one point every five minutes so old requests progress.
-            "effective_priority": float(risk_score) + aging_bonus,
-            "allocation_policy": None,
-            "allocation_basis": None,
-            "quantity_source": None,
-        }
 
     @staticmethod
     def _priority_key(request):
@@ -753,13 +353,13 @@ class ResourceAllocationAgent:
 
     def allocate_batch(self, requests, now=None):
         """Allocate stations to a priority-sorted batch of response plans."""
-        current_time = self._utc(now)
+        current_time = normalize_utc(now)
         prepared = []
         terminal_results = []
 
         for request in requests or []:
             try:
-                item = self._prepare_batch_request(request, current_time)
+                item = self.request_preparer.prepare(request, current_time)
             except (TypeError, ValueError) as error:
                 response_plan = (
                     request.get("response_plan", request)
@@ -950,7 +550,7 @@ class ResourceAllocationAgent:
         """Release every station assigned to one incident; safe to call twice."""
         return self.station_allocator.release_incident(
             incident_id,
-            released_at=self._utc(released_at),
+            released_at=normalize_utc(released_at),
             reason=reason,
         )
 
