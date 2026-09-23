@@ -38,6 +38,7 @@ from ecoguard.api.events import router as events_router
 from ecoguard.api.scenario import router as scenario_router
 from ecoguard.api.weak_events import router as weak_events_router
 from ecoguard.api.demo import router as demo_router
+from ecoguard.api.pipeline import router as pipeline_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -83,6 +84,7 @@ app.include_router(events_router)
 app.include_router(weak_events_router)
 app.include_router(scenario_router)
 app.include_router(demo_router)
+app.include_router(pipeline_router)
 
 # Allow the Vite dev server to call the API directly during development.
 # Both localhost and 127.0.0.1 are listed because browsers treat them as

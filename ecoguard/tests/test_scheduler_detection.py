@@ -572,3 +572,35 @@ def test_advisory_plans_publish_before_the_allocator_runs(monkeypatch):
         ("allocate", ["INC-FIRE"]),
         ("publish", ["INC-FIRE"]),
     ]
+
+
+def test_paused_pipeline_skips_the_wave_without_touching_collectors(monkeypatch):
+    """A paused pipeline runs no detector and opens no incident.
+
+    The reason this matters is not the saved model call. With the key absent
+    every wave still wrote a failed projection, and six failures abandon an
+    incident for good — so a backend left running keyless burned the retry
+    budget of every open incident and left them broken when the key returned.
+    """
+    from ecoguard import pipeline_switch
+    from ecoguard import scheduler as shared_runtime
+
+    ran = []
+    monkeypatch.setattr(shared_runtime, "_detect_and_coordinate", lambda: ran.append(1))
+
+    previously = pipeline_switch.is_enabled()
+    try:
+        pipeline_switch.set_enabled(False)
+        assert shared_runtime.detect_and_coordinate() == []
+        assert ran == []
+
+        pipeline_switch.set_enabled(True)
+        shared_runtime.detect_and_coordinate()
+        assert ran == [1]
+    finally:
+        pipeline_switch.set_enabled(previously)
+
+    # Collection is on its own timers and is never gated by the switch.
+    collectors = [j for j in shared_runtime.scheduler.get_jobs()
+                  if j.id.startswith("collect_")]
+    assert collectors, "collectors must stay scheduled while the pipeline is paused"
