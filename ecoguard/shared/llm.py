@@ -135,6 +135,39 @@ class ClaudeProviderError(RuntimeError):
 CALL_BUDGET_PER_HOUR = int(os.getenv("ECOGUARD_CLAUDE_CALLS_PER_HOUR", "120"))
 CALL_BUDGET_WINDOW_SECONDS = 3600.0
 
+# The ceiling a single prompt may not cross, and the reason it exists.
+#
+# A call budget counts calls, so it cannot see the failure that actually
+# happened: twelve calls — well inside a 120/hour limit — carrying 1,066,014
+# input tokens between them, one of them 254,405 on its own. That was $2.76 in
+# about four minutes, and nothing refused it.
+#
+# The cause was a planner serialising an entire analysis into its prompt. An
+# air-pollution signal carries ~43 KB of detector internals, an incident
+# accumulates one per reading for its whole 18-hour life, and the prompt grew
+# with it. So the guard that matters is on prompt *size*, checked before the
+# request leaves.
+#
+# 60,000 is deliberately far above any legitimate prompt here: a grounded plan
+# is a few protocol excerpts and an analysis summary, which measured in the
+# low thousands. Anything approaching this ceiling is a serialisation bug, not
+# a big day.
+MAX_PROMPT_TOKENS = int(os.getenv("ECOGUARD_CLAUDE_MAX_PROMPT_TOKENS", "60000"))
+
+# Characters per token, used only to size a prompt before sending it. Four is
+# right for English; Hebrew runs worse, so this under-estimates and the guard
+# trips later than a true count would rather than earlier. Good enough for a
+# circuit breaker, and it costs no round trip.
+CHARS_PER_TOKEN = 4
+
+
+def estimate_prompt_tokens(system_blocks: list[dict], user_text: str) -> int:
+    """Roughly how large this prompt is, without asking the API."""
+    system_chars = sum(
+        len(str(block.get("text", ""))) for block in system_blocks or []
+    )
+    return (system_chars + len(user_text or "")) // CHARS_PER_TOKEN
+
 
 class CallBudget:
     """A rolling-window ceiling on Claude calls for this process."""
@@ -330,6 +363,22 @@ class ClaudeLLMService:
         """
         if self.client is None:
             raise ClaudeProviderError("missing credentials") from None
+
+        # Size first, and before the budget: an oversized prompt is a bug in the
+        # caller, and spending one of the hour's call slots to discover that
+        # would be the wrong trade. Refused rather than truncated — cutting a
+        # prompt down would send the model an analysis missing the half that
+        # mattered and return a confident plan built on it.
+        estimated = estimate_prompt_tokens(system_blocks, user_text)
+        if MAX_PROMPT_TOKENS and estimated > MAX_PROMPT_TOKENS:
+            logging.error(
+                "Refusing a %s-token prompt (ceiling %s). Nothing here should "
+                "be that large; a caller is serialising raw evidence into its "
+                "prompt. Raise ECOGUARD_CLAUDE_MAX_PROMPT_TOKENS only after "
+                "finding out what grew.",
+                f"{estimated:,}", f"{MAX_PROMPT_TOKENS:,}",
+            )
+            raise ClaudeProviderError("invalid request") from None
 
         # Refused before the request is built, so a loop costs nothing. Reported
         # as "rate limited" because that is what it is from a caller's point of

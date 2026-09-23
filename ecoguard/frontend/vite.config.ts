@@ -27,7 +27,7 @@ export default defineConfig({
     // otherwise reject as a DNS-rebinding attempt. Pinggy hands out a fresh
     // subdomain per session, so the suffixes are allowlisted rather than the
     // hostnames.
-    allowedHosts: ['.pinggy.link', '.pinggy.io', '.pinggy.online'],
+    allowedHosts: ['.pinggy.link', '.pinggy.io', '.https://bpkkppxaec.a.pinggy.link '],
     proxy: {
       '/api': {
         // A local backend, because the project is no longer hosted. This used

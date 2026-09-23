@@ -33,6 +33,21 @@ logger = logging.getLogger(__name__)
 
 SOURCE = "text_triage"
 
+# The classifier labels breathable-air reports `air_quality`, which is the
+# right word for what a message describes. Everything downstream — the queues,
+# the handler registry, the event mappers — calls that hazard `air_pollution`,
+# and the coordinator refuses a hazard it cannot route:
+#
+#   coordinator: 'air_quality' is in neither EMERGENCY_HAZARDS nor
+#   ADVISORY_HAZARDS
+#
+# So a Telegram report of heavy smoke was classified correctly, geocoded
+# correctly, and then dropped on the floor. Translating here rather than
+# renaming the label keeps the stored candidate faithful to what the model was
+# asked, and gives corroboration the same hazard name the structured detectors
+# use, so a smoke report and a pollution reading can meet.
+HAZARD_ALIASES = {"air_quality": "air_pollution"}
+
 # How far back to consider candidates on one run. Wider than the corroboration
 # window so a report and the official statement that confirms it are both in
 # the same pass even when they arrive either side of a tick boundary.
@@ -127,7 +142,7 @@ def reports_from_candidates(
             observation_id=candidate["observation_id"],
             source_id=candidate["source_id"],
             tier=candidate["tier"],
-            hazard=candidate["hazard"],
+            hazard=HAZARD_ALIASES.get(candidate["hazard"], candidate["hazard"]),
             observed_at=candidate["observed_at"],
             text=candidate.get("claim") or "",
             # Computed from the stored message rather than stored on the

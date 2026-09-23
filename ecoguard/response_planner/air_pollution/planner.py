@@ -249,11 +249,54 @@ class AirPollutionResponsePlanner:
             f"monitoring public information advisory unavailable {' '.join(unavailable)}"
         )
 
-    @staticmethod
-    def _prompt(analysis, chunks, reviewed, evidence_ids):
+    # Detector internals that belong in the incident record and never in a
+    # prompt. One air-pollution signal carries about 43 KB of these — a full
+    # detection_result and correlation_candidate — and an incident accumulates
+    # one per reading across its 18-hour life. Serialising the analysis whole
+    # therefore grew the prompt with the incident's age: a single observed call
+    # sent 254,405 input tokens, and twelve calls cost $2.76 in four minutes.
+    #
+    # The planner needs none of it. It may only copy reviewed actions and cite
+    # supplied excerpts, and the evidence IDs it is allowed to reference are
+    # passed separately, so dropping these changes nothing it is permitted to
+    # do.
+    PROMPT_EXCLUDED_KEYS = frozenset({
+        "detection_result",
+        "correlation_candidate",
+        "baseline_evidence",
+        "raw_payload",
+        "signals",
+    })
+
+    @classmethod
+    def _compact(cls, value, depth: int = 0):
+        """The analysis with the bulky detector internals stripped out."""
+        if depth > 12:
+            return "..."
+        if isinstance(value, dict):
+            return {
+                key: cls._compact(item, depth + 1)
+                for key, item in value.items()
+                if key not in cls.PROMPT_EXCLUDED_KEYS
+            }
+        if isinstance(value, list):
+            # A long list here is repeated readings, not distinct facts. The
+            # count is kept so the model is not misled into thinking it saw
+            # everything.
+            if len(value) > 20:
+                return [
+                    *(cls._compact(item, depth + 1) for item in value[:20]),
+                    f"... {len(value) - 20} more omitted",
+                ]
+            return [cls._compact(item, depth + 1) for item in value]
+        return value
+
+    @classmethod
+    def _prompt(cls, analysis, chunks, reviewed, evidence_ids):
+        report = cls._compact(analysis.model_dump(mode="json"))
         return (
             "# Non-emergency Air Pollution Analyzer report\n"
-            f"{json.dumps(analysis.model_dump(mode='json'), ensure_ascii=False, indent=2)}\n\n"
+            f"{json.dumps(report, ensure_ascii=False, indent=2)}\n\n"
             "# Available analysis evidence IDs\n"
             f"{json.dumps(sorted(evidence_ids), ensure_ascii=False)}\n\n"
             "# Verified pollution-guidance excerpts\n"

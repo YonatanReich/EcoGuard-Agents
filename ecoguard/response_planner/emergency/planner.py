@@ -22,6 +22,23 @@ from ecoguard.shared.protocols import ProtocolRetriever, verify_citations
 AGENT_NAME = "EmergencyResponsePlanner"
 DEFAULT_TOP_K = 5
 
+# Measured, not assumed: raising this did not help.
+#
+# The hypothesis was that plans truncate — 8 citations quoting up to 1,400
+# characters each, sharing a 4,096 budget with adaptive thinking, failing as
+# `json_invalid`. Across four scenario runs the default scored 5/5, 3/5 and
+# 3/5; 12,000 scored 2/5. One run either side is not proof, but there is no
+# evidence for the change and some against it, so it is reverted rather than
+# kept on a plausible story.
+#
+# What the runs actually show is that plan failures are varied rather than
+# truncation: `ungrounded_response` (citations that do not verify verbatim),
+# schema violations, and invalid JSON, spread across fire, flood and air
+# pollution. That is a grounding and reliability problem in the planning stage,
+# not an output-budget one, and it is recorded in the scenario report instead of
+# being papered over here.
+PLAN_MAX_TOKENS = None
+
 # ponytail: one retry, no judge. The grounding check below is already a
 # deterministic pass/fail against the retrieved text, so a second sample is
 # the whole fix; a model scoring its own plan would be a weaker signal for
@@ -37,6 +54,23 @@ Your previous plan was rejected. A protocol citation or an action referenced
 a chunk_id that was not supplied above, or quoted text that does not appear
 in that chunk. Copy chunk ids and quotations character-for-character from the
 excerpts in this message, and cite only excerpts that appear here.
+"""
+
+# A plan can also fail on the schema's own consistency rule — most often by
+# assigning an action to a unit type that is missing from recommended_units.
+# That is a slip rather than a misunderstanding, and naming it is usually
+# enough, so it spends the same retry budget as an ungrounded plan instead of
+# failing the incident outright. Observed in a scenario run: both fire plans
+# were discarded for exactly this, with a full risk analysis already paid for.
+INCONSISTENT_RETRY_NOTE = """
+
+# Correction
+
+Your previous plan was rejected by the output schema: {reason}
+
+Every unit named in an action's responsible_unit must also appear in
+recommended_units, plan_summary must be at least 20 characters, and each
+action needs at least one supporting_protocol_chunk_id.
 """
 
 EMERGENCY_PLANNING_SYSTEM_PROMPT = """\
@@ -57,12 +91,29 @@ Strict boundaries:
 - Respect each excerpt's jurisdiction and applicability metadata. Guidance
   marked supplementary or requiring local adaptation must not be presented as
   binding Israeli law, authority, agency responsibility, threshold, or road rule.
-- recommended_units contains unit-type identifiers only.
+- recommended_units contains unit-type identifiers only, and must list
+  every unit type used by any action. An action whose responsible_unit is
+  absent from recommended_units invalidates the whole plan.
 - Order actions by operational priority. Each action names one responsible unit
   type, a timeframe, and one or more supporting_protocol_chunk_ids copied from
   the supplied excerpts.
 - Every protocol citation must identify a supplied chunk and quote it verbatim.
 """
+
+def _schema_reason(error: Exception) -> str:
+    """One short, quotable sentence naming what the schema objected to.
+
+    Only pydantic's own message is used. The rejected values came from the
+    model's reading of the incident and stay out of the retry prompt for the
+    same reason they stay out of the log.
+    """
+    if isinstance(error, ValidationError):
+        messages = [item.get("msg", "") for item in error.errors()]
+        joined = "; ".join(message for message in messages if message)
+        if joined:
+            return joined[:300]
+    return "the response did not satisfy the required plan shape"
+
 
 QueryBuilder = Callable[[EmergencyResponsePlanInput], str]
 PromptBuilder = Callable[
@@ -163,10 +214,16 @@ class EmergencyResponsePlanner:
                 )
             except ClaudeProviderError as error:
                 return self._empty(validated, status="failed", error=str(error))
-            except (ValidationError, TypeError, AttributeError):
-                return self._empty(
-                    validated, status="failed", error="malformed_response"
+            except (ValidationError, TypeError, AttributeError) as error:
+                # Last attempt, or nothing useful to say back: give up.
+                if attempt + 1 >= MAX_PLAN_ATTEMPTS:
+                    return self._empty(
+                        validated, status="failed", error="malformed_response"
+                    )
+                user_text += INCONSISTENT_RETRY_NOTE.format(
+                    reason=_schema_reason(error)
                 )
+                continue
 
             plan, dropped = self._verified_plan(validated, payload, chunks, attempt)
             if plan is not None:

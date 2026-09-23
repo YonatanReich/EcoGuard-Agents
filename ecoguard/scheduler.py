@@ -199,48 +199,37 @@ for position, (name, collector_class) in enumerate(COLLECTORS.items()):
     )
 
 
-def process_text_events() -> dict[str, object]:
+def process_text_events(*, coordinate=None) -> dict[str, object]:
     """Classify stored Telegram/RSS text, then triage it, without escaping.
 
-    This is deliberately separate from collection and structured detection.
-    A model, database, gazetteer, or Coordinator failure in the text lane must
-    not stop upstream collectors or FIRMS/Flood/Earthquake detection.
+    Failure is contained but not isolated from the wave: a model, database or
+    gazetteer failure here is caught and logged, and the structured detectors
+    carry on, but the signals this produces are handed back to the caller
+    rather than coordinated separately.
+
+    Args:
+        coordinate: Where triage should send its signals. The wave passes a
+            collector so that text signals join the same coordination batch as
+            the structured ones; passing None makes triage coordinate on its
+            own, which is only correct when nothing else is about to.
     """
     result: dict[str, object] = {"classification": None, "triage": None}
     try:
-        with single_flight("process_text_events") as acquired:
-            if not acquired:
-                logger.info("text event processor: previous run still active, skipping")
-                return result
+        from ecoguard.detectors.text.classifier import classify_new_text
 
-            try:
-                from ecoguard.detectors.text.classifier import classify_new_text
-
-                result["classification"] = classify_new_text()
-            except Exception:
-                # Triage still runs: candidates successfully stored on an
-                # earlier tick must not be stranded by today's model outage.
-                logger.exception("text classification failed; continuing to triage")
-
-            try:
-                from ecoguard.detectors.text.run import run_text_triage
-
-                result["triage"] = run_text_triage()
-            except Exception:
-                logger.exception("text triage failed; collectors and detectors continue")
+        result["classification"] = classify_new_text()
     except Exception:
-        logger.exception("text event processor could not acquire its database lock")
+        # Triage still runs: candidates successfully stored on an earlier tick
+        # must not be stranded by today's model outage.
+        logger.exception("text classification failed; continuing to triage")
+
+    try:
+        from ecoguard.detectors.text.run import run_text_triage
+
+        result["triage"] = run_text_triage(coordinate=coordinate)
+    except Exception:
+        logger.exception("text triage failed; collectors and detectors continue")
     return result
-
-
-scheduler.add_job(
-    process_text_events,
-    "interval",
-    minutes=3,
-    id="process_text_events",
-    max_instances=1,
-    coalesce=True,
-)
 
 
 # Retention is not a collector — it writes nothing and talks to no provider —
@@ -346,6 +335,28 @@ def _detect_and_coordinate():
     from ecoguard.detectors.earthquake import observation_processing as earthquake_processing
 
     signals = []
+
+    # The text lane runs inside the wave, and its signals join this batch
+    # rather than being coordinated on their own.
+    #
+    # It used to be a separate three-minute job that called the coordinator
+    # itself and threw the result away. Two things followed, both silent. Text
+    # incidents were created and then never dispatched by anyone, so a report
+    # from Telegram could never be analysed, planned or projected — the
+    # uncorroborated advisory lane could not fire at all. And because the two
+    # lanes coordinated on different clocks, a Telegram report and a satellite
+    # hotspot describing the same fire were never in the same batch, so they
+    # could not corroborate each other in the pass they both arrived in.
+    #
+    # Running it here fixes both, costs less (classification on a ten-minute
+    # cadence rather than three), and makes a scenario run reproducible.
+    # Isolation is unchanged: process_text_events catches its own failures, as
+    # each detector below does.
+    try:
+        process_text_events(coordinate=signals.extend)
+    except Exception:
+        logger.exception("text lane failed; structured detection continues")
+
     for detector in (
         satellite,
         weather,
