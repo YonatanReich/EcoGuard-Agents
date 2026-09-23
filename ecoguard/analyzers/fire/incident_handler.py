@@ -8,6 +8,7 @@ from functools import lru_cache
 from typing import Any
 
 from ecoguard.analyzers.fire.risk_analysis_agent import RiskAnalysisAgent
+from ecoguard.analyzers.fire.stored_context import stored_context_for
 from ecoguard.coordinator.dispatcher import (
     IncidentDispatchContext,
     IncidentProcessingResult,
@@ -141,6 +142,7 @@ def detected_event_from_incident(incident: Mapping[str, Any]) -> dict[str, Any]:
         }
 
     timestamp = _iso(incident.get("last_signal_at") or incident.get("first_seen_at"))
+    stored = stored_context_for(incident)
     return {
         "metadata": {
             "timestamp": timestamp or datetime.now(timezone.utc).isoformat(),
@@ -153,7 +155,7 @@ def detected_event_from_incident(incident: Mapping[str, Any]) -> dict[str, Any]:
             "longitude": float(longitude),
         },
         "detection_confidence": detection_confidence,
-        "fire_weather_severity": None,
+        "fire_weather_severity": (stored.get("fire_danger") or {}).get("danger_class"),
         "satellite_evidence": {
             "source": "NASA FIRMS",
             "collection_status": "success" if satellite is not None else "not_available",
@@ -166,15 +168,18 @@ def detected_event_from_incident(incident: Mapping[str, Any]) -> dict[str, Any]:
             "hotspots": hotspots,
         },
         "report_evidence": report_evidence,
-        # These enrichments were part of the request-scoped FireDetectionAgent
-        # result, but are not stored on a Coordinator incident. Their absence is
-        # explicit so RiskAnalysisAgent records evidence gaps instead of zeros.
-        "fire_danger": None,
-        "weather_context": None,
-        "geospatial_context": None,
+        # Read from what the collectors already stored rather than left empty.
+        # The request-scoped fire query fetched these from three providers while
+        # an operator waited; an incident has no such request, and leaving them
+        # absent made the assessment report a coordinate's fire danger as
+        # unknown while its band sat in the database.
+        **stored,
         "source_status": {
             "coordinator": "success",
             "nasa_firms": "success" if satellite is not None else "not_available",
+            "stored_context": (
+                "success" if stored.get("geospatial_context") else "not_available"
+            ),
         },
     }
 
