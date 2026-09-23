@@ -27,6 +27,7 @@ from ecoguard.database.repositories.collector_runs import (
     log_start,
 )
 from ecoguard.detectors.text.keywords import HAZARDS, hazards_in, normalise
+from ecoguard.detectors.shared.window import DEFAULT_MAX_CATCHUP, catchup_floor
 from ecoguard.shared.llm import ClaudeLLMService
 
 logger = logging.getLogger(__name__)
@@ -44,7 +45,13 @@ DEFAULT_BATCH_SIZE = 40
 # How far back an unclassified message is still worth a call. A message the
 # classifier read and found nothing in leaves no row, so it is indistinguishable
 # from one never read and would be offered forever without this bound.
-DEFAULT_LOOKBACK = timedelta(hours=24)
+#
+# Three hours rather than a day, because this is also what a wake-up costs. The
+# feeds publish some 330 messages a day, and classifying all of them the moment
+# the pipeline resumes spends real money on messages too old to be reporting
+# anything current. Matching the detectors' catch-up window keeps one answer to
+# "how far back is still now".
+DEFAULT_LOOKBACK = DEFAULT_MAX_CATCHUP
 
 # The classifier's bookmark in collector_runs, same as every other lane.
 SOURCE = "text_classifier"
@@ -348,20 +355,34 @@ def classify_new_text(
     A tick with no new messages returns before the model is called, so the cost
     follows how much the feeds actually published.
     """
-    # A message the model read and found nothing in writes no candidate row, so
-    # the row-existence check alone calls it unclassified forever and re-sends
-    # it every tick for a day. The bookmark is what bounds that: read what
-    # arrived since the last successful run, like every other detector.
-    # DEFAULT_LOOKBACK stays as the cold-start floor.
-    bookmark = last_success_at(SOURCE)
-    lookback = since or max(
-        datetime.now(timezone.utc) - DEFAULT_LOOKBACK,
-        bookmark or datetime.min.replace(tzinfo=timezone.utc),
-    )
+    # Two different questions, so two bounds. `lookback` is how far back to
+    # re-offer messages we may already have read: a message the model found
+    # nothing in leaves no row, so without this it would be offered forever.
+    # `published_after` is how old a message may be and still be reporting
+    # something happening.
+    #
+    # The second is needed because the Telegram collector re-reads the last
+    # fifty posts of every channel on every run. A run after any gap ingests
+    # days of backlog stamped as arriving now, and an arrival-time bound alone
+    # sends all of it to the model as news — 500 messages against 15, measured.
+    #
+    # A caller that passes `since` has stated the window it wants and is not
+    # second-guessed: replaying a scenario or classifying a deliberate backlog
+    # is a real thing to want, and it is not the scheduled path.
+    now = datetime.now(timezone.utc)
+    if since is not None:
+        lookback, published_after = since, None
+    else:
+        lookback = catchup_floor(
+            last_success_at(SOURCE), now, limit=DEFAULT_LOOKBACK
+        )
+        published_after = now - DEFAULT_LOOKBACK
 
     run_id = log_start(SOURCE)
     try:
-        messages = unclassified_text_observations(since=lookback, limit=limit)
+        messages = unclassified_text_observations(
+            since=lookback, limit=limit, published_after=published_after,
+        )
         if not messages:
             log_finish(run_id, status="ok", rows_written=0)
             return {"messages": 0, "candidates": 0, "disagreements": {}}

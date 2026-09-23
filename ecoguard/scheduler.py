@@ -18,7 +18,7 @@ from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from ecoguard import retention
+from ecoguard import pipeline_switch, retention
 from ecoguard.collectors.flood.hydrometric_observations import (
     SOURCE as HYDROMETRIC_OBSERVATIONS_SOURCE,
     HydrometricObservationCollector,
@@ -317,6 +317,15 @@ def detect_and_coordinate():
     # plans need rebuilding. Every model call in the pipeline is then paid
     # twice. The collectors have had this lock since they were written; this
     # job is the expensive one and did not.
+    # Checked before the lock, not inside it: a paused wave should not queue
+    # behind a running one, and should not hold the lock other processes want.
+    if not pipeline_switch.is_enabled():
+        logger.info(
+            "detect_and_coordinate: pipeline is paused, skipping "
+            "(collectors are unaffected)"
+        )
+        return []
+
     with single_flight("detect_and_coordinate") as acquired:
         if not acquired:
             logger.info(

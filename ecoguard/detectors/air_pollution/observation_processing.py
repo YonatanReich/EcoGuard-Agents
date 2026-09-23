@@ -14,7 +14,7 @@ from ecoguard.shared.activity import live_actor
 
 import logging
 from collections.abc import Callable, Iterable, Mapping
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 from pydantic import AwareDatetime, Field, ValidationError
@@ -39,12 +39,19 @@ from ecoguard.detectors.air_pollution.live_baseline import (
 )
 from ecoguard.shared.air_quality_schemas import AirQualityObservation
 from ecoguard.shared.signals import CellSignal
+from ecoguard.detectors.shared.window import catchup_floor
 
 logger = logging.getLogger(__name__)
 
 AIR_POLLUTION_SOURCE = "air_pollution"
 RUN_SOURCE = "detector_air_pollution"
 DETECTION_BATCH_SIZE = 500
+
+# How far back to read arrivals when resuming after a gap. The provider
+# publishes every five minutes, so three hours is already some forty readings
+# per series - far more than a baseline comparison needs, and well short of
+# the eighteen-hour quiet period an episode would still be open within.
+CATCHUP = timedelta(hours=3)
 
 # Deliberately excludes collector envelope fields such as collected_at and
 # collection_status. New envelope metadata cannot silently enter the strict
@@ -247,13 +254,14 @@ def detect_new(
         log_start,
     )
 
-    since = last_success_at(RUN_SOURCE)
+    bookmark = last_success_at(RUN_SOURCE)
     run_id = log_start(RUN_SOURCE)
     try:
         through = at or datetime.now(timezone.utc)
         if through.tzinfo is None or through.utcoffset() is None:
             raise ValueError("at must carry a UTC offset")
         through = through.astimezone(timezone.utc)
+        since = catchup_floor(bookmark, through, limit=CATCHUP)
         cursor_at = since
         cursor_id = 0 if since is not None else None
         service = processor or AirPollutionObservationProcessor()

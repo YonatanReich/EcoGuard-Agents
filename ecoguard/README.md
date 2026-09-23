@@ -64,6 +64,27 @@ micrograms. None compare directly. So detectors report not *how much* but *how
 unusual* - a number between zero and one - and a one-in-500 reading of one is
 the same strength of claim as a one-in-500 reading of another.
 
+## Collection and thinking are on separate switches
+
+They have opposite appetites. A collector is cheap, and what it misses is gone
+for good — a provider does not keep the five-minute reading nobody asked for.
+Everything downstream costs money per event, and can be caught up whenever,
+because it reads from the store rather than from a provider.
+
+So collectors run whenever the process is up, and detection onwards can be
+paused:
+
+```
+ECOGUARD_PIPELINE=off                  # start paused
+POST /api/pipeline {"enabled": true}   # or flip it while running
+```
+
+Paused, the store keeps filling and nothing is judged, opened, analysed or
+planned. When it resumes, each detector reads the recent past once and then
+goes back to reading only what has arrived since it last ran — so an event is
+detected with the fire danger, weather and population data already beside it,
+and a two-day pause does not replay two days of finished events.
+
 ## Conventions
 
 - **Failures produce nothing, never a default.** An analyzer that cannot reach

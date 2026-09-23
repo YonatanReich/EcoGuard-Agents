@@ -30,6 +30,7 @@ from ecoguard.shared.signals import (
     direction_for,
     rarity_from_baseline,
 )
+from ecoguard.detectors.shared.window import catchup_floor
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,11 @@ if None in DIRECTIONS.values():
 # a stale reading is not evidence about the present, and silence is visible in
 # the run log while a confident four-hour-old anomaly is not.
 MAX_AGE = timedelta(hours=2)
+
+# How far back to read arrivals when resuming after a gap. One hour more than
+# MAX_AGE, which is one missed collector tick of slack: reading further would
+# only find readings the sweep then refuses as stale.
+CATCHUP = timedelta(hours=3)
 
 # How old an observation may be before it is history rather than news. Wider
 # than MAX_AGE because the bookmark, not a window, decides what gets read: this
@@ -267,10 +273,10 @@ def detect_new(*, reportable_only: bool = True) -> list[CellSignal]:
     then read the rows, so the overlap falls on the safe side. A tick that never
     happened costs nothing but latency.
     """
-    since = last_success_at(RUN_SOURCE)
+    now = datetime.now(timezone.utc)
+    since = catchup_floor(last_success_at(RUN_SOURCE), now, limit=CATCHUP)
     run_id = log_start(RUN_SOURCE)
     try:
-        now = datetime.now(timezone.utc)
         signals = _signals_from(
             arrivals_since(since, now), reportable_only=reportable_only
         )

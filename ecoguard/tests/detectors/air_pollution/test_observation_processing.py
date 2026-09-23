@@ -408,7 +408,17 @@ def test_detect_new_paginates_equal_ingestion_timestamps_by_id(monkeypatch):
     assert all(call["ingested_after"] <= INGESTED for call in calls)
 
 
-def test_first_run_starts_at_beginning_of_persisted_stream(monkeypatch):
+def test_first_run_starts_at_the_present_not_the_beginning_of_the_stream(monkeypatch):
+    """A detector with no bookmark reads the recent past, not the whole store.
+
+    This used to start at the beginning of the persisted stream. On the live
+    database that is 780,000 readings going back a fortnight, and every one of
+    them would be evaluated as though it had just arrived — opening incidents
+    for episodes that ended days ago. A detector answers "is something
+    happening", so it starts from the present however it got here.
+    """
+    from ecoguard.detectors.shared.window import DEFAULT_MAX_CATCHUP
+
     calls = []
 
     def reader(**kwargs):
@@ -419,5 +429,5 @@ def test_first_run_starts_at_beginning_of_persisted_stream(monkeypatch):
     service, _ = processor(reader=reader)
 
     assert detect_new(processor=service, at=DETECTED) == []
-    assert calls[0]["ingested_after"] is None
-    assert calls[0]["after_id"] is None
+    assert calls[0]["ingested_after"] == DETECTED - DEFAULT_MAX_CATCHUP
+    assert calls[0]["after_id"] == 0

@@ -84,7 +84,7 @@ def store_candidates(results: Sequence[dict[str, Any]]) -> int:
 
 
 def unclassified_text_observations(
-    *, since: datetime, limit: int = 500
+    *, since: datetime, limit: int = 500, published_after: datetime | None = None
 ) -> list[dict[str, Any]]:
     """Stored messages with no candidate row and no record of being judged.
 
@@ -98,6 +98,15 @@ def unclassified_text_observations(
     identical to one it never read, so it is offered again. `since` bounds
     that: re-reading yesterday's football results forever would be the cost of
     having no negative rows.
+
+    `since` is about arrival and `published_after` is about age, and they are
+    not the same bound. The Telegram collector re-reads the last fifty messages
+    of every channel on each run, so a run after any gap ingests days of
+    backlog stamped as arriving now — 106 messages spanning two days, on the
+    run that followed one expired session. Every one of them looks new to an
+    arrival-time filter and would be sent to the model. A message published the
+    day before yesterday is not reporting something happening, however recently
+    we happened to fetch it.
     """
     with Session() as session:
         rows = session.execute(
@@ -112,6 +121,8 @@ def unclassified_text_observations(
                   FROM observations o
                  WHERE o.source IN ('telegram', 'rss')
                    AND o.ingested_at > :since
+                   AND (CAST(:published_after AS timestamptz) IS NULL
+                        OR o.observed_at > CAST(:published_after AS timestamptz))
                    AND o.payload->>'source_id' IS NOT NULL
                    AND NOT EXISTS (
                          SELECT 1 FROM text_candidates c
@@ -121,7 +132,7 @@ def unclassified_text_observations(
                  LIMIT :limit
                 """
             ),
-            {"since": since, "limit": limit},
+            {"since": since, "limit": limit, "published_after": published_after},
         ).mappings().all()
     return [dict(row) for row in rows]
 
