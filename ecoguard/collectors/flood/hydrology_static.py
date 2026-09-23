@@ -48,6 +48,7 @@ class LayerSpec:
 
     @property
     def url(self) -> str:
+        """The address this layer is downloaded from."""
         return f"{BASE_URL}{self.path}"
 
 
@@ -61,6 +62,7 @@ class DownloadedLayer:
 
 
 def _required_int(properties: dict[str, Any], name: str, layer: str) -> int:
+    """A whole number that must be present, naming the layer when it is not."""
     value = properties.get(name)
     if value is None or isinstance(value, bool):
         raise StaticHydrologyLayerError(f"{layer} feature is missing integer property {name}")
@@ -73,11 +75,13 @@ def _required_int(properties: dict[str, Any], name: str, layer: str) -> int:
 
 
 def _optional_int(properties: dict[str, Any], name: str) -> int | None:
+    """A whole number, or None when absent."""
     value = properties.get(name)
     return None if value is None else int(value)
 
 
 def _optional_text(properties: dict[str, Any], name: str) -> str | None:
+    """Text, or None when absent or blank."""
     value = properties.get(name)
     if value is None:
         return None
@@ -86,6 +90,7 @@ def _optional_text(properties: dict[str, Any], name: str) -> str | None:
 
 
 def _properties(feature: dict[str, Any], layer: str) -> dict[str, Any]:
+    """One map feature's attributes, rejecting a feature without any."""
     properties = feature.get("properties")
     if not isinstance(properties, dict):
         raise StaticHydrologyLayerError(f"{layer} feature has no properties object")
@@ -93,6 +98,7 @@ def _properties(feature: dict[str, Any], layer: str) -> dict[str, Any]:
 
 
 def _serialized_geometry(feature: dict[str, Any], layer: str) -> str:
+    """A feature's shape as the text the database stores."""
     geometry = feature.get("geometry")
     if not isinstance(geometry, dict):
         raise StaticHydrologyLayerError(f"{layer} feature has no geometry object")
@@ -100,10 +106,12 @@ def _serialized_geometry(feature: dict[str, Any], layer: str) -> str:
 
 
 def _serialized_properties(properties: dict[str, Any]) -> str:
+    """A feature's attributes as stable text, so unchanged data compares equal."""
     return json.dumps(properties, ensure_ascii=False, separators=(",", ":"))
 
 
 def _basin_row(feature: dict[str, Any], imported_at: datetime) -> dict[str, Any]:
+    """One drainage basin as a database row."""
     properties = _properties(feature, "drainage_basins")
     return {
         "basin_id": _required_int(properties, "basin_id", "drainage_basins"),
@@ -118,6 +126,7 @@ def _basin_row(feature: dict[str, Any], imported_at: datetime) -> dict[str, Any]
 
 
 def _stream_row(feature: dict[str, Any], imported_at: datetime) -> dict[str, Any]:
+    """One stream as a database row."""
     properties = _properties(feature, "streams")
     return {
         "object_id": _required_int(properties, "OBJECTID", "streams"),
@@ -134,6 +143,7 @@ def _stream_row(feature: dict[str, Any], imported_at: datetime) -> dict[str, Any
 
 
 def _road_marker_row(feature: dict[str, Any], imported_at: datetime) -> dict[str, Any]:
+    """One road kilometre marker as a database row."""
     properties = _properties(feature, "road_km_markers")
     road_number = _optional_text(properties, "ROADNUM")
     kilometer = properties.get("KM")
@@ -325,6 +335,7 @@ def _rebuild_stream_network(
 
 
 def _canonical_checksum(document: dict[str, Any]) -> str:
+    """A fingerprint of a document, so an unchanged file can be skipped."""
     canonical = json.dumps(
         document, ensure_ascii=False, sort_keys=True, separators=(",", ":")
     ).encode("utf-8")
@@ -399,6 +410,7 @@ def download_layers(
 
 
 def _chunks(rows: list[dict[str, Any]]):
+    """Split rows into batches small enough to insert in one statement."""
     for start in range(0, len(rows), CHUNK_SIZE):
         yield rows[start:start + CHUNK_SIZE]
 

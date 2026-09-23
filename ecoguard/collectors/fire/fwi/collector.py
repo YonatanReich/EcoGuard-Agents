@@ -1,24 +1,8 @@
-"""Our own Fire Weather Index system, stepped forward one day at a time.
+"""Computing the daily fire-weather index from stored weather.
 
-Unlike every other collector this one calls no provider. Its input is the
-weather already in `observations` and its own previous output, which is what
-makes it different in kind: the three moisture codes are *accumulators*, and an
-accumulator that is recomputed from a fixed window instead of carried forward
-is not the same quantity. DC in particular integrates months of drying, so a
-DC derived from seven days of history is not a shallow DC — it is a different
-number that happens to share the name.
-
-That is also why this writes even on days nothing much happened. A missing day
-is not a gap in a series, it is a broken chain: every day after it inherits the
-error. The collector therefore walks from wherever it left off up to the most
-recent complete noon, writing each day, rather than only computing today.
-
-Honest limitation on the first season: the chain starts at the standard spring
-values and only what has been observed since can inform it. FFMC settles within
-days and DMC within weeks, but DC will be understated for months — it is
-accumulating from a cold start, not measuring a real drought history. Read it
-as relative to its own record until a full season has passed.
-"""
+Calculates rather than fetches. The index needs one value per day at a midday
+that has fully passed, and it builds on the previous day's value, so a missed
+day is a permanent hole and the collector catches up in order."""
 
 from __future__ import annotations
 
@@ -56,6 +40,7 @@ SPIN_UP_DAYS = 60
 
 
 def _noon(day: datetime) -> datetime:
+    """Midday on the given day, which is when the index is defined."""
     return day.replace(
         hour=NOON_LOCAL_STANDARD_UTC_HOUR, minute=0, second=0, microsecond=0
     )
@@ -123,6 +108,7 @@ def _noon_inputs(series: dict[str, Any], noon: datetime) -> dict[str, float] | N
         return None
 
     def at(variable: str) -> float | None:
+        """One weather value at that hour, or None when it was not recorded."""
         values = hourly.get(variable) or []
         value = values[position] if position < len(values) else None
         return None if value is None else float(value)
@@ -152,9 +138,11 @@ class FireWeatherIndexCollector(BaseCollector):
     source = SOURCE
 
     def __init__(self, now: Any = None):
+        """Build the collector. The clock is injectable so tests are repeatable."""
         self._now = now or (lambda: datetime.now(timezone.utc))
 
     def fetch(self) -> list[dict[str, Any]]:
+        """Compute the fire-weather index for every day still missing one."""
         cells = service_area_cells()
         if not cells:
             return []

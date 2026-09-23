@@ -1,4 +1,8 @@
-"""Standalone inference interface for estimated fire-risk conditions."""
+"""Estimating fire risk for a set of conditions.
+
+Reports the driving factors alongside the score, so the answer can be read
+rather than taken on trust, and reports a failure rather than a default when
+the model cannot be applied."""
 
 from __future__ import annotations
 
@@ -22,12 +26,14 @@ class FireRiskPredictionAgent:
     """Score a complete, pre-collected 44-feature payload without acquiring data."""
 
     def __init__(self, model_path: Path | str = DEFAULT_MODEL_PATH, thresholds_path: Path | str = DEFAULT_THRESHOLDS_PATH):
+        """Build the agent. The model and its calibration are injectable for testing."""
         self.model_path = Path(model_path)
         self.thresholds_path = Path(thresholds_path)
         self._pipeline = None
         self._metadata: dict[str, Any] | None = None
 
     def _load(self) -> None:
+        """Load the model and its calibration, once."""
         if self._pipeline is not None:
             return
         bundle = joblib.load(self.model_path)
@@ -47,15 +53,18 @@ class FireRiskPredictionAgent:
 
     @property
     def feature_names(self) -> tuple[str, ...]:
+        """The inputs this model expects, in order."""
         self._load()
         return tuple(self._metadata["feature_names"])
 
     @property
     def calibration_metadata(self) -> Mapping[str, Any]:
+        """How the model's scores were calibrated, and against what."""
         self._load()
         return self._metadata
 
     def predict(self, features: Mapping[str, Any]) -> dict[str, Any]:
+        """The estimated fire risk for one set of conditions."""
         try:
             self._load()
             if not isinstance(features, Mapping):
@@ -97,6 +106,7 @@ class FireRiskPredictionAgent:
             return self._error("model_artifact_error", str(exc))
 
     def _main_factors(self, values: Mapping[str, float]) -> list[dict[str, str]]:
+        """Which conditions drove this estimate, so it can be read rather than trusted."""
         references = self._metadata.get("feature_reference_train_2023_2024", {})
         ranked = self._metadata.get("global_feature_importance", [])
         factors = []
@@ -115,6 +125,7 @@ class FireRiskPredictionAgent:
 
     @staticmethod
     def _error(code: str, message: str, details: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        """A result carrying the reason no estimate could be produced."""
         error = {"code": code, "message": message}
         if details:
             error["details"] = dict(details)
@@ -122,6 +133,7 @@ class FireRiskPredictionAgent:
 
 
 def _factor_statement(feature: str) -> str:
+    """One driving factor in words."""
     if feature.startswith("fires_within") or feature.startswith("days_since_previous_firms"):
         return "Recent historical fire activity nearby was associated with the model output."
     if any(token in feature for token in ("temperature", "humidity", "wind", "precipitation")):
@@ -137,6 +149,7 @@ PredictionAgent = FireRiskPredictionAgent
 
 
 def main() -> None:
+    """Run one estimate from the command line."""
     parser = argparse.ArgumentParser(description="Score one fully prepared fire-risk feature payload")
     parser.add_argument("features_json", type=Path)
     parser.add_argument("--model", type=Path, default=DEFAULT_MODEL_PATH)

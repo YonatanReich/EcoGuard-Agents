@@ -9,4 +9,4 @@ suspected anomaly. None of these modules assign severity, route an event,
 persist a candidate, or plan a response.
 
 This hazard is **advisory**, so its analyzer belongs under
-`ecoguard/analyzers/non_emergency/air_pollution/`, not `emergency/`.
+`ecoguard/analyzers/air_pollution/`, not `emergency/`.

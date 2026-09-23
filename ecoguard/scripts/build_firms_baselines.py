@@ -1,38 +1,4 @@
-"""Build the hotspot-rate baseline: how often does each cell light up anyway?
-
-    python -m ecoguard.scripts.build_firms_baselines
-    python -m ecoguard.scripts.build_firms_baselines --days 180 --rebuild
-
-The satellite is the only thing in this system that has ever actually seen a
-fire. It is also the only thing that sees the same steel mill every night, and
-without a way to tell those apart, wiring it to the coordinator would produce a
-nightly incident nobody should be dispatched to.
-
-`rarity_from_rate` in shared/signals.py was written for exactly this and has had
-nothing to read. It needs one number per cell: the share of days on which that
-cell produced a detection. This builds it.
-
-What it does: walks the last year five days at a time (FIRMS caps a request at
-five), asks for the whole service-area bounding box, and counts for each cell
-the days on which at least one hotspot landed in it.
-
-Three choices worth knowing:
-
-  * **Days, not detections.** A fire burning through four satellite passes in
-    an afternoon is one day of fire, not four events. Counting detections would
-    make a single bad day look like persistence.
-  * **Standard-processing sources for the older windows.** The near-real-time
-    products only reach back about two months; the SP products are the archive
-    and are also the better data, having been reprocessed.
-  * **Every cell gets a row, including the quiet ones.** The request is one
-    bounding box over the whole country, so a cell with no fires is a measured
-    zero rather than a gap. That is the opposite of weather_baselines, where a
-    cell outside the subgrid genuinely has no answer - and it matters, because
-    "this cell has never lit in a year" is the strongest evidence this table
-    holds and the thing that makes a new detection worth acting on.
-
-A full run is a few dozen requests and a minute or two.
-"""
+"""Measuring how often each cell shows a satellite hotspot anyway, so an ordinary one is not read as news."""
 
 from __future__ import annotations
 
@@ -44,8 +10,8 @@ from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import text
 
-from ecoguard.collection.fire.firms.client import FirmsDataAgent, FirmsProviderError
-from ecoguard.collection.fire.firms.collector import _service_area_box
+from ecoguard.collectors.fire.firms.client import FirmsDataAgent, FirmsProviderError
+from ecoguard.collectors.fire.firms.collector import _service_area_box
 from ecoguard.database.engine import Session
 from ecoguard.detectors.fire import signature
 from ecoguard.shared.cells import cell_for, service_area_cells
@@ -308,6 +274,7 @@ def store(days, counts, peak, profiles, days_observed: int,
 
 
 def build(days: int = DEFAULT_DAYS, agent: FirmsDataAgent | None = None) -> dict:
+    """Measure how often each cell shows a hotspot anyway."""
     agent = agent or FirmsDataAgent()
     box = _service_area_box()
     today = datetime.now(timezone.utc).date()
@@ -384,6 +351,7 @@ def build(days: int = DEFAULT_DAYS, agent: FirmsDataAgent | None = None) -> dict
 
 
 def main() -> None:
+    """Build the hotspot baselines from the command line."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--days", type=int, default=DEFAULT_DAYS)
     arguments = parser.parse_args()

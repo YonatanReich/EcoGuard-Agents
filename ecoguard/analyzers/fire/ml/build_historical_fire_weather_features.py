@@ -1,4 +1,10 @@
-"""Enrich supported historical FIRMS candidates with pre-event weather."""
+"""Adding the weather that preceded each historical fire.
+
+Every value is taken from before the fire started, so nothing can be learned
+from weather that had not happened yet.
+
+Downloads are saved as they go, because the run takes hours and a restart
+should not repeat what it already fetched."""
 
 from __future__ import annotations
 
@@ -74,16 +80,19 @@ class HistoricalWeatherError(RuntimeError):
 
 class ProviderError(HistoricalWeatherError):
     def __init__(self, category: str, *, transient: bool):
+        """Carry the category of a provider failure."""
         super().__init__(category)
         self.category = category
         self.transient = transient
 
 
 def _canonical_json(value: Any) -> str:
+    """Stable JSON text, so unchanged data produces the same fingerprint."""
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def _atomic_text(path: Path, text: str) -> None:
+    """Write a file in one step, so a crash cannot leave it half written."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     try:
@@ -95,6 +104,7 @@ def _atomic_text(path: Path, text: str) -> None:
 
 
 def parse_utc_timestamp(value: object) -> datetime:
+    """A stored timestamp as an aware time."""
     try:
         parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except (TypeError, ValueError):
@@ -105,6 +115,7 @@ def parse_utc_timestamp(value: object) -> datetime:
 
 
 def load_supported_candidates(path: Path = INPUT_PATH) -> list[dict[str, str]]:
+    """The fire records this build can add weather to."""
     if not path.exists():
         raise HistoricalWeatherError(f"required generated input is missing: {path}")
     try:
@@ -120,6 +131,7 @@ def load_supported_candidates(path: Path = INPUT_PATH) -> list[dict[str, str]]:
 
 
 def checkpoint_configuration(endpoint: str = ARCHIVE_ENDPOINT) -> dict[str, Any]:
+    """What the saved progress was built with, so a changed setting invalidates it."""
     return {
         "endpoint": endpoint,
         "timezone": TIMEZONE,
@@ -131,12 +143,14 @@ def checkpoint_configuration(endpoint: str = ARCHIVE_ENDPOINT) -> dict[str, Any]
 
 class WeatherCheckpoint:
     def __init__(self, directory: Path, configuration: Mapping[str, Any]):
+        """Open the saved progress for this build."""
         self.directory = directory
         self.entries = directory / "candidates"
         self.manifest = directory / "manifest.json"
         self.configuration = dict(configuration)
 
     def initialize(self) -> None:
+        """Prepare the progress directory, discarding it if the settings changed."""
         expected = {
             "format_version": CHECKPOINT_FORMAT_VERSION,
             "configuration": self.configuration,
@@ -156,6 +170,7 @@ class WeatherCheckpoint:
 
     @staticmethod
     def _key(candidate: Mapping[str, Any]) -> str:
+        """A stable key for one record's weather."""
         identity = "|".join(
             str(candidate.get(field, ""))
             for field in ("candidate_id", "start_timestamp", "centroid_latitude", "centroid_longitude")
@@ -163,9 +178,11 @@ class WeatherCheckpoint:
         return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:32]
 
     def _path(self, candidate: Mapping[str, Any]) -> Path:
+        """Where one record's weather is saved."""
         return self.entries / f"{self._key(candidate)}.json"
 
     def save(self, candidate: Mapping[str, Any], weather: Mapping[str, Any]) -> None:
+        """Keep one record's weather, so a restart does not re-download it."""
         payload = {
             "candidate": {
                 field: str(candidate.get(field, ""))
@@ -181,6 +198,7 @@ class WeatherCheckpoint:
         _atomic_text(self._path(candidate), _canonical_json(envelope))
 
     def load(self, candidate: Mapping[str, Any]) -> dict[str, Any] | None:
+        """One record's saved weather, or None when it has not been fetched."""
         path = self._path(candidate)
         if not path.exists():
             return None
@@ -218,6 +236,7 @@ class OpenMeteoHistoricalClient:
         sleep: Callable[[float], None] = time.sleep,
         retry_logger: Callable[[str], None] = print,
     ):
+        """Build the client for the historical weather archive."""
         self.endpoint = endpoint
         self.session = session or requests.Session()
         self.timeout = timeout
@@ -226,6 +245,7 @@ class OpenMeteoHistoricalClient:
         self.retry_logger = retry_logger
 
     def fetch(self, latitude: float, longitude: float, event_time: datetime) -> dict[str, Any]:
+        """The weather around one place and time."""
         params = {
             "latitude": latitude,
             "longitude": longitude,
@@ -274,6 +294,7 @@ class OpenMeteoHistoricalClient:
 
 
 def validate_hourly_response(data: Any) -> dict[str, Any]:
+    """Reject a response that is missing the hours it claims to carry."""
     if not isinstance(data, dict) or data.get("timezone") not in {"GMT", "UTC"}:
         raise ProviderError("malformed response", transient=False)
     hourly = data.get("hourly")
@@ -301,6 +322,7 @@ def validate_hourly_response(data: Any) -> dict[str, Any]:
 
 
 def _failed_row(candidate: Mapping[str, Any], category: str) -> dict[str, Any]:
+    """A record marked as having no weather, and why."""
     row = {field: candidate.get(field, "") for field in IDENTITY_FIELDS}
     row.update({"weather_source": SOURCE_NAME, "weather_collection_status": "failed", "weather_error": category})
     row.update({field: None for field in FEATURE_FIELDS})
@@ -308,6 +330,7 @@ def _failed_row(candidate: Mapping[str, Any], category: str) -> dict[str, Any]:
 
 
 def build_feature_row(candidate: Mapping[str, Any], weather: Mapping[str, Any]) -> dict[str, Any]:
+    """One record with its weather summarized into model inputs."""
     event_time = parse_utc_timestamp(candidate["start_timestamp"])
     features, status = compute_features(weather, event_time)
     row = {field: candidate.get(field, "") for field in IDENTITY_FIELDS}
@@ -317,6 +340,7 @@ def build_feature_row(candidate: Mapping[str, Any], weather: Mapping[str, Any]) 
 
 
 def write_output(path: Path, rows: Iterable[Mapping[str, Any]]) -> None:
+    """Write the finished dataset to disk."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     try:
@@ -331,6 +355,7 @@ def write_output(path: Path, rows: Iterable[Mapping[str, Any]]) -> None:
 
 
 def format_progress(completed: int, total: int, candidate: Mapping[str, Any], cached: int, elapsed: float) -> str:
+    """A one-line progress report, with how much is left."""
     percentage = completed / total * 100 if total else 100.0
     hours, remainder = divmod(int(elapsed), 3600)
     minutes, seconds = divmod(remainder, 60)
@@ -354,6 +379,7 @@ def build_historical_weather_features(
     request_pause_seconds: float = REQUEST_PAUSE_SECONDS,
     sleep: Callable[[float], None] = time.sleep,
 ) -> list[dict[str, Any]]:
+    """Add pre-event weather to every fire record."""
     candidates = load_supported_candidates(input_path)
     provider = client or OpenMeteoHistoricalClient()
     checkpoint = WeatherCheckpoint(checkpoint_path, checkpoint_configuration(provider.endpoint))
@@ -388,6 +414,7 @@ def build_historical_weather_features(
 
 
 def main() -> int:
+    """Run the build from the command line."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, default=INPUT_PATH)
     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)

@@ -1,28 +1,7 @@
-"""MODIS NDVI for every service-area cell: whether the fuel is alive.
+"""Satellite vegetation imagery.
 
-`surface_cells` says what grows where, and that never changes. It cannot say
-whether the grass is green or cured, and those are different fires — the same
-cell of grassland carries a slow creeping burn in March and a fast run in
-August. Land cover is the fuel's identity; this is its state.
-
-NDVI is the standard proxy. It is not fuel moisture and should not be reported
-as such: it measures canopy greenness, which tracks live fuel moisture well in
-herbaceous fuels and poorly under a closed evergreen canopy, where the canopy
-stays green over fully cured understorey. Use it as one input, not as an
-answer.
-
-Source is NASA GIBS, which serves the MODIS 8-day composite as an open WMS with
-no key and no registration — the same arrangement as the EFFIS Fire Weather
-Index raster, and this collector follows the same shape: fetch one image over
-the country, map pixel colours back through the published legend, sample per
-cell. The colour round trip costs a little precision (the legend bins NDVI at
-about 0.005) and that is far finer than the question being asked of it.
-
-Eight-day compositing is deliberate on MODIS's part, not a limitation here:
-a daily NDVI is mostly cloud and view-angle noise, and vegetation does not
-change meaningfully in a day. The composite is republished daily as it rolls,
-so a daily tick keeps the freshest one.
-"""
+An eight-day composite republished daily as it rolls forward, sampled per grid
+cell to say how much fuel is present and how dry it is."""
 
 from __future__ import annotations
 
@@ -129,10 +108,12 @@ class VegetationCollector(BaseCollector):
     source = "vegetation"
 
     def __init__(self, session: Any | None = None, now: Any = None):
+        """Build the collector. Session and clock are injectable for testing."""
         self.session = session or requests.Session()
         self._now = now or (lambda: datetime.now(timezone.utc))
 
     def _fetch_raster(self, bounds, day: datetime) -> Image.Image:
+        """Download the vegetation image covering this area for one day."""
         west, south, east, north = bounds
         height = max(1, int(RASTER_WIDTH * (north - south) / (east - west)))
         response = self.session.get(
@@ -154,6 +135,7 @@ class VegetationCollector(BaseCollector):
         return Image.open(io.BytesIO(response.content)).convert("RGB")
 
     def fetch(self) -> list[dict[str, Any]]:
+        """Sample vegetation cover for every cell in the service area."""
         bounds = area_bounds()
         legend = colour_to_ndvi()
         cells = service_area_cells()
@@ -175,6 +157,7 @@ class VegetationCollector(BaseCollector):
         )
 
     def _sample(self, image, bounds, cells, day: datetime, legend) -> list[dict[str, Any]]:
+        """Read one value per cell out of a downloaded image."""
         pixels = image.load()
         records = []
         for cell in cells:

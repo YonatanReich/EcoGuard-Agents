@@ -1,23 +1,12 @@
-"""Demo A: five authored events, and the evidence they would have produced.
+"""Demo A: an authored set of events, and the noise around them.
 
-The events are written down first, in `GROUND_TRUTH`. The observations below
-are then derived from them — what FIRMS would have seen, what the gauge would
-have read, what someone would have posted — so the expected output is known
-before the pipeline runs. Without that, "it found three fires" cannot be
-distinguished from "it found three things".
+Each event was decided first - a flood at a named gauge, two fires, a pollution
+episode in the south, a handful of reports - and then written as the readings
+the real collectors would have produced for it, down to the timestamps and
+units each provider uses.
 
-Calibration is against the real reference data, not invented:
-
-  * Eilat and the Carmel have no `firms_baselines` row, and the satellite
-    detector reports a cell it has no baseline for (rarity None is reportable).
-  * Station 417's September PM10 p95 is 46-58 ug/m3, so 185 is unambiguous and
-    25 is unambiguously normal.
-  * Nahal Ashalim's own official discharge thresholds are 5 and 20 m3/s, and
-    they travel in the observation payload, so the flood transition is exact.
-
-Noise is not padding. Each noise row is a specific thing the system is supposed
-to decline, and the grader checks that it declined it.
-"""
+That direction matters: the pipeline sees only ordinary observations, so
+nothing about the demo makes detection easier than it is in practice."""
 
 from __future__ import annotations
 
@@ -184,6 +173,7 @@ def _firms(lat: float, lon: float, frp: float, pixels: int, minutes_ago: int,
 
 def _weather(temperature: float, humidity: float, wind: float,
              gusts: float, direction: float) -> dict[str, Any]:
+    """One weather reading, in the shape the collector would have written."""
     return {
         "rain": 0.0,
         "weather_code": 0.0,
@@ -201,6 +191,7 @@ def _weather(temperature: float, humidity: float, wind: float,
 
 def _pollution(station: str, channel: str, pollutant: str, value: float,
                lat: float, lon: float, observed: datetime) -> dict[str, Any]:
+    """One air-quality reading, in the shape the collector would have written."""
     # provider_hour_for_observation() rejects anything whose provider timestamp
     # is not the same instant at a +02:00 offset -- the Ministry publishes on
     # Israel standard time, and the check exists so a caller cannot silently
@@ -263,6 +254,7 @@ def _gauge(station_id: int, name_en: str, name_he: str, lat: float, lon: float,
 def _telegram(peer: int, message_id: int, channel: str, title: str,
               body: str, observed: datetime,
               forwarded: dict | None = None) -> dict[str, Any]:
+    """One Telegram message, in the shape the collector would have written."""
     return {
         "kind": "telegram",
         "peer_id": peer,
@@ -286,6 +278,7 @@ def _telegram(peer: int, message_id: int, channel: str, title: str,
 
 def _rss(handle: str, display: str, guid: str, title: str, body: str,
          observed: datetime, feed: str) -> dict[str, Any]:
+    """One news item, in the shape the collector would have written."""
     return {
         "kind": "rss",
         "title": title,
@@ -311,6 +304,7 @@ def build_rows(now: datetime) -> list[tuple[str, str, datetime, dict[str, Any]]]
     """Every observation the scenario writes: (source, cell_id, observed_at, payload)."""
 
     def ago(minutes: int) -> datetime:
+        """A moment this many minutes before the demo's start."""
         return now - timedelta(minutes=minutes)
 
     def ago_5(minutes: int) -> datetime:

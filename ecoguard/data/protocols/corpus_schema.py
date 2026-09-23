@@ -1,30 +1,14 @@
-"""The `protocol_chunks` table, and the one place its DDL lives.
+"""The table the protocol passages are stored in.
 
-Shipped as executable DDL rather than only as an alembic revision because this
-repository currently has two alembic heads and a stored revision that exists on
-an unmerged branch, so `alembic upgrade` cannot walk its own history here. The
-ingestion script therefore ensures its own table. Every statement is
-`IF NOT EXISTS`, so running it against a database that already has the table is
-a no-op and applying the migration later is too.
+Passages are filtered by what they are about before they are ranked, which is
+where most of the quality comes from: for "fire approaching a settlement",
+high-rise building tactics scores almost as well as the correct clause, so
+ranking alone would surface the wrong doctrine whenever the wording tilted. A
+filter makes that impossible; a better model only makes it unlikely.
 
-Why these columns
------------------
-Most retrieval quality comes from filtering on `function` and `hazard` before
-ranking rather than from better embeddings. Measured on this corpus: with the
-query "fire approaching a settlement", high-rise structural tactics scores 0.804
-against the correct clause's 0.827 — close enough that similarity alone would
-surface building doctrine for a wildland question roughly whenever the phrasing
-tilted. A filter makes that impossible; a better model only makes it unlikely.
-
-`publish_date` and `supersedes` exist because these procedures replace each
-other. A 2016 document outranking its 2025 replacement is a correctness bug
-that looks exactly like a relevance ranking.
-
-`classification` and `external_pub_ok` are stored rather than assumed, per the
-plan's §1a. Everything in this corpus was found publicly and may ship, but the
-column stays so a future restricted document is a row-level fact rather than a
-convention somebody has to remember.
-"""
+The publication date is stored because these procedures replace each other, and
+a 2016 document outranking its 2025 replacement is a correctness bug wearing
+the costume of a ranking preference."""
 
 from __future__ import annotations
 

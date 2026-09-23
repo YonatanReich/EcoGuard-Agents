@@ -20,6 +20,7 @@ from ecoguard.planners.shared.planner import EmergencyResponsePlanner
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
+    """A value as a plain dict, whatever shape it arrived in."""
     if isinstance(value, Mapping):
         return dict(value)
     dump = getattr(value, "model_dump", None)
@@ -29,6 +30,7 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 
 def _iso(value: object) -> str | None:
+    """A time as an ISO string, or None when absent."""
     if isinstance(value, datetime):
         return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
     if value is None:
@@ -37,6 +39,7 @@ def _iso(value: object) -> str | None:
 
 
 def _confidence_label(raw: object, numeric: object) -> str | None:
+    """A readable confidence word from whatever the provider supplied."""
     text = str(raw or "").strip().lower()
     if text in {"h", "high"}:
         return "high"
@@ -188,11 +191,13 @@ class FireIncidentHandler:
         planner: object | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
+        """Build the handler with its risk analyzer and planner."""
         self._risk_analyzer = risk_analyzer or RiskAnalysisAgent()
         self._planner = planner or EmergencyResponsePlanner()
         self._clock = clock
 
     def _now(self) -> datetime:
+        """The current time, from the injected clock."""
         value = self._clock()
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("Fire handler clock must carry a UTC offset")
@@ -203,6 +208,12 @@ class FireIncidentHandler:
         incident: Mapping[str, Any],
         context: IncidentDispatchContext,
     ) -> IncidentProcessingResult:
+        """Assess one fire and plan a response.
+
+        The only analyzer that uses a model: it produces a risk score and a written
+        explanation, both grounded in the protocol corpus and rejected if they
+        cannot be traced back to it.
+        """
         if context.hazard != "fire" or context.route != "emergency":
             raise ValueError("Fire handler requires the emergency route")
 

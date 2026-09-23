@@ -1,13 +1,8 @@
-"""Ministry/Envista concentrations stored through the shared collector wrapper.
+"""The national air-quality monitoring network.
 
-cell_id is a source-local series identity, as it is for Telegram messages:
-ministry:<station>:<channel>:<pollutant>:<unit>, with each component URL-escaped.
-It is NOT a risk-grid cell. Coordinates are the monitoring station's WGS84
-point; original provider identities remain in the payload. The shared unique
-constraint (source, cell_id, observed_at) makes overlapping latest polls
-idempotent. Provider revisions at the same identity are first-write-wins, as
-for every other collector; this is preliminary data, not a validated archive.
-"""
+Roughly a thousand station-and-pollutant series, published every five minutes.
+Stored as they arrive; deciding which readings are unusual is the detector's
+job."""
 
 from __future__ import annotations
 
@@ -27,10 +22,12 @@ class AirPollutionCollector(BaseCollector):
     source = "air_pollution"
 
     def __init__(self, client=None, *, clock=None):
+        """Build the collector. Client and clock are injectable for testing."""
         self.client = client if client is not None else MinistryAirQualityClient()
         self.clock = clock or (lambda: datetime.now(timezone.utc))
 
     def fetch(self) -> list[dict[str, Any]]:
+        """Every air-quality reading published since the last one stored."""
         # BaseCollector logs exception text and tracebacks. Keep unexpected
         # provider/validation exceptions (which may contain headers) private.
         try:

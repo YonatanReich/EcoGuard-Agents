@@ -67,6 +67,7 @@ class TransportCorridorScreeningResult(ContractModel):
     @field_validator("limitations")
     @classmethod
     def validate_limitations(cls, values: list[str]) -> list[str]:
+        """Reject a blank limitation, since an empty caveat says nothing."""
         stripped = [value.strip() for value in values]
         if any(not value for value in stripped):
             raise ValueError("limitations cannot contain blank entries")
@@ -74,6 +75,7 @@ class TransportCorridorScreeningResult(ContractModel):
 
     @model_validator(mode="after")
     def validate_availability(self):
+        """Reject a result that is both unavailable and carrying a corridor."""
         has_any_geometry = (
             self.downwind_to_direction_deg is not None
             or self.boundary_bearings is not None
@@ -121,6 +123,7 @@ def corridor_boundary_bearings(
 
 
 def _validated_ranking(value: RankingInput) -> SettlementSpatialRankingResult:
+    """One ranking result, rejecting anything malformed."""
     payload = (
         value.model_dump()
         if isinstance(value, SettlementSpatialRankingResult)

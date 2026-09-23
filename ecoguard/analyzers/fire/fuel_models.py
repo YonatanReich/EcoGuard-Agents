@@ -1,43 +1,7 @@
-"""What a land-cover class means to a fire, as spread-model parameters.
+"""How different vegetation burns.
 
-`surface_cells` stores WorldCover classes because that is what the satellite
-publishes. No spread model takes a land-cover class: they take fuel load, how
-deep the fuel bed is, how finely divided it is, and how wet it can get before
-it stops carrying fire. This is the translation, and it is a table of constants
-rather than a data source — nothing to collect, but nothing can model spread
-without it.
-
-The mapping targets the Anderson 13 standard fuel models, which is what the
-Rothermel surface spread equations are parameterised against and what most
-published rate-of-spread work reports in. Each WorldCover class maps to the
-Anderson model that best describes Mediterranean-basin fuel of that type:
-
-    grassland  -> FM1  short grass, fastest spreading, entirely wind-driven
-    cropland   -> FM3  tall grass; stubble and standing cereal after harvest
-    shrubland  -> FM5  brush; Israeli garrigue and batha
-    tree_cover -> FM9  long-needle litter, which is what Aleppo pine drops and
-                       what carried the 2010 Carmel fire through the crowns
-
-**Why the load is split by size class.** Rothermel's equations are not a
-function of total fuel load. They are a function of how much fuel there is *in
-each size class and moisture state*, because a fire is a race between the heat
-the flaming front releases and the heat the next metre of fuel absorbs before
-it ignites. FM5 is the case that proves it: brush is 3.5 t/acre, but two thirds
-of that is living tissue at 70-100% moisture, which does not burn — it sits in
-the fuel bed as a heat sink. Collapsing FM5 into one dead-fuel class at the
-total load makes it spread roughly five times faster than the published tables
-say it does, and shrubland is the fuel most of wildland Israel actually is.
-
-So each model carries its four Anderson loads separately. The totals are
-unchanged from the published tables; only the split is new.
-
-Two honest limits remain. Anderson 13 was derived in North America, so these
-are the closest standard analogues rather than Israel-calibrated fuels — a
-local calibration would be a research project, and the constants below are the
-right place to apply it when it exists. And a cover-grid cell is a *mixture*:
-`blend` below combines parameters by area fraction, which is right for load and
-depth and only approximately right for the ratios.
-"""
+Maps land cover onto the standard fuel categories used to estimate spread, so
+scrub, forest and farmland are not treated alike."""
 
 from __future__ import annotations
 

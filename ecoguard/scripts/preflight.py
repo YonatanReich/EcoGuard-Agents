@@ -1,16 +1,8 @@
-"""Pre-demo preflight: is this machine ready to run the live system?
+"""Is this machine ready to run the system?
 
-Answers the questions the running app cannot answer about itself — whether the
-database is reachable, whether the Claude key still has credit, whether any
-collector has gone stale, and whether another process is already running the
-detection wave against the same database.
-
-Read-only apart from one four-token Claude call, and safe to run while the API
-is up. Exit code is 0 when everything a demo needs is green, 1 otherwise, so it
-can gate a start script.
-
-    python -m ecoguard.scripts.preflight
-"""
+Checks the settings, the database, and whether each collector has run recently,
+and reports anything that would stop a demo before it starts rather than in
+front of an audience."""
 
 from __future__ import annotations
 
@@ -53,10 +45,12 @@ results: list[tuple[str, str, str]] = []
 
 
 def record(status: str, check: str, detail: str) -> None:
+    """Note the result of one check."""
     results.append((status, check, detail))
 
 
 def check_environment() -> None:
+    """Whether every required setting and key is present."""
     for name in REQUIRED_ENV:
         present = bool((os.getenv(name) or "").strip())
         record(OK if present else FAIL, name, "set" if present else "not set or empty")
@@ -70,6 +64,7 @@ def check_environment() -> None:
 
 
 def check_database() -> bool:
+    """Whether the database is reachable and up to date."""
     try:
         from sqlalchemy import text
 
@@ -120,6 +115,7 @@ def check_wave_lock() -> None:
 
 
 def check_collectors() -> None:
+    """Whether each collector has run recently enough."""
     try:
         from sqlalchemy import text
 
@@ -160,6 +156,7 @@ def check_collectors() -> None:
 
 
 def _age(delta: timedelta) -> str:
+    """How long ago something happened, in words."""
     minutes = int(delta.total_seconds() // 60)
     if minutes < 90:
         return f"{minutes}m"
@@ -168,6 +165,7 @@ def _age(delta: timedelta) -> str:
 
 
 def main() -> int:
+    """Run every readiness check and report what would stop a demo."""
     check_environment()
     if check_database():
         check_wave_lock()

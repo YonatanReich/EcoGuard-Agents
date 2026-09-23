@@ -17,6 +17,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add incidents — one row per thing that is happening, however many times it is seen."""
     # The first table in this system with a lifecycle. Everything else records
     # what arrived; this records what is *going on*, which means a row here
     # changes over time while an observation never does.
@@ -85,6 +86,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove incidents — one row per thing that is happening, however many times it is seen."""
     op.execute("DROP INDEX IF EXISTS incidents_cells_idx")
     op.execute("DROP INDEX IF EXISTS incidents_open_idx")
     op.execute("DROP TABLE IF EXISTS incidents")

@@ -204,7 +204,13 @@ class IncidentHandler(Protocol):
         self,
         incident: Mapping[str, Any],
         context: IncidentDispatchContext,
-    ) -> IncidentProcessingResult: ...
+    ) -> IncidentProcessingResult:
+        """Analyse and plan for one incident, and report what happened.
+
+        Never raises: a handler that fails returns a result saying so, because
+        one broken hazard must not stop the others in the same wave.
+        """
+        ...
 
 
 HandlerRegistry = Mapping[tuple[str, str], IncidentHandler]
@@ -212,6 +218,11 @@ IncidentReader = Callable[[str], dict[str, Any] | None]
 
 
 def _utc(value: datetime | None = None) -> datetime:
+    """Normalise a time to UTC, refusing one that carries no timezone.
+
+    A naive datetime here would silently compare wrong against stored times,
+    so it is rejected rather than assumed to be UTC.
+    """
     supplied = value or datetime.now(timezone.utc)
     if supplied.tzinfo is None or supplied.utcoffset() is None:
         raise ValueError("dispatch time must carry a UTC offset")
@@ -261,19 +272,19 @@ def is_uncorroborated_report(incident: Mapping[str, Any]) -> bool:
 def default_handler_registry() -> dict[tuple[str, str], IncidentHandler]:
     """Production handlers, imported lazily so unsupported hazards stay cheap."""
 
-    from ecoguard.analyzers.non_emergency.air_pollution.incident_handler import (
+    from ecoguard.analyzers.air_pollution.incident_handler import (
         configured_air_pollution_incident_handler,
     )
-    from ecoguard.analyzers.emergency.earthquake.incident_handler import (
+    from ecoguard.analyzers.earthquake.incident_handler import (
         EarthquakeIncidentHandler,
     )
-    from ecoguard.analyzers.emergency.flood.incident_handler import (
+    from ecoguard.analyzers.flood.incident_handler import (
         configured_flood_road_incident_handler,
     )
-    from ecoguard.analyzers.emergency.fire.incident_handler import (
+    from ecoguard.analyzers.fire.incident_handler import (
         configured_fire_incident_handler,
     )
-    from ecoguard.response_planner.uncorroborated.incident_handler import (
+    from ecoguard.planners.uncorroborated.incident_handler import (
         UncorroboratedReportHandler,
     )
 

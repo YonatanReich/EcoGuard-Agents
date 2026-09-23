@@ -101,10 +101,12 @@ class GsiEarthquakeCollector(BaseCollector):
         get: Callable[..., Any] = requests.get,
         now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
+        """Build the collector. The HTTP session is injectable for testing."""
         self._get = get
         self._now = now
 
     def fetch(self) -> list[dict[str, Any]]:
+        """Every earthquake the national feed currently lists."""
         end = self._now().astimezone(timezone.utc)
         response = self._get(
             FDSN_EVENT_QUERY_URL,

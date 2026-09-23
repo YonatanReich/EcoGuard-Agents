@@ -1,31 +1,8 @@
-"""Shaking intensity from magnitude, depth and distance.
+"""How strongly an earthquake was felt at a distance.
 
-Replaces the four invented radius bands the impact model used to draw. Those
-returned 5, 10, 25 or 50 km from magnitude alone -- no source, and depth was
-collected, stored and never used, so an M5.0 at 5 km and an M5.0 at 100 km
-produced the same circle.
-
-The equation here is Allen, Wald and Worden (2012), "Intensity attenuation
-for active crustal regions", Journal of Seismology 16: 409-433, in its
-hypocentral-distance form. The Dead Sea Transform is an active crustal region,
-which is the class the equation is derived for, and the hypocentral form needs
-exactly what GSI already sends: magnitude, epicentre and depth.
-
-Coefficients are the published ones, cross-checked against OpenQuake's
-`allen_2012_ipe` implementation of the same paper.
-
-WHAT THIS IS NOT
-Output is Modified Mercalli Intensity -- how hard the ground shook. It is not
-damage and not casualties. Turning intensity into either needs building
-fragility and occupancy data the system does not hold, and inventing that
-conversion is the failure this module exists to stop repeating.
-
-Site amplification is also absent. Soft sediment amplifies shaking by roughly
-2 to 3 over rock, and Israel's coastal plain and Jordan Valley are soft while
-the hills are rock, so a rock-site estimate understates the worst places. The
-equation takes no site term in this form; adding one needs a Vs30 grid, and
-until that exists every value here is a rock-site approximation and says so.
-"""
+Converts magnitude and distance into an expected shaking intensity, so the
+estimated impact area reflects how far the shaking carried rather than the
+magnitude alone."""
 
 from __future__ import annotations
 

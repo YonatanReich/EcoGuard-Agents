@@ -1,55 +1,8 @@
-"""Which stations are responsible, and how many teams: a jurisdiction answer.
+"""Working out what a fire response needs, before anything is reserved.
 
-What this does NOT do
----------------------
-It does not choose routes, rank by travel time, or pick vehicles. That is the
-resource allocator's work: it holds the Mapbox routing, it claims specific
-units atomically, and it resolves contention between simultaneous incidents.
-
-The planner answers a different question — *who is responsible* — and
-responsibility is jurisdictional, not geometric. The nearest station is not
-automatically the responsible one, and on the border cases it usually is not.
-Mixing the two questions produced a version of this module that ranked by road
-time, which quietly moved an allocator concern into the planner and would have
-had the two components disagreeing about the same fire.
-
-Proximity still appears here, but only as a tiebreak *within* the responsible
-district, to identify which of that district's stations is the home station.
-It is ordering, not routing, and it is labelled as such on the result.
-
-Territoriality first
-
-The ordering is the point. Each district handles and contains events in its own
-sector, and a neighbouring district assists by exception — so the home station
-is the nearest station *inside the district the fire is in*, which is often not
-the nearest station outright. Ranking by proximity first and filtering by
-district afterwards produces a different and wrong answer.
-
-The parallel initial response
------------------------------
-At grade 3 and above, when the nearest station overall lies outside the
-district, one initial response team is dispatched from it **at the same time**
-as the home station's full complement — not after, and not because the home
-station proved insufficient. It needs no approval from the national control
-centre, which is notified for information only.
-
-That is the part of this procedure most easily implemented wrong, because the
-natural shape in code is a fallback: try the home district, and if short, reach
-outside. That shape is a different procedure with a different timeline, and it
-would delay the closest appliance to the fire behind a decision that the
-procedure does not require anyone to make. It is modelled here as a separate,
-concurrently issued request and labelled as such on the result.
-
-The procedure bounds it at one team. It is not a licence to draw from every
-neighbouring district.
-
-Police are a dispatch output, not a courtesy
---------------------------------------------
-In a civil emergency the localised evacuation decision belongs to Israel
-Police, not to the Fire Authority. So for grade 3 and above — the grade defined
-by a settlement being inside the footprint — the responsible police station for
-each threatened locality is an actual notification target, and it comes from
-the resolved `town_police_stations` join rather than from a name match.
+Turns a plan's recommended unit types into concrete requirements: how many of
+each, and where they are needed. Still says nothing about which station
+provides them.
 """
 
 from __future__ import annotations

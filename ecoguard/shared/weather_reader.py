@@ -1,31 +1,14 @@
-"""
-Weather Data Agent
+"""The latest stored weather for one coordinate.
 
-Serves the latest stored weather observation for a single coordinate.
+Reads what the collector wrote rather than calling the provider, so an HTTP
+request no longer waits on a third-party round trip and there is only one
+rate limit to respect.
 
-It used to call Open-Meteo itself, once per HTTP request. That made it the
-third independent caller of the same API - alongside the scheduled collector
-and the fire-risk model's private cache - each with its own rate-limiter state
-that could not see the others, and it put a multi-second provider round trip on
-the hot path of an endpoint that was already slow.
+A coordinate is answered by the grid cell containing it, and the answer says
+which cell and how far away it is. Forecasts are absent rather than invented:
+the store holds observations, and a forecast is not one.
 
-Now the collection layer is the only thing that talks to Open-Meteo, and this
-reads what it wrote. The response shape is unchanged, so nothing downstream had
-to move. Two things did change, and both are visible in the response:
-
-  * a coordinate is answered by the 5 km grid cell containing it, so
-    metadata.observation reports which cell, how far away it is, and when the
-    reading was taken
-  * weather.forecast.daily is empty. The store holds observations; a forecast
-    is not one, and inventing the key's contents would be worse than an honest
-    absence.
-
-The agent never raises. On any failure it returns the same structure with
-metadata.collection_status set to "failed", so callers can merge results from
-several agents without special-casing errors.
-
-Consumed by: ecoguard.api.main.get_environmental_data, ecoguard.detectors.fire.detection_agent
-"""
+Never raises: on failure it returns the same shape with a status saying so."""
 
 import logging
 from datetime import datetime, timezone
@@ -51,6 +34,7 @@ class WeatherDataAgent:
     """
 
     def __init__(self):
+        """Build the reader. Nothing is fetched until it is asked."""
         self.source_name = "open-meteo"
 
     def build_failed_response(

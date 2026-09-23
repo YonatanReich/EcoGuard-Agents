@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 def _source_station_ids(observations: list[dict[str, Any]]) -> list[int]:
+    """The gauge ids present in these readings."""
     return sorted(
         {
             int(station["source_station_id"])

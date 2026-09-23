@@ -1,26 +1,8 @@
-"""The fire spread analyser: one coordinator incident in, one forecast out.
+"""How bad a fire's spread is about to be, over a stated horizon.
 
-Reads an incident exactly as `coordinator/incidents.py` stores it, grows the
-fire with `spread.py`, asks `exposure.py` who is in the way, and states the
-result in a sentence. No provider call and no model artefact: every number here
-comes out of published fire physics applied to the environment it is handed, so
-the same incident and the same weather always produce the same forecast.
-
-Why the environment is an argument rather than something this fetches
---------------------------------------------------------------------
-The weather, the cover fractions and the terrain all live in the store and
-`repositories/surface.py` already aggregates them over a radius. Passing them
-in anyway keeps the judgement separable from the retrieval: the hard part to
-get right is what the numbers mean, and a function that reaches into Postgres
-to find that out can only be tested against Postgres. `environment_for` is the
-thin production loader; everything interesting is in `analyze`, which is pure.
-
-Three semantics now share the words "risk" in this package and must not be
-confused. `risk_prediction_agent` scores 0-1, the chance a fire *starts*.
-`risk_analysis_agent` scores 0-100, how bad a fire that exists already is.
-This scores 0-100 for something narrower again: how bad its *spread* is about
-to be, over a stated horizon. Every consumer branches on `risk_semantics`.
-"""
+Distinct from the other two fire scores: this one is about the next few hours
+rather than the fire as it stands, and it is reported on its own scale so the
+three can never be confused."""
 
 from __future__ import annotations
 

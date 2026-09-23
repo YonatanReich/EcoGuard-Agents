@@ -15,6 +15,7 @@ class EarthquakeIncidentHandler:
     name = "earthquake_impact_screening"
 
     def __init__(self, *, planner: object | None = None) -> None:
+        """Build the handler with its planner."""
         self.planner = planner if planner is not None else EmergencyResponsePlanner()
 
     def process(
@@ -22,6 +23,11 @@ class EarthquakeIncidentHandler:
         incident: Mapping[str, Any],
         context: IncidentDispatchContext,
     ) -> IncidentProcessingResult:
+        """Screen one earthquake and plan a response.
+
+        The impact area is calculated, not modelled by a model; only the response
+        plan involves one.
+        """
         candidates = [
             signal["evidence"]["earthquake"]
             for signal in incident.get("signals") or []

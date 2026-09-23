@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import argparse
 
-from ecoguard.collection.flood.road_network import replace_road_source
+from ecoguard.collectors.flood.road_network import replace_road_source
 
 
 def main() -> None:
+    """Import a road file from the command line."""
     parser = argparse.ArgumentParser()
     parser.add_argument("path", help="GeoJSON FeatureCollection of road lines")
     parser.add_argument("--source", default="openstreetmap")

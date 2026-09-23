@@ -1,32 +1,15 @@
-"""
-Claude LLM Service
+"""The one thing the agents cannot do offline: a structured model call.
 
-Responsible for the one thing the agents cannot do offline: running a structured
-Claude call and returning a schema-validated result. It knows nothing about
-fires — it takes system blocks, a user message and a Pydantic model, and returns
-an instance of that model or raises a sanitized error.
+Knows nothing about any hazard. It takes instructions, a message and the shape
+of the answer, and returns that shape or raises.
 
-Failure handling follows the newer house convention (see
-ecoguard/collection/fire/firms/client.py): this is a leaf provider client, so it RAISES a typed
-error whose message comes from a closed vocabulary, and the orchestrating agents
-catch it and translate it into a "failed" status. It never invents a result.
+Two guards live here because nothing downstream can see the whole picture: a
+cap on how many calls may be made per hour, and a cap on how large one prompt
+may be. Both exist because a single runaway caller can otherwise spend real
+money very quickly.
 
-Credential safety:
-    Every raise uses ``from None``. The Anthropic key travels in a header rather
-    than a URL, so the leak vector is weaker than the FIRMS one — but a
-    BadRequestError body can echo the prompt back, and the prompt contains event
-    data and retrieved protocol text. The SDK's exception ``__str__`` includes
-    response bodies. Suppressing the cause chain bounds what can escape to
-    exactly one word from CLAUDE_ERROR_KINDS.
-
-Testability:
-    ``client`` is injectable, following the pattern in
-    ecoguard/shared/geocoding.py. Tests pass a fake exposing
-    ``.messages.parse(**kwargs)``; ``anthropic.Anthropic`` is never constructed
-    in the test suite.
-
-Consumed by: ecoguard.analyzers.emergency.fire.risk_analysis_agent, ecoguard.response_planner.fire.planning_agent
-"""
+Failures are raised as one word from a fixed list, never the provider's own
+message, because that message can echo the prompt back."""
 
 from __future__ import annotations
 
@@ -173,6 +156,7 @@ class CallBudget:
     """A rolling-window ceiling on Claude calls for this process."""
 
     def __init__(self, limit: int, window_seconds: float) -> None:
+        """Build the budget, or the client with its model and injectable transport."""
         self._limit = limit
         self._window = window_seconds
         self._calls: deque[float] = deque()
@@ -225,6 +209,7 @@ class CallBudget:
                 self.output_tokens += value
 
     def snapshot(self) -> dict[str, int]:
+        """How much of the hourly call budget is currently used."""
         with self._lock:
             return {
                 "calls_in_window": len(self._calls),
@@ -263,6 +248,7 @@ class ClaudeLLMService:
         max_retries: int = DEFAULT_MAX_RETRIES,
         client: object | None = None,
     ) -> None:
+        """Build the client. Transport, model and limits are injectable for testing."""
         self._api_key = os.getenv("ANTHROPIC_API_KEY") if api_key is None else api_key
 
         # Identity-linked API keys are scoped to a workspace and the API rejects

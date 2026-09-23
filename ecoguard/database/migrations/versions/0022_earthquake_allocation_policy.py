@@ -15,6 +15,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Allow earthquake allocations to be driven by policy."""
     op.execute(
         """
         ALTER TABLE resource_allocations
@@ -47,6 +48,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove policy-driven earthquake allocations."""
     op.execute(
         """
         DELETE FROM resource_allocations WHERE allocation_policy IS NOT NULL;

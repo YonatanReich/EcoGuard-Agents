@@ -1,25 +1,10 @@
-"""
-EcoGuard Agents — FastAPI application entry point.
+"""The HTTP layer: every route the dashboard calls.
 
-Responsible for exposing the agent layer over HTTP and for combining the
-output of several agents into the single unified response the frontend
-dashboard consumes. This module owns transport concerns only — CORS, input
-validation, status codes and error masking. All domain logic lives in the
-agents package.
+Owns transport only - cross-origin rules, request validation, status codes and
+error masking. Every decision of substance is made further back, in the
+detectors, analyzers and planners.
 
-Endpoints:
-    GET /                       Health check.
-    GET /api/events             Durable shared event projections.
-    GET /api/detected-events    Live fire detection, risk analysis and response
-                                planning for one coordinate.
-    GET /api/environmental-data Stored weather + live geospatial context for
-                                one coordinate.
-    POST /api/area-summary      Population, weather and fire danger aggregated
-                                over a polygon drawn on the map.
-
-Run locally with:
-    uvicorn ecoguard.api.main:app --reload
-"""
+Run locally with `uvicorn ecoguard.api.main:app --reload`."""
 
 import logging
 import os
@@ -32,10 +17,10 @@ from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from ecoguard.detectors.fire.detection_agent import FireDetectionAgent
-from ecoguard.analyzers.emergency.fire.risk_prediction_agent import FireRiskPredictionAgent
+from ecoguard.analyzers.fire.risk_prediction_agent import FireRiskPredictionAgent
 from ecoguard.shared.geospatial_context import GeospatialContextAgent
-from ecoguard.response_planner.fire.planning_agent import ResponsePlanningAgent
-from ecoguard.analyzers.emergency.fire.risk_analysis_agent import RiskAnalysisAgent, build_event_id
+from ecoguard.planners.fire.planning_agent import ResponsePlanningAgent
+from ecoguard.analyzers.fire.risk_analysis_agent import RiskAnalysisAgent, build_event_id
 from ecoguard.shared.weather_reader import WeatherDataAgent
 from ecoguard.api.area_schemas import AreaSummaryRequest, AreaSummaryResponse
 from ecoguard.api.fire_risk_schemas import (
@@ -44,9 +29,9 @@ from ecoguard.api.fire_risk_schemas import (
     NationalRiskScanResponse,
 )
 from ecoguard.shared.llm import ClaudeLLMService
-from ecoguard.analyzers.emergency.fire.feature_builder import CurrentRiskFeatureBuilder
-from ecoguard.analyzers.emergency.fire.refresh_orchestrator import CurrentRiskRefreshOrchestrator
-from ecoguard.analyzers.emergency.fire.national_scan import NationalCurrentRiskScanService
+from ecoguard.analyzers.fire.feature_builder import CurrentRiskFeatureBuilder
+from ecoguard.analyzers.fire.refresh_orchestrator import CurrentRiskRefreshOrchestrator
+from ecoguard.analyzers.fire.national_scan import NationalCurrentRiskScanService
 from ecoguard.api.fire_danger_surface import build_surface as build_fire_danger_surface
 from ecoguard.shared.protocols import ProtocolRetriever
 from ecoguard.api.events import router as events_router
@@ -195,7 +180,8 @@ _fire_danger_payload_cache: dict[str, Any] = {}
 
 
 def _fire_danger_payload():
-    from ecoguard.collection.fire.effis.collector import area_bounds
+    """The fire-danger surface, recomputed only when the cached one has aged out."""
+    from ecoguard.collectors.fire.effis.collector import area_bounds
     from ecoguard.database.repositories.observations import latest_fire_danger_geojson
 
     now = time.monotonic()
@@ -328,7 +314,7 @@ def get_water_levels():
     """
     from dataclasses import asdict
 
-    from ecoguard.analyzers.non_emergency.water_level.advisory import (
+    from ecoguard.analyzers.water_level.advisory import (
         LevelReading,
         advise,
     )

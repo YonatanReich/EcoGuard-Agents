@@ -55,6 +55,7 @@ class MatchingOfficialPollutantIndex:
 def stored_air_pollution_signals(
     incident: Mapping[str, Any],
 ) -> list[StoredAirPollutionSignal]:
+    """The pollution signals recorded on this incident."""
     signals = incident.get("signals") or incident.get("incident_signals")
     if not isinstance(signals, list):
         return []
@@ -109,6 +110,7 @@ def stored_air_pollution_signals(
 
 
 def _corroborating_pairs(incident: Mapping[str, Any]):
+    """Readings from different stations that support each other."""
     for first, second in combinations(stored_air_pollution_signals(incident), 2):
         if first.detection_id == second.detection_id:
             continue
@@ -123,6 +125,7 @@ def _matches_projected_anomaly(
     signal: StoredAirPollutionSignal,
     projected: ProjectedAirPollutionIdentity,
 ) -> bool:
+    """Whether a stored signal is the one already shown on the card."""
     return bool(
         signal.station_id == projected.station_id
         and signal.channel_id == projected.channel_id
@@ -136,6 +139,7 @@ def _path_a(
     incident: Mapping[str, Any],
     projected: ProjectedAirPollutionIdentity,
 ) -> bool:
+    """Qualifies on the official index alone being high enough."""
     return any(
         first.pollutant == second.pollutant == projected.pollutant
         and (first.source, first.station_id) != (second.source, second.station_id)
@@ -152,6 +156,7 @@ def _path_b(
     projected: ProjectedAirPollutionIdentity,
     official_index: MatchingOfficialPollutantIndex | None,
 ) -> bool:
+    """Qualifies on two stations independently reporting the same thing."""
     if (
         official_index is None
         or official_index.pollutant_sub_index is None

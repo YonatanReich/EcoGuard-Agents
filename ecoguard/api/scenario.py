@@ -25,6 +25,7 @@ SCENARIOS = {"demo_a": "ecoguard.demo.scenarios.demo_a"}
 
 
 def _seeder(scenario: str):
+    """The function that fills the sandbox for one named scenario."""
     from importlib import import_module
 
     module = import_module(SCENARIOS[scenario])

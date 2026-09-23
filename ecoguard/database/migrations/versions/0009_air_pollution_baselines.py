@@ -14,6 +14,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add compact versioned air pollution baselines."""
     # Additive only: operational observations and all existing tables are untouched.
     op.execute("""
         CREATE TABLE air_pollution_station_catalog (
@@ -130,5 +131,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove compact versioned air pollution baselines."""
     # This migration is deliberately non-destructive in both directions.
     raise RuntimeError("0009 is additive-only; explicit data-retention review is required to remove it")

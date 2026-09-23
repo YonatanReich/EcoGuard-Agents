@@ -11,7 +11,7 @@ from ecoguard.detectors.air_pollution.hourly import (
     provider_hour_for_observation,
 )
 from ecoguard.shared.ministry_air_quality_client import MinistryAirQualityClient
-from ecoguard.tests.collection.pollution.test_ministry_air_quality_client import FakeSession, routes_for, channel, station
+from ecoguard.tests.collectors.pollution.test_ministry_air_quality_client import FakeSession, routes_for, channel, station
 
 HOUR = datetime(2026, 7, 1, 8, tzinfo=timezone.utc)
 

@@ -70,6 +70,7 @@ class ResourceAllocationRepository:
 
     @staticmethod
     def _station_column(recommended_unit: str) -> str:
+        """Which station table a kind of unit is drawn from."""
         try:
             return STATION_COLUMNS[recommended_unit]
         except KeyError as error:

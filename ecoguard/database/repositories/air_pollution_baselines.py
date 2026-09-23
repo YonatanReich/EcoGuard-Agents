@@ -26,19 +26,23 @@ Progress = Callable[[str], None]
 
 
 def _notify(progress: Progress | None, message: str) -> None:
+    """Report progress, when a caller asked to be kept informed."""
     if progress is not None:
         progress(message)
 
 
 def _identity(row: dict[str, Any]) -> tuple[str, str, str, str, str, str]:
+    """What makes one baseline row distinct from another."""
     return tuple(row[field] for field in IDENTITY_FIELDS)  # type: ignore[return-value]
 
 
 def _mapping_rows(result) -> list[dict[str, Any]]:
+    """Query rows as plain dictionaries."""
     return [dict(row) for row in result.mappings().all()]
 
 
 def _unique(rows, key, label):
+    """Reject a set of rows containing the same thing twice."""
     mapped = {}
     for row in rows:
         row_key = key(row)

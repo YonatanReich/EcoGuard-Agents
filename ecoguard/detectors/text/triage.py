@@ -342,6 +342,7 @@ def triage(
     seen_texts: list[str] = []
 
     def already_reported(item: Report) -> bool:
+        """Whether this claim has already been seen this pass, by origin or wording."""
         if item.origin_key in seen_origins:
             return True
         return any(near_duplicate(item.text, seen) for seen in seen_texts)

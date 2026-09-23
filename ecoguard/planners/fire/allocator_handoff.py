@@ -1,42 +1,8 @@
-"""From a planner result to an allocation request.
+"""Handing a finished fire plan to the resource allocator.
 
-The two components answer different questions and the handoff is where that
-line is drawn:
-
-    planner     how many teams, and which stations are *responsible*
-    allocator   which actual units, contention between simultaneous events,
-                and the roads they take
-
-Why the planner's station counts win
--------------------------------------
-The allocator carries `STATIONS_REQUIRED_BY_RISK`, a table mapping a risk level
-to one-to-four stations per unit type, and its own comment calls it what it is:
-"Temporary station counts until an operational source can provide real vehicle
-quantities." The planner now derives counts from an event grade anchored to a
-published threshold — ten teams is a national criterion in 201.02.003 §2.1.5 —
-which is a weaker source than the authority's own dispatch table and a stronger
-one than a placeholder.
-
-More importantly, two components deriving the same number by different logic
-will eventually disagree about the same fire, and nothing in the system would
-notice. So the planner's dispatch block is authoritative for *how many* and
-*which stations are responsible*, and this adapter passes it through.
-
-What is deliberately not passed through
----------------------------------------
-Routes, travel times and specific vehicles. The allocator holds Mapbox, claims
-units atomically so two incidents cannot take the same engine, and resolves
-which event is served first. None of that belongs upstream, and an earlier
-version of `dispatch.py` that ranked by road time had to be unwound for exactly
-that reason.
-
-The territoriality caveat
--------------------------
-The allocator ranks candidates by road travel time. Left to itself it could
-promote an out-of-district station over the responsible one, silently undoing
-the rule that each district contains events in its own sector. The responsible
-stations travel on the request as `preferred_stations` so that ordering is
-visible to it rather than having to be re-derived.
+Translates the plan's unit types into the shape the allocator expects, and
+carries the incident's location and severity with them. It decides nothing
+about which station responds - that is the allocator's job.
 """
 
 from __future__ import annotations

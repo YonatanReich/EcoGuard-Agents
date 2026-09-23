@@ -1,4 +1,10 @@
-"""Pure, shared weather feature calculations used by historical and live data."""
+"""Weather summaries for a place and moment: lags, maxima and totals.
+
+Shared by the live path and the historical training data, so a model is used on
+exactly the shape it was trained on.
+
+Every value is taken from before the moment in question, so nothing can be
+scored on weather that had not happened yet."""
 
 from __future__ import annotations
 
@@ -20,6 +26,7 @@ FEATURE_FIELDS = (
 
 
 def _numeric(values: Iterable[Any]) -> list[float]:
+    """The values that are real numbers, ignoring blanks and anything unparseable."""
     result = []
     for value in values:
         if value is None:
@@ -42,6 +49,7 @@ def compute_features(weather: Mapping[str, Any], event_time: datetime) -> tuple[
     timestamps = [datetime.fromisoformat(str(value)).replace(tzinfo=timezone.utc) for value in hourly["time"]]
 
     def latest_at_or_before(variable: str, target: datetime) -> float | None:
+        """The most recent reading of one variable at or before a moment."""
         values = hourly.get(variable, [])
         matches = [
             (timestamp, values[index])
@@ -64,6 +72,7 @@ def compute_features(weather: Mapping[str, Any], event_time: datetime) -> tuple[
     features["precipitation_1h_before"] = latest_at_or_before("precipitation", event_time - timedelta(hours=1))
 
     def window_values(variable: str, hours: int) -> list[float]:
+        """Every reading of one variable in the hours before the event."""
         values = hourly.get(variable, [])
         start = event_time - timedelta(hours=hours)
         return _numeric(

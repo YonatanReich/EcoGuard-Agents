@@ -1,14 +1,8 @@
-"""Compare what a scenario produced against what its evidence was built to mean.
+"""Scoring a demo run: what the system found against what was planted.
 
-Mechanical checks only — did an incident appear, in the right lane, near the
-right place, with a plan attached. Whether the prose is *sensible* is a
-judgement this file deliberately does not pretend to make; it collects the text
-so a human can read it, and scores only what has a right answer.
-
-Run it after a scenario, with the sandbox still populated:
-
-    python -m ecoguard.demo.grade demo_a
-"""
+Compares the events the pipeline produced with the scenario's own list of what
+is real and what is noise, and reports the matches, the misses and the false
+alarms."""
 
 from __future__ import annotations
 
@@ -25,6 +19,7 @@ EARTH_KM_PER_DEGREE = 111.32
 
 
 def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Distance between two coordinates, in kilometres."""
     scale = math.cos(math.radians((lat1 + lat2) / 2))
     return math.hypot(
         (lat2 - lat1) * EARTH_KM_PER_DEGREE,
@@ -33,6 +28,7 @@ def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 def _rows(schema: str, sql: str) -> list[dict[str, Any]]:
+    """Rows from one sandbox table."""
     with Session() as session:
         return [dict(row) for row in session.execute(
             text(sql.replace("{s}", f'"{schema}"'))
@@ -181,6 +177,7 @@ def _closest(incidents, expected):
 
 
 def main() -> int:
+    """Print the scorecard for the last demo run."""
     # Titles and place names are Hebrew; a Windows console defaults to cp1252
     # and would crash the report rather than print it.
     try:

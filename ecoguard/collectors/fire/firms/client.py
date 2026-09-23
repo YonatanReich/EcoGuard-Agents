@@ -1,36 +1,11 @@
-"""
-NASA FIRMS Data Agent
+"""The satellite hotspot provider.
 
-Responsible for collecting near-real-time satellite thermal hotspot data
-around a requested coordinate using the NASA FIRMS Area API.
+Reports where instruments saw heat, with a confidence and an intensity. A
+hotspot is not a confirmed fire - it is a warm pixel - and the detector decides
+what to make of it.
 
-The agent currently uses the VIIRS NOAA-20 Near Real-Time data source.
-NASA FIRMS returns the observations as CSV, so this agent also handles
-normalization into Python dictionaries and wraps the result in the
-project's unified response structure.
-
-How it works:
-    1. build_bounding_box creates a geographic search area around the
-       requested coordinate.
-    2. fetch_hotspots calls the NASA FIRMS Area API using the configured
-       MAP_KEY, satellite source, bounding box and day range.
-    3. parse_hotspots_csv converts the CSV response into a list of
-       structured hotspot records.
-    4. build_unified_response wraps the normalized hotspot data in a
-       consistent EcoGuard response object.
-
-Important:
-    A FIRMS hotspot represents a satellite-detected thermal anomaly.
-    It is strong evidence of active fire or another significant heat
-    source, but it is not treated as absolute proof of a wildfire by
-    this agent alone.
-
-Environment:
-    Requires NASA_FIRMS_API_KEY in the project .env file.
-
-Consumed by:
-    FireDetectionAgent
-"""
+Failures are raised as one word from a fixed list, so a provider error message
+can never carry the request key into a log."""
 
 import csv
 import io
@@ -57,6 +32,7 @@ class FirmsDataAgent:
     """
 
     def __init__(self):
+        """Build the client, reading the satellite provider key from the environment."""
         self.api_key = os.getenv("NASA_FIRMS_API_KEY")
 
         self.base_url = (

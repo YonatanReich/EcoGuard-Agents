@@ -20,6 +20,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add move flood lifecycle ownership to shared incidents."""
     # Preserve every old flood lifecycle row before removing the parallel
     # store. Active rows continue as open shared incidents and resolved rows
     # remain queryable history.
@@ -80,6 +81,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove move flood lifecycle ownership to shared incidents."""
     # The old tables are recreated for code rollback. Shared incidents are not
     # deleted: a downgrade must not destroy events recorded after the upgrade.
     op.execute(

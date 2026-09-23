@@ -146,6 +146,7 @@ class RainfallIdfRow:
 
 
 def _positive_int(value: str, label: str, row_number: int) -> int:
+    """A positive whole number, naming the column and row when it is not."""
     try:
         result = int(value)
     except (TypeError, ValueError) as error:
@@ -158,6 +159,7 @@ def _positive_int(value: str, label: str, row_number: int) -> int:
 
 
 def _decimal(value: str, label: str, row_number: int) -> Decimal:
+    """An exact decimal, naming the column and row when it is not."""
     try:
         result = Decimal(value)
     except (InvalidOperation, TypeError) as error:
@@ -170,6 +172,7 @@ def _decimal(value: str, label: str, row_number: int) -> Decimal:
 
 
 def _nonnegative_float(value: str, label: str, row_number: int) -> float:
+    """A number that must not be negative, naming the column and row."""
     try:
         result = float(value)
     except (TypeError, ValueError) as error:
@@ -184,6 +187,7 @@ def _nonnegative_float(value: str, label: str, row_number: int) -> float:
 
 
 def _parse_probability(value: str, row_number: int) -> Decimal:
+    """A probability between zero and one."""
     if not value or not value.endswith("%"):
         raise RainfallIdfImportError(
             f"row {row_number}: probability must end with %"
@@ -201,6 +205,7 @@ def _parse_row(
     row_number: int,
     station_source_ids: Mapping[str, int],
 ) -> RainfallIdfRow:
+    """One row of the rainfall intensity table."""
     station_name = (raw.get("station") or "").strip()
     if station_name not in station_source_ids:
         raise RainfallIdfImportError(
@@ -377,6 +382,7 @@ _REFRESH_BASIN_LINKS = text(
 def _rain_station_ids(
     session: OrmSession, source_station_ids: Sequence[int]
 ) -> dict[int, int]:
+    """The rain gauge identifiers present in these rows."""
     statement = text(
         """
         SELECT id, source_station_id

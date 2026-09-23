@@ -45,6 +45,11 @@ LEGACY_LIMITATION = (
 
 
 def estimated_impact_radius_km(magnitude: float) -> float:
+    """How far out an earthquake of this size is worth assessing.
+
+    A screening radius, not a damage model. It says where to look, not what
+    was damaged.
+    """
     if magnitude < 3.5:
         return 5.0
     if magnitude < 4.5:
@@ -111,12 +116,14 @@ def estimate_impact(
     town_query: Callable[[dict[str, Any]], TownIntersectionResult] = towns_intersecting,
     population_query: Callable[[dict[str, Any]], Mapping[str, Any]] = population_intersection,
 ) -> EarthquakeImpact:
+    """The area an earthquake may have affected, and the towns in it."""
     magnitude = float(earthquake["magnitude"])
     depth_km = float(earthquake["depth_km"])
     latitude = float(earthquake["latitude"])
     longitude = float(earthquake["longitude"])
 
     def _circle(radius_km: float) -> dict[str, Any]:
+        """A circle of this radius as map geometry."""
         return impact_area_polygon(
             latitude=latitude, longitude=longitude, radius_km=radius_km
         )

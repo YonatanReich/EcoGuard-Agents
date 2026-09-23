@@ -1,38 +1,8 @@
-"""The response planner: an incident report in, a grounded response plan out.
+"""The fire planner written against Israeli fire-service doctrine.
 
-Takes what the fire analyser produced — the JSON and the narrative — retrieves
-the procedures that bear on it, and produces a plan an emergency operator can
-work down: what to do first, what to send, who to tell, who to move.
-
-Retrieval is fixed, not agentic
--------------------------------
-The build plan allows a bounded agent with three or four tool calls. This does
-something stricter and cheaper: four *predetermined* filtered retrievals, then
-one model call. The reasoning is the plan's own — "the plan varies run to run"
-is not an acceptable property of a system that recommends dispatching emergency
-vehicles — and a fixed retrieval takes that further than a capped loop does. It
-is also about a third of the tokens, because nothing is retrieved twice and no
-tool-call round trip carries the whole context again.
-
-The four angles are the four questions a duty officer asks, and each is
-filtered so it cannot be answered by the wrong doctrine:
-
-    escalation   does this become a national event
-    dispatch     how do I get more, and from where
-    wildland     how is a settlement protected from an approaching fire
-    interface    who else has to be involved
-
-What is decided in code and what is asked of the model
-------------------------------------------------------
-Escalation is code: §2.1's criteria are thresholds with a stated source, and
-`escalation.py` cites the clause rather than making the model re-derive it.
-Station assignment is code: the allocator already ranks by road travel time.
-Contact details are code: they come from the towns table and are passed in, so
-the model never has the opportunity to invent a telephone number.
-
-What is left for the model is the judgement-shaped part — what the response
-should look like, in what order, and why — which is the only part retrieval
-was ever for.
+Produces an ordered response plan grounded in the protocol corpus. Superseded
+for scheduled runs by the shared emergency planner; still used by the
+single-event endpoint.
 """
 
 from __future__ import annotations

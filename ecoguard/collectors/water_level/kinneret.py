@@ -1,15 +1,11 @@
-"""Collect the Water Authority's daily Kinneret level from data.gov.il.
+"""The Water Authority's daily Kinneret level.
 
-The Authority publishes one level per survey day as a CKAN datastore resource.
-It is a single figure for the whole lake, not a reading at a point, so unlike
-every other point-shaped source here the coordinates below are where it gets
-drawn rather than where it was measured.
+One figure for the whole lake rather than a reading at a point, so unlike every
+other source here its coordinates are where it gets drawn, not where it was
+measured.
 
-The dataset is a rolling republish of the entire series back to 1966, so a
-tick fetches a window and lets the shared observation identity discard what it
-already has — the same property the hydrometric collector relies on, and what
-makes a missed day after an outage repair itself on the next tick.
-"""
+The provider republishes the whole series back to 1966 on every call, so a day
+missed during an outage repairs itself on the next tick."""
 
 from __future__ import annotations
 
@@ -58,6 +54,7 @@ class KinneretLevelError(ValueError):
 
 
 def _survey_date(value: Any) -> datetime:
+    """The survey day as a date, rejecting anything that is not one."""
     if not isinstance(value, str) or not value.strip():
         raise KinneretLevelError("Survey_Date must be a non-empty string")
     try:
@@ -72,6 +69,7 @@ def _survey_date(value: Any) -> datetime:
 
 
 def _level(value: Any) -> float:
+    """The lake level as a number, rejecting anything that is not one."""
     if isinstance(value, bool):
         raise KinneretLevelError("Kinneret_Level must be numeric")
     try:
@@ -140,9 +138,11 @@ class KinneretLevelCollector(BaseCollector):
     source = SOURCE
 
     def __init__(self, *, get: Callable[..., Any] = requests.get) -> None:
+        """Build the collector. The HTTP call is injectable for testing."""
         self._get = get
 
     def fetch(self) -> list[dict[str, Any]]:
+        """The most recent published lake levels."""
         response = self._get(
             CKAN_SEARCH_URL,
             params={

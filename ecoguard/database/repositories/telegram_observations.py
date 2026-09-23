@@ -17,6 +17,7 @@ MAX_LIMIT = 5000
 
 
 def _utc(value: datetime, name: str) -> datetime:
+    """A time in UTC, naming the field when it carries no timezone."""
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"{name} must carry a UTC offset")
     return value.astimezone(timezone.utc)
@@ -25,6 +26,7 @@ def _utc(value: datetime, name: str) -> datetime:
 def telegram_observation_statement(
     *, observed_since: datetime, observed_through: datetime, limit: int = DEFAULT_LIMIT
 ):
+    """The statement that stores one message, revising it if it was edited."""
     since = _utc(observed_since, "observed_since")
     through = _utc(observed_through, "observed_through")
     if since > through:
@@ -53,6 +55,7 @@ def telegram_observation_statement(
 def recent_telegram_observations(
     *, observed_since: datetime, observed_through: datetime, limit: int = DEFAULT_LIMIT
 ) -> list[dict[str, Any]]:
+    """The messages stored in the last stretch of time."""
     statement = telegram_observation_statement(
         observed_since=observed_since,
         observed_through=observed_through,

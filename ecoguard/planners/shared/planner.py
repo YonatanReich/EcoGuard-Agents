@@ -135,6 +135,7 @@ class EmergencyResponsePlanner:
         prompt_builder: PromptBuilder | None = None,
         proposal_model: type = EmergencyPlanProposal,
     ) -> None:
+        """Build the planner. The retriever and model client are injectable for testing."""
         self.llm_service = llm_service if llm_service is not None else ClaudeLLMService()
         self.retriever = retriever
         self.retriever_hazard = retriever_hazard
@@ -297,6 +298,7 @@ class EmergencyResponsePlanner:
         )
 
     def _scoped_retriever(self, hazard: str) -> tuple[object, str | None]:
+        """The protocol retriever limited to one hazard's documents."""
         if self.retriever is None:
             return ProtocolRetriever(hazard=hazard), None
 
@@ -311,6 +313,7 @@ class EmergencyResponsePlanner:
 
     @staticmethod
     def _validated_hazard(analysis: object) -> str:
+        """The hazard this analysis is about, rejecting one we cannot plan for."""
         if isinstance(analysis, EmergencyResponsePlanInput):
             return analysis.hazard_type
         if isinstance(analysis, dict):
@@ -323,6 +326,7 @@ class EmergencyResponsePlanner:
 
     @staticmethod
     def build_query(analysis: EmergencyResponsePlanInput) -> str:
+        """What to search the protocols for, from the analysis."""
         return " ".join(
             [
                 analysis.hazard_type,
@@ -336,6 +340,7 @@ class EmergencyResponsePlanner:
     def build_prompt(
         analysis: EmergencyResponsePlanInput, chunks: list[dict]
     ) -> tuple[list[dict], str]:
+        """The instructions and evidence sent to the model."""
         excerpts = "\n\n".join(
             EmergencyResponsePlanner._render_chunk(chunk) for chunk in chunks
         )
@@ -380,6 +385,7 @@ class EmergencyResponsePlanner:
         error: str | None = None,
         unverified_citation_count: int = 0,
     ) -> EmergencyResponsePlan:
+        """A plan carrying no actions, and the reason there are none."""
         return EmergencyResponsePlan(
             metadata={
                 "timestamp": self._timestamp(),
@@ -410,6 +416,7 @@ class EmergencyResponsePlanner:
         status: str,
         reason: str,
     ) -> EmergencyResponsePlan:
+        """An empty plan built from a partial answer."""
         source = raw if isinstance(raw, dict) else {}
         try:
             location = EmergencyLocation.model_validate(source.get("location"))
@@ -451,6 +458,7 @@ class EmergencyResponsePlanner:
 
     @staticmethod
     def _timestamp() -> str:
+        """The current time, for stamping a plan."""
         return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 

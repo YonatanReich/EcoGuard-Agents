@@ -97,6 +97,7 @@ _NIQQUD_PATTERN = re.compile(
 
 
 def _normalize_text(text: str) -> str:
+    """Strip punctuation and spacing so wording can be compared."""
     without_niqqud = _NIQQUD_PATTERN.sub("", text)
     punctuation_normalized = "".join(
         " " if unicodedata.category(character).startswith("P") else character
@@ -106,11 +107,13 @@ def _normalize_text(text: str) -> str:
 
 
 def _contains_phrase(text: str, phrase: str) -> bool:
+    """Whether the text contains this phrase as whole words."""
     pattern = r"(?<!\w)" + re.escape(phrase).replace(r"\ ", r"\s+") + r"(?!\w)"
     return re.search(pattern, text) is not None
 
 
 def _find_strong_terms(text: str) -> list[str]:
+    """Words that on their own suggest a fire is being reported."""
     return [
         canonical_term
         for canonical_term, variants in STRONG_FIRE_TERMS.items()
@@ -119,10 +122,12 @@ def _find_strong_terms(text: str) -> list[str]:
 
 
 def _find_terms(text: str, terms: tuple[str, ...]) -> list[str]:
+    """Which of these terms appear in the text."""
     return [term for term in terms if _contains_phrase(text, term)]
 
 
 def _find_context_terms(text: str) -> list[str]:
+    """Words that support a fire reading without implying one alone."""
     prefix_pattern = "[בלמהוכ]?"
     matched_terms = []
 

@@ -63,8 +63,13 @@ class StaticSample:
 
 
 class StaticSampler(Protocol):
-    def sample(self, latitude: float, longitude: float) -> StaticSample: ...
-    def close(self) -> None: ...
+    """Anything that can report terrain and land cover at a coordinate."""
+
+    def sample(self, latitude: float, longitude: float) -> StaticSample:
+        """Terrain and land cover at one coordinate."""
+
+    def close(self) -> None:
+        """Release whatever the sampler holds open."""
 
 
 def select_representative_land_pixel(
@@ -120,6 +125,7 @@ class LocalRasterSampler:
         service_area_path: Path = DEFAULT_SERVICE_AREA_PATH,
         resolution_km: float = GRID_RESOLUTION_KM,
     ):
+        """Open the raster sources, without reading them yet."""
         self.source_directory = Path(source_directory)
         self.service_area = ServiceArea(service_area_path)
         self.resolution_km = resolution_km
@@ -128,6 +134,7 @@ class LocalRasterSampler:
         self._dem: dict[str, object] = {}
 
     def _open_land(self, latitude: float, longitude: float):
+        """The land-cover raster covering this coordinate."""
         filename, _ = worldcover_tile(latitude, longitude)
         path = self.source_directory / "worldcover_2021" / filename
         if not path.exists():
@@ -137,6 +144,7 @@ class LocalRasterSampler:
         return self._land[filename]
 
     def _dem_for(self, latitude: float, longitude: float):
+        """The elevation raster covering this coordinate."""
         # Reuse the historical builder's tile-edge convention.
         attempted: list[Path] = []
         for latitude_shift in (0.0, -0.5, 0.5):
@@ -158,6 +166,7 @@ class LocalRasterSampler:
         raise StaticGridBuildError(f"missing DEM coverage for {latitude:.6f},{longitude:.6f}; checked: {names}")
 
     def _recover_land_sample(self, latitude: float, longitude: float) -> tuple[int, float, float] | None:
+        """Retry a land-cover reading from a neighbouring tile when one fails."""
         centroid_inside = self.service_area.contains_or_touches(latitude, longitude)
         latitude_half = self.resolution_km / LATITUDE_KM_PER_DEGREE / 2
         longitude_half = self.resolution_km / (
@@ -194,6 +203,7 @@ class LocalRasterSampler:
 
     @staticmethod
     def _elevation(dataset, latitude: float, longitude: float) -> float | None:
+        """Ground height at one coordinate, or None when it is not covered."""
         try:
             row, column = dataset.index(longitude, latitude)
             value = float(dataset.read(1, window=Window(column, row, 1, 1))[0, 0])
@@ -202,6 +212,7 @@ class LocalRasterSampler:
         return value if math.isfinite(value) else None
 
     def sample(self, latitude: float, longitude: float) -> StaticSample:
+        """Terrain and land cover at one coordinate, read from the raster files."""
         land_cover = sample_land_cover(self._open_land(latitude, longitude), latitude, longitude)
         if land_cover is None:
             return StaticSample(None, None, land_cover, "inactive_unmapped")
@@ -222,10 +233,12 @@ class LocalRasterSampler:
         )
 
     def close(self) -> None:
+        """Release the open raster files."""
         self._stack.close()
 
 
 def _schema_sql() -> str:
+    """The table definitions for the prepared terrain database."""
     flags = ",\n".join(f"{feature} INTEGER NOT NULL CHECK ({feature} IN (0, 1))" for feature in LAND_COVER_FEATURES)
     return f"""
     CREATE TABLE risk_grid_cells (
@@ -254,6 +267,7 @@ def _schema_sql() -> str:
 
 
 def _row(cell: GridCell, sample: StaticSample, built_at: str) -> tuple:
+    """One grid cell's terrain sample, as a database row."""
     active = int(sample.worldcover_class not in {None, PERMANENT_WATER_CODE})
     complete = active and sample.elevation_m is not None and sample.slope_degrees is not None
     status = "complete" if complete else ("inactive_water" if sample.worldcover_class == PERMANENT_WATER_CODE else "inactive_unmapped" if not active else "incomplete")
@@ -280,6 +294,11 @@ def build_static_grid_database(
     service_area_path: Path = DEFAULT_SERVICE_AREA_PATH,
     built_at: str | None = None,
 ) -> dict:
+    """Sample terrain and land cover for every cell and store the result.
+
+    Run once. The analyzer then reads this instead of opening raster files on
+    every request.
+    """
     cells = generate_grid(bounds, resolution_km)
     if len({cell.cell_id for cell in cells}) != len(cells):
         raise StaticGridBuildError("duplicate cell_id generated")
@@ -323,6 +342,7 @@ def build_static_grid_database(
 
 
 def validate_database(connection: sqlite3.Connection) -> None:
+    """Reject a prepared database that is incomplete or malformed."""
     duplicate = connection.execute("SELECT cell_id FROM risk_grid_cells GROUP BY cell_id HAVING COUNT(*) > 1").fetchone()
     if duplicate:
         raise StaticGridBuildError("duplicate cell_id persisted")
@@ -337,6 +357,7 @@ def validate_database(connection: sqlite3.Connection) -> None:
 
 
 def summarize_database(path: Path, *, resolution_km: float = GRID_RESOLUTION_KM) -> dict:
+    """A short description of what a prepared database contains."""
     connection = sqlite3.connect(path)
     connection.row_factory = sqlite3.Row
     try:
@@ -349,6 +370,7 @@ def summarize_database(path: Path, *, resolution_km: float = GRID_RESOLUTION_KM)
     slopes = [row["slope_degrees"] for row in complete]
     distribution = Counter(LAND_COVER_CLASSES.get(row["worldcover_class"], "unmapped") for row in rows)
     def stats(values: list[float]) -> dict[str, float | None]:
+        """The minimum, maximum and average of these values."""
         return {"min": min(values), "median": statistics.median(values), "max": max(values)} if values else {"min": None, "median": None, "max": None}
     return {
         "resolution_km": resolution_km,

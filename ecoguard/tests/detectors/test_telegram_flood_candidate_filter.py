@@ -1,6 +1,6 @@
 import pytest
 
-from ecoguard.detectors.telegram.flood_candidate_filter import detect_flood_candidate
+from ecoguard.detectors.flood.telegram_candidate_filter import detect_flood_candidate
 
 
 @pytest.mark.parametrize(

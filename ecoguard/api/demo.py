@@ -1,18 +1,10 @@
-"""Demo event feed — the live dashboard, fed from a separate database.
+"""The demo event feed, served from its own database.
 
-Exists so the resource allocator, the response plans and the event modals can
-be shown working without waiting for something to actually happen in Israel.
-Everything here is fabricated, which is why it is kept in its own database and
-behind its own route: nothing in the demo store can reach /api/events, and
-nothing real can reach this one.
-
-The rows carry whole SharedEvent payloads rather than a normalized schema.
-The contract the frontend reads is that payload, so a demo that stores it
-verbatim can never drift from the shape the dashboard expects — and it is
-validated on the way out anyway.
-
-Seed it with `python -m ecoguard.scripts.seed_demo`.
-"""
+Lets the allocator, the response plans and the event cards be shown working
+without waiting for something to actually happen. Everything here is
+fabricated, which is why it lives in a separate database behind a separate
+route: nothing demo can reach the live feed, and nothing real can reach this
+one."""
 
 from __future__ import annotations
 
@@ -34,6 +26,7 @@ _event_adapter = TypeAdapter(SharedEvent)
 
 @lru_cache(maxsize=1)
 def _engine():
+    """A connection to the demo database, which is kept separate from the live one."""
     # Not inherited from database.engine: that module owns the live store and
     # raises at import when DATABASE_URL is missing.
     load_dotenv()
@@ -45,6 +38,7 @@ def _engine():
 
 @router.get("/api/demo/events", response_model=SharedEventFeed)
 def get_demo_events() -> SharedEventFeed:
+    """The demo events, in the same shape the dashboard reads for real ones."""
     try:
         with _engine().connect() as connection:
             rows = connection.execute(text(

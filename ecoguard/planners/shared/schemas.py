@@ -1,4 +1,8 @@
-"""Typed contracts at the shared emergency planning boundary."""
+"""The shapes a response plan must take.
+
+The validators are what makes the planner fail closed: a plan asking for an
+action no assigned unit can carry out, or one whose status contradicts its
+contents, is rejected before it can reach an operator."""
 
 from __future__ import annotations
 
@@ -56,6 +60,7 @@ class EmergencyPlanProposal(EmergencyContract):
 
     @model_validator(mode="after")
     def _units_cover_actions(self) -> "EmergencyPlanProposal":
+        """Reject a plan asking for an action no assigned unit can carry out."""
         assigned = {action.responsible_unit for action in self.actions}
         missing = assigned - set(self.recommended_units)
         if missing:
@@ -100,6 +105,7 @@ class EmergencyResponsePlan(EmergencyContract):
 
     @model_validator(mode="after")
     def _status_is_coherent(self) -> "EmergencyResponsePlan":
+        """Reject a plan whose status contradicts its contents."""
         if self.metadata.planning_status == "success":
             if (
                 self.error is not None

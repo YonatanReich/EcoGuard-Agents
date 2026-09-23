@@ -4,24 +4,20 @@ from unittest.mock import Mock
 
 import pytest
 
-from ecoguard.analyzers.non_emergency.air_pollution.trend_inference_service import (
+from ecoguard.analyzers.air_pollution.trend_inference_service import (
     DEFAULT_ARTIFACT_DIRECTORY,
     AirPollutionTrendInferenceService,
 )
 from ecoguard.detectors.air_pollution.correlation import PollutionCorrelationCandidate
-from ecoguard.research.training.evaluate_air_pollution_trend_phase2b import (
-    FinalSGDModelBundle as TrainingFinalSGDModelBundle,
-    IdentityVocabulary as TrainingIdentityVocabulary,
-)
 from ecoguard.shared.air_pollution_trend_model import (
     FinalSGDModelBundle,
     IdentityVocabulary,
 )
-from ecoguard.tests.analyzers.non_emergency.air_pollution.test_event_analyzer import (
+from ecoguard.tests.analyzers.air_pollution.test_event_analyzer import (
     GENERATED_AT,
     _candidate,
 )
-from ecoguard.tests.analyzers.non_emergency.air_pollution.test_trend_inference_service import (
+from ecoguard.tests.analyzers.air_pollution.test_trend_inference_service import (
     _candidate_with_pollutant,
     _rows,
 )
@@ -30,9 +26,12 @@ NO2_STATION_ID = "1"
 NO2_CHANNEL_ID = "4"
 
 
-def test_training_uses_stable_serialized_contract_classes():
-    assert TrainingFinalSGDModelBundle is FinalSGDModelBundle
-    assert TrainingIdentityVocabulary is IdentityVocabulary
+def test_serialized_contract_classes_live_in_the_shared_module():
+    """Artifacts on disk were pickled against these classes; the paths must hold.
+
+    This also compared them against the phase2b training script, which was a
+    one-off experiment with no production importer and has been removed.
+    """
     assert FinalSGDModelBundle.__module__ == (
         "ecoguard.shared.air_pollution_trend_model"
     )

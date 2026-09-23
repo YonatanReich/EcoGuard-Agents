@@ -51,6 +51,7 @@ class AirPollutionResponsePlanner:
     """Plan from an Analyzer report without routing, persistence, or execution."""
 
     def __init__(self, *, llm_service=None, retriever=None, top_k: int = 5):
+        """Build a planner. Both collaborators are injectable for testing."""
         self.llm_service = llm_service if llm_service is not None else ClaudeLLMService()
         self.retriever = (
             retriever
@@ -63,6 +64,13 @@ class AirPollutionResponsePlanner:
     def plan_response(
         self, analysis: AirPollutionEventAnalysis
     ) -> AirPollutionPlanningResult:
+        """Recommend advisory actions for one pollution episode.
+
+        Finds guidance covering the pollutants involved, asks the model to
+        choose from the reviewed actions in it, then checks every choice and
+        every quotation against the source. Anything it cannot verify is
+        thrown away and the plan is reported as failed rather than shown.
+        """
         validated = AirPollutionEventAnalysis.model_validate(
             analysis.model_dump(round_trip=True)
         )
@@ -224,6 +232,7 @@ class AirPollutionResponsePlanner:
 
     @staticmethod
     def _pollutants(analysis: AirPollutionEventAnalysis) -> set[str]:
+        """Which pollutants this episode actually involves."""
         state = analysis.current_state.result
         return (
             {candidate.anomaly.pollutant for candidate in state.detections}
@@ -235,6 +244,11 @@ class AirPollutionResponsePlanner:
     def _query(
         analysis: AirPollutionEventAnalysis, pollutants: set[str]
     ) -> str:
+        """The search text used to find relevant guidance passages.
+
+        Names the pollutants and what the analysis could not determine, so
+        guidance about acting under uncertainty ranks alongside the rest.
+        """
         unavailable = [
             name
             for name, component in (
@@ -293,6 +307,11 @@ class AirPollutionResponsePlanner:
 
     @classmethod
     def _prompt(cls, analysis, chunks, reviewed, evidence_ids):
+        """The message sent to the model: findings, guidance, allowed actions.
+
+        The analysis is stripped of detector internals first. Left whole it
+        reached a quarter of a million tokens on a busy incident.
+        """
         report = cls._compact(analysis.model_dump(mode="json"))
         return (
             "# Non-emergency Air Pollution Analyzer report\n"
@@ -308,6 +327,11 @@ class AirPollutionResponsePlanner:
 
     @staticmethod
     def _reviewed_actions(chunks, documents):
+        """The pre-approved actions whose wording appears in these passages.
+
+        A recommendation is only offered if a human already approved it and the
+        passage quoted actually contains it.
+        """
         reviewed = []
         for chunk in chunks:
             for action in documents[chunk["document_id"]].get("reviewed_actions", []):
@@ -321,6 +345,13 @@ class AirPollutionResponsePlanner:
 
     @staticmethod
     def _actions_grounded(proposal, reviewed, citations):
+        """Whether every recommendation copies an approved one exactly.
+
+        Compares all five fields character for character and requires a
+        verified quotation containing the wording. One mismatch fails the whole
+        plan, because a half-invented recommendation is not safer than a fully
+        invented one.
+        """
         fields = (
             "recommendation",
             "responsible_authority_type",
@@ -353,6 +384,7 @@ class AirPollutionResponsePlanner:
 
     @staticmethod
     def _analysis_evidence_ids(analysis: AirPollutionEventAnalysis) -> set[str]:
+        """Every piece of evidence the plan is allowed to refer to."""
         identifiers = {item.evidence_id for item in analysis.evidence}
         identifiers.update(
             item.evidence_id for item in analysis.transport_analysis.evidence
@@ -368,6 +400,7 @@ class AirPollutionResponsePlanner:
 
     @staticmethod
     def _analysis_limitations(analysis: AirPollutionEventAnalysis) -> list[str]:
+        """What this advice does not cover, carried through to the card."""
         limitations = [
             "Non-emergency decision support only; no allocation, dispatch, or implementation is represented.",
             *analysis.limitations,
@@ -393,6 +426,7 @@ class AirPollutionResponsePlanner:
     def _unavailable_evidence_gaps(
         analysis: AirPollutionEventAnalysis,
     ) -> list[str]:
+        """The parts of the analysis that could not be produced, and why."""
         return [
             f"{label} unavailable: {component.unavailable_reason}."
             for label, component in (
@@ -405,6 +439,7 @@ class AirPollutionResponsePlanner:
 
     @staticmethod
     def _result(analysis, status, reason, limitations):
+        """A plan-less result carrying the reason no advice was produced."""
         return AirPollutionPlanningResult(
             analysis=analysis,
             plan=AirPollutionResponsePlan(

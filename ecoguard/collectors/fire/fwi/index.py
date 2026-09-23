@@ -1,38 +1,7 @@
-"""The Canadian Forest Fire Weather Index system, as six numbers.
+"""The fire-weather index itself: moisture, spread and intensity.
 
-EFFIS gives us one categorical band a day. This computes the whole system from
-weather we already collect, because the band is the last step of six and the
-five before it are the ones that carry state.
-
-The three moisture codes are what a band cannot express, and they differ by how
-long they remember:
-
-  * FFMC — fine dead fuels (litter, cured grass). Responds in *hours*. This is
-    what decides whether a match catches this afternoon.
-  * DMC  — loosely compacted duff. Responds over *weeks*. Decides how much of
-    the organic layer will carry fire.
-  * DC   — deep compact organic matter. Responds over *months*. This is the
-    seasonal drought memory: it is what makes a dry August after a dry winter
-    different from a dry August after a wet one, and nothing else we store
-    knows that difference.
-
-ISI combines FFMC with wind into a spread-rate signal, BUI combines DMC and DC
-into available-fuel, and FWI combines those two. Only that last number maps to
-the EFFIS band, so storing only the band discarded five sixths of the system.
-
-The formulation is Van Wagner & Pickett (1985), the same equations EFFIS and
-the Canadian Forest Service run. Inputs are noon local standard time
-temperature, relative humidity and wind, with precipitation accumulated over
-the preceding 24 hours — that timing is part of the definition, not a
-convention, because the codes are calibrated against it.
-
-A caveat worth carrying: the day-length tables below are the standard
-mid-latitude ones. Israel at 31 N sits south of where they were derived, which
-biases DMC and DC slightly. EFFIS applies the same tables globally, so this
-matches the reference implementation rather than improving on it — but the
-codes are best read as relative to their own history here, not as absolute
-values comparable to Canadian ones.
-"""
+Standard published formulas, kept separate from the collector so they can be
+checked against worked examples without touching the database."""
 
 from __future__ import annotations
 
@@ -79,9 +48,11 @@ class FireWeatherState:
 
     @property
     def danger_class(self) -> str:
+        """The published danger band this index value falls in."""
         return next(name for bound, name in DANGER_CLASSES if self.fwi < bound)
 
     def as_payload(self) -> dict[str, float | str]:
+        """The index and its parts, in the shape stored on an observation."""
         return {
             "ffmc": round(self.ffmc, 2),
             "dmc": round(self.dmc, 2),

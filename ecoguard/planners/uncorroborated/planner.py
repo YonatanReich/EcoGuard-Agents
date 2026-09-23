@@ -1,24 +1,8 @@
 """What to tell an operator about a report nothing has confirmed.
 
-This is the whole planning lane for uncorroborated reports, and it deliberately
-makes no model call.
-
-Why no model:
-    The output is four facts — a station name, its phone number, an authority
-    name, its phone number — and every one of them is already in the database,
-    verified, with a known provenance. A model asked to write this prose could
-    only either copy those fields or get them wrong, and a wrong phone number on
-    an emergency advisory is a real-world harm, not a formatting defect. It is
-    also free and works with the Claude balance at zero, which is the state the
-    system spends most of its time in.
-
-What it does not do:
-    It does not assess severity, model spread, estimate exposure, or allocate
-    anything. Nobody has confirmed the event exists. The advice is to verify,
-    and it names who can.
-
-Consumed by: ecoguard.planners.uncorroborated.incident_handler
-"""
+No model call and no analysis: there is nothing measured here to analyse. The
+useful answer is who to contact - the police station responsible for that area,
+with its number, and the local authority."""
 
 from __future__ import annotations
 
@@ -62,6 +46,7 @@ class UncorroboratedAdvisory:
     reason: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
+        """The advisory as plain data."""
         return {
             "status": self.status,
             "hazard": self.hazard,
@@ -90,9 +75,11 @@ class UncorroboratedReportPlanner:
     """Turn an unconfirmed claim into "who to phone", and nothing more."""
 
     def __init__(self, *, parties_lookup: Callable[..., Mapping[str, Any]] | None = None):
+        """Build the planner. The lookup of who is responsible is injectable for testing."""
         self._lookup = parties_lookup
 
     def _parties(self, latitude: float, longitude: float) -> Mapping[str, Any]:
+        """Who answers for this place: the police station and the local authority."""
         lookup = self._lookup
         if lookup is None:
             from ecoguard.database.repositories.responsible_services import (
@@ -181,6 +168,7 @@ class UncorroboratedReportPlanner:
 
     @staticmethod
     def _police_action(police: Mapping[str, Any], label: str, place: str) -> dict[str, Any]:
+        """The advice to contact the responsible police station, with its number."""
         if not police:
             return {
                 "order": 1,
@@ -221,6 +209,7 @@ class UncorroboratedReportPlanner:
     def _authority_action(
         authority: Mapping[str, Any], label: str, place: str
     ) -> dict[str, Any]:
+        """The advice to contact the local authority."""
         if not authority:
             return {
                 "order": 2,

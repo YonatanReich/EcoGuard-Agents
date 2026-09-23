@@ -31,6 +31,7 @@ class MapboxClient:
         event_road_tolerance_m: float | None = None,
         http_client: httpx.Client | None = None,
     ):
+        """Build the client. Token, endpoint and timeouts are injectable for testing."""
         self.access_token = access_token or os.getenv("MAPBOX_ACCESS_TOKEN")
         self.base_url = (
             base_url or os.getenv("MAPBOX_BASE_URL") or "https://api.mapbox.com"
@@ -76,6 +77,7 @@ class MapboxClient:
 
     @staticmethod
     def _point(coordinates: Any) -> dict[str, float]:
+        """One coordinate pair from a provider response, rejecting anything malformed."""
         if not isinstance(coordinates, list) or len(coordinates) < 2:
             raise RoutingError("Mapbox returned invalid coordinates")
         longitude, latitude = coordinates[:2]
@@ -90,6 +92,7 @@ class MapboxClient:
 
     @staticmethod
     def _number(value: Any, field: str) -> float:
+        """A response field as a non-negative number, naming the field when it is not."""
         if (
             not isinstance(value, (int, float))
             or isinstance(value, bool)
@@ -100,6 +103,7 @@ class MapboxClient:
         return float(value)
 
     def _request(self, path: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Make one routing request, turning a provider error into a typed failure."""
         payload = self._get_json(path, params)
         code = payload.get("code")
         if code != "Ok":
@@ -142,10 +146,12 @@ class MapboxClient:
 
     @staticmethod
     def _normalised_label(value: object) -> str:
+        """A road name in one spelling, so two writings compare equal."""
         return " ".join(str(value or "").casefold().split())
 
     @staticmethod
     def _base_road_class(value: object) -> str:
+        """A road class without its slip-road suffix."""
         road_class = str(value or "").strip()
         return (
             road_class[:-5]
@@ -155,6 +161,11 @@ class MapboxClient:
 
     @classmethod
     def _compatible_road_class(cls, expected: object, actual: object) -> bool:
+        """Whether two road classes describe the same kind of road.
+
+        Different map vintages classify the same restricted street differently, so
+        an exact match is too strict.
+        """
         expected_base = cls._base_road_class(expected)
         actual_base = cls._base_road_class(actual)
         if expected_base == actual_base:
@@ -278,6 +289,7 @@ class MapboxClient:
 
     @staticmethod
     def _coordinates(points: Iterable[dict[str, Any]]) -> str:
+        """A list of points in the form the provider expects."""
         return ";".join(
             f"{point['longitude']},{point['latitude']}" for point in points
         )
@@ -287,6 +299,7 @@ class MapboxClient:
         waypoint: dict[str, Any],
         input_location: dict[str, float],
     ) -> dict[str, Any]:
+        """Which road the provider snapped this point to, and how far it moved it."""
         if not isinstance(waypoint, dict):
             raise RoutingError("Mapbox returned an invalid waypoint")
         snap_distance = waypoint.get("distance")
@@ -391,6 +404,7 @@ class MapboxClient:
 
     @staticmethod
     def _hebrew_steps(steps: list[Any]) -> list[dict[str, Any]]:
+        """The turn-by-turn directions, in Hebrew."""
         result = []
         for step in steps:
             if not isinstance(step, dict):
@@ -413,6 +427,7 @@ class MapboxClient:
         station: dict[str, Any],
         event_location: dict[str, float],
     ) -> dict[str, Any]:
+        """The driving route from one station to the incident."""
         points = [
             {
                 "latitude": station["latitude"],

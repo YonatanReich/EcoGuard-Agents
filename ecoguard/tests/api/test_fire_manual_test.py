@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
-from ecoguard.analyzers.emergency.fire.incident_handler import FireIncidentHandler
+from ecoguard.analyzers.fire.incident_handler import FireIncidentHandler
 from ecoguard.api.fire_manual_test import (
     SCENARIOS,
     SyntheticFirePlanner,

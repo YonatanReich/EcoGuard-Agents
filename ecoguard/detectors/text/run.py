@@ -106,6 +106,7 @@ DEFAULT_TOWN_UNCERTAINTY_M = 3000.0
 
 
 def _uncertainty_m(area_km2: Any) -> float:
+    """How vague a town-sized location is, as a radius in metres."""
     import math
 
     try:

@@ -72,6 +72,7 @@ class FirmsIncident:
 
 
 def parse_timestamp(value: object) -> datetime:
+    """A stored timestamp as an aware datetime."""
     try:
         parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except (TypeError, ValueError):
@@ -82,6 +83,7 @@ def parse_timestamp(value: object) -> datetime:
 
 
 def haversine_km(first_lat: float, first_lon: float, second_lat: float, second_lon: float) -> float:
+    """Distance between two coordinates, in kilometres."""
     radius = 6371.0088
     lat1, lat2 = math.radians(first_lat), math.radians(second_lat)
     delta_lat = lat2 - lat1
@@ -91,6 +93,7 @@ def haversine_km(first_lat: float, first_lon: float, second_lat: float, second_l
 
 
 def incident_time_gap_hours(timestamp: datetime, incident: FirmsIncident) -> float:
+    """How long before or after a fire this moment falls."""
     if timestamp < incident.start:
         return (incident.start - timestamp).total_seconds() / 3600
     if timestamp > incident.end:
@@ -99,6 +102,7 @@ def incident_time_gap_hours(timestamp: datetime, incident: FirmsIncident) -> flo
 
 
 def load_positive_references(path: Path = POSITIVE_INPUT) -> list[dict[str, str]]:
+    """Read the confirmed fires the negatives are drawn against."""
     rows = load_csv(path)
     required = {
         "candidate_id", "start_timestamp", "centroid_latitude", "centroid_longitude",
@@ -111,6 +115,7 @@ def load_positive_references(path: Path = POSITIVE_INPUT) -> list[dict[str, str]
 
 
 def load_firms_incidents(path: Path = FIRMS_INPUT) -> list[FirmsIncident]:
+    """Read the satellite detections used to exclude real fires."""
     rows = load_csv(path)
     incidents = []
     try:
@@ -139,6 +144,7 @@ class FirmsSpaceTimeIndex:
     """Grid index for exclusion queries and exact nearest-point metadata."""
 
     def __init__(self, incidents: Iterable[FirmsIncident], cell_size: float = GRID_SIZE_DEGREES):
+        """Index the detections into a grid, for fast lookup."""
         self.incidents = list(incidents)
         self.cell_size = cell_size
         self.cells: dict[tuple[int, int], list[int]] = {}
@@ -151,9 +157,11 @@ class FirmsSpaceTimeIndex:
         self.max_y = max(cell[1] for cell in self.cells)
 
     def _cell(self, latitude: float, longitude: float) -> tuple[int, int]:
+        """The grid cell containing this coordinate."""
         return math.floor(longitude / self.cell_size), math.floor(latitude / self.cell_size)
 
     def _nearby_indices(self, latitude: float, longitude: float, radius_km: float) -> Iterable[int]:
+        """The detections near one coordinate."""
         x, y = self._cell(latitude, longitude)
         cell_radius = math.ceil(radius_km / (self.cell_size * 90.0)) + 1
         for cell_x in range(x - cell_radius, x + cell_radius + 1):
@@ -168,6 +176,7 @@ class FirmsSpaceTimeIndex:
         spatial_radius_km: float,
         temporal_hours: float,
     ) -> bool:
+        """Whether a fire was burning near this place and time."""
         margin = timedelta(hours=temporal_hours)
         for index in self._nearby_indices(latitude, longitude, spatial_radius_km):
             incident = self.incidents[index]
@@ -215,6 +224,7 @@ class FirmsSpaceTimeIndex:
 
 
 def _nearby_point(latitude: float, longitude: float, rng: random.Random, maximum_km: float) -> tuple[float, float]:
+    """A random coordinate within this distance of a place."""
     distance = rng.uniform(0.5, maximum_km)
     bearing = rng.uniform(0, 2 * math.pi)
     delta_latitude = distance * math.cos(bearing) / 111.32
@@ -230,6 +240,7 @@ def _sample_timestamp(
     rng: random.Random,
     prefer_same_month: bool,
 ) -> tuple[datetime, str]:
+    """A random time that is safely clear of any known fire."""
     if prefer_same_month:
         month = reference.month
         method = "same_month"
@@ -244,6 +255,7 @@ def _sample_timestamp(
 
 
 def _negative_id(reference_id: str, timestamp: datetime, latitude: float, longitude: float) -> str:
+    """A stable identifier for one generated non-fire sample."""
     identity = f"{reference_id}|{timestamp.isoformat()}|{latitude:.6f}|{longitude:.6f}"
     return f"negative_{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:24]}"
 
@@ -261,6 +273,12 @@ def generate_negative_samples(
     max_attempts_per_negative: int = DEFAULT_MAX_ATTEMPTS_PER_NEGATIVE,
     nearby_radius_km: float = DEFAULT_NEARBY_RADIUS_KM,
 ) -> list[dict[str, Any]]:
+    """Generate places and times where no fire was burning.
+
+    The model needs examples of nothing happening. These are drawn near real
+    fires but well clear of them in time, so the model learns conditions rather
+    than locations.
+    """
     if min(negatives_per_positive, spatial_exclusion_km, temporal_exclusion_hours, max_attempts_per_negative) <= 0:
         raise ValueError("negative sampling parameters must be positive")
     ordered_positives = sorted(positives, key=lambda row: (str(row["start_timestamp"]), str(row["candidate_id"])))
@@ -340,6 +358,7 @@ def generate_negative_samples(
 
 
 def write_output(path: Path, rows: Iterable[Mapping[str, Any]]) -> None:
+    """Write the generated samples to disk."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     try:
@@ -365,6 +384,7 @@ def build_negative_dataset(
     temporal_exclusion_hours: float = DEFAULT_TEMPORAL_EXCLUSION_HOURS,
     seed: int = DEFAULT_RANDOM_SEED,
 ) -> list[dict[str, Any]]:
+    """Build the non-fire half of the training data."""
     positives = load_positive_references(positives_path)
     incidents = load_firms_incidents(firms_path)
     settlements = SettlementSpatialIndex(settlement_polygons(load_boundary_geojson(boundary_path)))
@@ -386,6 +406,7 @@ def build_negative_dataset(
 def summarize(
     rows: list[Mapping[str, Any]], positive_count: int, negatives_per_positive: int
 ) -> dict[str, Any]:
+    """A short description of what was generated."""
     per_positive = Counter(str(row["reference_positive_candidate_id"]) for row in rows)
     distances = sorted(float(row["nearest_firms_candidate_distance_km"]) for row in rows)
     gaps = sorted(float(row["nearest_firms_candidate_time_gap_hours"]) for row in rows)
@@ -403,6 +424,7 @@ def summarize(
 
 
 def main() -> int:
+    """Run the build from the command line."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--positives", type=Path, default=POSITIVE_INPUT)
     parser.add_argument("--firms-candidates", type=Path, default=FIRMS_INPUT)

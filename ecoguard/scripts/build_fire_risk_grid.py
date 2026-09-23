@@ -6,7 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-from ecoguard.analyzers.emergency.fire.static_feature_store import (
+from ecoguard.analyzers.fire.static_feature_store import (
     DEFAULT_DATABASE_PATH,
     DEFAULT_SOURCE_DIRECTORY,
     StaticGridBuildError,
@@ -16,6 +16,7 @@ from ecoguard.shared.service_area import DEFAULT_SERVICE_AREA_PATH
 
 
 def main() -> int:
+    """Build the fire-risk grid from the command line."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=DEFAULT_DATABASE_PATH)
     parser.add_argument("--source-directory", type=Path, default=DEFAULT_SOURCE_DIRECTORY)

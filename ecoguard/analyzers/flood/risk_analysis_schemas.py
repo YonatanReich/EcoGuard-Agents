@@ -70,6 +70,7 @@ class FloodRiskAssessment(FloodRiskContract):
 
     @model_validator(mode="after")
     def _coherent_status(self) -> "FloodRiskAssessment":
+        """Reject an assessment whose status contradicts its contents."""
         if self.metadata.analysis_status == "unavailable":
             if any(
                 value is not None

@@ -25,6 +25,7 @@ class OperationalAnalysisUnavailable(ValueError):
 
 
 def _mapping(value: object) -> dict[str, Any]:
+    """A plain dict, or an empty one when the value is not dict-like."""
     return dict(value) if isinstance(value, Mapping) else {}
 
 

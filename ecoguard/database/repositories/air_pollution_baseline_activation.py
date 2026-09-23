@@ -22,6 +22,7 @@ from ecoguard.detectors.air_pollution.baseline_activation import (
 
 
 def _mappings(result) -> list[dict[str, Any]]:
+    """Query rows as plain dictionaries."""
     return [dict(row) for row in result.mappings().all()]
 
 
@@ -84,6 +85,7 @@ def read_activation_snapshot(session, *, family: str, lock: bool) -> dict[str, A
 
 
 def _assess(session, *, family: str, lock: bool, expected_profile_count: int):
+    """Whether a baseline family is complete enough to switch to, and why not if it is not."""
     snapshot = read_activation_snapshot(session, family=family, lock=lock)
     return assess_activation_cohort(
         family=family,

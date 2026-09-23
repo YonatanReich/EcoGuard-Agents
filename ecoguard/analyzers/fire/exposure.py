@@ -1,25 +1,7 @@
-"""Who is in the way: turning a spread ring into named places and arrival times.
+"""What a fire threatens: the settlements, roads and buildings in its way.
 
-This is the step that makes the difference between a coordinate and a warning.
-`spread.py` answers "a 2.1 km run toward bearing 264"; nobody can act on that.
-This answers "Givat Shmuel, 28,500 people, the leading edge reaches its eastern
-edge in about 50 minutes", which is a sentence a duty officer can do something
-with.
-
-Geometry without a geometry library, deliberately. The store has PostGIS and
-that is where this runs against real population rasters — but the ring-versus-
-locality test is a few hundred segment comparisons on rings this module built
-itself, and requiring a live database to answer "which town is this fire in"
-would make the one question worth regression-testing untestable offline. The
-primitives below are the textbook ones and are exact for the simple polygons
-involved.
-
-Arrival time is read back off the ring rather than recomputed. `spread_rings`
-already knows the reach on every bearing at the horizon, so the rate along a
-bearing is that reach divided by the horizon, and the time to any distance on
-that bearing follows. Recomputing it from the rate of spread would be a second
-implementation of the same ellipse, free to disagree with the first.
-"""
+Builds the area at risk from the fire's position and likely spread, then counts
+what falls inside it. Being inside the area means "in the path", not "damaged"."""
 
 from __future__ import annotations
 
@@ -134,6 +116,7 @@ def point_in_ring(point: tuple[float, float], ring: Sequence[tuple[float, float]
 
 
 def _orientation(a, b, c) -> float:
+    """Which way three points turn, used to build the exposed area's outline."""
     return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
 
 

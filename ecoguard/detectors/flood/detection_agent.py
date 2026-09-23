@@ -13,10 +13,12 @@ class FloodDetectionAgent:
     """Evaluate hydrometric readings without database or scheduler concerns."""
 
     def __init__(self, policy: FloodPolicy | None = None) -> None:
+        """Build the agent with a policy, or the default thresholds."""
         self.policy = policy or FloodPolicy()
 
     @property
     def lookback(self) -> timedelta:
+        """How far back readings are loaded to find a consecutive predecessor."""
         return self.policy.lookback
 
     def accepts_pending(self, observation: Mapping[str, Any]) -> bool:
@@ -49,6 +51,7 @@ class FloodDetectionAgent:
         stream_ids: Mapping[int, int] | None = None,
         target_observed_at: set[datetime] | None = None,
     ) -> list[CellSignal]:
+        """Decide whether readings at one place cross a flood threshold."""
         return evaluate_cell(
             cell_id,
             observations,

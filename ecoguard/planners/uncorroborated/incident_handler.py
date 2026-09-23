@@ -1,16 +1,7 @@
-"""Dispatch handler for incidents that rest only on unconfirmed reports.
+"""Handling an incident that rests only on unconfirmed reports.
 
-Shaped like every other incident handler so the dispatcher needs no special
-case beyond choosing it, but it skips the analysis stage outright: there is no
-`analysis_result` and no `risk_assessment`, and `analysis_status` says
-`skipped` with a reason rather than pretending to a result.
-
-That omission is the point. Running a risk model over an unverified claim
-produces a number, and a number on an operator's screen reads as a measurement
-whatever the label next to it says.
-
-Consumed by: ecoguard.coordinator.dispatcher.default_handler_registry
-"""
+Routed here instead of to an analyzer, deliberately: there is no measurement to
+analyse, and running one anyway would dress a rumour up as a finding."""
 
 from __future__ import annotations
 
@@ -35,6 +26,7 @@ class UncorroboratedReportHandler:
     name = "UncorroboratedReportHandler"
 
     def __init__(self, *, planner: UncorroboratedReportPlanner | None = None) -> None:
+        """Build the handler with its planner."""
         self._planner = planner or UncorroboratedReportPlanner()
 
     def process(
@@ -42,6 +34,11 @@ class UncorroboratedReportHandler:
         incident: Mapping[str, Any],
         context: IncidentDispatchContext,
     ) -> IncidentProcessingResult:
+        """Advise on one unconfirmed report.
+
+        Skips analysis entirely: there is nothing measured to analyse, so the only
+        useful answer is who to contact to find out.
+        """
         claim, location_text = self._newest_claim(incident)
 
         advisory = self._planner.plan(

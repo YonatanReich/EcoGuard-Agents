@@ -1,19 +1,4 @@
-"""Unpack the two Israeli fire-service archives into safe, mapped filenames.
-
-    python -m ecoguard.scripts.extract_protocol_corpus
-
-Why this is its own step rather than part of ingestion
------------------------------------------------------
-Both archives store Hebrew filenames as `#Uxxxx` escapes, and several decoded
-names exceed what Windows will accept as a path. Extracting "properly" fails
-halfway through with a filesystem error on a document whose title happens to be
-long, which is a miserable thing to debug in the middle of a parsing run.
-
-So the archives are unpacked to sequential names — `ops/00.pdf` — and the real
-title lives in a JSON mapping beside them. Nothing downstream depends on the
-filesystem holding Hebrew, and the mapping is one file to check when a document
-looks wrong.
-"""
+"""Unpacking the fire service procedure archives into safe, predictable filenames."""
 
 from __future__ import annotations
 
@@ -56,6 +41,7 @@ def decode(name: str) -> str:
 
 
 def extract() -> dict:
+    """Unpack the procedure archives into safe filenames."""
     DESTINATION.mkdir(parents=True, exist_ok=True)
     manifest: dict[str, dict] = {}
 
@@ -108,6 +94,7 @@ def extract() -> dict:
 
 
 def main() -> None:
+    """Extract the corpus from the command line."""
     manifest = extract()
     print(f"{len(manifest)} documents extracted to {DESTINATION}")
     for short_name in ARCHIVES:

@@ -53,6 +53,7 @@ class HydrometricObservationBatch:
 
 
 def _source_timestamp(value: Any, label: str) -> datetime:
+    """A provider timestamp as an aware datetime, naming the field on failure."""
     if not isinstance(value, str):
         raise HydrometricObservationError(f"{label} must be a timestamp string")
     try:
@@ -67,6 +68,7 @@ def _source_timestamp(value: Any, label: str) -> datetime:
 
 
 def _station_id(value: Any) -> int:
+    """A gauge identifier as a whole number."""
     if isinstance(value, bool):
         raise HydrometricObservationError("station id must be an integer")
     try:
@@ -79,6 +81,7 @@ def _station_id(value: Any) -> int:
 
 
 def _measurement(value: Any, label: str) -> float | None:
+    """A reading as a number, or None when the provider left it blank."""
     if value is None:
         return None
     if isinstance(value, bool):
@@ -273,6 +276,7 @@ class HydrometricObservationCollector:
     source = SOURCE
 
     def __init__(self, http_session: requests.Session | None = None) -> None:
+        """Build the collector. The HTTP session is injectable for testing."""
         self.http_session = http_session
 
     def run(self) -> None:

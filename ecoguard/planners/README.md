@@ -1,49 +1,32 @@
-# response_planner/
+# Planners
 
-Turns an assessment into a plan: which units do what, by when, grounded in
-published protocol rather than invented.
+The step that says what should be done about it.
 
-## Shared emergency planner
+A planner takes a finished analysis and produces decision support: which *kinds*
+of unit are needed and what actions to take in what order. It never picks a
+particular station, vehicle or crew — that is the resource allocator — and it
+never claims anyone has been dispatched.
 
-`emergency/EmergencyResponsePlanner` is the common planning boundary for Fire,
-Flood, and Earthquake. Its analyzer-agnostic required handoff is only `hazard_type` plus a
-non-empty `event_description`. Incident identity, location, risk context,
-evidence gaps, limitations and analyzer-specific context are optional trusted
-context. The planner preserves supplied context but does not derive missing
-risk, population, spread or inundation, select facilities or vehicles,
-calculate resource quantities, or claim dispatch.
+Everything a planner recommends has to be traceable to a written protocol. If it
+cannot quote the source, the plan is rejected rather than shown.
 
-Analyzer-specific integration belongs outside the shared planner:
+## What is here
 
-```text
-Fire Analyzer  -> fire  + textual event description -> EmergencyResponsePlanner
-Flood Analyzer -> flood + textual event description -> EmergencyResponsePlanner
-Earthquake Impact -> earthquake + factual impact description -> EmergencyResponsePlanner
-Future analyzer -> supported hazard + description   -> the same planner
-```
+| Folder | What it plans for |
+|---|---|
+| `shared/` | The emergency planner used by fire, flood and earthquake, plus the input contract they all adapt to |
+| `air_pollution/` | Advisory recommendations, copied word for word from reviewed guidance |
+| `uncorroborated/` | What to do about a report nobody has confirmed: who to phone. No model call at all |
+| `fire/` | The original fire-specific planner, still used by the older single-event endpoint |
 
-The integration adapter decides how to summarize analyzer fields into the
-description. The shared planner neither imports nor interprets an analyzer's
-schema.
+The protocol documents themselves live in `ecoguard/data/protocols`.
 
-- **Fire:** supported through the existing `fire/ResponsePlanningAgent`
-  compatibility wrapper. Its adapter converts current Fire analysis fields
-  into the generic textual description and optional context.
-- **Flood:** the shared planner routes to the approved Flood corpus and can plan
-  directly from a Flood event description. No Flood Analyzer, coordinator, or
-  runtime integration is included here.
-- **Earthquake:** the deterministic impact result is adapted without deriving
-  damage, casualties, operational severity, risk scores, risk levels, or
-  quantities. Planning retrieves only from the Israeli Earthquake corpus.
+## Things worth knowing
 
-Protocol retrieval is isolated by hazard. Neither hazard falls back to the
-other's doctrine.
+The uncorroborated planner is deliberately not a model. It names a police
+station and a local authority with their phone numbers, straight from the
+database, so it is free to run, works when nothing else does, and cannot invent
+a number.
 
-`protocols/` is the RAG corpus, one directory per hazard, each with a manifest
-carrying per-document sha256 and licence. It lives here rather than under
-`data/` because the corpus and the agent citing it are one thing — a protocol
-added without a planner change is invisible, and a planner change without the
-corpus is ungrounded.
-
-Retrieval itself is in `ecoguard/shared/protocols.py`, because analysis and the
-plan judge read the corpus too.
+A plan that fails its grounding check is retried a few times with increasing
+gaps, then left alone. Retrying forever was once a genuine and expensive bug.

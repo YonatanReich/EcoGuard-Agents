@@ -24,6 +24,7 @@ SEED_PATH = REFERENCE / "towns.json"
 
 
 def upgrade() -> None:
+    """Add towns — one row per settlement, with its outline and who answers for it."""
     # The settlement level, which nothing in this schema had before. The
     # station tables know where the responders are and `incidents` knows where
     # the fire is; this is the missing third thing — where the people are.
@@ -203,4 +204,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove towns — one row per settlement, with its outline and who answers for it."""
     op.execute("DROP TABLE IF EXISTS towns")

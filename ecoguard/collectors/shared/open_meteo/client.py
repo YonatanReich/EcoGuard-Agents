@@ -40,6 +40,7 @@ DEFAULT_MAX_CONSECUTIVE_RATE_LIMITS = 2
 
 class HourlyProviderError(RuntimeError):
     def __init__(self, category: str, *, transient: bool):
+        """Build the client, or carry the category of a failure."""
         super().__init__(category)
         self.category = category
         self.transient = transient
@@ -57,6 +58,7 @@ def _hour_param(value: datetime) -> str:
 
 
 def _utc(value: object) -> datetime:
+    """A value as an aware UTC datetime."""
     try:
         parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except (TypeError, ValueError):
@@ -67,6 +69,7 @@ def _utc(value: object) -> datetime:
 
 
 def validate_location_response(data: Any) -> dict[str, Any]:
+    """Reject a response that does not describe the place that was asked for."""
     if not isinstance(data, Mapping) or data.get("timezone") not in {"UTC", "GMT"}:
         raise HourlyProviderError("malformed_response", transient=False)
     try:
@@ -126,6 +129,7 @@ class OpenMeteoHourlyClient:
         monotonic: Callable[[], float] = time.monotonic,
         wall_clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ):
+        """Build the client. Session, clock and retry settings are injectable for testing."""
         if batch_size < 1 or minimum_interval_seconds < 0 or rate_limit_cooldown_seconds < 0:
             raise ValueError("batch size must be positive and timing values non-negative")
         if max_consecutive_rate_limits < 1:
@@ -143,6 +147,7 @@ class OpenMeteoHourlyClient:
         self._consecutive_rate_limits = 0
 
     def _before_http_request(self) -> None:
+        """Wait if necessary, so the provider's rate limit is respected."""
         now = self.monotonic()
         if now < self._cooldown_until:
             raise HourlyProviderError("rate_limited", transient=True)
@@ -153,6 +158,7 @@ class OpenMeteoHourlyClient:
         self._last_request_at = self.monotonic()
 
     def _retry_after_seconds(self, response: Any) -> float | None:
+        """How long the provider asked us to wait, when it said."""
         value = getattr(response, "headers", {}).get("Retry-After")
         if value is None:
             return None
@@ -171,6 +177,7 @@ class OpenMeteoHourlyClient:
     def fetch_range(
         self, coordinates: Sequence[tuple[float, float]], start: datetime, end: datetime,
     ) -> list[dict[str, Any]]:
+        """Weather for one place between two times."""
         if not coordinates or len(coordinates) > self.batch_size or start > end:
             raise ValueError("invalid coordinate batch or time range")
         # start_hour/end_hour, not start_date/end_date. The date form is

@@ -24,6 +24,7 @@ class UndefinedBearingError(ValueError):
 
 
 def _validated_direction(value: float, *, field_name: str) -> float:
+    """A compass direction in degrees, naming the field when it is invalid."""
     if isinstance(value, bool) or not isinstance(value, Real):
         raise ValueError(f"{field_name} must be a finite number")
     normalized_value = float(value)
@@ -35,6 +36,7 @@ def _validated_direction(value: float, *, field_name: str) -> float:
 
 
 def _validated_coordinate(value: CoordinateInput) -> GeographicCoordinate:
+    """One coordinate pair, rejecting anything out of range."""
     payload = value.model_dump() if isinstance(value, GeographicCoordinate) else value
     return GeographicCoordinate.model_validate(payload)
 

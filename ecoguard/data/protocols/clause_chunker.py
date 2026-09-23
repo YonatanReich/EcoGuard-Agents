@@ -1,36 +1,16 @@
-"""Cut the procedures where they were already cut: on their clause numbering.
+"""Cutting the procedures where their authors already cut them.
 
-These documents are rigidly numbered — `1.`, `1.1`, `2.1.1`, `2.1.2` — and that
-hierarchy is better than any sliding window, because it is the structure the
-authors used to separate one rule from the next.
+These documents are numbered throughout - 1, 1.1, 2.1.1 - and that numbering
+separates one rule from the next better than any fixed-size split could.
 
-The case that settles it is `נוהל אירועים ארציים` (201.02.003 §2.1), which
-lists when an event escalates to national level:
+The second level is the unit. One level up puts a whole section in one piece
+and loses the ability to find a single criterion; one level down leaves a rule
+of five words with nothing around it to say what it belongs to.
 
-    2.1.5  participation of 10 teams or more
-    2.1.6  danger to a settlement
-    2.1.7  trapped or injured firefighter evacuated to hospital
-
-Each is independently retrievable and each must still know it belongs to
-"events with potential for national-level assistance". A fixed-size splitter
-cuts that list somewhere arbitrary and destroys both properties at once.
-
-Chunking at the second level
-----------------------------
-`2.1` is the unit, carrying its third-level children inline. Splitting at the
-third level would make `2.1.6 danger to a settlement` a chunk of five words
-with no context; keeping the first level would put the whole of section 2 in
-one chunk and lose the ability to retrieve one criterion. The second level is
-where a clause is both self-contained and still a rule.
-
-On right-to-left text
----------------------
-Hebrew extracts with reversed segments in places. It is left exactly as
-extracted: embeddings handle it, and reordering risks corrupting content in a
-document that tells somebody how to fight a fire. The clause *numbers* are
-Latin digits and survive extraction intact, which is what makes this approach
-work at all.
-"""
+Hebrew text extracts with some segments reversed. It is left exactly as
+extracted, because reordering risks corrupting a document that tells somebody
+how to fight a fire - and the clause numbers survive extraction intact, which
+is what makes this work."""
 
 from __future__ import annotations
 
@@ -106,6 +86,7 @@ def header_metadata(text: str) -> dict[str, Any]:
     dates = HEADER_DATE.findall(text[:1500])
 
     def as_date(value: str) -> str:
+        """A date written day-first, stored year-first."""
         day, month, year = re.split(r"[./]", value)
         return f"{year}-{month}-{day}"
 
@@ -133,6 +114,7 @@ def related_procedures(text: str) -> list[str]:
 
 
 def _level(clause_path: str) -> int:
+    """How deep a clause number is, so the right level can be chosen."""
     return clause_path.count(".") + 1
 
 

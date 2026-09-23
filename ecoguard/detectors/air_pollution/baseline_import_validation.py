@@ -22,6 +22,7 @@ BLOCKERS = []  # Compatibility decisions approved; persistence/activation remain
 
 
 def _pairs(pairs):
+    """Build a dict from key/value pairs, rejecting any duplicate key."""
     result = {}
     for key, value in pairs:
         if key in result:
@@ -31,10 +32,12 @@ def _pairs(pairs):
 
 
 def _int(value, minimum=0):
+    """Whether this is a whole number at or above the minimum."""
     return type(value) is int and value >= minimum
 
 
 def _number(value):
+    """Whether this is a real, finite number."""
     return type(value) in (int, float) and math.isfinite(value)
 
 
@@ -42,6 +45,7 @@ def validate_profile(p):
     """Return all detectable contract errors without mutating the source object."""
     errors = []
     def check(ok, message):
+        """Record a message when the condition fails."""
         if not ok:
             errors.append(message)
     if not isinstance(p, dict):

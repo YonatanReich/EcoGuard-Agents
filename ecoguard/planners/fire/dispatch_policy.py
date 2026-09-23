@@ -1,36 +1,7 @@
-"""The dispatch reconstruction, as configuration rather than as code.
+"""How many units of each type a fire of a given severity needs.
 
-WHAT THIS IS NOT
-================
-This is not the Fire Authority's dispatch procedure. Their real mechanism is a
-lookup table — טבלת ההנחיה לשיגור — that lives in שלהבת, their CAD system. It
-is not published and we do not have it. Everything below is a reconstruction
-derived from thresholds that *are* published, and every plan built on it must
-carry `dispatch_table_unavailable` in its coverage gaps.
-
-The distinction matters because a grade and a team count look identical on the
-page whether they came from the authority's table or from this file.
-
-WHAT IT IS ANCHORED ON
-======================
-Two numbers here are cited rather than chosen:
-
-* **Ten teams** is a national-event criterion in נוהל אירועים ארציים
-  (הוראה 201 / 201.02.003 §2.1.5). That is why the top grade begins at ten and
-  not at some other number.
-* **Danger to a settlement** is a criterion in the same clause list (§2.1.6),
-  which is why a settlement inside the projected footprint is what lifts an
-  event to grade 3 — the grade at which our inter-district procedure permits
-  cross-district dispatch.
-
-The band widths between them are interpolation. Grade 4's lower bound of six
-is informed by the fire commissioner's statement to the Knesset National
-Security Committee that 32% of events required over four hours of fighting by
-at least four teams — which places four in the common-significant range rather
-than the exceptional one, so the exceptional band starts above it.
-
-These are tunable on purpose. Change them here; do not spread them into the
-selection code.
+A fixed table rather than a judgement, so the same fire always produces the
+same requirement and a reviewer can check it against doctrine.
 """
 
 from __future__ import annotations

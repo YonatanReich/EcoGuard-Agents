@@ -1,4 +1,9 @@
-"""Pure causal features and auditable +30 minute Air Pollution targets."""
+"""What the trend model is shown, and what it is asked to predict.
+
+Every input is built from readings that existed at the time, and the answer is
+what the same series did half an hour later. Keeping those two strictly apart
+is what stops the model from being scored on information it could not have
+had."""
 
 from __future__ import annotations
 
@@ -30,6 +35,7 @@ TrendLabel = Literal["RISING", "STABLE", "FALLING"]
 
 
 def _feature_columns() -> tuple[str, ...]:
+    """The model's inputs, in a fixed order, so training and use agree."""
     columns = ["current_concentration"]
     for minutes in LAG_MINUTES:
         columns.extend((
@@ -92,6 +98,7 @@ class StabilityBand:
     independent_of_p95: Literal[True] = True
 
     def label(self, delta_30: float) -> TrendLabel:
+        """Whether a change of this size counts as rising, falling or steady."""
         if delta_30 > self.epsilon:
             return "RISING"
         if delta_30 < -self.epsilon:
@@ -99,6 +106,7 @@ class StabilityBand:
         return "STABLE"
 
     def to_dict(self) -> dict[str, object]:
+        """The settings as plain data, so they can be stored with the model."""
         payload = asdict(self)
         payload["training_start"] = self.training_start.isoformat()
         payload["training_end"] = self.training_end.isoformat()
@@ -117,6 +125,7 @@ class TrainingStabilityBandEstimator:
         scale_multiplier: float = 1.4826,
         version: str = "candidate-v1",
     ) -> None:
+        """Build the estimator with the range of steadiness it may choose from."""
         if training_start.utcoffset() is None or training_end.utcoffset() is None:
             raise ValueError("training bounds must carry UTC offsets")
         if training_end <= training_start or scale_multiplier <= 0:
@@ -135,6 +144,7 @@ class TrainingStabilityBandEstimator:
         identity: AirPollutionSeriesIdentity,
         observations: Sequence[HistoricalAirPollutionObservation],
     ) -> None:
+        """Take one series into account."""
         if identity.pollutant != self.pollutant:
             return
         selected = sorted(
@@ -161,6 +171,7 @@ class TrainingStabilityBandEstimator:
         self._difference_count += len(differences)
 
     def finalize(self) -> StabilityBand:
+        """The band of change that counts as steady, from everything seen."""
         if not self._dispersions:
             raise ValueError("insufficient exact adjacent training differences")
         center = float(statistics.median(self._centers))
@@ -192,6 +203,7 @@ class ResearchSplitPolicy:
     embargo_minutes: int = MINIMUM_EMBARGO_MINUTES
 
     def __post_init__(self) -> None:
+        """Reject settings that do not describe a usable split."""
         if self.embargo_minutes < MINIMUM_EMBARGO_MINUTES:
             raise ValueError(f"embargo must be at least {MINIMUM_EMBARGO_MINUTES} minutes")
         values = (self.train_start, self.validation_start, self.test_start, self.archive_end)
@@ -199,6 +211,7 @@ class ResearchSplitPolicy:
             raise ValueError("split boundaries must be aware and chronological")
 
     def name_at(self, moment: datetime) -> Literal["train", "validation", "test"] | None:
+        """Which part of the split this moment belongs to, if any."""
         if self.train_start <= moment < self.validation_start:
             return "train"
         if self.validation_start <= moment < self.test_start:
@@ -226,6 +239,7 @@ class ResearchSplitPolicy:
         return split, None
 
     def to_dict(self) -> dict[str, object]:
+        """The split as plain data, so it can be stored with the model."""
         return {
             "train": [self.train_start.isoformat(), self.validation_start.isoformat()],
             "validation": [self.validation_start.isoformat(), self.test_start.isoformat()],
@@ -239,6 +253,7 @@ class ResearchSplitPolicy:
 def _index(
     observations: Iterable[HistoricalAirPollutionObservation],
 ) -> dict[datetime, HistoricalAirPollutionObservation]:
+    """Where a moment falls in a series of readings."""
     return {item.observed_at: item for item in observations}
 
 
@@ -247,11 +262,13 @@ def _rolling(
     observed_at: datetime,
     minutes: int,
 ) -> list[HistoricalAirPollutionObservation]:
+    """One summary of the readings in a window before a moment."""
     start = observed_at - timedelta(minutes=minutes)
     return [item for item in ordered if start < item.observed_at <= observed_at]
 
 
 def _slope(points: Sequence[HistoricalAirPollutionObservation]) -> float | None:
+    """How fast the readings are changing, or None when there are too few."""
     if len(points) < 2:
         return None
     origin = points[0].observed_at
@@ -333,6 +350,7 @@ def build_target(
     observations: Sequence[HistoricalAirPollutionObservation],
     observed_at: datetime,
 ) -> TrendTarget | None:
+    """What actually happened half an hour later, for one reading."""
     values_at = _index(observations)
     current = values_at.get(observed_at)
     if current is None:
@@ -359,6 +377,7 @@ def build_trend_example(
     observations: Sequence[HistoricalAirPollutionObservation],
     observed_at: datetime,
 ) -> TrendExample | None:
+    """One training example: what was known then, and what followed."""
     values_at = _index(observations)
     current = values_at.get(observed_at)
     if current is None:
@@ -410,5 +429,6 @@ def estimate_training_stability_band(
 def class_counts(
     deltas: Iterable[float], band: StabilityBand
 ) -> dict[TrendLabel, int]:
+    """How many examples fall in each outcome, so an imbalance is visible."""
     counts: Counter[TrendLabel] = Counter(band.label(delta) for delta in deltas)
     return {label: counts[label] for label in ("RISING", "STABLE", "FALLING")}

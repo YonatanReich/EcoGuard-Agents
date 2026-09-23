@@ -6,7 +6,7 @@ from ecoguard.shared.activity import live_actor
 
 from datetime import datetime, timezone
 
-from ecoguard.collection.earthquake.gsi import SOURCE
+from ecoguard.collectors.earthquake.gsi import SOURCE
 from ecoguard.database.repositories.collector_runs import last_success_at, log_finish, log_start
 from ecoguard.database.repositories.observations import read_observations_batch
 from ecoguard.shared.signals import EARTHQUAKE, HIGH, CellLocation, CellSignal
@@ -47,6 +47,11 @@ def signals_from_observations(rows: list[dict]) -> list[CellSignal]:
 
 @live_actor("detector.earthquake")
 def detect_new(*, at: datetime | None = None) -> list[CellSignal]:
+    """Turn newly collected earthquakes into signals.
+
+    Reads from the last successful run onwards, so each event is reported
+    once however often this runs.
+    """
     through = (at or datetime.now(timezone.utc)).astimezone(timezone.utc)
     since = last_success_at(RUN_SOURCE)
     run_id = log_start(RUN_SOURCE)

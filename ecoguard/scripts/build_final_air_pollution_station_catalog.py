@@ -1,23 +1,4 @@
-#!/usr/bin/env python3
-"""
-EcoGuard - Final Air Pollution Station Catalog
-
-Builds one station-level catalog for:
-NO2, O3, PM10, PM2.5, SO2
-
-For each station/pollutant it distinguishes:
-- FULL_BASELINE
-- PARTIAL_BASELINE
-- INSUFFICIENT_HISTORY
-- EXCLUDED_MOBILE_OR_INACTIVE
-- NOT_MEASURED
-
-It combines:
-1) current official Ministry/Envista station metadata
-2) baseline profile JSON files already built under national-baseline-v2/profiles
-
-No historical downloads. No DB writes.
-"""
+"""Assembling the list of stations with usable baselines, and why the rest were left out."""
 
 from __future__ import annotations
 
@@ -42,6 +23,7 @@ MOBILE_MARKERS = ("ניידת", "קרון")
 
 
 def norm_pol(name: Any) -> str:
+    """One spelling per pollutant."""
     p = str(name or "").upper().replace(" ", "")
     if p in {"PM25", "PM2_5"}:
         return "PM2.5"
@@ -49,6 +31,7 @@ def norm_pol(name: Any) -> str:
 
 
 def exclusion_reason(station_name: str, active: Any) -> str | None:
+    """Why this station is being left out, or None when it is not."""
     if active is False:
         return "inactive_monitor"
     if "לא פעילה" in station_name or "לא פעיל" in station_name:
@@ -60,6 +43,7 @@ def exclusion_reason(station_name: str, active: Any) -> str | None:
 
 
 def load_profiles(profiles_dir: Path):
+    """The baselines already built, from disk."""
     profiles = defaultdict(list)
     for path in profiles_dir.glob("*.json"):
         try:
@@ -75,10 +59,12 @@ def load_profiles(profiles_dir: Path):
 
 
 def best_profile(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The strongest baseline for one series, by how much history it covers."""
     if not rows:
         return None
 
     def rank(d):
+        """How good one baseline is, for choosing between them."""
         ok = int(d.get("coverage_summary", {}).get("ok_buckets", 0) or 0)
         status = d.get("profile_status")
         status_rank = {"ok": 3, "partial_coverage": 2, "insufficient_history": 1}.get(status, 0)
@@ -88,6 +74,7 @@ def best_profile(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
 
 
 async def main():
+    """Build the station catalogue from the command line."""
     profiles_dir = REPO_ROOT / "venv" / "phase2-output" / "national-baseline-v2" / "profiles"
     output_dir = REPO_ROOT / "venv" / "phase2-output" / "national-baseline-v2"
     output_dir.mkdir(parents=True, exist_ok=True)

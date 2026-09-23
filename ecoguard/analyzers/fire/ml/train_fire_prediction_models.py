@@ -1,4 +1,11 @@
-"""Train temporal baseline models using only pre-event weather features."""
+"""Training the weather-only fire model.
+
+Split by time rather than at random, so the model is always tested on what came
+after what it learned from - a random split lets tomorrow's weather teach it
+about today, and the score that produces is not real.
+
+The inputs are checked against a fixed list before training, for the same
+reason."""
 
 from __future__ import annotations
 
@@ -69,6 +76,7 @@ class TrainingError(RuntimeError):
 
 
 def parse_timestamp(value: object) -> datetime:
+    """A stored timestamp as an aware time."""
     try:
         parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except (TypeError, ValueError):
@@ -79,6 +87,11 @@ def parse_timestamp(value: object) -> datetime:
 
 
 def assert_feature_allowlist(features: Iterable[str]) -> tuple[str, ...]:
+    """Refuse to train on anything outside the agreed inputs.
+
+    The guard against learning from something that would not have been known
+    at the time, which inflates a score and means nothing.
+    """
     selected = tuple(features)
     if selected != ML_FEATURES:
         raise TrainingError("ML feature order differs from the historical weather allowlist")
@@ -89,6 +102,7 @@ def assert_feature_allowlist(features: Iterable[str]) -> tuple[str, ...]:
 
 
 def load_dataset(path: Path = DATASET_PATH) -> list[dict[str, Any]]:
+    """The training records from disk."""
     if not path.exists():
         raise TrainingError(f"ML dataset is missing: {path}")
     try:
@@ -120,6 +134,7 @@ def load_dataset(path: Path = DATASET_PATH) -> list[dict[str, Any]]:
 
 
 def temporal_split(rows: Iterable[Mapping[str, Any]]) -> dict[str, list[Mapping[str, Any]]]:
+    """Split by time, so the model is tested on what came after what it learned from."""
     splits = {"train": [], "validation": [], "test": []}
     for row in rows:
         year = row["_timestamp"].year
@@ -144,6 +159,7 @@ def temporal_split(rows: Iterable[Mapping[str, Any]]) -> dict[str, list[Mapping[
 
 
 def matrix(rows: list[Mapping[str, Any]]) -> tuple[np.ndarray, np.ndarray]:
+    """Records as the matrix the model takes."""
     return (
         np.asarray([row["_features"] for row in rows], dtype=float),
         np.asarray([row["_label"] for row in rows], dtype=int),
@@ -151,6 +167,7 @@ def matrix(rows: list[Mapping[str, Any]]) -> tuple[np.ndarray, np.ndarray]:
 
 
 def build_models(seed: int = RANDOM_SEED) -> dict[str, Pipeline]:
+    """The candidate models to compare."""
     imputer = lambda: SimpleImputer(strategy="median")
     return {
         "dummy": Pipeline([("imputer", imputer()), ("model", DummyClassifier(strategy="prior"))]),
@@ -203,6 +220,7 @@ def build_models(seed: int = RANDOM_SEED) -> dict[str, Pipeline]:
 
 
 def calculate_metrics(labels: np.ndarray, probabilities: np.ndarray, threshold: float) -> dict[str, Any]:
+    """How well one model did, on the measures that matter here."""
     predictions = (probabilities >= threshold).astype(int)
     tn, fp, fn, tp = confusion_matrix(labels, predictions, labels=[0, 1]).ravel()
     unique = np.unique(labels)
@@ -240,6 +258,7 @@ def fit_and_compare(
     *,
     seed: int = RANDOM_SEED,
 ) -> tuple[str, float, dict[str, Pipeline], dict[str, Any]]:
+    """Train every candidate and report which did best."""
     models = build_models(seed)
     comparison = {}
     for name, pipeline in models.items():
@@ -271,6 +290,7 @@ def fit_and_compare(
 
 
 def split_counts(splits: Mapping[str, list[Mapping[str, Any]]]) -> dict[str, Any]:
+    """How many records landed in each part of the split."""
     result = {}
     for name, rows in splits.items():
         counts = Counter(int(row["_label"]) for row in rows)
@@ -281,6 +301,7 @@ def split_counts(splits: Mapping[str, list[Mapping[str, Any]]]) -> dict[str, Any
 def geographic_audit(
     rows: list[Mapping[str, Any]], probabilities: np.ndarray, threshold: float
 ) -> dict[str, Any]:
+    """Whether the model does noticeably worse in some regions than others."""
     result = {}
     for status, mapped in (("mapped", True), ("unlocated", False)):
         indices = [
@@ -305,6 +326,7 @@ def geographic_audit(
 def feature_rankings(
     models: Mapping[str, Pipeline], feature_names: tuple[str, ...] = ML_FEATURES
 ) -> list[dict[str, Any]]:
+    """Which inputs the model leaned on most."""
     rows = []
     logistic = models["logistic_regression"].named_steps["model"]
     coefficients = logistic.coef_[0]
@@ -340,6 +362,7 @@ def feature_rankings(
 
 
 def _atomic_json(path: Path, value: Any) -> None:
+    """Write JSON in one step, so a crash cannot leave it half written."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     try:
@@ -351,6 +374,7 @@ def _atomic_json(path: Path, value: Any) -> None:
 
 
 def _atomic_csv(path: Path, fields: tuple[str, ...], rows: Iterable[Mapping[str, Any]]) -> None:
+    """Write a CSV in one step, so a crash cannot leave it half written."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     try:
@@ -371,6 +395,7 @@ def train_and_evaluate(
     seed: int = RANDOM_SEED,
     creation_time: datetime | None = None,
 ) -> dict[str, Any]:
+    """Train the models and write the results."""
     rows = load_dataset(dataset_path)
     splits = temporal_split(rows)
     train_x, train_y = matrix(splits["train"])
@@ -457,6 +482,7 @@ def train_and_evaluate(
 
 
 def main() -> int:
+    """Run the training from the command line."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", type=Path, default=DATASET_PATH)
     parser.add_argument("--output-dir", type=Path, default=OUTPUT_DIRECTORY)

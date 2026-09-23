@@ -1,32 +1,7 @@
-"""
-Development server with stubbed fire detection.
+"""A development server with fire detection stubbed out.
 
-The dashboard is empty by default, and that is correct behaviour rather than a
-bug: NASA FIRMS only returns hotspots where fires actually are, so a typical
-coordinate in Israel has nothing to show. Without a NASA_FIRMS_API_KEY it is
-emptier still, because detection cannot run at all.
-
-That makes the UI hard to develop against. This script runs the real app with
-`fire_detection_agent` replaced by a stub that always returns one plausible
-detected fire near Givat Shmuel, so the event cards, risk badges, protocol
-citations and map markers all have something to render.
-
-Nothing in the application is modified. This swaps a module global at startup,
-the same way tests/test_events_api.py does, and it lives in scripts/ so it can
-never be imported by the running service.
-
-Risk analysis and response planning are NOT stubbed. With ANTHROPIC_API_KEY set
-you get real, protocol-grounded reasoning over the stub event. Without it, both
-agents report "missing credentials" and the dashboard shows the unassessed
-state — grey marker, "not assessed" badge — which is itself worth looking at.
-
-Usage:
-    python scripts/run_demo_server.py            # port 8000
-    python scripts/run_demo_server.py --port 8010
-
-Then run the frontend as usual (`cd frontend && npm run dev`) and open the
-dashboard. Do not use this for anything but local development.
-"""
+For working on the dashboard without waiting on satellites, providers or
+credit."""
 
 from __future__ import annotations
 
@@ -136,6 +111,7 @@ class StubFireDetectionAgent:
 
 
 def main_cli() -> int:
+    """Start the development server from the command line."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--host", default="127.0.0.1")

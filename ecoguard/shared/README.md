@@ -1,16 +1,26 @@
-# shared/
+# Shared
 
-Things more than one stage reads. The rule is the same as
-`collection/shared/`: **the test is dependency, not subject matter.** If only
-one stage ever imports it, it belongs in that stage's folder even when it
-sounds general.
+Code used by more than one layer.
 
-- `llm.py`, `protocols.py`, `schemas.py` — analysis, planning and the judge all
-  use these.
-- `grid.py`, `service_area.py` — collection *and* analysis define the country
-  and its 5 km cells through these.
-- `weather_features.py` — the seam contract between what collection stores and
-  what analysis computes.
-- `geospatial_context.py` — detection and resource allocation both need OSM
-  context.
-- `weather_reader.py`, `geocoding.py`, `locations.py`.
+If something belongs to a single layer it lives with that layer. What is left
+here is genuinely cross-cutting: the grid the whole system is addressed by, the
+signal and event shapes every stage passes around, and the one place that talks
+to Claude.
+
+## What is here
+
+| File | What it is |
+|---|---|
+| `llm.py` | The single Claude entry point: one structured call, spend guards, token logging |
+| `events.py` | The event shape the dashboard reads, for every hazard |
+| `signals.py` | The signal shape detectors emit and the coordinator consumes |
+| `cells.py`, `grid.py` | The map grid every location is snapped to |
+| `protocols.py` | Finding and verifying quotable passages in the guidance corpus |
+| `schemas.py` | Shared model output shapes |
+| `geocoding.py` | Turning place names into coordinates |
+| `activity.py` | What each part of the system is doing right now, for the System page |
+
+## Things worth knowing
+
+Every Claude call in the project goes through `llm.py`. That is why a spending
+limit and a prompt-size ceiling can exist at all — there is exactly one door.

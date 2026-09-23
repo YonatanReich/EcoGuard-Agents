@@ -2,6 +2,7 @@ import csv
 from datetime import datetime, timezone
 
 import joblib
+import pytest
 
 from ecoguard.analyzers.fire.ml.build_historical_environmental_features import ENVIRONMENTAL_FEATURES
 from ecoguard.analyzers.fire.ml.build_historical_fire_weather_features import FEATURE_FIELDS
@@ -46,13 +47,18 @@ def test_temporal_split_is_unchanged(tmp_path):
 
 
 def test_saved_environmental_model_preserves_feature_order():
-    bundle = joblib.load(GENERATED / "ml" / "fire_prediction_environmental_model.joblib") if __import__("pathlib").GENERATED / "ml" / "fire_prediction_environmental_model.joblib".exists() else None
+    artifact = GENERATED / "ml" / "fire_prediction_environmental_model.joblib"
+    if not artifact.exists():
+        pytest.skip("trained model artifact is not present in this checkout")
+    bundle = joblib.load(artifact)
     if bundle is not None:
         assert bundle["metadata"]["feature_names"] == list(FULL_FEATURES)
 
 
 def test_saved_metrics_preserve_validation_only_model_comparison():
-    path = __import__("pathlib").GENERATED / "ml" / "fire_prediction_environmental_metrics.json"
+    path = GENERATED / "ml" / "fire_prediction_environmental_metrics.json"
+    if not path.exists():
+        pytest.skip("training metrics artifact is not present in this checkout")
     if path.exists():
         metrics = __import__("json").loads(path.read_text(encoding="utf-8"))
         comparison = metrics["full_validation_model_comparison"]

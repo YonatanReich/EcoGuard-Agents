@@ -52,6 +52,7 @@ class EnvironmentalBuildError(RuntimeError):
 
 
 def _atomic_json(path: Path, value: Any) -> None:
+    """Write JSON in one step, so a crash cannot leave it half written."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     try:
@@ -63,6 +64,7 @@ def _atomic_json(path: Path, value: Any) -> None:
 
 
 def load_rows(path: Path = INPUT_PATH) -> list[dict[str, str]]:
+    """Read the input records."""
     if not path.exists():
         raise EnvironmentalBuildError(f"input is missing: {path}")
     with path.open(encoding="utf-8-sig", newline="") as handle:
@@ -74,10 +76,12 @@ def load_rows(path: Path = INPUT_PATH) -> list[dict[str, str]]:
 
 
 def coordinate_key(latitude: object, longitude: object) -> str:
+    """A stable key for one coordinate, used to cache lookups."""
     return f"{float(latitude):.6f},{float(longitude):.6f}"
 
 
 def load_elevation_cache(path: Path = ELEVATION_CACHE) -> dict[str, float | None]:
+    """Read previously looked-up ground heights."""
     if not path.exists():
         return {}
     try:
@@ -97,6 +101,7 @@ def collect_elevations(
     sleep: Callable[[float], None] = time.sleep,
     logger: Callable[[str], None] = print,
 ) -> dict[str, float | None]:
+    """Look up ground height for every coordinate, caching as it goes."""
     cache = load_elevation_cache(cache_path)
     coordinates = {}
     for row in rows:
@@ -144,6 +149,7 @@ def collect_elevations(
 
 class PriorFirmsIndex:
     def __init__(self, incidents: Iterable[FirmsIncident]):
+        """Index past fires for fast lookup by place."""
         self.cells: dict[tuple[int, int], list[FirmsIncident]] = {}
         for incident in incidents:
             cell = (math.floor(incident.longitude / GRID_DEGREES), math.floor(incident.latitude / GRID_DEGREES))
@@ -152,6 +158,7 @@ class PriorFirmsIndex:
             values.sort(key=lambda incident: (incident.start, incident.candidate_id))
 
     def nearby(self, latitude: float, longitude: float, radius_km: float) -> Iterable[FirmsIncident]:
+        """Past fires within this radius of a coordinate."""
         x = math.floor(longitude / GRID_DEGREES)
         y = math.floor(latitude / GRID_DEGREES)
         radius = math.ceil(radius_km / (GRID_DEGREES * 90)) + 1
@@ -168,6 +175,7 @@ def historical_fire_features(
     *,
     excluded_candidate_ids: Iterable[str] = (),
 ) -> dict[str, Any]:
+    """How often this place burned before, at several radii and time windows."""
     excluded = set(excluded_candidate_ids)
     nearby = []
     for incident in index.nearby(latitude, longitude, 25.0):
@@ -179,6 +187,7 @@ def historical_fire_features(
         if distance <= 25:
             nearby.append((incident, distance))
     def count(radius: float, days: int) -> int:
+        """How many past fires fall within this radius and time window."""
         cutoff = timestamp - timedelta(days=days)
         return sum(incident.start >= cutoff and distance <= radius for incident, distance in nearby)
     previous_10 = [incident for incident, distance in nearby if distance <= 10]
@@ -195,6 +204,7 @@ def historical_fire_features(
 
 
 def enrich_rows(rows: list[Mapping[str, Any]], incidents: Iterable[FirmsIncident], elevations: Mapping[str, float | None]) -> list[dict[str, Any]]:
+    """Add weather, terrain and fire-history features to every record."""
     index = PriorFirmsIndex(incidents)
     output = []
     for row in rows:
@@ -219,6 +229,7 @@ def enrich_rows(rows: list[Mapping[str, Any]], incidents: Iterable[FirmsIncident
 
 
 def write_output(path: Path, rows: list[Mapping[str, Any]]) -> None:
+    """Write the finished dataset to disk."""
     fields = tuple(rows[0])
     temporary = path.with_suffix(path.suffix + ".tmp")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -232,6 +243,7 @@ def write_output(path: Path, rows: list[Mapping[str, Any]]) -> None:
 
 
 def build_environmental_dataset(*, input_path: Path = INPUT_PATH, firms_path: Path = FIRMS_INPUT, output_path: Path = OUTPUT_PATH, cache_path: Path = ELEVATION_CACHE, session: Any | None = None, logger: Callable[[str], None] = print) -> list[dict[str, Any]]:
+    """Build the environmental training dataset end to end."""
     rows = load_rows(input_path)
     elevations = collect_elevations(rows, cache_path=cache_path, session=session, logger=logger)
     output = enrich_rows(rows, load_firms_incidents(firms_path), elevations)
@@ -242,6 +254,7 @@ def build_environmental_dataset(*, input_path: Path = INPUT_PATH, firms_path: Pa
 
 
 def main() -> int:
+    """Run the build from the command line."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, default=INPUT_PATH)
     parser.add_argument("--firms", type=Path, default=FIRMS_INPUT)

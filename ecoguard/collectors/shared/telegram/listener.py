@@ -13,6 +13,7 @@ from ecoguard.collectors.shared.telegram.session import get_session_path, load_c
 
 
 async def discover_channels() -> list[dict[str, object]]:
+    """Log in interactively and resolve each configured channel to its numeric identity."""
     api_id, api_hash = load_credentials()
     client = TelegramClient(str(get_session_path()), api_id, api_hash)
     await client.start(
@@ -40,6 +41,7 @@ async def discover_channels() -> list[dict[str, object]]:
 
 
 def main() -> int:
+    """Run channel discovery from the command line."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--discover", action="store_true",

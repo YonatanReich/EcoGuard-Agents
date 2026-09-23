@@ -11,6 +11,7 @@ target_metadata = Base.metadata
 
 
 def run_migrations_online() -> None:
+    """Apply the pending migrations against the configured database."""
     with engine.connect() as connection:
         context.configure(
             connection=connection,

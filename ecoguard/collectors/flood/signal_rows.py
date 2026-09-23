@@ -75,6 +75,7 @@ def hydrometric_signal_records(
     rows: Iterable[dict[str, Any]],
     stations: Mapping[int, Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
+    """Gauge readings in the shape the flood detector reads."""
     eligible_stations = {
         station_id: station
         for station_id, station in stations.items()
@@ -91,4 +92,5 @@ def rainfall_signal_records(
     rows: Iterable[dict[str, Any]],
     stations: Mapping[int, Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
+    """Rain gauge readings in the shape the flood detector reads."""
     return _grouped_records(rows, stations, ("rainfall_mm",))

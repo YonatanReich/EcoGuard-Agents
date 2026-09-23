@@ -155,6 +155,7 @@ def _days_until(level_m: float, target_m: float, slope_m_per_day: float | None) 
 
 
 def _rationale(level_m: float, band: str, slope_m_per_day: float | None) -> str:
+    """Why the lake is in this band, in words."""
     where = {
         BAND_ABOVE_UPPER_RED: (
             f"{level_m - UPPER_RED_LINE_M:.2f} m above the upper red line"

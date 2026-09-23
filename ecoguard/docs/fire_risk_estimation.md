@@ -91,7 +91,7 @@ Regenerate calibration metadata:
 Score one prepared feature JSON object containing exactly all 44 fields:
 
 ```powershell
-.\.ml-venv\Scripts\python.exe -m ecoguard.analyzers.emergency.fire.risk_prediction_agent .\prepared_fire_risk_features.json
+.\.ml-venv\Scripts\python.exe -m ecoguard.analyzers.fire.risk_prediction_agent .\prepared_fire_risk_features.json
 ```
 
 The generated `data/generated/ml/fire_risk_thresholds.json` stores the feature order, thresholds, sigmoid parameters, selection rules, evaluation summaries, training references, sklearn version, paths, and semantics.

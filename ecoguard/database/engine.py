@@ -1,12 +1,11 @@
-"""SQLAlchemy engine and session factory for the EcoGuard Postgres store.
+"""The database connection, opened once when the process starts.
 
-DATABASE_URL is read once, at import, so a missing or malformed connection
-string fails when the process starts rather than on the first query inside a
-scheduled collector run — where it would surface only as a `failed` row.
+Reading the connection string at startup means a missing or malformed one fails
+immediately, rather than surfacing much later as a failed collector run.
 
-A proper pydantic-settings module replaces this later; for now it follows the
-python-dotenv pattern already used across the repository.
-"""
+Also owns the sandbox switch: pointing every query at a demo schema instead of
+the live one, which is what lets a demo run through the real pipeline without
+touching real data."""
 
 from __future__ import annotations
 

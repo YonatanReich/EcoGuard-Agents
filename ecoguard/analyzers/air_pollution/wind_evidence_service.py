@@ -1,4 +1,8 @@
-"""Persisted-first wind evidence for publishable Air Pollution events."""
+"""Wind evidence for a pollution event, from stored readings first.
+
+A stored reading costs nothing and is the one the event was actually built
+from, so the provider is only asked when nothing usable is on hand - and what
+comes back is kept, so the next event need not ask again."""
 
 from __future__ import annotations
 
@@ -28,6 +32,7 @@ class PersistedFirstWindEvidenceService:
         writer: Callable[[str, list[dict[str, Any]]], int] | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
+        """Build the service, wrapping the live one."""
         if reader is None:
             from ecoguard.database.repositories.weather_history import (
                 wind_for_point_at,
@@ -53,6 +58,11 @@ class PersistedFirstWindEvidenceService:
         maximum_observation_age_seconds: float,
         alternative_limit: int = 3,
     ):
+        """Wind evidence, from what is already stored where possible.
+
+        A stored reading costs nothing and is what the event was built from, so the
+        provider is only asked when nothing usable is on hand.
+        """
         origin = GeographicCoordinate.model_validate(
             analysis_coordinates.model_dump()
             if isinstance(analysis_coordinates, GeographicCoordinate)
@@ -107,6 +117,7 @@ class PersistedFirstWindEvidenceService:
         anomaly_observed_at: datetime,
         maximum_age_seconds: float,
     ) -> WindEvidence | None:
+        """One stored reading as wind evidence, or None when it is unusable."""
         try:
             observed_at = self._utc(row["observed_at"], "observed_at")
             age = (anomaly_observed_at - observed_at).total_seconds()
@@ -204,6 +215,7 @@ class PersistedFirstWindEvidenceService:
             return None
 
     def _persist_live_observation(self, evidence: WindEvidence) -> None:
+        """Keep a freshly fetched reading, so the next event need not fetch it again."""
         if evidence.source_type != "station_observation":
             raise RuntimeError("live_wind_is_not_an_observation")
         observed_at = evidence.wind_observed_at
@@ -235,12 +247,14 @@ class PersistedFirstWindEvidenceService:
 
     @staticmethod
     def _utc(value: datetime, name: str) -> datetime:
+        """A time in UTC, naming the field when it carries no timezone."""
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError(f"{name} must carry a UTC offset")
         return value.astimezone(timezone.utc)
 
     @staticmethod
     def _positive_number(value: object, name: str) -> float:
+        """A value that must be a positive number, naming the field when it is not."""
         number = PersistedFirstWindEvidenceService._nonnegative(value)
         if number <= 0:
             raise ValueError(f"{name} must be positive")
@@ -248,6 +262,7 @@ class PersistedFirstWindEvidenceService:
 
     @staticmethod
     def _nonnegative(value: object) -> float:
+        """A value that must not be negative."""
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError("wind value must be numeric")
         number = float(value)
@@ -257,6 +272,7 @@ class PersistedFirstWindEvidenceService:
 
     @staticmethod
     def _direction(value: object) -> float:
+        """A compass direction in degrees."""
         number = PersistedFirstWindEvidenceService._nonnegative(value)
         if number >= 360:
             raise ValueError("wind direction must be below 360")

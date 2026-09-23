@@ -21,6 +21,7 @@ CHUNK_SIZE = 500
 
 
 def _point(record: dict[str, Any]) -> WKTElement | None:
+    """A reading's position, or None when it has none."""
     latitude, longitude = record.get("latitude"), record.get("longitude")
     if latitude is None or longitude is None:
         return None
@@ -32,6 +33,7 @@ def _row(
     record: dict[str, Any],
     ingested_at: datetime,
 ) -> dict[str, Any]:
+    """One reading as a database row."""
     observed_at = record["observed_at"]
     if observed_at.tzinfo is None or observed_at.utcoffset() is None:
         raise ValueError("observed_at must carry a UTC offset")

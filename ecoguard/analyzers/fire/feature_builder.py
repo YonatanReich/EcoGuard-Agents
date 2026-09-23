@@ -30,6 +30,7 @@ FIRMS_FEATURES = (
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Distance between two coordinates, in kilometres."""
     radius = 6371.0088
     first, second = math.radians(lat1), math.radians(lat2)
     delta_lat = second - first
@@ -64,10 +65,12 @@ class StoredWeatherFeatures:
     """
 
     def __init__(self) -> None:
+        """Build the feature source, loading nothing until it is asked."""
         self._preloaded: dict[str, dict[str, Any]] | None = None
 
     @contextmanager
     def window(self, cell_ids, evaluation: datetime):
+        """Prepare the history these cells need for the evaluation time."""
         start, end = feature_window(evaluation)
         self._preloaded = hourly_for_cells(list(cell_ids), start, end)
         try:
@@ -76,6 +79,7 @@ class StoredWeatherFeatures:
             self._preloaded = None
 
     def features_for_cell(self, cell_id: str, evaluation_time: datetime) -> dict[str, Any]:
+        """Every model input for one cell at one moment."""
         stored = (self._preloaded or {}).get(cell_id)
         if stored is None:
             start, end = feature_window(evaluation_time)
@@ -104,6 +108,7 @@ class CurrentRiskFeatureBuilder:
         firms_index: PriorFirmsIndex | None = None,
         maximum_cell_distance_km: float = 5.0,
     ):
+        """Build the feature source, loading nothing until it is asked."""
         self.grid_path = Path(grid_path)
         self.weather_source = weather_source or StoredWeatherFeatures()
         self.firms_path = Path(firms_path)
@@ -111,6 +116,7 @@ class CurrentRiskFeatureBuilder:
         self.maximum_cell_distance_km = maximum_cell_distance_km
 
     def _cell(self, latitude: float, longitude: float) -> dict[str, Any] | None:
+        """The grid cell containing this coordinate, or None when outside the area."""
         if not self.grid_path.exists():
             return None
         connection = sqlite3.connect(self.grid_path)
@@ -128,6 +134,7 @@ class CurrentRiskFeatureBuilder:
         return dict(row) if distance <= self.maximum_cell_distance_km else None
 
     def _cell_by_id(self, cell_id: str) -> dict[str, Any] | None:
+        """One grid cell by its identifier."""
         if not self.grid_path.exists():
             return None
         connection = sqlite3.connect(self.grid_path)
@@ -143,11 +150,13 @@ class CurrentRiskFeatureBuilder:
             connection.close()
 
     def _index(self) -> PriorFirmsIndex:
+        """The past-fire index, built on first use and reused after."""
         if self._firms_index is None:
             self._firms_index = PriorFirmsIndex(load_firms_incidents(self.firms_path))
         return self._firms_index
 
     def build(self, latitude: float, longitude: float, evaluation_time: datetime | None = None) -> dict[str, Any]:
+        """The full set of model inputs for one place and time."""
         evaluation = (evaluation_time or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(
             minute=0, second=0, microsecond=0
         )
@@ -169,6 +178,7 @@ class CurrentRiskFeatureBuilder:
     def _build_cell(
         self, cell: dict[str, Any] | None, evaluation: datetime, requested_cell_id: str | None = None,
     ) -> dict[str, Any]:
+        """Assemble one cell's inputs from weather, terrain and past fires."""
         if cell is None:
             return {"status": "unavailable", "reason": "active_grid_cell_not_found", "features": None, "cell_id": requested_cell_id}
         if cell.get("feature_status") != "complete" or any(cell.get(name) is None for name in STATIC_MODEL_FEATURES):

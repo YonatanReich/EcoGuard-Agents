@@ -27,6 +27,7 @@ class IMSWindObservationError(RuntimeError):
     """A deliberately credential-free IMS request failure."""
 
     def __init__(self, category: str, *, transient: bool):
+        """Build the client, or carry the category of a failure."""
         super().__init__(category)
         self.category = category
         self.transient = transient
@@ -52,10 +53,12 @@ class IMSHTTPDiagnostic:
     error_category: str | None = None
 
     def as_safe_dict(self) -> dict[str, object]:
+        """The failure as plain fields, with nothing credential-bearing in it."""
         return asdict(self)
 
 
 def _validated_station_id(station_id: object) -> str:
+    """A station id as text, rejecting anything that is not one."""
     if isinstance(station_id, bool):
         raise ValueError("station_id must be a positive integer")
     value = str(station_id).strip()
@@ -75,6 +78,7 @@ class IMSWindObservationClient:
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         diagnostic_callback: Callable[[IMSHTTPDiagnostic], None] | None = None,
     ) -> None:
+        """Build the client. Transport and the provider key are injectable for testing."""
         if (
             isinstance(timeout, bool)
             or not isinstance(timeout, (int, float))
@@ -93,6 +97,7 @@ class IMSWindObservationClient:
         self.diagnostic_callback = diagnostic_callback
 
     def _headers(self) -> dict[str, str]:
+        """The request headers, including the provider key."""
         return {
             "Accept": "application/json",
             "Authorization": f"ApiToken {self._api_token}",
@@ -101,6 +106,7 @@ class IMSWindObservationClient:
 
     @staticmethod
     def _raise_for_status(response: Any) -> None:
+        """Turn an error response into a typed failure with no secrets in it."""
         status = int(getattr(response, "status_code", 0))
         if 200 <= status < 300:
             return
@@ -115,6 +121,7 @@ class IMSWindObservationClient:
 
     @staticmethod
     def _body_byte_length(response: Any) -> int | None:
+        """How large the response body was, when that is knowable."""
         content = getattr(response, "content", None)
         if isinstance(content, bytes):
             return len(content)
@@ -124,6 +131,7 @@ class IMSWindObservationClient:
 
     @staticmethod
     def _response_json(response: Any, *, body_byte_length: int | None) -> Any:
+        """The response as JSON, failing clearly when it is not."""
         if body_byte_length == 0:
             raise IMSWindObservationError("empty_response", transient=False)
         try:
@@ -137,6 +145,7 @@ class IMSWindObservationClient:
         return payload
 
     def _safe_url(self, value: object | None) -> str | None:
+        """A URL with any credentials stripped, safe to log."""
         if value is None:
             return None
         sanitized = str(value).replace(self._api_token, "<redacted>")
@@ -154,6 +163,7 @@ class IMSWindObservationClient:
             return "<invalid-url>"
 
     def _safe_text(self, value: object | None) -> str | None:
+        """Text trimmed and bounded, safe to log."""
         if value is None:
             return None
         return str(value).replace(self._api_token, "<redacted>")
@@ -161,6 +171,7 @@ class IMSWindObservationClient:
     def _request_url(
         self, endpoint: str, params: Mapping[str, str] | None
     ) -> str:
+        """The full URL for one provider endpoint."""
         prepared = requests.Request(
             "GET",
             f"{IMS_API_ROOT}/{endpoint}",
@@ -169,10 +180,12 @@ class IMSWindObservationClient:
         return self._safe_url(prepared.url) or f"{IMS_API_ROOT}/{endpoint}"
 
     def _emit_diagnostic(self, diagnostic: IMSHTTPDiagnostic) -> None:
+        """Record what one request did, without recording the key."""
         if self.diagnostic_callback is not None:
             self.diagnostic_callback(diagnostic)
 
     def _json_shape(self, payload: object) -> dict[str, object]:
+        """A description of a payload's structure, for diagnosing odd responses."""
         if isinstance(payload, dict):
             return {
                 "json_type": "dict",
@@ -194,6 +207,7 @@ class IMSWindObservationClient:
         params: Mapping[str, str] | None = None,
         operation: str,
     ) -> Any:
+        """Make one request and return its JSON, or raise a typed failure."""
         request_url = self._request_url(endpoint, params)
         try:
             response = self.session.get(
@@ -271,15 +285,18 @@ class IMSWindObservationClient:
             raise IMSWindObservationError("network_error", transient=True) from None
 
     def get_stations(self) -> Any:
+        """Every weather station the provider lists."""
         return self._get_json("stations", operation="stations")
 
     def get_station(self, station_id: object) -> Any:
+        """One station's description."""
         validated = _validated_station_id(station_id)
         return self._get_json(
             f"stations/{validated}", operation=f"station_metadata:{validated}"
         )
 
     def get_station_data_latest(self, station_id: object) -> Any:
+        """One station's most recent readings."""
         validated = _validated_station_id(station_id)
         return self._get_json(
             f"stations/{validated}/data/latest",
@@ -287,6 +304,7 @@ class IMSWindObservationClient:
         )
 
     def get_station_data_daily(self, station_id: object, day: date) -> Any:
+        """One station's readings for a given day."""
         if not isinstance(day, date):
             raise TypeError("day must be a date")
         validated = _validated_station_id(station_id)
@@ -302,6 +320,7 @@ class IMSWindObservationClient:
         start_date: date,
         end_date: date,
     ) -> Any:
+        """One station's readings between two times."""
         if not isinstance(start_date, date) or not isinstance(end_date, date):
             raise TypeError("start_date and end_date must be dates")
         if end_date < start_date:

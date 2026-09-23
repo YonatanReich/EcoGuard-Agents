@@ -1,25 +1,4 @@
-"""Build muni_il.geojson — Israel's local authority boundaries, web-ready.
-
-Source is the Ministry of Interior's seamless jurisdiction layer
-(גבולות שיפוט - רצף), a 51 MB shapefile of 411 survey-grade polygons in the
-Israel TM Grid. Three things have to happen before a browser can use it:
-
-  reproject   ITM (EPSG:2039, metres) -> WGS84, which the map speaks
-  dissolve    411 polygons -> 285 authorities, since 62 of them are multipart
-              and one label per authority beats one per fragment
-  simplify    1.6M vertices -> ~50k, taking the file from 31 MB to under 1 MB
-
-The projection is done here with a closed-form inverse Transverse Mercator
-rather than pyproj/geopandas: neither is installed, and every parameter needed
-is sitting in muni_il.prj. It is validated on the way past — see main().
-
-Run from the repo root:
-
-    python ecoguard/scripts/build_muni_geojson.py
-
-Output is checked in, so this only needs re-running if the Ministry publishes a
-new edition of the layer.
-"""
+"""Building the local authority boundaries as a web-ready map file."""
 
 from __future__ import annotations
 
@@ -136,6 +115,7 @@ def _check_projection() -> None:
 # ---------------------------------------------------------------------------
 
 def read_dbf(path: Path) -> list[dict[str, str]]:
+    """The attribute table out of a shapefile."""
     raw = path.read_bytes()
     record_count, header_len, record_len = struct.unpack("<IHH", raw[4:12])
 
@@ -158,6 +138,7 @@ def read_dbf(path: Path) -> list[dict[str, str]]:
 
 
 def read_polygons(path: Path) -> list[Polygon | MultiPolygon]:
+    """The outlines out of a shapefile."""
     raw = path.read_bytes()
     shapes, cursor = [], 100  # 100-byte file header
 
@@ -193,6 +174,7 @@ def read_polygons(path: Path) -> list[Polygon | MultiPolygon]:
 
 
 def main() -> None:
+    """Build the authority boundaries from the command line."""
     _check_projection()
 
     rows = read_dbf(SOURCE.with_suffix(".dbf"))

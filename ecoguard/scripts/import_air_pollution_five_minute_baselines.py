@@ -19,6 +19,7 @@ DEFAULT_COMPLETED = REPO_ROOT / "venv/phase2-output/national-baseline-v2"
 
 
 def main(argv=None) -> int:
+    """Import the five-minute baselines, reporting what would change unless told to apply it."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
     parser.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE)

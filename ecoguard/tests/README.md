@@ -1,14 +1,30 @@
-# tests/
+# Tests
 
-Subdivided to mirror the source tree, so a test sits where the code it covers
-sits:
+What stops a change breaking something quietly.
 
-`collection/` `database/` `detectors/` `analyzers/` `response_planner/`
-`resource_allocator/` `shared/` `api/` `scripts/`
+The layout mirrors the code, so tests for the flood analyzer sit in
+`analyzers/flood/`. Most run entirely offline: no database, no network, no
+model. Where a test needs a model it uses a stand-in that returns a fixed
+answer, so the test checks our handling rather than the model's mood.
 
-`conftest.py` holds the only repo-wide fixture — `database`, which TCP-probes
-the configured Postgres and skips rather than hanging when nothing answers.
-`fixtures/` holds the one recorded provider response.
+## Worth knowing before running them
 
-`ecoguard/research/tests/` is a **separate, uncollected** root — `pytest.ini`
-pins `testpaths = ecoguard/tests`, so research tests are run explicitly.
+Some tests under `coordinator/` and `database/` write to a real database, and
+`test_coordinator.py` deletes every incident it finds. If your connection
+points at a database you care about, exclude those two folders:
+
+    pytest ecoguard/tests --ignore=ecoguard/tests/coordinator --ignore=ecoguard/tests/database
+
+A handful of tests need trained model files that are not in version control.
+They skip when the file is absent rather than failing.
+
+## The ones that earn their keep
+
+`coordinator/test_fire_pipeline_smoke.py` drives a fire from detection all the
+way to the dashboard feed without a database or a model call.
+
+`coordinator/test_dispatch_retry_backoff.py` replays a real incident that once
+produced 108 model calls in a day, and proves it now produces six.
+
+`detectors/text/test_uncorroborated_lane.py` covers the whole unconfirmed
+report path, including the cases the system must refuse.

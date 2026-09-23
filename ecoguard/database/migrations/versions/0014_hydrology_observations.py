@@ -15,6 +15,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add water Authority hydrology observation caches."""
     # source_station_id remains mandatory even when the current station catalog
     # no longer contains an older station. This lets the cache preserve every
     # provider observation without fabricating station metadata. The nullable
@@ -166,6 +167,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove water Authority hydrology observation caches."""
     # Drop dependent tables before their referenced station tables.
     op.execute("DROP TABLE IF EXISTS rainfall_accumulations")
     op.execute("DROP TABLE IF EXISTS rainfall_observations")

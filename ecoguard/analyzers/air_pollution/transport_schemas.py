@@ -1,13 +1,8 @@
-"""Strict, provider-neutral contracts for pollution transport screening.
+"""The shapes used to describe where pollution may drift.
 
-These records sit after future Coordinator routing and before response planning::
-
-    Routed pollution incident -> transport screening -> response planning
-
-They define evidence and derived-result boundaries only.  They do not select a
-weather provider, rank settlements, generate corridors, estimate transport
-times, confirm a pollution source or exposure, or make operational decisions.
-"""
+The validators are the safety net: a corridor that claims a source without
+evidence, or cites the same evidence twice, is rejected before it can reach a
+card and be read as a finding."""
 
 from __future__ import annotations
 
@@ -76,6 +71,7 @@ _NON_POLLUTANTS = frozenset(
 
 
 def _validated_reference_ids(values: list[str]) -> list[str]:
+    """Evidence pointers, rejecting blanks and duplicates."""
     stripped = [value.strip() for value in values]
     if any(not value for value in stripped):
         raise ValueError("evidence reference IDs cannot be blank")
@@ -96,6 +92,7 @@ class TransportEvidenceReference(ContractModel):
     @field_validator("evidence_id", "source_name", "source_type", "reference")
     @classmethod
     def strip_text(cls, value: str | None) -> str | None:
+        """Trim text, treating a blank as absent."""
         return value.strip() if value is not None else None
 
 
@@ -109,10 +106,12 @@ class AnalysisOrigin(ContractModel):
     @field_validator("evidence_reference_ids")
     @classmethod
     def validate_reference_ids(cls, values: list[str]) -> list[str]:
+        """Reject blank or duplicated evidence pointers."""
         return _validated_reference_ids(values)
 
     @model_validator(mode="after")
     def source_origins_require_evidence(self):
+        """Reject a claimed source that cites no evidence."""
         if (
             self.analysis_origin_kind in {"correlated_source", "confirmed_source"}
             and not self.evidence_reference_ids
@@ -138,6 +137,7 @@ class TransportPollutantObservation(ContractModel):
     @field_validator("pollutant")
     @classmethod
     def normalize_pollutant(cls, value: str) -> str:
+        """One spelling per pollutant, so comparisons work."""
         normalized = _POLLUTANT_ALIASES.get(value.upper(), value)
         if normalized.upper() in _NON_POLLUTANTS:
             raise ValueError("weather context cannot be a pollutant observation")
@@ -146,11 +146,13 @@ class TransportPollutantObservation(ContractModel):
     @field_validator("original_unit")
     @classmethod
     def strip_original_unit(cls, value: str) -> str:
+        """Trim the unit as the provider wrote it."""
         return value.strip()
 
     @field_validator("evidence_reference_ids")
     @classmethod
     def validate_reference_ids(cls, values: list[str]) -> list[str]:
+        """Reject blank or duplicated evidence pointers."""
         return _validated_reference_ids(values)
 
 
@@ -165,15 +167,18 @@ class PollutionAnomalyTransportEvidence(ContractModel):
     @field_validator("detection_id")
     @classmethod
     def strip_detection_id(cls, value: str) -> str:
+        """Trim the detection identifier."""
         return value.strip()
 
     @field_validator("anomaly_observed_at")
     @classmethod
     def normalize_timestamp(cls, value: AwareDatetime) -> AwareDatetime:
+        """Store the time in UTC."""
         return value.astimezone(timezone.utc)
 
     @model_validator(mode="after")
     def evidence_ids_are_unique(self):
+        """Reject a record citing the same evidence twice."""
         identifiers = [item.evidence_id for item in self.evidence_references]
         if len(set(identifiers)) != len(identifiers):
             raise ValueError("anomaly evidence IDs must be unique")
@@ -202,6 +207,7 @@ class WindOriginalUnits(ContractModel):
     )
     @classmethod
     def strip_units(cls, value: str | None) -> str | None:
+        """Trim a unit, treating a blank as absent."""
         return value.strip() if value is not None else None
 
 
@@ -246,6 +252,7 @@ class WindEvidence(ContractModel):
     )
     @classmethod
     def strip_text(cls, value: str | None) -> str | None:
+        """Trim text, treating a blank as absent."""
         return value.strip() if value is not None else None
 
     @field_validator(
@@ -257,17 +264,20 @@ class WindEvidence(ContractModel):
     )
     @classmethod
     def normalize_timestamps(cls, value: AwareDatetime | None) -> AwareDatetime | None:
+        """Store times in UTC."""
         return value.astimezone(timezone.utc) if value is not None else None
 
     @field_validator("provider_channel_validity")
     @classmethod
     def validate_channel_names(cls, values: dict[str, ProviderValidity]):
+        """Reject a channel name the provider does not use."""
         if any(not name.strip() for name in values):
             raise ValueError("provider channel names cannot be blank")
         return {name.strip(): value for name, value in values.items()}
 
     @model_validator(mode="after")
     def validate_source_and_optional_evidence(self):
+        """Reject a source claim whose evidence does not support it."""
         if self.source_type == "station_observation":
             if self.provider_location_kind != "station":
                 raise ValueError("station observations require a station location")
@@ -299,6 +309,7 @@ class WindEvidence(ContractModel):
 
     @property
     def effective_at(self) -> AwareDatetime:
+        """The time this reading actually describes."""
         value = self.wind_observed_at if self.source_type == "station_observation" else self.wind_valid_at
         assert value is not None
         return value
@@ -317,6 +328,7 @@ class SettlementTransportCandidate(ContractModel):
     @field_validator("settlement_id", "name", "source_provider", "source_feature_id")
     @classmethod
     def strip_text(cls, value: str | None) -> str | None:
+        """Trim text, treating a blank as absent."""
         return value.strip() if value is not None else None
 
 
@@ -336,10 +348,12 @@ class PollutionTransportPredictionInput(ContractModel):
     @field_validator("prediction_id", "incident_id", "coordinator_routing_id")
     @classmethod
     def strip_identity(cls, value: str | None) -> str | None:
+        """Trim the identifier."""
         return value.strip() if value is not None else None
 
     @model_validator(mode="after")
     def validate_routing_and_evidence_alignment(self):
+        """Reject a request whose wind evidence does not match the reading it is for."""
         if self.incident_id is None and self.coordinator_routing_id is None:
             raise ValueError("incident_id or coordinator_routing_id is required")
         if (
@@ -377,16 +391,19 @@ class DerivedTransportScreening(ContractModel):
     @field_validator("algorithm_version", "parameter_version")
     @classmethod
     def strip_version(cls, value: str) -> str:
+        """Trim the version label."""
         return value.strip()
 
     @field_validator("generated_at")
     @classmethod
     def normalize_generated_at(cls, value: AwareDatetime) -> AwareDatetime:
+        """Store the time in UTC."""
         return value.astimezone(timezone.utc)
 
     @field_validator("limitations")
     @classmethod
     def validate_limitations(cls, values: list[str]) -> list[str]:
+        """Reject a blank caveat, since an empty one says nothing."""
         stripped = [value.strip() for value in values]
         if any(not value for value in stripped):
             raise ValueError("limitations cannot contain blank entries")
@@ -395,10 +412,12 @@ class DerivedTransportScreening(ContractModel):
     @field_validator("evidence_reference_ids")
     @classmethod
     def validate_reference_ids(cls, values: list[str]) -> list[str]:
+        """Reject blank or duplicated evidence pointers."""
         return _validated_reference_ids(values)
 
     @model_validator(mode="after")
     def status_is_coherent(self):
+        """Reject a screening whose status contradicts its contents."""
         derived = (
             self.downwind_to_direction_deg,
             self.corridor_method,
@@ -436,11 +455,13 @@ class SettlementTransportRelevanceResult(ContractModel):
     @field_validator("settlement_id", "name")
     @classmethod
     def strip_text(cls, value: str) -> str:
+        """Trim text, treating a blank as absent."""
         return value.strip()
 
     @field_validator("score_components")
     @classmethod
     def validate_score_components(cls, values: dict[str, float]):
+        """Reject a score whose parts do not add up."""
         if any(not name.strip() for name in values):
             raise ValueError("score component names cannot be blank")
         return {name.strip(): value for name, value in values.items()}
@@ -448,6 +469,7 @@ class SettlementTransportRelevanceResult(ContractModel):
     @field_validator("transport_time_assumptions")
     @classmethod
     def validate_time_assumptions(cls, values: list[str]) -> list[str]:
+        """Reject travel-time assumptions that are not stated."""
         stripped = [value.strip() for value in values]
         if any(not value for value in stripped):
             raise ValueError("transport-time assumptions cannot contain blank entries")
@@ -455,6 +477,7 @@ class SettlementTransportRelevanceResult(ContractModel):
 
     @model_validator(mode="after")
     def result_is_coherent(self):
+        """Reject a result whose parts contradict each other."""
         if self.exclusion_reason is None and self.rank is None:
             raise ValueError("non-excluded settlement results require a rank")
         if self.exclusion_reason is not None and self.rank is not None:
@@ -487,10 +510,12 @@ class PollutionTransportPredictionResult(ContractModel):
     @field_validator("prediction_id", "incident_id", "coordinator_routing_id", "detection_id")
     @classmethod
     def strip_identity(cls, value: str | None) -> str | None:
+        """Trim the identifier."""
         return value.strip() if value is not None else None
 
     @model_validator(mode="after")
     def validate_result_collection(self):
+        """Reject a result set that is internally inconsistent."""
         if self.incident_id is None and self.coordinator_routing_id is None:
             raise ValueError("incident_id or coordinator_routing_id is required")
         if self.transport_screening.data_status == "unavailable" and self.settlement_results:

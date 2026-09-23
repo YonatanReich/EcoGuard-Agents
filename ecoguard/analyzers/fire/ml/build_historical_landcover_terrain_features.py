@@ -1,4 +1,7 @@
-"""Add cached ESA WorldCover classes and DEM-neighborhood slope features."""
+"""Adding terrain and land cover to each historical fire record.
+
+Both are static, so they are looked up once per place and cached; the tiles
+themselves are large and are kept on disk rather than re-downloaded."""
 
 from __future__ import annotations
 
@@ -58,10 +61,12 @@ class StaticFeatureBuildError(RuntimeError):
 
 
 def _hemisphere(value: int, positive: str, negative: str, width: int) -> str:
+    """A coordinate as the letter-and-number form the tile names use."""
     return f"{positive if value >= 0 else negative}{abs(value):0{width}d}"
 
 
 def worldcover_tile(latitude: float, longitude: float) -> tuple[str, str]:
+    """Which land-cover tile covers this coordinate."""
     south = math.floor(latitude / 3) * 3
     west = math.floor(longitude / 3) * 3
     tile = f"{_hemisphere(south, 'N', 'S', 2)}{_hemisphere(west, 'E', 'W', 3)}"
@@ -70,6 +75,7 @@ def worldcover_tile(latitude: float, longitude: float) -> tuple[str, str]:
 
 
 def dem_tile(latitude: float, longitude: float) -> tuple[str, str]:
+    """Which elevation tile covers this coordinate."""
     south, west = math.floor(latitude), math.floor(longitude)
     tile = f"{_hemisphere(south, 'N', 'S', 2)}_00_{_hemisphere(west, 'E', 'W', 3)}_00"
     stem = f"Copernicus_DSM_COG_30_{tile}_DEM"
@@ -77,6 +83,7 @@ def dem_tile(latitude: float, longitude: float) -> tuple[str, str]:
 
 
 def _atomic_json(path: Path, value: Any) -> None:
+    """Write JSON in one step, so a crash cannot leave it half written."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     try:
@@ -94,6 +101,7 @@ def download_file(
     session: Any | None = None,
     sleep: Callable[[float], None] = time.sleep,
 ) -> None:
+    """Fetch one tile to disk, skipping it when it is already there."""
     if path.exists() and path.stat().st_size:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -131,6 +139,7 @@ def download_file(
 
 
 def slope_from_neighborhood(values: np.ndarray, cell_x_metres: float, cell_y_metres: float) -> float | None:
+    """How steep the ground is, from the heights around a point."""
     values = np.asarray(values, dtype=float)
     if values.shape != (3, 3) or not np.isfinite(values).all() or cell_x_metres <= 0 or cell_y_metres <= 0:
         return None
@@ -140,6 +149,7 @@ def slope_from_neighborhood(values: np.ndarray, cell_x_metres: float, cell_y_met
 
 
 def sample_land_cover(dataset: Any, latitude: float, longitude: float) -> int | None:
+    """What grows at one coordinate."""
     try:
         row, column = dataset.index(longitude, latitude)
         value = int(dataset.read(1, window=Window(column, row, 1, 1))[0, 0])
@@ -149,6 +159,7 @@ def sample_land_cover(dataset: Any, latitude: float, longitude: float) -> int | 
 
 
 def sample_slope(dataset: Any, latitude: float, longitude: float) -> float | None:
+    """How steep the ground is at one coordinate."""
     try:
         row, column = dataset.index(longitude, latitude)
         values = dataset.read(1, window=Window(column - 1, row - 1, 3, 3), boundless=True, fill_value=np.nan)
@@ -179,6 +190,7 @@ def sample_slope_across_tiles(latitude: float, longitude: float, dataset_for: Ca
 
 
 def load_cache(path: Path = CACHE_PATH) -> dict[str, dict[str, Any]]:
+    """Terrain already looked up, so a rerun does not repeat it."""
     if not path.exists(): return {}
     try: value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError): raise StaticFeatureBuildError("static feature cache is corrupted") from None
@@ -192,6 +204,7 @@ def collect_static_features(
     cache_path: Path = CACHE_PATH, session: Any | None = None,
     sleep: Callable[[float], None] = time.sleep, logger: Callable[[str], None] = print,
 ) -> dict[str, dict[str, Any]]:
+    """Look up terrain and land cover for every record."""
     coordinates = {coordinate_key(row["latitude"], row["longitude"]): (float(row["latitude"]), float(row["longitude"])) for row in rows}
     cache = load_cache(cache_path)
     missing = [key for key in sorted(coordinates) if key not in cache or cache[key].get("slope_degrees") is None]
@@ -218,6 +231,7 @@ def collect_static_features(
             if land_filename not in land_datasets:
                 land_datasets[land_filename] = rasterio.open(source_directory / "worldcover_2021" / land_filename)
             def dataset_for(sample_latitude: float, sample_longitude: float):
+                """The tile covering this coordinate, opened once and reused."""
                 # GLO-90 COG bounds are pixel-centre shifted by half a cell, so
                 # an integer-degree coordinate can belong to the adjacent tile.
                 for latitude_shift in (0.0, -0.5, 0.5):
@@ -242,6 +256,7 @@ def collect_static_features(
 
 
 def enrich_rows(rows: list[Mapping[str, Any]], cache: Mapping[str, Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Add terrain and land cover to every record."""
     output = []
     for row in rows:
         enriched = dict(row); value = cache.get(coordinate_key(row["latitude"], row["longitude"]), {})
@@ -253,6 +268,7 @@ def enrich_rows(rows: list[Mapping[str, Any]], cache: Mapping[str, Mapping[str, 
 
 
 def write_output(path: Path, rows: list[Mapping[str, Any]]) -> None:
+    """Write the finished dataset to disk."""
     path.parent.mkdir(parents=True, exist_ok=True); temporary = path.with_suffix(path.suffix + ".tmp")
     try:
         with temporary.open("w", encoding="utf-8-sig", newline="") as handle:
@@ -263,6 +279,7 @@ def write_output(path: Path, rows: list[Mapping[str, Any]]) -> None:
 
 
 def build_dataset(*, input_path: Path = INPUT_PATH, output_path: Path = OUTPUT_PATH, source_directory: Path = SOURCE_DIRECTORY, cache_path: Path = CACHE_PATH, session: Any | None = None, logger: Callable[[str], None] = print) -> list[dict[str, Any]]:
+    """Build the terrain and land-cover dataset end to end."""
     with input_path.open(encoding="utf-8-sig", newline="") as handle: rows = list(csv.DictReader(handle))
     if not rows: raise StaticFeatureBuildError("environmental input is empty or missing")
     cache = collect_static_features(rows, source_directory=source_directory, cache_path=cache_path, session=session, logger=logger)
@@ -272,6 +289,7 @@ def build_dataset(*, input_path: Path = INPUT_PATH, output_path: Path = OUTPUT_P
 
 
 def main() -> int:
+    """Run the build from the command line."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, default=INPUT_PATH); parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
     parser.add_argument("--source-directory", type=Path, default=SOURCE_DIRECTORY); parser.add_argument("--cache", type=Path, default=CACHE_PATH)

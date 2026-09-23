@@ -53,12 +53,14 @@ class FireWeatherCollector(BaseCollector):
     source = "fire_weather"
 
     def __init__(self, agent: FireDangerAgent | None = None):
+        """Build the collector with its provider client."""
         # FireDangerAgent's legend mapping is the valuable part and is reused
         # unchanged. Its fetch is per-point, which would be ~1,200 WMS calls a
         # tick; one raster covering the country answers all of them.
         self.agent = agent or FireDangerAgent()
 
     def fetch_area_raster(self, bounds: tuple[float, float, float, float], day: date) -> Image.Image:
+        """Download the fire-danger image covering this area for one day."""
         west, south, east, north = bounds
         height = round(RASTER_WIDTH * (north - south) / (east - west))
         response = requests.get(

@@ -1,4 +1,9 @@
-"""Calibrate the existing wildfire model into validation-derived risk levels."""
+"""Turning model scores into risk levels that mean something.
+
+A model can rank well and still be badly calibrated - saying 80% when it is
+right half the time. This fits the correction, then sets the boundaries between
+low, medium and high, and reports what actually happened in each band so the
+bands can be argued with."""
 
 from __future__ import annotations
 
@@ -43,11 +48,13 @@ class CalibrationError(RuntimeError):
 
 
 def _logit(probabilities: np.ndarray) -> np.ndarray:
+    """Probabilities on the scale the calibration is fitted in."""
     clipped = np.clip(np.asarray(probabilities, dtype=float), 1e-6, 1 - 1e-6)
     return np.log(clipped / (1 - clipped)).reshape(-1, 1)
 
 
 def expected_calibration_error(labels: Sequence[int], scores: Sequence[float], bins: int = 10) -> float:
+    """How far the model's stated confidence is from how often it is right."""
     y = np.asarray(labels, dtype=int)
     p = np.asarray(scores, dtype=float)
     edges = np.linspace(0.0, 1.0, bins + 1)
@@ -60,6 +67,7 @@ def expected_calibration_error(labels: Sequence[int], scores: Sequence[float], b
 
 
 def calibration_metrics(labels: Sequence[int], scores: Sequence[float]) -> dict[str, float]:
+    """How well the model's confidence matches reality."""
     y = np.asarray(labels, dtype=int)
     p = np.asarray(scores, dtype=float)
     return {
@@ -110,6 +118,7 @@ def compare_calibration_methods(raw_scores: Sequence[float], labels: Sequence[in
 
 
 def apply_calibration(raw_scores: Sequence[float], method: str, parameters: Mapping[str, Any]) -> np.ndarray:
+    """Adjust raw scores so a stated confidence means what it says."""
     raw = np.asarray(raw_scores, dtype=float)
     if method == "raw":
         return np.clip(raw, 0.0, 1.0)
@@ -165,11 +174,13 @@ def derive_risk_thresholds(scores: Sequence[float], labels: Sequence[int]) -> tu
 
 
 def assign_risk_levels(scores: Sequence[float], low_medium: float, medium_high: float) -> np.ndarray:
+    """Turn calibrated scores into low, medium and high."""
     p = np.asarray(scores, dtype=float)
     return np.where(p >= medium_high, "high", np.where(p >= low_medium, "medium", "low"))
 
 
 def bucket_statistics(labels: Sequence[int], scores: Sequence[float], low_medium: float, medium_high: float) -> dict[str, Any]:
+    """What actually happened in each risk level, so the bands can be checked."""
     y = np.asarray(labels, dtype=int)
     p = np.asarray(scores, dtype=float)
     levels = assign_risk_levels(p, low_medium, medium_high)
@@ -194,6 +205,7 @@ def bucket_statistics(labels: Sequence[int], scores: Sequence[float], low_medium
 
 
 def _feature_references(rows: Sequence[Mapping[str, Any]], features: Sequence[str]) -> dict[str, dict[str, float]]:
+    """The inputs each record carried, for the report."""
     matrix, _ = matrix_for(rows, features)
     return {
         feature: {
@@ -206,6 +218,7 @@ def _feature_references(rows: Sequence[Mapping[str, Any]], features: Sequence[st
 
 
 def _global_importance(path: Path) -> list[dict[str, Any]]:
+    """Which inputs the trained model leaned on most."""
     if not path.exists():
         return []
     with path.open(encoding="utf-8-sig", newline="") as handle:
@@ -214,6 +227,7 @@ def _global_importance(path: Path) -> list[dict[str, Any]]:
 
 
 def build_calibration(model_path: Path = MODEL_PATH, dataset_path: Path = DATASET_PATH, output_path: Path = OUTPUT_PATH) -> dict[str, Any]:
+    """Fit the calibration and the risk bands, and write them out."""
     bundle = joblib.load(model_path)
     pipeline = bundle["pipeline"]
     feature_names = list(bundle["metadata"]["feature_names"])
@@ -265,6 +279,7 @@ def build_calibration(model_path: Path = MODEL_PATH, dataset_path: Path = DATASE
 
 
 def main() -> None:
+    """Run the calibration from the command line."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", type=Path, default=MODEL_PATH)
     parser.add_argument("--dataset", type=Path, default=DATASET_PATH)

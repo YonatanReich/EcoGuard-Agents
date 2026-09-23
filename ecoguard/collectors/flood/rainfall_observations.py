@@ -115,6 +115,7 @@ RAIN_STATION_UPSERT = text(
 
 
 def _source_timestamp(value: Any, label: str) -> datetime:
+    """A provider timestamp as an aware datetime, naming the field on failure."""
     if not isinstance(value, str):
         raise RainfallObservationError(f"{label} must be a timestamp string")
     try:
@@ -129,6 +130,7 @@ def _source_timestamp(value: Any, label: str) -> datetime:
 
 
 def _station_id(value: Any) -> int:
+    """A gauge identifier as a whole number."""
     if isinstance(value, bool):
         raise RainfallObservationError("station id must be an integer")
     try:
@@ -141,6 +143,7 @@ def _station_id(value: Any) -> int:
 
 
 def _number(value: Any, label: str) -> float:
+    """A required number, naming the field when it is not one."""
     if value is None or isinstance(value, bool):
         raise RainfallObservationError(f"{label} must be numeric")
     try:
@@ -153,6 +156,7 @@ def _number(value: Any, label: str) -> float:
 
 
 def _rainfall(value: Any, label: str) -> float:
+    """A required rainfall amount."""
     result = _number(value, label)
     if result < 0:
         raise RainfallObservationError(f"{label} cannot be negative")
@@ -162,11 +166,13 @@ def _rainfall(value: Any, label: str) -> float:
 def _optional_rainfall(
     values: dict[str, Any], key: str, label: str
 ) -> float | None:
+    """A rainfall amount, or None when the provider left it blank."""
     value = values.get(key)
     return None if value is None else _rainfall(value, label)
 
 
 def _optional_text(value: Any) -> str | None:
+    """Text, or None when absent or blank."""
     if value is None:
         return None
     result = str(value).strip()
@@ -174,6 +180,7 @@ def _optional_text(value: Any) -> str | None:
 
 
 def _mapping(value: Any, label: str) -> dict[str, Any]:
+    """A nested object that must be present."""
     if not isinstance(value, dict):
         raise RainfallObservationError(f"{label} must be an object")
     return value
@@ -383,6 +390,7 @@ def _database_rows(
     station_ids: dict[int, int],
     collected_at: datetime,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+    """The readings as database rows."""
     observations = [
         {
             **row,

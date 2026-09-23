@@ -14,6 +14,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add population_cells."""
     # One row per raster pixel of a population-count grid, as the pixel's own
     # footprint rather than its centre. That is what makes a drawn polygon
     # answerable: a cell only half inside the polygon contributes half its
@@ -39,4 +40,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove population_cells."""
     op.execute("DROP TABLE IF EXISTS population_cells")

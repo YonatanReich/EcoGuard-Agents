@@ -1,9 +1,7 @@
-"""Nullable kinematic atmospheric transport-time screening estimates.
+"""How long pollution would take to reach a settlement, roughly.
 
-The duration is a constant-wind geometric screening value. It is not an ETA,
-arrival prediction, exposure time, plume travel time, or operational response
-time, and it carries no probability semantics.
-"""
+A wind-speed-and-distance estimate, with its assumptions stated on the result.
+Screening only: it says when something could arrive, never that it has."""
 
 from __future__ import annotations
 
@@ -76,6 +74,7 @@ class KinematicTransportTimeEstimate(ContractModel):
     @field_validator("transport_time_assumptions")
     @classmethod
     def validate_assumptions(cls, values: list[str]) -> list[str]:
+        """Reject an estimate whose assumptions are not stated."""
         stripped = [value.strip() for value in values]
         if any(not value for value in stripped):
             raise ValueError("transport-time assumptions cannot contain blank entries")
@@ -83,6 +82,7 @@ class KinematicTransportTimeEstimate(ContractModel):
 
     @model_validator(mode="after")
     def validate_estimate_status(self):
+        """Reject an estimate whose status contradicts its contents."""
         if self.estimate_status == "estimated":
             if (
                 self.kinematic_advection_time_seconds is None
@@ -109,6 +109,7 @@ def _result(
     duration_seconds: float | None = None,
     suppression_reason: TransportTimeSuppressionReason | None = None,
 ) -> KinematicTransportTimeEstimate:
+    """An estimate built from these inputs."""
     estimated = duration_seconds is not None
     return KinematicTransportTimeEstimate(
         estimate_status="estimated" if estimated else "suppressed",
@@ -176,6 +177,7 @@ def estimate_kinematic_transport_time(
 def _validated_settlement(
     value: SettlementResultInput,
 ) -> SettlementTransportRelevanceResult:
+    """One settlement, rejecting anything malformed."""
     payload = (
         value.model_dump()
         if isinstance(value, SettlementTransportRelevanceResult)
@@ -185,6 +187,7 @@ def _validated_settlement(
 
 
 def _validated_wind_evidence(value: WindEvidenceInput) -> WindEvidence:
+    """Wind evidence, rejecting anything malformed."""
     payload = value.model_dump() if isinstance(value, WindEvidence) else value
     return WindEvidence.model_validate(payload)
 

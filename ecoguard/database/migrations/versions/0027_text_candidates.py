@@ -29,6 +29,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add what the classifier decided about one message, for one hazard."""
     op.execute(
         """
         CREATE TABLE text_candidates (
@@ -97,4 +98,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove what the classifier decided about one message, for one hazard."""
     op.execute("DROP TABLE text_candidates")

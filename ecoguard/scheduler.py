@@ -19,21 +19,21 @@ from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from ecoguard import retention
-from ecoguard.collection.flood.hydrometric_observations import (
+from ecoguard.collectors.flood.hydrometric_observations import (
     SOURCE as HYDROMETRIC_OBSERVATIONS_SOURCE,
     HydrometricObservationCollector,
 )
-from ecoguard.collection.earthquake.gsi import GsiEarthquakeCollector
-from ecoguard.collection.pollution.collector import AirPollutionCollector
-from ecoguard.collection.fire.effis.collector import FireWeatherCollector
-from ecoguard.collection.fire.firms.collector import FirmsCollector
-from ecoguard.collection.fire.fwi.collector import FireWeatherIndexCollector
-from ecoguard.collection.fire.gibs.collector import VegetationCollector
-from ecoguard.collection.shared.telegram.collector import TelegramCollector
-from ecoguard.collection.text.rss import RssCollector
-from ecoguard.collection.water_level.kinneret import KinneretLevelCollector
-from ecoguard.collection.shared.open_meteo.forecast import WeatherForecastCollector
-from ecoguard.collection.shared.open_meteo.observations import WeatherCollector
+from ecoguard.collectors.earthquake.gsi import GsiEarthquakeCollector
+from ecoguard.collectors.pollution.collector import AirPollutionCollector
+from ecoguard.collectors.fire.effis.collector import FireWeatherCollector
+from ecoguard.collectors.fire.firms.collector import FirmsCollector
+from ecoguard.collectors.fire.fwi.collector import FireWeatherIndexCollector
+from ecoguard.collectors.fire.gibs.collector import VegetationCollector
+from ecoguard.collectors.shared.telegram.collector import TelegramCollector
+from ecoguard.collectors.text.rss import RssCollector
+from ecoguard.collectors.water_level.kinneret import KinneretLevelCollector
+from ecoguard.collectors.shared.open_meteo.forecast import WeatherForecastCollector
+from ecoguard.collectors.shared.open_meteo.observations import WeatherCollector
 from ecoguard.database.locks import single_flight
 from ecoguard.resource_allocator.allocation_agent import ResourceAllocationAgent
 from ecoguard.resource_allocator.allocation_agent import (

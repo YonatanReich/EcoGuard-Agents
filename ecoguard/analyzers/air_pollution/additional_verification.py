@@ -23,6 +23,7 @@ LIMITATION = (
 
 
 def _default_firms_run_reader() -> dict[str, Any] | None:
+    """Read the last satellite collection run, so its freshness can be judged."""
     from ecoguard.database.repositories.air_pollution_verification import (
         latest_firms_collector_run,
     )
@@ -38,6 +39,7 @@ class AirPollutionAdditionalVerificationService:
         *,
         firms_run_reader: CollectorRunReader = _default_firms_run_reader,
     ) -> None:
+        """Build the verifier. Readers are injectable so tests need no database."""
         self._firms_run_reader = firms_run_reader
 
     def verify(
@@ -49,6 +51,11 @@ class AirPollutionAdditionalVerificationService:
         classification: OfficialPollutantClassification,
         checked_at: datetime,
     ) -> AirPollutionAdditionalVerification | None:
+        """Look for a nearby fire that could explain this pollution.
+
+        A correlation only: finding a fire nearby does not prove it caused the
+        reading, and the result says so.
+        """
         checked_at = self._utc(checked_at)
         if not qualification.qualified:
             return None
@@ -127,6 +134,7 @@ class AirPollutionAdditionalVerificationService:
 
     @staticmethod
     def _correlation(link: Mapping[str, Any]) -> PossibleSourceCorrelation | None:
+        """One possible source link, or None when the record is unusable."""
         source_incident = link.get("cause_incident")
         if not isinstance(source_incident, str) or not source_incident:
             return None
@@ -154,6 +162,7 @@ class AirPollutionAdditionalVerificationService:
         reason: str,
         providers: list[str],
     ) -> AirPollutionAdditionalVerification:
+        """A result saying no verification was possible, and why."""
         return AirPollutionAdditionalVerification(
             status="VERIFICATION_UNAVAILABLE",
             checked_at=checked_at,
@@ -164,6 +173,7 @@ class AirPollutionAdditionalVerificationService:
 
     @staticmethod
     def _utc(value: datetime) -> datetime:
+        """The same moment expressed in UTC."""
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("verification clock must carry a UTC offset")
         return value.astimezone(timezone.utc)

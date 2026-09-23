@@ -21,6 +21,7 @@ HISTORICAL_BASELINE_FAMILY = "completed_hour"
 
 
 def _generated_at(value: Any) -> datetime | None:
+    """The timestamp on an imported file, or None when it carries none."""
     if value is None:
         return None
     if not isinstance(value, str):

@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 
 def load_credentials() -> tuple[int, str]:
+    """The Telegram API credentials, failing clearly when they are absent."""
     load_dotenv()
     raw_api_id = os.getenv("TELEGRAM_API_ID")
     api_hash = os.getenv("TELEGRAM_API_HASH")
@@ -21,6 +22,7 @@ def load_credentials() -> tuple[int, str]:
 
 
 def get_session_path() -> Path:
+    """Where the logged-in Telegram session is kept on this machine."""
     local_app_data = os.getenv("LOCALAPPDATA")
     if not local_app_data:
         raise RuntimeError("LOCALAPPDATA is required for secure Telegram session storage.")

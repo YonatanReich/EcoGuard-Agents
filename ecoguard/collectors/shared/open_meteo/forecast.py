@@ -1,32 +1,8 @@
-"""Open-Meteo's forecast for the hours that have not happened yet.
+"""Weather forecasts, for fire-weather and flood lead time.
 
-The one thing the observation collector structurally cannot provide. Past
-weather explains a fire that is burning; it cannot say whether tomorrow
-afternoon is when this becomes serious, and "future risk" is a question only a
-forecast can answer.
-
-Rows land in the same `observations` table as everything else, separated by
-`issued_at` rather than by a table of their own:
-
-  * observed_at — the hour being described, exactly as for a measurement, so a
-    forecast for 14:00 and the observation of 14:00 line up on one axis once
-    that hour arrives, and scoring a forecast against what happened is a join
-    rather than a reconciliation.
-  * issued_at — the run that produced it. NULL means measured. Keeping every
-    run rather than overwriting is what makes deterioration visible: the same
-    afternoon forecast at 30 C and then at 38 C is a story, and an
-    overwrite-in-place table can only ever show the last frame.
-
-Two deliberate reductions, both because a 5 km hourly national forecast is far
-more data than the forecast itself contains:
-
-  * Cells are sampled every FORECAST_CELL_STRIDE rows and columns. Open-Meteo
-    serves Israel from global models whose own grid is on the order of 10 km,
-    so neighbouring 5 km cells are interpolations of one another. Sampling to
-    roughly 15 km discards duplicated interpolation, not information.
-  * The horizon stops at FORECAST_HORIZON_HOURS. Beyond two days the useful
-    signal for fire operations is a daily outlook, not an hourly series.
-"""
+Writes far more rows per run than the observation collector - two days of lead
+time for every cell it samples - which is why it samples a coarser grid and
+runs only a few times a day."""
 
 from __future__ import annotations
 
@@ -82,11 +58,13 @@ class WeatherForecastCollector(BaseCollector):
         horizon_hours: int = FORECAST_HORIZON_HOURS,
         stride: int = FORECAST_CELL_STRIDE,
     ):
+        """Build the collector. Client and clock are injectable for testing."""
         self.client = client or OpenMeteoHourlyClient()
         self.horizon_hours = horizon_hours
         self.stride = stride
 
     def fetch(self) -> list[dict[str, Any]]:
+        """The forecast for every sampled cell, for the next two days."""
         cells = forecast_cells(self.stride)
         if not cells:
             return []
@@ -125,6 +103,7 @@ class WeatherForecastCollector(BaseCollector):
         return records
 
     def _records(self, cells, responses, issued_at: datetime) -> list[dict[str, Any]]:
+        """Turn provider responses into stored readings, one per cell and hour."""
         records = []
         for cell, response in zip(cells, responses):
             hourly = response["hourly"]

@@ -37,6 +37,7 @@ class AnalysisComponent(AnomalyContract, Generic[T]):
 
     @model_validator(mode="after")
     def _coherent_availability(self) -> "AnalysisComponent[T]":
+        """Reject a component that is both unavailable and carrying a result."""
         if self.status == "unavailable":
             if self.result is not None or self.unavailable_reason is None:
                 raise ValueError("unavailable components require a reason and no result")
@@ -58,6 +59,7 @@ class CurrentPollutionState(AnomalyContract):
 
     @model_validator(mode="after")
     def _unique_detections(self) -> "CurrentPollutionState":
+        """Reject a state listing the same detection twice."""
         identifiers = [item.anomaly.detection_id for item in self.detections]
         if len(identifiers) != len(set(identifiers)):
             raise ValueError("duplicate detection IDs; grouping belongs to Coordinator")
@@ -72,6 +74,7 @@ class NonEmergencyRoutingMetadata(AnomalyContract):
     @field_validator("routed_at")
     @classmethod
     def _utc_time(cls, value: AwareDatetime) -> AwareDatetime:
+        """Store times in UTC so comparisons never depend on the sender's clock."""
         return value.astimezone(timezone.utc)
 
 
@@ -96,6 +99,7 @@ class AirPollutionEventQualification(AnomalyContract):
 
     @model_validator(mode="after")
     def _coherent_decision(self):
+        """Reject a decision whose outcome and reason disagree."""
         if self.qualified != (self.path is not None):
             raise ValueError("qualified events require exactly one qualification path")
         return self
@@ -157,10 +161,12 @@ class AirPollutionAdditionalVerification(AnomalyContract):
     @field_validator("checked_at")
     @classmethod
     def _verification_time_to_utc(cls, value: AwareDatetime) -> AwareDatetime:
+        """Store the verification time in UTC."""
         return value.astimezone(timezone.utc)
 
     @model_validator(mode="after")
     def _coherent_verification(self):
+        """Reject a verification whose status and contents disagree."""
         if self.status == "CORROBORATED" and not self.possible_source_correlations:
             raise ValueError("corroborated verification requires supporting evidence")
         if self.status != "CORROBORATED" and self.possible_source_correlations:
@@ -190,10 +196,12 @@ class AirPollutionTrendPrediction(AnomalyContract):
     @field_validator("issued_at", "as_of")
     @classmethod
     def _trend_time_to_utc(cls, value: AwareDatetime) -> AwareDatetime:
+        """Store the prediction time in UTC."""
         return value.astimezone(timezone.utc)
 
     @model_validator(mode="after")
     def _coherent_probabilities(self) -> "AirPollutionTrendPrediction":
+        """Reject a prediction whose probabilities do not sum to one."""
         if set(self.probabilities) != {"RISING", "STABLE", "FALLING"}:
             raise ValueError("trend probabilities require all three classes")
         values = list(self.probabilities.values())
@@ -251,10 +259,12 @@ class PopulationImpactContext(AnomalyContract):
     @field_validator("queried_at")
     @classmethod
     def _population_time_to_utc(cls, value: AwareDatetime) -> AwareDatetime:
+        """Store the population estimate's time in UTC."""
         return value.astimezone(timezone.utc)
 
     @model_validator(mode="after")
     def _population_provenance_and_settlements(self):
+        """Reject a population figure that does not say where it came from."""
         # The current shared table has no persisted dataset metadata.  Partial
         # metadata would be more misleading than an explicit all-null record.
         metadata = (
@@ -287,10 +297,12 @@ class AirPollutionAnalysisInput(AnomalyContract):
     @field_validator("requested_at")
     @classmethod
     def _utc_requested_at(cls, value: AwareDatetime) -> AwareDatetime:
+        """Store the request time in UTC."""
         return value.astimezone(timezone.utc)
 
     @model_validator(mode="after")
     def _validate_external_boundary(self) -> "AirPollutionAnalysisInput":
+        """Reject input that reaches past what the analyzer is allowed to use."""
         if self.routing.routed_at > self.requested_at:
             raise ValueError("routing cannot postdate analysis request")
         evidence_ids = [item.evidence_id for item in self.evidence]
@@ -331,10 +343,12 @@ class AirPollutionEventAnalysis(AirPollutionAnalysisInput):
     @field_validator("generated_at")
     @classmethod
     def _utc_generated_at(cls, value: AwareDatetime) -> AwareDatetime:
+        """Store the generation time in UTC."""
         return value.astimezone(timezone.utc)
 
     @model_validator(mode="after")
     def _coherent_report(self) -> "AirPollutionEventAnalysis":
+        """Reject a report whose components contradict its overall status."""
         if self.generated_at < self.requested_at:
             raise ValueError("analysis cannot be generated before requested_at")
         states = (

@@ -1,24 +1,27 @@
-# scripts/
+# Scripts
 
-One-off and scheduled jobs run from the command line, not imported by the app.
+One-off and occasional jobs, run by hand.
 
-Loaders that fill reference tables (`load_surface_grid`, `load_population_grid`,
-`build_weather_baselines`, `build_fire_risk_grid`), the national risk scan
-runner, a dev server with detection stubbed, and `claude_smoke_check` — the one
-part of risk analysis that cannot be verified offline because it needs a real
-model call.
+Nothing here runs on a timer. These build the reference data the system reads,
+import static datasets, or check that things are working.
 
-Run as modules: `python -m ecoguard.scripts.load_surface_grid`
+## What is here
 
-The IMS rainfall IDF loader validates the full flat export before replacing
-the reconciled stations' curves atomically:
+Roughly three kinds:
 
-`python -m ecoguard.scripts.import_rainfall_idf path/to/idf_flat.csv`
+**Preparing data the system needs** - loading town boundaries, the map grid,
+population, road networks, fire districts, station rosters, and the guidance
+corpus.
 
-Use `--validate-only` to check the complete source without connecting to or
-changing the database.
+**Building things that are computed once** - weather and satellite baselines,
+the fire risk grid.
 
-After station coordinates or basin geometry change, rebuild the derived
-same-basin links with:
+**Checking** - `preflight.py` says whether this machine is ready to run a live
+demonstration, and `claude_smoke_check.py` confirms the model lane works.
 
-`python -m ecoguard.scripts.sync_hydrometric_idf_basin_links`
+## Things worth knowing
+
+Run `preflight.py` before any live demonstration. It checks the things the
+application cannot report about itself: whether the database answers, whether
+the Claude key still works, whether another copy is already running, and which
+collectors have gone quiet.

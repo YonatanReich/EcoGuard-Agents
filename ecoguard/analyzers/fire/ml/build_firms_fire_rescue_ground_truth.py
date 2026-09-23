@@ -87,6 +87,7 @@ class SettlementPolygon:
 
 
 def normalize_lamas_code(value: object) -> str:
+    """A settlement code in the one spelling used throughout."""
     text = str(value or "").strip()
     if not text or text in {"-", "0"}:
         return ""
@@ -100,6 +101,7 @@ def normalize_lamas_code(value: object) -> str:
 
 
 def _atomic_text(path: Path, text: str) -> None:
+    """Write a file in one step, so a crash cannot leave it half written."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     try:
@@ -111,6 +113,7 @@ def _atomic_text(path: Path, text: str) -> None:
 
 
 def _fetch_json(url: str) -> dict[str, Any]:
+    """Download and parse one JSON document."""
     request = urllib.request.Request(
         url,
         headers={"User-Agent": USER_AGENT, "Accept": "application/geo+json, application/json"},
@@ -140,6 +143,7 @@ def download_boundary_cache(
     cache_path: Path = BOUNDARY_CACHE,
     manifest_path: Path = BOUNDARY_MANIFEST,
 ) -> dict[str, Any]:
+    """Fetch settlement boundaries once and keep them on disk."""
     features: list[dict[str, Any]] = []
     offset = 0
     while True:
@@ -196,6 +200,7 @@ def download_boundary_cache(
 
 
 def validate_boundary_geojson(collection: Mapping[str, Any]) -> None:
+    """Reject a boundary file that is missing or malformed."""
     features = collection.get("features")
     if collection.get("type") != "FeatureCollection" or not isinstance(features, list):
         raise GroundTruthBuildError("boundary cache is invalid GeoJSON")
@@ -216,6 +221,7 @@ def validate_boundary_geojson(collection: Mapping[str, Any]) -> None:
 
 
 def load_boundary_geojson(path: Path = BOUNDARY_CACHE) -> dict[str, Any]:
+    """Read the cached settlement boundaries."""
     if not path.exists():
         raise GroundTruthBuildError(
             "official settlement-boundary cache is missing; run with --refresh-boundaries"
@@ -229,6 +235,7 @@ def load_boundary_geojson(path: Path = BOUNDARY_CACHE) -> dict[str, Any]:
 
 
 def _iter_points(value: Any) -> Iterable[tuple[float, float]]:
+    """Every coordinate inside a nested geometry."""
     if (
         isinstance(value, Sequence)
         and len(value) >= 2
@@ -242,6 +249,7 @@ def _iter_points(value: Any) -> Iterable[tuple[float, float]]:
 
 
 def _geometry_bounds(geometry: Mapping[str, Any]) -> tuple[float, float, float, float]:
+    """The rectangle enclosing one geometry."""
     points = list(_iter_points(geometry.get("coordinates")))
     if not points:
         raise GroundTruthBuildError("boundary polygon has no coordinates")
@@ -250,6 +258,7 @@ def _geometry_bounds(geometry: Mapping[str, Any]) -> tuple[float, float, float, 
 
 
 def settlement_polygons(collection: Mapping[str, Any]) -> list[SettlementPolygon]:
+    """Every settlement outline, with its code and bounds."""
     polygons = []
     for feature in collection["features"]:
         properties = feature.get("properties") or {}
@@ -280,6 +289,7 @@ def settlement_polygons(collection: Mapping[str, Any]) -> list[SettlementPolygon
 def _point_on_segment(
     x: float, y: float, first: Sequence[float], second: Sequence[float]
 ) -> bool:
+    """Whether a point lies exactly on a line segment."""
     x1, y1, x2, y2 = float(first[0]), float(first[1]), float(second[0]), float(second[1])
     cross = (x - x1) * (y2 - y1) - (y - y1) * (x2 - x1)
     if abs(cross) > 1e-12:
@@ -290,6 +300,7 @@ def _point_on_segment(
 
 
 def _point_in_ring(longitude: float, latitude: float, ring: Sequence[Sequence[float]]) -> bool:
+    """Whether a point is inside one closed ring."""
     inside = False
     for index, first in enumerate(ring):
         second = ring[(index + 1) % len(ring)]
@@ -308,12 +319,14 @@ def _point_in_ring(longitude: float, latitude: float, ring: Sequence[Sequence[fl
 def _point_in_polygon(
     longitude: float, latitude: float, rings: Sequence[Sequence[Sequence[float]]]
 ) -> bool:
+    """Whether a point is inside a polygon, allowing for holes."""
     return bool(rings) and _point_in_ring(longitude, latitude, rings[0]) and not any(
         _point_in_ring(longitude, latitude, hole) for hole in rings[1:]
     )
 
 
 def point_in_geometry(longitude: float, latitude: float, geometry: Mapping[str, Any]) -> bool:
+    """Whether a coordinate falls inside a geometry of any shape."""
     if geometry["type"] == "Polygon":
         return _point_in_polygon(longitude, latitude, geometry["coordinates"])
     return any(
@@ -324,6 +337,7 @@ def point_in_geometry(longitude: float, latitude: float, geometry: Mapping[str, 
 
 class SettlementSpatialIndex:
     def __init__(self, polygons: list[SettlementPolygon], cell_size: float = GRID_SIZE_DEGREES):
+        """Index the settlement outlines into a grid, for fast lookup."""
         self.polygons = polygons
         self.cell_size = cell_size
         self.cells: dict[tuple[int, int], list[int]] = defaultdict(list)
@@ -334,6 +348,7 @@ class SettlementSpatialIndex:
                     self.cells[(x, y)].append(index)
 
     def locate(self, latitude: float, longitude: float) -> SettlementPolygon | None:
+        """Which settlement contains this coordinate, if any."""
         cell = (math.floor(longitude / self.cell_size), math.floor(latitude / self.cell_size))
         matches = []
         for index in self.cells.get(cell, []):
@@ -357,6 +372,7 @@ class SettlementSpatialIndex:
 
 
 def load_csv(path: Path) -> list[dict[str, str]]:
+    """Read a CSV file as a list of dictionaries."""
     if not path.exists():
         raise GroundTruthBuildError(f"required generated input is missing: {path}")
     try:
@@ -369,6 +385,7 @@ def load_csv(path: Path) -> list[dict[str, str]]:
 def build_official_index(
     records: Iterable[Mapping[str, Any]],
 ) -> dict[tuple[int, int, str], dict[str, Any]]:
+    """Index the official fire records by settlement and month."""
     grouped: dict[tuple[int, int, str], dict[str, Any]] = {}
     for row in records:
         scenario = str(row.get("scenario") or "").strip()
@@ -391,6 +408,7 @@ def build_official_index(
 
 
 def _candidate_year_month(timestamp: object) -> tuple[int, int]:
+    """The year and month a record belongs to."""
     parsed = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
     return parsed.year, parsed.month
 
@@ -400,6 +418,7 @@ def match_candidates(
     spatial_index: SettlementSpatialIndex,
     official_index: Mapping[tuple[int, int, str], Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
+    """Match satellite detections against official fire records."""
     prepared = []
     candidate_counts: dict[tuple[int, int, str], int] = defaultdict(int)
     for candidate in candidates:
@@ -448,6 +467,7 @@ def match_candidates(
 
 
 def write_output(path: Path, records: Iterable[Mapping[str, Any]]) -> None:
+    """Write the finished records to disk."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     try:
@@ -468,6 +488,7 @@ def build_ground_truth(
     official_path: Path = FIRE_RESCUE_RECORDS,
     output_path: Path = OUTPUT_PATH,
 ) -> list[dict[str, Any]]:
+    """Build the labelled dataset of real fires, from official records."""
     polygons = settlement_polygons(load_boundary_geojson(boundary_cache))
     candidates = load_csv(candidates_path)
     official = build_official_index(load_csv(official_path))
@@ -477,6 +498,7 @@ def build_ground_truth(
 
 
 def main() -> int:
+    """Run the build from the command line."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--refresh-boundaries", action="store_true")
     parser.add_argument("--boundary-cache", type=Path, default=BOUNDARY_CACHE)

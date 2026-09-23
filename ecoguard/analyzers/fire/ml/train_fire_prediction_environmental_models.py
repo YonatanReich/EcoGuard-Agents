@@ -1,4 +1,7 @@
-"""Train the richer temporal wildfire baseline and lightweight ablations."""
+"""Training the fuller fire model, and the cut-down versions it is compared against.
+
+The ablations are the point: a richer model that does not beat a simpler one is
+not worth its extra inputs."""
 
 from __future__ import annotations
 
@@ -57,6 +60,7 @@ class EnvironmentalTrainingError(RuntimeError): pass
 
 
 def assert_environmental_features(features=FULL_FEATURES):
+    """Refuse to train on anything outside the agreed inputs."""
     leaked = set(features) & FORBIDDEN_FEATURES
     if leaked: raise EnvironmentalTrainingError(f"forbidden features: {sorted(leaked)}")
     if len(features) != len(set(features)): raise EnvironmentalTrainingError("duplicate features")
@@ -64,6 +68,7 @@ def assert_environmental_features(features=FULL_FEATURES):
 
 
 def load_environmental_dataset(path: Path = DATASET_PATH):
+    """The training records from disk."""
     with path.open(encoding="utf-8-sig", newline="") as handle:
         rows = list(csv.DictReader(handle))
     if not rows or not {"sample_id", "timestamp", "fire_label", *FULL_FEATURES}.issubset(rows[0]):
@@ -80,10 +85,12 @@ def load_environmental_dataset(path: Path = DATASET_PATH):
 
 
 def matrix_for(rows, features):
+    """Records as the matrix the model takes."""
     return np.asarray([[row["_environmental"][field] for field in features] for row in rows], dtype=float), np.asarray([row["_label"] for row in rows], dtype=int)
 
 
 def distribution_shift(splits):
+    """Whether the parts of the split differ enough to explain a score change."""
     result = {}
     for feature in FULL_FEATURES:
         values = {name: np.asarray([row["_environmental"][feature] for row in rows], dtype=float) for name, rows in splits.items()}
@@ -94,11 +101,13 @@ def distribution_shift(splits):
 
 
 def _write_json(path, value):
+    """Write JSON in one step, so a crash cannot leave it half written."""
     path.parent.mkdir(parents=True, exist_ok=True); temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8"); temporary.replace(path)
 
 
 def _write_csv(path, fields, rows):
+    """Write a CSV in one step, so a crash cannot leave it half written."""
     temporary = path.with_suffix(path.suffix + ".tmp")
     with temporary.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n"); writer.writeheader(); writer.writerows(rows)
@@ -106,6 +115,7 @@ def _write_csv(path, fields, rows):
 
 
 def train_environmental(*, dataset_path=DATASET_PATH, baseline_metrics_path=BASELINE_METRICS_PATH, output_directory=OUTPUT_DIRECTORY, seed=RANDOM_SEED, creation_time=None):
+    """Train the richer model and the cut-down versions it is compared against."""
     rows = load_environmental_dataset(dataset_path); splits = temporal_split(rows)
     ablations = {}; fitted = {}
     for group, features in ABLATIONS.items():
@@ -153,6 +163,7 @@ def train_environmental(*, dataset_path=DATASET_PATH, baseline_metrics_path=BASE
 
 
 def main():
+    """Run the training from the command line."""
     parser = argparse.ArgumentParser(description=__doc__); parser.add_argument("--dataset", type=Path, default=DATASET_PATH); parser.add_argument("--baseline-metrics", type=Path, default=BASELINE_METRICS_PATH); parser.add_argument("--output-dir", type=Path, default=OUTPUT_DIRECTORY); args = parser.parse_args()
     metrics = train_environmental(dataset_path=args.dataset, baseline_metrics_path=args.baseline_metrics, output_directory=args.output_dir)
     print(json.dumps(metrics, ensure_ascii=False, indent=2)); return 0

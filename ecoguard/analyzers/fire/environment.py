@@ -1,20 +1,7 @@
-"""The production loaders `spread_analyzer` has always described and never had.
+"""The conditions around a fire: weather, terrain and vegetation.
 
-Its module docstring names `environment_for` as "the thin production loader"
-and then does not define it, which is why `analyze()` has only ever been
-reachable from a test. This is that function, plus the one that finds the
-settlements to test exposure against.
-
-Both live here rather than in `spread_analyzer` on purpose, and it is the same
-reason that module gives for taking the environment as an argument: the hard
-part to get right is what the numbers mean, and a function that reaches into
-Postgres to find them out can only be tested against Postgres. So the judgement
-stays pure and separately testable, and everything that touches the store is in
-this file, where it can be stubbed in one place.
-
-Nothing here computes anything. It reads what the collection layer already
-stored and renames it into the keys `analyze()` asks for.
-"""
+Reads what the collectors already stored for that place rather than asking any
+provider, so the assessment is repeatable and costs nothing."""
 
 from __future__ import annotations
 
@@ -112,6 +99,7 @@ def environment_for(
     from ecoguard.database.repositories.area_summary import summarize_area
 
     def read(radius: float):
+        """Read the environmental values within this radius of the fire."""
         try:
             return summarize_area(
                 circle_around(float(latitude), float(longitude), radius)
@@ -315,6 +303,7 @@ def weather_at(
     payload = payload or {}
 
     def number(key: str) -> float | None:
+        """One value from the reading as a number, or None when absent."""
         value = payload.get(key)
         return None if value is None else float(value)
 

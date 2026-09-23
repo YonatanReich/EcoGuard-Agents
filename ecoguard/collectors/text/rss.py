@@ -1,13 +1,11 @@
 """News feeds in, raw text observations out. No interpretation here.
 
 Stores the headline and the summary, never the article body: the classifier
-only ever sees a headline and a summary anyway, and storing whole articles from
-commercial outlets buys nothing and raises a copyright question.
+sees only those anyway, and storing whole articles raises a copyright question
+for nothing.
 
-ETag / If-Modified-Since are sent because a breaking-news feed is polled every
-few minutes and is unchanged on most of those polls; a 304 costs one round trip
-and no parsing.
-"""
+Feeds are polled with a "has this changed?" header, so an unchanged feed costs
+one round trip and no parsing."""
 
 from __future__ import annotations
 
@@ -59,6 +57,7 @@ def strip_markup(value: str | None) -> str | None:
 
 
 def _text(item: ElementTree.Element, tag: str) -> str | None:
+    """One field of a feed item as text, or None when absent or blank."""
     found = item.find(tag)
     if found is None or found.text is None:
         return None
@@ -67,6 +66,7 @@ def _text(item: ElementTree.Element, tag: str) -> str | None:
 
 
 def _published_at(item: ElementTree.Element) -> datetime | None:
+    """When a feed item says it was published, or None when it does not say."""
     raw = _text(item, "pubDate")
     if raw is None:
         return None
@@ -118,6 +118,7 @@ def parse_items(body: bytes) -> list[dict[str, Any]]:
 
 
 def _record(source: TextSource, item: dict[str, Any], at: datetime) -> dict[str, Any]:
+    """One feed item as a stored text observation."""
     published_at = item["published_at"] or at
     summary = strip_markup(item["summary"])
     return {
@@ -153,9 +154,11 @@ class RssCollector(BaseCollector):
     source = SOURCE
 
     def __init__(self, sources: list[TextSource] | None = None) -> None:
+        """Build the collector. The feed list is injectable for testing."""
         self._sources = sources
 
     def fetch(self) -> list[dict[str, Any]]:
+        """New items from every active feed."""
         feeds = self._sources if self._sources is not None else active_sources("rss")
         at = datetime.now(timezone.utc)
         records: list[dict[str, Any]] = []
@@ -169,6 +172,7 @@ class RssCollector(BaseCollector):
         return records
 
     def _fetch_one(self, feed: TextSource, at: datetime) -> list[dict[str, Any]]:
+        """Poll one feed, skipping the parse entirely when it reports no change."""
         response = requests.get(
             feed.source_id,
             timeout=TIMEOUT_SECONDS,

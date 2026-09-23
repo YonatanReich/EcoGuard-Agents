@@ -14,6 +14,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add generic durable SharedEvent projections keyed by Coordinator incident."""
     op.execute(
         """
         CREATE TABLE event_projections (
@@ -53,6 +54,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove generic durable SharedEvent projections keyed by Coordinator incident."""
     op.execute("DROP INDEX IF EXISTS event_projections_retry_idx")
     op.execute("DROP INDEX IF EXISTS event_projections_delivery_idx")
     op.execute("DROP TABLE IF EXISTS event_projections")

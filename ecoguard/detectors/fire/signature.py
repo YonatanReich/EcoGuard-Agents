@@ -1,70 +1,8 @@
-"""What a cell normally does, and whether this detection is it.
+"""What a cell's fires normally look like, so an unusual one stands out.
 
-The problem this exists for
----------------------------
-`satellite.py` suppresses a cell that lights on more than one day in twenty,
-from a flat rate in `firms_baselines`. Measured against a full year, that bar
-catches 17 cells out of 1,174 — and then blinds us to those 17 forever. The
-worst of them lights on 71% of days. A real wildfire there can never be
-reported, and `repositories/fire_history.py` already names that failure:
-
-    A caller that finds `persistent` True should not discard the detection.
-    It should stop *alerting* on it: a flare stack that also catches the brush
-    around it is exactly the case where the record is misleading and the fire
-    is real.
-
-A scalar rate cannot make that distinction, because it is a property of the
-cell and the question is about the detection. This module answers the second
-question: given everything this cell has ever done, how unusual is *this*?
-
-Why this is fitted rather than thresholded
-------------------------------------------
-Because the separating structure is not a number anyone can write down. The
-documented industrial source in the Rishon LeZion belt lights between 22:52 and
-00:33, at 0.5-2.0 MW, on one or two pixels, in the same spot. None of those
-figures is a rule — the next flare stack has its own — so the profile has to be
-learned per cell from its own history. That is what makes this a model: an
-unsupervised, per-cell density estimate, used for novelty detection.
-
-Why it is not supervised
-------------------------
-There are no usable labels. The only ground truth in this repo is
-`build_firms_fire_rescue_ground_truth.py`, whose own documentation is explicit
-that a match means "a relevant fire was officially recorded in this settlement
-in this calendar month" and **not** that any individual FIRMS candidate is a
-real fire. Training a false-positive classifier on that label would teach it
-that an industrial site in a settlement which also had a real fire that month
-is a fire — which is precisely the case that matters and precisely the case it
-would get wrong. Unlabelled novelty detection is not a compromise here; it is
-the only honest fit to the data that exists.
-
-Why there is no sklearn model file
-----------------------------------
-Four statistics per cell, one of them circular. An IsolationForest over this
-would need a versioned artifact, a retraining job, and special handling for the
-hour anyway — and it could not tell an operator why it suppressed something.
-Everything in this pipeline has to be arguable with; a suppressed fire most of
-all. These statistics are legible, so `explain()` can say "this cell has lit 84
-times, always within 40 minutes of 23:10, always near 1.2 MW" and a duty
-officer can disagree with it.
-
-The four axes
--------------
-  * **hour of day** — a fixed installation runs to a schedule; a fire does not
-    care what time it is. Circular, so it is fitted as a mean resultant vector:
-    the concentration R says how much the hour tells us at all, and a cell that
-    lights at all hours contributes nothing on this axis rather than noise.
-  * **radiative power** — on a log scale, because a flare sits inside one order
-    of magnitude for years while a fire crosses several in an afternoon.
-  * **pixels per overpass** — industry lights the pixel it occupies. A fire
-    lights the ones around it too.
-  * **spatial scatter** — how far the pixels sit from their own centroid. A
-    fixed source is fixed; a front is not.
-
-Only the upward tail counts on the last three. More power, more pixels and more
-spread than usual are evidence of a fire; less of any of them is just a quiet
-night at the same factory, and scoring that as novel would invert the filter.
-"""
+Describes a cell's own history - typical heat, size, scatter and time of day -
+and scores how far a new detection departs from it. Used to decide whether a
+detection in a place that burns often is worth reporting."""
 
 from __future__ import annotations
 
@@ -236,10 +174,12 @@ def fit(samples: Sequence[Mapping[str, float]]) -> dict[str, Any] | None:
 
 
 def _mean(samples: Sequence[Mapping[str, float]], key: str) -> float:
+    """The average of one field across these samples."""
     return sum(sample[key] for sample in samples) / len(samples)
 
 
 def _sd(samples: Sequence[Mapping[str, float]], key: str) -> float:
+    """The spread of one field across these samples."""
     if len(samples) < 2:
         return 0.0
     mean = _mean(samples, key)

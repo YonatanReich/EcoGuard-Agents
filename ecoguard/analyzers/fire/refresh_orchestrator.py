@@ -1,10 +1,8 @@
-"""Small in-process scheduler for the national Current Risk snapshot.
+"""Rebuilding the national fire-risk snapshot on a timer.
 
-It used to fetch weather too, from its own Open-Meteo client into its own
-SQLite cache. That was the second of three collection paths against the same
-API; weather now arrives once, through the collection layer, and this only
-scores what is already stored.
-"""
+Scoring every grid cell takes long enough that it cannot happen inside a
+request, so it runs in the background and the dashboard reads whatever was
+built last - along with when that was, so a stale picture is visible as one."""
 
 from __future__ import annotations
 
@@ -27,6 +25,7 @@ DEFAULT_STATUS_PATH = GENERATED / "fire_risk_refresh_status.json"
 
 
 def configured_refresh_minutes() -> int:
+    """How often the national snapshot is rebuilt, from the settings."""
     try:
         value = int(os.getenv("FIRE_RISK_REFRESH_INTERVAL_MINUTES", str(DEFAULT_REFRESH_MINUTES)))
     except ValueError:
@@ -35,6 +34,7 @@ def configured_refresh_minutes() -> int:
 
 
 def _utc(value: datetime | None = None) -> datetime:
+    """A time in UTC."""
     selected = value or datetime.now(timezone.utc)
     if selected.tzinfo is None:
         raise ValueError("refresh timestamp must include a UTC offset")
@@ -42,10 +42,12 @@ def _utc(value: datetime | None = None) -> datetime:
 
 
 def _text(value: datetime | None = None) -> str:
+    """A value as text, or None when absent."""
     return (value or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _parse_utc(value: object) -> datetime | None:
+    """A stored timestamp as an aware time."""
     if not value:
         return None
     try:
@@ -58,6 +60,7 @@ def _parse_utc(value: object) -> datetime | None:
 
 
 def _atomic_json(path: Path, value: dict[str, Any]) -> None:
+    """Write JSON in one step, so a crash cannot leave it half written."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -73,6 +76,7 @@ class CurrentRiskRefreshOrchestrator:
         status_path: Path | str = DEFAULT_STATUS_PATH,
         cadence_minutes: int | None = None,
     ):
+        """Build the orchestrator, without starting it."""
         self.scan_service = scan_service or NationalCurrentRiskScanService(grid_path=grid_path)
         self.grid_path, self.snapshot_path, self.status_path = Path(grid_path), Path(snapshot_path), Path(status_path)
         self.cadence_minutes = cadence_minutes if cadence_minutes is not None else configured_refresh_minutes()
@@ -84,6 +88,7 @@ class CurrentRiskRefreshOrchestrator:
 
     @live_actor("analyzer.fire")
     def refresh(self, evaluation_time: datetime | None = None) -> dict[str, Any]:
+        """Rebuild the national snapshot once."""
         if not self._run_lock.acquire(blocking=False):
             return {"status": "skipped_overlap", "scan_updated": False}
         started = _text()
@@ -131,6 +136,7 @@ class CurrentRiskRefreshOrchestrator:
         return {**snapshot, "refresh_metadata": metadata}
 
     def latest_snapshot(self, *, now: datetime | None = None) -> dict[str, Any] | None:
+        """The most recent snapshot, or None when none has been built."""
         if not self.snapshot_path.exists():
             return None
         try:
@@ -142,6 +148,7 @@ class CurrentRiskRefreshOrchestrator:
             return None
 
     def latest_status(self) -> dict[str, Any] | None:
+        """Whether the last rebuild succeeded, and when it ran."""
         if not self.status_path.exists(): return None
         try:
             value = json.loads(self.status_path.read_text(encoding="utf-8"))
@@ -150,16 +157,19 @@ class CurrentRiskRefreshOrchestrator:
             return None
 
     def start(self) -> None:
+        """Begin rebuilding on a schedule."""
         if self._thread and self._thread.is_alive(): return
         self._stop.clear()
         self._thread = threading.Thread(target=self._loop, name="current-risk-refresh", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
+        """Stop rebuilding and wait for the current run to finish."""
         self._stop.set()
         if self._thread and self._thread.is_alive(): self._thread.join(timeout=5)
 
     def _loop(self) -> None:
+        """Rebuild on the configured interval until told to stop."""
         self.refresh()
         interval = self.cadence_minutes * 60
         while not self._stop.wait(interval):

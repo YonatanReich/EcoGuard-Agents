@@ -1,4 +1,8 @@
-"""Configured Telegram channels and stable-identity verification policy."""
+"""Which Telegram channels are read, and how their identity is checked.
+
+A channel name can be released and taken over by someone else, so each one is
+also pinned to its numeric identity; a channel that answers under the right
+name but the wrong number is refused."""
 
 from __future__ import annotations
 
@@ -25,6 +29,7 @@ class TelegramChannelPolicy:
 
     @property
     def pinned_peer_id(self) -> int | None:
+        """The numeric identity this channel is pinned to, if any."""
         raw = os.getenv(self.peer_id_environment)
         if raw is None or not raw.strip():
             return self.verified_peer_id
@@ -42,6 +47,7 @@ class TelegramChannelPolicy:
         return configured
 
     def verification(self, peer_id: int) -> dict[str, Any]:
+        """Whether the channel that answered is the one we pinned, and in what role."""
         pinned = self.pinned_peer_id
         verified = pinned is not None and peer_id == pinned
         return {
@@ -53,6 +59,11 @@ class TelegramChannelPolicy:
         }
 
     def validate(self, *, peer_id: int, resolved_username: str | None) -> None:
+        """Reject a channel whose name or numeric identity does not match what was configured.
+
+        A username can be released and re-registered by someone else, so the
+        numeric identity is what is trusted.
+        """
         if not resolved_username or resolved_username.casefold() != self.username.casefold():
             raise TelegramChannelIdentityError(
                 f"configured Telegram username {self.username!r} resolved as "
@@ -87,6 +98,7 @@ CHANNEL_POLICIES = (
 
 
 def policy_for_username(username: object) -> TelegramChannelPolicy | None:
+    """The policy configured for this channel name, if there is one."""
     if not isinstance(username, str):
         return None
     folded = username.removeprefix("@").casefold()
@@ -97,6 +109,7 @@ def policy_for_username(username: object) -> TelegramChannelPolicy | None:
 
 
 def public_message_url(username: str | None, message_id: int) -> str | None:
+    """A link to one message, when the channel is public enough to have one."""
     if not username or not _PUBLIC_USERNAME.fullmatch(username):
         return None
     return f"https://t.me/{username}/{message_id}"

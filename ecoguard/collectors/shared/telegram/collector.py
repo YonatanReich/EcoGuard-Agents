@@ -1,4 +1,7 @@
-"""Raw Telegram polling for the shared text-event classify-then-triage lane."""
+"""Messages from the configured Telegram channels.
+
+Stores what was posted and who posted it, and nothing more - whether a message
+describes a real incident is decided later, by the text detector."""
 
 from __future__ import annotations
 
@@ -26,6 +29,7 @@ EDIT_RECHECK_MESSAGES = 50
 
 
 def _forwarded_provenance(message: object) -> dict[str, Any] | None:
+    """Where a forwarded message came from, so a repost is not read as a first-hand report."""
     forwarded = getattr(message, "fwd_from", None)
     if forwarded is None:
         return None
@@ -126,12 +130,14 @@ class TelegramCollector(BaseCollector):
         self,
         channels: tuple[tuple[TelegramChannelPolicy, str, int | None], ...] | None = None,
     ) -> None:
+        """Build the collector. The channel list is injectable for testing."""
         # Read at run time, not at import: a channel added to the allowlist
         # mid-shift must be collected on the next tick, not after a restart.
         self._channels = channels
 
     @property
     def channels(self) -> tuple[tuple[TelegramChannelPolicy, str, int | None], ...]:
+        """The channels to poll, read fresh so a newly allowed one is picked up without a restart."""
         if self._channels is not None:
             return self._channels
         return policies_from_allowlist()
@@ -141,6 +147,7 @@ class TelegramCollector(BaseCollector):
         return upsert_editable_observations(self.source, records)
 
     async def _collect(self) -> list[dict[str, Any]]:
+        """Poll every configured channel and return the messages found."""
         api_id, api_hash = load_credentials()
         client = TelegramClient(str(get_session_path()), api_id, api_hash)
         await client.connect()
@@ -205,4 +212,9 @@ class TelegramCollector(BaseCollector):
             await client.disconnect()
 
     def fetch(self) -> list[dict[str, Any]]:
+        """The recent messages from every configured channel.
+
+        Re-reads the tail of each channel rather than only what is new, because
+        operational channels edit posts as an incident develops.
+        """
         return asyncio.run(self._collect())

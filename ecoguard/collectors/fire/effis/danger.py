@@ -1,31 +1,7 @@
-"""
-Fire Danger Agent
+"""The European fire-danger service.
 
-Responsible for retrieving the Fire Weather Index (FWI) danger category
-for a given coordinate using the GWIS/EFFIS Web Map Service (WMS).
-
-The GWIS/EFFIS service exposes the FWI layer as a raster map rather than
-a directly queryable numeric value for the layer used by this project.
-
-How it works:
-    1. fetch_fwi_image builds a bounding box centered on the requested
-       coordinate and requests the FWI raster from the WMS service.
-    2. get_center_pixel reads the RGB value at the center of the image.
-       Because the bounding box is symmetric, this pixel represents the
-       requested coordinate.
-    3. classify_fwi_pixel maps the RGB value to the official FWI danger
-       category represented by the GWIS/EFFIS legend.
-    4. get_fire_danger combines these steps and returns one structured
-       fire-danger record.
-
-Important:
-    The WMS raster exposes a danger category through its rendered color.
-    Therefore this agent reports the FWI category and its official range,
-    not an invented exact numeric FWI value.
-
-Consumed by:
-    FireDetectionAgent
-"""
+Publishes a daily rating of how readily fire would spread, as an image covering
+the region. Downloaded once a day and sampled per grid cell."""
 
 import io
 from datetime import date
@@ -45,6 +21,7 @@ class FireDangerAgent:
     """
 
     def __init__(self):
+        """Build the client for the European fire-danger service."""
         self.base_url = (
             "https://maps.effis.emergency.copernicus.eu/effis"
         )

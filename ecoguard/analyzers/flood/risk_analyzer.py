@@ -26,9 +26,11 @@ class FloodRiskAnalyzer:
         *,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
+        """Build the risk analyzer. The clock is injectable for testing."""
         self._clock = clock
 
     def _now(self) -> datetime:
+        """The current time, from the injected clock."""
         value = self._clock()
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("Flood risk analyzer clock must carry a UTC offset")
@@ -38,6 +40,11 @@ class FloodRiskAnalyzer:
     def analyze(
         self, analysis: FloodEventAnalysis | Mapping[str, Any]
     ) -> FloodRiskAssessment:
+        """Rate how dangerous this flood is, from the official thresholds.
+
+        No model call: the severity comes from the gauge's own published flood
+        thresholds, so the same readings always produce the same rating.
+        """
         event = FloodEventAnalysis.model_validate(analysis)
         state = event.current_state
         change = event.change_assessment
@@ -128,6 +135,7 @@ class FloodRiskAnalyzer:
 
     @staticmethod
     def _confidence(primary: HydrometricStationState | None) -> str:
+        """How much to trust the rating, given what the gauges reported."""
         value = primary.confidence if primary is not None else None
         if value is not None and value >= 0.8:
             return "high"
@@ -140,6 +148,7 @@ class FloodRiskAnalyzer:
         event: FloodEventAnalysis,
         primary: HydrometricStationState | None,
     ) -> list[str]:
+        """The specific readings that produced this rating."""
         state = event.current_state
         change = event.change_assessment
         if state is None or change is None:

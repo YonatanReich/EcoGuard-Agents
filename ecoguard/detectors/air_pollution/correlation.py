@@ -21,6 +21,7 @@ class PollutionCorrelationCandidate(AnomalyContract):
 
     @model_validator(mode="after")
     def _consistent_location(self) -> "PollutionCorrelationCandidate":
+        """Reject a candidate whose context belongs to a different place."""
         if self.spatial_context and self.spatial_context.location != self.anomaly.location:
             raise ValueError("spatial context must belong to the anomaly location")
         return self
@@ -28,22 +29,26 @@ class PollutionCorrelationCandidate(AnomalyContract):
     @computed_field
     @property
     def hazard_type(self) -> Literal["air_pollution"]:
+        """Always air pollution; present so every candidate answers the same way."""
         return "air_pollution"
 
     @computed_field
     @property
     def pollutants(self) -> list[str]:
+        """The pollutant this candidate is about."""
         return [self.anomaly.pollutant]
 
     @computed_field
     @property
     def pollutant_categories(self) -> list[str]:
+        """The grouping used for comparison, with PM2.5 and PM10 treated alike."""
         pollutant = self.anomaly.pollutant
         return ["particulate_matter" if pollutant in {"PM2.5", "PM10"} else pollutant]
 
     @computed_field
     @property
     def time_bucket_utc(self) -> datetime:
+        """The reading's time rounded to the bucket used for matching."""
         observed = self.anomaly.observed_at.astimezone(timezone.utc)
         return observed.replace(
             minute=(observed.minute // 30) * 30, second=0, microsecond=0
@@ -52,11 +57,13 @@ class PollutionCorrelationCandidate(AnomalyContract):
     @computed_field
     @property
     def station_channels(self) -> list[tuple[str, str, str]]:
+        """The provider, station and channel this reading came from."""
         return [(self.anomaly.provider, self.anomaly.station_id, self.anomaly.channel_id)]
 
     @computed_field
     @property
     def evidence_references(self) -> list[tuple[str, str]]:
+        """Pointers to the baseline evidence behind this candidate."""
         evidence = self.anomaly.baseline_evidence
         return [
             ("detector_rule", self.anomaly.detector_rule_version),
@@ -74,6 +81,7 @@ class PollutionCorrelationPolicy(AnomalyContract):
 
     @model_validator(mode="after")
     def _nested_limits(self) -> "PollutionCorrelationPolicy":
+        """Reject a policy whose duplicate window is wider than its match window."""
         if self.near_duplicate_seconds > self.maximum_minutes * 60:
             raise ValueError("duplicate time limit exceeds matching limit")
         if self.near_duplicate_distance_km > self.maximum_distance_km:
@@ -113,6 +121,7 @@ def correlation_candidate(
 
 
 def _feature_keys(candidate: PollutionCorrelationCandidate) -> set[str]:
+    """Which nearby map features this candidate knows about."""
     context = candidate.spatial_context
     if not context or context.status == "unavailable" or not context.source:
         return set()

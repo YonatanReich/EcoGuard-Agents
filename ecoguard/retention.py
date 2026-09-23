@@ -149,6 +149,7 @@ def run(dry_run: bool = False) -> None:
 
 
 def main() -> None:
+    """Delete what has aged out, from the command line."""
     import argparse
 
     parser = argparse.ArgumentParser(description=__doc__)

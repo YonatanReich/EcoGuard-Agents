@@ -1,29 +1,8 @@
-"""Seed the demo database with fabricated incidents.
+"""Filling the demo database with fabricated events.
 
-Run with:
-    python -m ecoguard.scripts.seed_demo
-
-Everything written here is invented — the risk scores, the plans, the incident
-reports, the dispatch grades. The point is to show the dashboard, the response
-plans and the resource allocator working on a full incident, which the live
-feed only does when something is genuinely burning or flooding.
-
-Two things are *not* invented, because a demo that dispatches from nowhere to
-nowhere shows the allocator doing the one thing it does not do:
-
-  * the responding stations are the real nearest ones, read out of the live
-    reference tables (read-only; nothing is written to the live database);
-  * the routes are real Mapbox driving routes between those stations and the
-    incident, fetched once here and baked into the payload.
-
-Both degrade rather than fail: with no live database the stations fall back to
-a fixed list, and with no Mapbox token the route falls back to a straight line.
-A demo that will not seed is worse than one that drives over a field.
-
-The payloads are validated against the same SharedEvent contract the live feed
-uses before anything is written, so a demo incident can never be a shape the
-dashboard cannot render.
-"""
+Feeds the separate demo route, so the dashboard, the plans and the allocator
+can be shown working without waiting for something to happen. Nothing here
+reaches the live feed."""
 
 from __future__ import annotations
 
@@ -53,6 +32,7 @@ NOW = datetime.now(timezone.utc).replace(microsecond=0)
 
 
 def _iso(moment: datetime) -> str:
+    """A time as text."""
     return moment.isoformat()
 
 
@@ -93,6 +73,7 @@ FALLBACK_STATIONS: dict[str, list[dict[str, Any]]] = {
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Distance between two coordinates, in kilometres."""
     radius = 6371.0088
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     d_phi = phi2 - phi1
@@ -142,6 +123,7 @@ def _load_reference_stations() -> dict[str, list[dict[str, Any]]]:
 def _nearest(
     stations: list[dict[str, Any]], latitude: float, longitude: float, count: int
 ) -> list[dict[str, Any]]:
+    """The closest stations of one kind to a place."""
     ranked = sorted(
         stations,
         key=lambda station: _haversine_km(
@@ -246,6 +228,7 @@ def _allocated_stations(
     actions: dict[str, list[dict[str, Any]]],
     reason: str,
 ) -> list[dict[str, Any]]:
+    """The stations a demo incident is shown as having been sent."""
     allocated = []
     for unit, count in wanted.items():
         for station in _nearest(reference[unit], latitude, longitude, count):
@@ -276,6 +259,7 @@ def _allocated_stations(
 
 
 def _requirements(wanted: dict[str, int], assigned: list[dict[str, Any]]) -> dict[str, Any]:
+    """What one incident asked for against what it received."""
     result = {}
     for unit, requested in wanted.items():
         got = sum(1 for station in assigned if station["recommended_unit"] == unit)
@@ -288,6 +272,7 @@ def _requirements(wanted: dict[str, int], assigned: list[dict[str, Any]]) -> dic
 
 
 def _action(action: str, unit: str, timeframe: str) -> dict[str, Any]:
+    """One recommended action, in the shape a plan carries."""
     return {
         "action": action,
         "responsible_unit": unit,
@@ -386,6 +371,7 @@ EARTHQUAKE_PLAN = (
 def build_events(
     reference: dict[str, list[dict[str, Any]]], token: str | None
 ) -> list[dict[str, Any]]:
+    """Build the fabricated events the demo dashboard shows."""
     events: list[dict[str, Any]] = []
 
     # --- Fire: Carmel forest, east of Nesher -------------------------------
@@ -923,6 +909,7 @@ CREATE TABLE IF NOT EXISTS demo_events (
 
 
 def main() -> None:
+    """Fill the demo database from the command line."""
     url = os.getenv("DEMO_DATABASE_URL")
     if not url:
         raise SystemExit("DEMO_DATABASE_URL is not set (see .env)")

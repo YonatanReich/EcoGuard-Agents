@@ -141,6 +141,7 @@ class FirmsCollector(BaseCollector):
         agent: FirmsDataAgent | None = None,
         sources: tuple[str, ...] = SOURCES,
     ):
+        """Build the collector with its provider client."""
         self.agent = agent or FirmsDataAgent()
         self.sources = sources
 

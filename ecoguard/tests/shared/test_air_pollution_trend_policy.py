@@ -4,10 +4,8 @@ import ast
 from dataclasses import asdict
 from pathlib import Path
 
-from ecoguard.analyzers.non_emergency.air_pollution import trend_inference_service
+from ecoguard.analyzers.air_pollution import trend_inference_service
 from ecoguard.paths import REPOSITORY_ROOT
-from ecoguard.research.training import evaluate_air_pollution_trend_phase2a as phase2a
-from ecoguard.research.training import evaluate_air_pollution_trend_phase2b as phase2b
 from ecoguard.shared.air_pollution_trend_policy import (
     LOCKED_TREND_SGD_CONFIGURATIONS,
     TREND_ARTIFACT_FILENAMES,
@@ -21,15 +19,19 @@ from ecoguard.shared.air_pollution_trend_policy import (
 )
 
 
-def test_training_reexports_the_single_shared_policy_contract():
-    assert phase2a.LABELS is TREND_LABELS
-    assert phase2a.LABEL_TO_INT is TREND_LABEL_TO_INT
-    assert phase2b.LOCKED_FINAL_CANDIDATES is LOCKED_TREND_SGD_CONFIGURATIONS
-    assert phase2b.FINAL_ARTIFACT_VERSION == TREND_FINAL_ARTIFACT_VERSION
-    assert phase2b.FINAL_TRAINING_START == TREND_FINAL_TRAINING_START
-    assert phase2b.FINAL_TRAINING_END == TREND_FINAL_TRAINING_END
-    assert phase2b.MINIMUM_HISTORY_COVERAGE == TREND_MINIMUM_HISTORY_COVERAGE
-    assert phase2b.PREPROCESSING_VERSION == TREND_PREPROCESSING_VERSION
+def test_the_locked_trend_policy_is_unchanged():
+    """The trend model's configuration is frozen; this is what pins it.
+
+    It used to also assert that the phase2a/phase2b training scripts re-exported
+    these constants. Those scripts were one-off experiments with no production
+    importer and were removed; the constants they locked are still live, so the
+    assertions that matter are kept.
+    """
+    assert TREND_LABELS and TREND_LABEL_TO_INT
+    assert TREND_FINAL_TRAINING_START < TREND_FINAL_TRAINING_END
+    assert TREND_FINAL_ARTIFACT_VERSION
+    assert TREND_MINIMUM_HISTORY_COVERAGE > 0
+    assert TREND_PREPROCESSING_VERSION
     assert tuple(TREND_ARTIFACT_FILENAMES) == ("NO2", "O3", "PM2.5", "SO2")
     assert asdict(LOCKED_TREND_SGD_CONFIGURATIONS["NO2"]) == {
         "name": "phase2b_balanced_optimal_3epoch",

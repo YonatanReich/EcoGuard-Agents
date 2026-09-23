@@ -1,4 +1,4 @@
-"""Deterministic Flood event analysis and emergency handoff."""
+"""How severe a flood is, and which roads it affects."""
 
 from ecoguard.analyzers.flood.event_analyzer import FloodEventAnalyzer
 from ecoguard.analyzers.flood.event_analysis_schemas import FloodEventAnalysis

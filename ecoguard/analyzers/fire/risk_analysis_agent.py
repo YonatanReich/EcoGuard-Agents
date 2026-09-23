@@ -302,6 +302,7 @@ class RiskAnalysisAgent:
         enable_web_search: bool = WEB_SEARCH_ENABLED,
         max_searches: int = DEFAULT_MAX_SEARCHES,
     ) -> None:
+        """Build the agent. The retriever and model client are injectable for testing."""
         self.llm_service = llm_service if llm_service is not None else ClaudeLLMService()
         self.retriever = retriever if retriever is not None else ProtocolRetriever()
         self.top_k = top_k
@@ -931,6 +932,7 @@ def build_situational_facts(detected_event: dict) -> dict:
         }
 
     def entries(key: str) -> list[dict]:
+        """One group of facts from the detection, as a list."""
         items = geospatial.get(key) or []
         return [item for item in items if isinstance(item, dict)]
 
@@ -983,6 +985,7 @@ def render_situational_facts(facts: dict) -> str:
         )
 
     def count(label: str, key: str) -> str:
+        """How many of one kind of thing are present, written out."""
         return f"- {label}: {facts[key]}"
 
     lines = [

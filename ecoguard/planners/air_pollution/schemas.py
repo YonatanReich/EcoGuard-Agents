@@ -64,6 +64,7 @@ class AirPollutionPlanProposal(AnomalyContract):
 
     @model_validator(mode="after")
     def _actions_use_declared_types(self) -> "AirPollutionPlanProposal":
+        """Reject a plan whose actions name a body or resource it never listed."""
         authorities = {action.responsible_authority_type for action in self.actions}
         resources = {action.resource_type for action in self.actions}
         if not authorities.issubset(set(self.recommended_authority_types)):
@@ -101,6 +102,11 @@ class AirPollutionResponsePlan(AnomalyContract):
 
     @model_validator(mode="after")
     def _status_is_coherent(self) -> "AirPollutionResponsePlan":
+        """Reject a plan whose status contradicts its contents.
+
+        A success must carry actions and verified guidance; anything else must
+        carry neither, so a failure can never be read as advice.
+        """
         if self.status == "success":
             if self.reason is not None or not self.summary or not self.actions or not self.protocol_references:
                 raise ValueError("successful plans require actions and verified guidance")

@@ -10,6 +10,7 @@ from ecoguard.detectors.air_pollution.baseline_import_validation import build_ma
 
 
 def main():
+    """Check a baseline file without touching the database."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, default=REPO_ROOT / "venv/phase2-output/national-baseline-v2")
     parser.add_argument("--summary", action="store_true", help="Omit per-profile checksums/catalog/details from stdout")

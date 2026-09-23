@@ -1,29 +1,14 @@
-"""Which services answer for a place: the jurisdiction question.
+"""Which services answer for a place.
 
-Distinct from "which station is nearest", which `resource_allocator` answers by
-road travel time. Both matter and they are not the same answer — the nearest
-appliance may belong to another district, and who is *responsible* decides who
-is notified, who commands, and who requests assistance from whom.
+Not the same question as which station is nearest, which the allocator answers
+by travel time. The nearest appliance may belong to another district, and who
+is responsible decides who is notified and who commands.
 
-The district alias
-------------------
-`towns.fire_district` and `fire_stations.district` name the same seven
-districts in two different ways, because they were loaded from two different
-sources. One of them disagrees:
-
-    towns:    דן  דרום  חוף  יו"ש            ירושלים  מרכז  צפון
-    stations: דן  דרום  חוף  יהודה ושומרון   ירושלים  מרכז  צפון
-
-A direct join therefore returns nothing for 122 towns — not an error, an empty
-result, which reads exactly like "no station is responsible for this town". The
-alias is resolved here rather than by editing either table, because both are
-reference data reloaded from their own sources and an edit would be undone by
-the next load.
-
-`לא מסווג (OSM)` is the other unmatched value: three stations that came from
-OpenStreetMap without a district. They are reachable by proximity and belong to
-no jurisdiction we know, which is a different fact from belonging to none.
-"""
+One wrinkle is handled here: the town list and the station list name the same
+districts slightly differently, and a direct match silently returns nothing for
+122 towns - which reads exactly like "no station is responsible". Both lists
+are reloaded from their own sources, so the mismatch is resolved in the query
+rather than by editing data that would be overwritten."""
 
 from __future__ import annotations
 
@@ -224,6 +209,7 @@ _RESPONSIBLE_PARTIES_SQL = text(
 
 
 def _station(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    """One station row as plain data, or None when there is none."""
     if row is None:
         return None
     return {

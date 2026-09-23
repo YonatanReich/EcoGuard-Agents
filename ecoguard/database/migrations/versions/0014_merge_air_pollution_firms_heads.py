@@ -9,8 +9,10 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Rejoin the air-pollution and fire migration histories."""
     pass
 
 
 def downgrade() -> None:
+    """Split the two migration histories again."""
     pass

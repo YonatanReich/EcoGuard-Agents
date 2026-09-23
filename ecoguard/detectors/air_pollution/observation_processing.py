@@ -55,6 +55,7 @@ ObservationReader = Callable[..., list[dict[str, Any]]]
 
 
 def _default_reader(**kwargs):
+    """The reader used when a caller does not supply one."""
     from ecoguard.database.repositories.observations import read_observations_batch
 
     return read_observations_batch(**kwargs)
@@ -64,6 +65,7 @@ class PersistedObservationAdapterError(ValueError):
     """Sanitized reason why a shared row cannot become a provider observation."""
 
     def __init__(self, reason: str):
+        """Carry the reason a stored reading could not be used."""
         super().__init__(reason)
         self.reason = reason
 
@@ -130,6 +132,7 @@ class AirPollutionObservationProcessor:
         baseline_context_service: AirPollutionLiveBaselineContextService | None = None,
         detector: AirPollutionAnomalyDetector | None = None,
     ) -> None:
+        """Build the processor. The reader is injectable for testing."""
         self.reader = reader
         self.baseline_context_service = (
             baseline_context_service or AirPollutionLiveBaselineContextService()
@@ -144,6 +147,7 @@ class AirPollutionObservationProcessor:
         ingested_through: datetime | None = None,
         limit: int = 500,
     ) -> list[PersistedAirPollutionDetection]:
+        """Read a batch of stored readings and turn them into candidates."""
         rows = self.reader(
             source=AIR_POLLUTION_SOURCE,
             ingested_after=ingested_after,
@@ -156,6 +160,7 @@ class AirPollutionObservationProcessor:
     def process_rows(
         self, rows: Iterable[Mapping[str, Any]],
     ) -> list[PersistedAirPollutionDetection]:
+        """Turn already-read rows into candidates, without touching the database."""
         supplied = list(rows)
         contexts: list[LiveBaselineContextResult | None] = [None] * len(supplied)
         observations: list[AirQualityObservation | None] = [None] * len(supplied)

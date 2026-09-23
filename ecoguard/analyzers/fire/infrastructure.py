@@ -1,47 +1,7 @@
-"""What is in the fire's way besides houses.
+"""The roads, power lines and buildings near a fire.
 
-A fire that reaches a thousand people is a serious event. The same fire
-reaching the same thousand people plus a fuel depot is a different event, and
-counting residents alone cannot tell them apart. That is the gap this closes:
-until now two fires with the same rate and the same population scored
-identically whether they were running at a power station or at an empty beach.
-
-Three kinds of thing, because they fail differently
----------------------------------------------------
-**Hazard** — a site that makes the fire worse by burning. A fuel depot, a
-power plant, a works, a scrap yard. It adds energy, it can explode, it can put
-something on the wind that the people downwind must be told about, and the
-tactics change from perimeter control to exclusion.
-
-**Life safety** — a site whose occupants cannot get themselves out. A hospital,
-a school, a university, a refugee site. The population figure already counts
-these people; what it does not carry is that evacuating them needs hours,
-vehicles and somewhere to put them, and that the decision has to be taken
-earlier than for a street of houses.
-
-**Economic** — industry, retail, depots. Real loss, no special tactic. Reported
-because an operator asked to justify committing aircraft will be asked about
-it, and scored lightly for the same reason it is scored at all: burning a
-factory is worse than burning scrub, and much less bad than either of the two
-above.
-
-Where the data comes from
--------------------------
-`data/reference/.osm_cache/nonresidential.json`, an OpenStreetMap extract
-already committed for the town builder: 2,806 features including 40 power
-plants, 237 hospitals, 1,470 industrial sites and 143 concrete plants. It is a
-cache rather than a live query on purpose — an analyser that has to reach
-Overpass before it can score a fire is an analyser that stops working when
-Overpass is slow, which is exactly when fires happen.
-
-What this is not
-----------------
-It is not a register of national critical infrastructure. OpenStreetMap maps
-what volunteers have mapped; a site absent from it is not a site that is not
-there. Every result therefore reports what was found and never asserts that
-nothing else is present — `nothing found` and `nothing there` are different
-claims and only the first one is available here.
-"""
+Read from stored map data, and reported as what is nearby rather than what is
+at risk - the exposure step decides that."""
 
 from __future__ import annotations
 

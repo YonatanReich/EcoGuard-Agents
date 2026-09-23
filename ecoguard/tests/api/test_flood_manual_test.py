@@ -9,7 +9,7 @@ from ecoguard.api.flood_manual_test import (
 )
 from ecoguard.coordinator.agent import coordinate
 from ecoguard.detectors.flood.detection_agent import FloodDetectionAgent
-from ecoguard.response_planner.emergency.schemas import EmergencyResponsePlanInput
+from ecoguard.planners.shared.schemas import EmergencyResponsePlanInput
 
 
 START = datetime(2026, 9, 21, 8, 0, tzinfo=timezone.utc)

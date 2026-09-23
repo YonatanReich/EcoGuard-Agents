@@ -61,6 +61,7 @@ class AirPollutionTransportConfigurationError(RuntimeError):
     """A safe configuration failure that contains no environment values."""
 
     def __init__(self, category: str):
+        """Build the service, or carry the category of a failure."""
         super().__init__(category)
         self.category = category
 
@@ -75,6 +76,8 @@ class AirPollutionTransportConfiguration(ContractModel):
 
 
 class WindEvidenceProvider(Protocol):
+    """Anything that can supply the wind readings a drift prediction needs."""
+
     def select_wind_evidence(
         self,
         *,
@@ -82,7 +85,8 @@ class WindEvidenceProvider(Protocol):
         anomaly_observed_at: datetime,
         maximum_observation_age_seconds: float,
         alternative_limit: int = 3,
-    ): ...
+    ):
+        """The wind readings this prediction should use."""
 
 
 class AirPollutionTransportPredictionExecution(ContractModel):
@@ -93,6 +97,7 @@ class AirPollutionTransportPredictionExecution(ContractModel):
 
 
 def _enabled_from_environment() -> bool:
+    """Whether transport prediction is switched on for this deployment."""
     raw = os.getenv(TRANSPORT_ENABLED_ENV)
     if raw is None or not raw.strip():
         return False
@@ -107,6 +112,7 @@ def _enabled_from_environment() -> bool:
 
 
 def _required_environment(name: str) -> str:
+    """One required setting, failing clearly when it is absent."""
     value = os.getenv(name)
     if value is None or not value.strip():
         raise AirPollutionTransportConfigurationError(
@@ -116,6 +122,7 @@ def _required_environment(name: str) -> str:
 
 
 def _finite_float(name: str, *, required: bool) -> float | None:
+    """A setting as a real number, optional or required."""
     raw = _required_environment(name) if required else os.getenv(name)
     if raw is None or not raw.strip():
         return None
@@ -167,6 +174,7 @@ def _settlement_id(
     source: str | None,
     feature,
 ) -> tuple[str, str | None]:
+    """A stable identifier for one settlement in the corridor."""
     if feature.osm_id is not None and feature.osm_type is not None:
         identifier = f"osm:{feature.osm_type}:{feature.osm_id}"
         return identifier, f"{feature.osm_type}:{feature.osm_id}"
@@ -230,6 +238,7 @@ class AirPollutionTransportPredictionService:
         wind_evidence_service: WindEvidenceProvider,
         configuration: AirPollutionTransportConfiguration,
     ) -> None:
+        """Build the service with its wind evidence source."""
         self.wind_evidence_service = wind_evidence_service
         self.configuration = AirPollutionTransportConfiguration.model_validate(
             configuration.model_dump()
@@ -239,6 +248,7 @@ class AirPollutionTransportPredictionService:
         self,
         candidate: PollutionCorrelationCandidate,
     ) -> WindEvidence:
+        """Fetch and choose wind evidence, reporting when none is usable."""
         validated = PollutionCorrelationCandidate.model_validate(
             candidate.model_dump(round_trip=True)
         )
@@ -260,6 +270,11 @@ class AirPollutionTransportPredictionService:
         wind_evidence: WindEvidence | Mapping[str, object] | None = None,
         analysis_origin: AnalysisOrigin | Mapping[str, object] | None = None,
     ) -> AirPollutionTransportPredictionExecution:
+        """Where the pollution may drift, and which settlements lie that way.
+
+        Screening only: a settlement in the corridor is somewhere the plume could
+        reach, not somewhere it has been measured.
+        """
         validated = PollutionCorrelationCandidate.model_validate(
             candidate.model_dump(round_trip=True)
         )

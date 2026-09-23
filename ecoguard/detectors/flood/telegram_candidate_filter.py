@@ -49,6 +49,7 @@ _NIQQUD = re.compile("[\u0591-\u05bd\u05bf\u05c1\u05c2\u05c4\u05c5\u05c7]")
 
 
 def _normalize(text: str) -> str:
+    """Strip punctuation and spacing so wording can be compared."""
     text = _NIQQUD.sub("", text)
     text = "".join(
         " " if unicodedata.category(character).startswith("P") else character
@@ -58,10 +59,12 @@ def _normalize(text: str) -> str:
 
 
 def _matches(text: str, terms: tuple[str, ...]) -> list[str]:
+    """Which of these terms appear in the text."""
     return [term for term in terms if term in text]
 
 
 def detect_flood_candidate(text: str | None) -> dict:
+    """Whether a message reads like a flood report, and which words said so."""
     if text is None or not text.strip():
         return {
             "is_flood_candidate": False,

@@ -1,11 +1,8 @@
-"""Streaming reader for the existing Ministry five-minute history cache.
+"""Reading the stored history of air-quality readings.
 
-This module does not download history.  It validates and reads the immutable
-month artifacts produced by ``air_pollution_five_minute_cache.py``.  One call
-holds one compressed month in memory, applies the same policy used by the
-operational five-minute baseline, and returns at most one month of accepted
-observations.
-"""
+Downloads nothing. It reads the month files already on disk, one month at a
+time, applying the same acceptance rules the live baseline uses so history and
+present are judged alike."""
 
 from __future__ import annotations
 
@@ -66,6 +63,7 @@ class HistoricalAirPollutionMonth:
 
 
 def _strict_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """A JSON object, rejecting a duplicated key rather than silently keeping one."""
     result: dict[str, Any] = {}
     for key, value in pairs:
         if key in result:
@@ -75,6 +73,7 @@ def _strict_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 
 def _load_payload(path: Path) -> tuple[dict[str, Any], str]:
+    """One stored history file, with a fingerprint of its contents."""
     raw = path.read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
     try:
@@ -91,6 +90,7 @@ def _load_payload(path: Path) -> tuple[dict[str, Any], str]:
 def _header(
     payload: dict[str, Any],
 ) -> tuple[AirPollutionSeriesIdentity, str, int, int, list[Any]]:
+    """The description recorded alongside a history file, so its origin stays known."""
     expected_semantics = {
         "resolution": "provider five-minute averages",
         "timeBeginning": False,

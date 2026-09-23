@@ -15,6 +15,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add cache station-to-stream matches and complete downstream routes."""
     op.execute(
         """
         CREATE TABLE flood_station_topology (
@@ -29,4 +30,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove cache station-to-stream matches and complete downstream routes."""
     op.execute("DROP TABLE IF EXISTS flood_station_topology")

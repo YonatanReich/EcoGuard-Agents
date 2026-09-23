@@ -1,54 +1,8 @@
-"""Fire weather: reading the stored hours back out and asking what is unusual.
+"""Finding weather in which a fire would spread.
 
-The collectors write an hour of weather for every cell in the country and stop
-there - `repositories/observations.py` says so in its first line: "Nothing reads
-them yet, that is detection". This is that read.
-
-What it claims, and what it does not
-------------------------------------
-A weather anomaly is not a fire, so this emits `hazard=FIRE_WEATHER` and never
-`FIRE`. The two are separate hazards routed to separate queues, and the
-separation is not bookkeeping: when they were one hazard, a live run put five
-undispatchable weather incidents above a real 90 MW fire in the emergency
-queue, because a temperature past its record saturates rarity instantly while a
-real fire's rarity is damped by its own detection history.
-
-What this produces is an advisory: "this region will burn fast if anything
-starts". Nobody is dispatched to a dry afternoon. A fire in the same cell is a
-different incident in the other queue, found by `satellite.py`, and the two are
-deliberately not merged — deduplication is hazard-scoped, and a 60-cell weather
-field merged into a point fire would make the fire harder to read, not easier.
-An analyser that wants the conditions around a fire looks them up by cell.
-
-The four variables
-------------------
-Fire weather is the classic quartet - heat, dryness, wind, and the atmosphere's
-thirst - and each is stored hourly per cell by the Open-Meteo collector:
-
-    temperature_2m           HIGH   heat
-    relative_humidity_2m     LOW    dryness of the air
-    wind_speed_10m           HIGH   what carries it
-    vapour_pressure_deficit  HIGH   how hard the air pulls water out of fuel
-
-VPD earns its place rather than duplicating the other two. Temperature and
-humidity are what a station reads; VPD is what the vegetation feels, and the
-same 30 C means something different at 20% humidity than at 60%.
-
-Three fire variables in `CONCERNING_DIRECTION` are deliberately not here:
-
-  * **precipitation** - and this one would have broken the system quietly.
-    Its September baseline is zero at every quantile including the maximum, so
-    `percentile_of` puts a dry hour at 0.0, and direction LOW inverts that to a
-    rarity of **1.0**. Every dry hour in the country would clear the reporting
-    bar: 1,174 signals an hour saying "it did not rain in Israel in September".
-    Rarity is undefined on a floor-heavy distribution measured from the floor,
-    and the honest answer is not to ask. Dryness is already carried by humidity
-    and VPD, which vary continuously and do have a usable distribution.
-  * **wind_gusts_10m**, **soil_moisture_0_to_7cm** - collected, but no rows in
-    `weather_baselines`. No baseline means no rarity, and a signal with
-    `rarity=None` cannot clear the bar anyway. They become available the moment
-    the baseline builder covers them; nothing here changes.
-"""
+Emits its own hazard, never a fire. Hot, dry, windy conditions mean a fire
+could spread if one started; they are not evidence that anything is burning,
+and treating them as such would fill the map with fires nobody reported."""
 
 from __future__ import annotations
 

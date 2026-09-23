@@ -1,50 +1,9 @@
-"""Is this a fire at all, or is the satellite looking at something else?
+"""Deciding how sure we are that a detected fire is real.
 
-The analyser used to assume the answer was yes. An incident arrived, it was
-called a fire, and everything downstream — the ellipse, the exposed
-settlements, the evacuation list — was built on an assumption nobody had
-tested. That is the wrong way round: a confident evacuation list for a hot
-factory roof is worse than no list at all, because somebody acts on it.
-
-The detector already suppresses cells that light routinely, and the coordinator
-already merges signals that agree. Neither of those is a judgement about *this*
-incident, and neither travels with it. This makes that judgement explicitly,
-from evidence the incident is already carrying, and states it so an operator
-sees how strong the claim is before reading what follows from it.
-
-The evidence, and why each piece counts
----------------------------------------
-**Independent instruments.** Two satellites on separate overpasses seeing the
-same cell is a different claim from one satellite seeing it twice. Glint, a hot
-roof and a cloud edge do not usually survive a different look angle at a
-different hour.
-
-**Instrument confidence.** The product's own flag, already normalised across
-the three scales FIRMS reports on.
-
-**Radiative power.** A 90 MW return is not a roof. Small returns are where the
-ambiguity lives, so power raises confidence and never lowers it — a genuine
-small fire is still a fire.
-
-**Growth across overpasses.** 4.7 to 18.6 to 71.6 MW is a fire taking hold.
-A flat trace at the same power for hours is a machine.
-
-**How often this cell lights anyway.** From `firms_baselines` via the signal's
-rarity. A cell that has never lit in a year is the strongest evidence here.
-
-**What has burned here before.** Distinct from the rate: `fire_history`
-separates a fire-prone area, which burns in seasons, from a standing thermal
-source, which burns on a schedule. A cell with a long record of regular
-detection is industry however rare any single one looks.
-
-Why this is a judgement and not a probability
----------------------------------------------
-Because there is nothing to calibrate a probability against. The only labels
-available are settlement-month aggregates that cannot identify an individual
-candidate, so any number would be a confidence dressed as a frequency. The
-verdict is therefore a band with its reasons attached, and the reasons are
-what an operator argues with.
-"""
+Scores the evidence on the incident - how many satellite passes saw it, how
+strong the heat was, whether anyone reported it - and produces a confidence
+band with the factors that drove it, so the reasoning is visible rather than a
+bare number."""
 
 from __future__ import annotations
 
@@ -98,6 +57,7 @@ FLAT_RATIO = 1.15
 
 
 def _signals(incident: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    """The fire signals recorded on this incident."""
     return [
         signal for signal in incident.get("signals") or ()
         if isinstance(signal, Mapping) and signal.get("hazard") == "fire"
@@ -144,6 +104,7 @@ def assess(
     score = 40  # a detection exists at all; the evidence moves it from here
 
     def note(factor: str, points: int, detail: str) -> None:
+        """Record one factor that counted towards confirmation, and by how much."""
         nonlocal score
         score += points
         reasons.append({"factor": factor, "points": points, "detail": detail})

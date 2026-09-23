@@ -1,12 +1,9 @@
-"""Pydantic transport schema for the drawn-area summary endpoint.
+"""The drawn-area request, and what counts as a usable shape.
 
-The polygon arrives from a drawing tool in the browser, which makes it
-untrusted input reaching PostGIS. It is bound as a parameter, never
-interpolated, so injection is not the risk; the risks are a shape PostGIS
-cannot parse, a freehand trace with tens of thousands of vertices, and a
-polygon covering half the planet. All three are refused here, before the query
-runs, so the endpoint answers 422 with a reason rather than timing out.
-"""
+The polygon comes from a drawing tool in the browser, so it is untrusted. A
+shape the map query cannot parse, a freehand trace with tens of thousands of
+points, or one covering half the planet is refused here, before the query
+runs."""
 
 from __future__ import annotations
 
@@ -34,6 +31,12 @@ class AreaSummaryRequest(BaseModel):
     @field_validator("geometry")
     @classmethod
     def _must_be_a_polygon_inside_israel(cls, geometry: dict[str, Any]) -> dict[str, Any]:
+        """Reject a drawn shape the map query cannot safely answer.
+
+        Refuses a shape that is not a closed polygon, one traced with far too many
+        points, and one covering more than the service area - all three before the
+        query runs, so the endpoint answers with a reason rather than hanging.
+        """
         if geometry.get("type") != "Polygon":
             raise ValueError("geometry must be a GeoJSON Polygon")
 

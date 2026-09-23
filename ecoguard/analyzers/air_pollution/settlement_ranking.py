@@ -74,6 +74,7 @@ class SettlementSpatialRankingResult(ContractModel):
 
 
 def _validated_candidate(value: CandidateInput) -> SettlementTransportCandidate:
+    """One settlement candidate, rejecting anything malformed."""
     payload = (
         value.model_dump()
         if isinstance(value, SettlementTransportCandidate)
@@ -83,6 +84,7 @@ def _validated_candidate(value: CandidateInput) -> SettlementTransportCandidate:
 
 
 def _snap_trigonometric_zero(value: float) -> float:
+    """Round a near-zero result to zero, so tiny float error is not a direction."""
     return 0.0 if isclose(value, 0.0, abs_tol=1e-15) else value
 
 

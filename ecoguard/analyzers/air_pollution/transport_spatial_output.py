@@ -1,10 +1,4 @@
-"""GeoJSON-shaped WGS84 output for pollution transport screening.
-
-The output is provider-neutral and contains no database integration. Geometry
-coordinates use GeoJSON order ``[longitude, latitude]`` in EPSG:4326. Future
-metric PostGIS operations must use ``geography`` or a suitable projected CRS;
-plain EPSG:4326 geometry distances are angular degrees, not metres.
-"""
+"""The drift corridor as a map shape, checked for the malformed outlines that would draw wrongly."""
 
 from __future__ import annotations
 
@@ -67,6 +61,7 @@ class GeoJSONPolygon(ContractModel):
 
     @model_validator(mode="after")
     def validate_exterior_ring(self):
+        """Reject an outline that is not closed or has too few points."""
         ring = self.coordinates[0]
         if len(ring) < 4:
             raise ValueError("polygon exterior ring requires at least four coordinates")
@@ -153,6 +148,7 @@ class PollutionTransportSpatialOutput(ContractModel):
     @field_validator("limitations")
     @classmethod
     def validate_limitations(cls, values: list[str]) -> list[str]:
+        """Reject a blank caveat, since an empty one says nothing."""
         stripped = [value.strip() for value in values]
         if any(not value for value in stripped):
             raise ValueError("limitations cannot contain blank entries")
@@ -160,6 +156,7 @@ class PollutionTransportSpatialOutput(ContractModel):
 
     @model_validator(mode="after")
     def validate_availability(self):
+        """Reject a result that is both unavailable and carrying a corridor."""
         complete_geometry = (
             self.centerline is not None
             and self.corridor_polygon is not None
@@ -201,11 +198,13 @@ class _ArcDiscretizationInput(ContractModel):
 
 
 def _validated_coordinate(value: CoordinateInput) -> GeographicCoordinate:
+    """One coordinate pair, rejecting anything out of range."""
     payload = value.model_dump() if isinstance(value, GeographicCoordinate) else value
     return GeographicCoordinate.model_validate(payload)
 
 
 def _longitude_latitude(point: GeographicCoordinate) -> LongitudeLatitude:
+    """A point in the order map files use."""
     return point.longitude, point.latitude
 
 
@@ -245,6 +244,7 @@ def destination_coordinate(
 def _reject_longitude_discontinuity(
     coordinates: list[LongitudeLatitude],
 ) -> None:
+    """Reject an outline that jumps across the date line, which would draw wrongly."""
     if any(
         abs(right[0] - left[0]) > 180.0
         for left, right in zip(coordinates, coordinates[1:])
@@ -309,6 +309,7 @@ def build_sector_polygon(
 
 
 def _validated_corridor(value: CorridorInput) -> TransportCorridorScreeningResult:
+    """One corridor, rejecting anything malformed."""
     payload = (
         value.model_dump()
         if isinstance(value, TransportCorridorScreeningResult)

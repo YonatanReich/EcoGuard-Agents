@@ -1,41 +1,7 @@
-"""Assemble the towns reference file: one row per Israeli locality.
+"""Assembling the towns reference file: one row per locality.
 
-The roster is the CBS population file — 1,222 localities, each with an official
-סמל יישוב and a resident count. That list, not OpenStreetMap, decides what a
-town is. An earlier version of this script worked the other way round and
-produced 2,017 "towns", because OSM also maps Palestinian West Bank villages,
-unrecognised Bedouin encampments, farms, and — where a locality is drawn as
-several scattered clusters — the same name ten times over. Anchoring on CBS
-makes the count right by construction and gives every row a population, which
-OSM supplies for barely one locality in seven.
-
-Each locality then needs an outline, and OSM is still the only source for that.
-Three ways, in order of preference:
-
-  place polygon    a way or relation tagged place=* carrying the name. Best:
-                   somebody drew this settlement's extent deliberately.
-  clipped built-up the locality has only a place *node*. The residential
-                   landuse around it is morphologically closed into a footprint
-                   and then clipped to the locality's own municipal boundary.
-                   The clip is what makes this safe: Haifa's built-up area runs
-                   continuously into the Krayot, and without it "Haifa" would
-                   be the whole conurbation.
-  raw built-up     same, where there is no municipal boundary to clip against —
-                   the West Bank, which muni_il does not cover.
-
-Anything still without geometry is reported and dropped; a town with no outline
-cannot be drawn or intersected with a spread ring.
-
-The remaining joins — police station, authority phone — are by Hebrew name,
-which is not a key. Official lists disagree about קריית/קרית, about באר שבע vs
-באר-שבע, about whether תל אביב - יפו has spaces around its hyphen. `normalise`
-collapses those; each row records how it matched in `*_match` so an approximate
-join can be found later rather than silently trusted.
-
-Run from the repo root, after build_localities.py and build_muni_geojson.py:
-
-    python ecoguard/scripts/build_towns.py
-"""
+Joins several public sources - names, codes, populations and outlines - which
+do not agree on spelling, so names are matched rather than compared."""
 
 from __future__ import annotations
 
@@ -115,6 +81,7 @@ def normalise(name: str) -> str:
 
 
 def build_index(pairs):
+    """Index the source names, so a town can be matched across files."""
     index = {}
     for name, value in pairs:
         key = normalise(name)
@@ -135,6 +102,7 @@ def lookup_exact(name: str, index):
 
 
 def lookup(name: str, index):
+    """The entry matching this name, allowing for spelling differences."""
     key = normalise(name)
     if not key:
         return None, "miss"
@@ -150,6 +118,7 @@ def lookup(name: str, index):
 
 
 def slugify(name: str, fallback: str) -> str:
+    """A name safe to use as an identifier."""
     ascii_only = (unicodedata.normalize("NFKD", name)
                   .encode("ascii", "ignore").decode().lower())
     slug = re.sub(r"[^a-z0-9]+", "-", ascii_only).strip("-")
@@ -157,11 +126,13 @@ def slugify(name: str, fallback: str) -> str:
 
 
 def to_int(value: str) -> int | None:
+    """A value as a whole number, or None when it is not one."""
     digits = (value or "").replace(",", "").strip()
     return int(digits) if digits.isdigit() else None
 
 
 def area_km2(geometry) -> float:
+    """How much ground a shape covers, in square kilometres."""
     return (geometry.area * (111_320 ** 2)
             * math.cos(math.radians(geometry.centroid.y)) / 1e6)
 
@@ -203,6 +174,7 @@ def stitch(ways: list[list[tuple[float, float]]]) -> list[list[tuple[float, floa
 def osm_geometry(element):
     """An OSM way or multipolygon relation as a shapely geometry."""
     def ring(coords):
+        """One closed outline from a map feature."""
         return [(c["lon"], c["lat"]) for c in coords or ()]
 
     if element["type"] == "way":
@@ -244,6 +216,7 @@ def polygon_parts(geometry):
 
 
 def km2(geometry) -> float:
+    """How much ground a shape covers, in square kilometres."""
     return area_km2(geometry)
 
 
@@ -262,6 +235,7 @@ def largest_polygon(geometry):
 
 
 def main() -> None:
+    """Build the towns reference file from the command line."""
     # ---------- the roster ----------
     roster = list(csv.DictReader(
         POPULATION_CSV.read_text(encoding=POPULATION_ENCODING).splitlines()))

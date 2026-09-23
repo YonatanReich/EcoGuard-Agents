@@ -72,6 +72,7 @@ class _ParsedSignal:
     confidence: float | None
 
     def station_state(self) -> HydrometricStationState:
+        """This gauge's latest reading, as the rest of the analysis sees it."""
         return HydrometricStationState(
             station_id=self.station_id,
             stream_id=self.stream_id,
@@ -98,6 +99,7 @@ class FloodEventAnalyzer:
         *,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
+        """Build the analyzer. The clock is injectable so tests are repeatable."""
         self._clock = clock
 
     @live_actor("analyzer.flood")
@@ -147,6 +149,7 @@ class FloodEventAnalyzer:
     def _signals(
         self, incident: Mapping[str, Any]
     ) -> tuple[list[_ParsedSignal], int, int]:
+        """The flood signals on this incident, newest first."""
         raw_signals = incident.get("signals") or []
         if not isinstance(raw_signals, Sequence) or isinstance(
             raw_signals, (str, bytes)
@@ -176,6 +179,7 @@ class FloodEventAnalyzer:
     def _parse_signal(
         self, raw: Mapping[str, Any], ordinal: int
     ) -> _ParsedSignal | None:
+        """One stored signal as usable numbers, or None when it is malformed."""
         evidence = raw.get("evidence")
         if not isinstance(evidence, Mapping):
             return None
@@ -249,6 +253,7 @@ class FloodEventAnalyzer:
     def _latest_by_station(
         signals: Sequence[_ParsedSignal],
     ) -> dict[int, _ParsedSignal]:
+        """The most recent reading per gauge."""
         latest: dict[int, _ParsedSignal] = {}
         for signal in signals:
             latest[signal.station_id] = signal
@@ -256,6 +261,7 @@ class FloodEventAnalyzer:
 
     @staticmethod
     def _primary(signals: Sequence[_ParsedSignal]) -> _ParsedSignal:
+        """The gauge driving this event, which is the most severe one."""
         return max(
             signals,
             key=lambda item: (item.severity_level, item.observed_at, item.station_id),
@@ -264,6 +270,7 @@ class FloodEventAnalyzer:
     def _current_state(
         self, current_by_station: Mapping[int, _ParsedSignal]
     ) -> CurrentHydrologicState:
+        """What the gauges say right now: flow, level and severity."""
         latest = list(current_by_station.values())
         primary = self._primary(latest)
         states = [item.station_state() for item in sorted(latest, key=lambda x: x.station_id)]
@@ -280,6 +287,7 @@ class FloodEventAnalyzer:
 
     @staticmethod
     def _progression(latest: _ParsedSignal) -> FloodProgressionAssessment:
+        """Whether the water is rising, steady or falling."""
         previous = latest.previous_discharge_m3s
         if previous is None:
             trend = "unknown"
@@ -306,6 +314,7 @@ class FloodEventAnalyzer:
         current_by_station: Mapping[int, _ParsedSignal],
         previous_by_station: Mapping[int, _ParsedSignal],
     ) -> FloodChangeAssessment:
+        """How this reading compares with the one before it."""
         current_severity = self._primary(list(current_by_station.values())).severity_level
         if not previous_by_station:
             return FloodChangeAssessment(
@@ -369,6 +378,7 @@ class FloodEventAnalyzer:
         progression: FloodProgressionAssessment,
         invalid_count: int,
     ) -> list[str]:
+        """What the analysis could not determine, and why."""
         gaps: list[str] = []
         missing_stream = sorted(
             item.station_id
@@ -399,6 +409,7 @@ class FloodEventAnalyzer:
         return gaps
 
     def _now(self) -> datetime:
+        """The current time, from the injected clock."""
         value = self._clock()
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("Flood analyzer clock must carry a UTC offset")
@@ -406,6 +417,7 @@ class FloodEventAnalyzer:
 
     @staticmethod
     def _datetime(value: object) -> datetime:
+        """A value as an aware datetime, rejecting anything unusable."""
         if isinstance(value, datetime):
             parsed = value
         elif isinstance(value, str):
@@ -423,6 +435,7 @@ class FloodEventAnalyzer:
         minimum: float | None = None,
         maximum: float | None = None,
     ) -> float:
+        """A value as a required number, rejecting anything unusable."""
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise TypeError("numeric value required")
         numeric = float(value)
@@ -442,6 +455,7 @@ class FloodEventAnalyzer:
         minimum: float | None = None,
         maximum: float | None = None,
     ) -> float | None:
+        """A value as a number, or None when it is absent."""
         if value is None:
             return None
         try:
@@ -451,12 +465,14 @@ class FloodEventAnalyzer:
 
     @staticmethod
     def _integer(value: object, *, minimum: int) -> int:
+        """A value as a required whole number at or above the minimum."""
         if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
             raise ValueError("integer value required")
         return value
 
     @classmethod
     def _optional_integer(cls, value: object, *, minimum: int) -> int | None:
+        """A value as a whole number, or None when it is absent."""
         if value is None:
             return None
         try:
@@ -466,6 +482,7 @@ class FloodEventAnalyzer:
 
     @classmethod
     def _threshold_vector(cls, value: object) -> list[float] | None:
+        """The gauge's official thresholds, only if they are complete and rising."""
         if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
             return None
         if len(value) != 6:

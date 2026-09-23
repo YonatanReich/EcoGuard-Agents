@@ -17,6 +17,7 @@ CLOCK_POLICY = "ministry-winter-utc-plus02-national-v2-label-v1"
 
 
 def _aware(value):
+    """A datetime with a timezone, parsed from text if necessary."""
     if isinstance(value, str):
         value = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if not isinstance(value, datetime) or value.utcoffset() is None:
@@ -88,6 +89,7 @@ def aggregate_hour(observations, *, station_id, channel_id, pollutant,
     for ingested, row_id, observed, row in sorted(candidates, key=lambda r: (r[0], r[1])):
         p = row["payload"]
         def reject(reason):
+            """Record why one row was excluded from the hour."""
             flags.append({"id": row_id, "reason": reason})
         # Unknown-unit rows occupy a DIFFERENT shared repository identity.
         # They must neither qualify nor shadow a verified-unit row's slot.

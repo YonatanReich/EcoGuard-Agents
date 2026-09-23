@@ -1,4 +1,11 @@
-"""Causal live inference from approved Air Pollution Trend SGD artifacts."""
+"""Is this pollution reading rising, falling or steady?
+
+Runs the trained model over the reading's recent history. The model file is
+fingerprinted against what was approved, so a swapped artifact is refused
+rather than quietly used.
+
+When history is missing or the model does not apply, it says so instead of
+guessing."""
 
 from __future__ import annotations
 
@@ -59,6 +66,7 @@ HistoryReader = Callable[..., list[dict[str, Any]]]
 
 
 def _default_history_reader(**kwargs) -> list[dict[str, Any]]:
+    """The reader used when a caller does not supply one."""
     from ecoguard.database.repositories.observations import (
         read_air_pollution_series_history,
     )
@@ -67,6 +75,7 @@ def _default_history_reader(**kwargs) -> list[dict[str, Any]]:
 
 
 def _sha256(path: Path) -> str:
+    """A fingerprint of a file, so a swapped model artifact is noticed."""
     digest = hashlib.sha256()
     with path.open("rb") as stream:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
@@ -76,6 +85,7 @@ def _sha256(path: Path) -> str:
 
 class _Unavailable(RuntimeError):
     def __init__(self, reason: str):
+        """Carry the reason a prediction cannot be made."""
         super().__init__(reason)
         self.reason = reason
 
@@ -90,6 +100,7 @@ class AirPollutionTrendInferenceService:
         history_reader: HistoryReader = _default_history_reader,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
+        """Build the service. The history reader is injectable for testing."""
         self._artifact_directory = Path(artifact_directory)
         self._history_reader = history_reader
         self._clock = clock
@@ -98,6 +109,7 @@ class AirPollutionTrendInferenceService:
     def predict(
         self, candidate: PollutionCorrelationCandidate
     ) -> AnalysisComponent[AirPollutionTrendPrediction]:
+        """Where this reading is heading, or why that cannot be said."""
         validated = PollutionCorrelationCandidate.model_validate(
             candidate.model_dump(round_trip=True)
         )
@@ -119,6 +131,7 @@ class AirPollutionTrendInferenceService:
     def _unavailable(
         reason: str,
     ) -> AnalysisComponent[AirPollutionTrendPrediction]:
+        """A result saying no prediction is available, and why."""
         return AnalysisComponent[AirPollutionTrendPrediction](
             status="unavailable",
             unavailable_reason=reason,
@@ -127,6 +140,7 @@ class AirPollutionTrendInferenceService:
     def _predict(
         self, candidate: PollutionCorrelationCandidate
     ) -> AnalysisComponent[AirPollutionTrendPrediction]:
+        """Run the model over one reading's recent history."""
         anomaly = candidate.anomaly
         bundle, model_record, model_sha256 = self._load_bundle(anomaly.pollutant)
         identity = AirPollutionSeriesIdentity(
@@ -235,6 +249,7 @@ class AirPollutionTrendInferenceService:
         identity: AirPollutionSeriesIdentity,
         unit: str,
     ) -> list[HistoricalAirPollutionObservation]:
+        """Reject a history that does not match the reading it is meant to describe."""
         observations = []
         try:
             for row in rows:
@@ -262,6 +277,7 @@ class AirPollutionTrendInferenceService:
     def _load_bundle(
         self, pollutant: str
     ) -> tuple[FinalSGDModelBundle, dict[str, Any], str]:
+        """The trained model for one pollutant, loaded once and reused."""
         cached = self._loaded.get(pollutant)
         if cached is not None:
             return cached
@@ -315,6 +331,7 @@ class AirPollutionTrendInferenceService:
         record: Mapping[str, Any],
         pollutant: str,
     ) -> None:
+        """Reject a model file that does not match what was approved."""
         manifest_vocabulary = record["identity_vocabulary"]
         expected_series = [
             {"station_id": station, "channel_id": channel}

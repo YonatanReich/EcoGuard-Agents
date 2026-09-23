@@ -33,12 +33,14 @@ class FloodRoadIncidentHandler:
         planner: EmergencyResponsePlanner | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
+        """Build the handler with its analyzer, risk analyzer and planner."""
         self._analyzer = analyzer or FloodEventAnalyzer(clock=clock)
         self._risk_analyzer = risk_analyzer or FloodRiskAnalyzer(clock=clock)
         self._planner = planner or EmergencyResponsePlanner()
         self._clock = clock
 
     def _now(self) -> datetime:
+        """The current time, from the injected clock."""
         value = self._clock()
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("Flood handler clock must carry a UTC offset")
@@ -49,6 +51,11 @@ class FloodRoadIncidentHandler:
         incident: Mapping[str, Any],
         context: IncidentDispatchContext,
     ) -> IncidentProcessingResult:
+        """Analyse one flood incident and plan a response.
+
+        Skips re-planning when nothing meaningful changed, so a gauge reporting
+        every ten minutes does not rebuild the same advice each time.
+        """
         if context.hazard != "flood" or context.route != "emergency":
             raise ValueError("Flood handler requires the emergency route")
 
@@ -219,6 +226,11 @@ class FloodRoadIncidentHandler:
 
     @staticmethod
     def _response_refresh_required(analysis) -> bool:
+        """Whether the situation changed enough to justify a new plan.
+
+        True on a rise in severity or a wider affected area; false on a steady or
+        falling reading, which is what keeps a long flood from re-planning all day.
+        """
         change = analysis.change_assessment
         if change is None:
             return False

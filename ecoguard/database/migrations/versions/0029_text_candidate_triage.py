@@ -19,6 +19,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add durable text-candidate triage handoff state."""
     op.execute("ALTER TABLE text_candidates ADD COLUMN triaged_at timestamptz")
     op.execute(
         "CREATE INDEX text_candidates_pending_triage "
@@ -27,5 +28,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove durable text-candidate triage handoff state."""
     op.execute("DROP INDEX IF EXISTS text_candidates_pending_triage")
     op.execute("ALTER TABLE text_candidates DROP COLUMN triaged_at")

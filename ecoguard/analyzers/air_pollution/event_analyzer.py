@@ -54,6 +54,7 @@ class AirPollutionNonEmergencyAnalyzer:
         spatial_enricher: AirPollutionSpatialEnricher | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
+        """Build the analyzer from its component services, all injectable."""
         self._transport_service = transport_service
         self._ministry_index_client = ministry_index_client
         self._population_service = population_service
@@ -69,6 +70,12 @@ class AirPollutionNonEmergencyAnalyzer:
         severity_assessment: AnalysisComponent[EventSeverityAssessment] | None = None,
         run_heavy_analysis: bool = True,
     ) -> AirPollutionEventAnalysis:
+        """Assess one pollution episode.
+
+        Runs each component separately - severity, trend, transport, population -
+        and records any that could not be produced rather than leaving a gap that
+        reads like a zero. No model is involved.
+        """
         validated = AirPollutionAnalysisInput.model_validate(
             analysis_input.model_dump(round_trip=True)
         )
@@ -135,6 +142,7 @@ class AirPollutionNonEmergencyAnalyzer:
     def _trend_component(
         self, analysis_input: AirPollutionAnalysisInput
     ) -> AnalysisComponent[AirPollutionTrendPrediction]:
+        """Where the reading is heading, from the trained trend model."""
         if self._trend_inference_service is None:
             return AnalysisComponent[AirPollutionTrendPrediction](
                 status="unavailable",
@@ -165,6 +173,7 @@ class AirPollutionNonEmergencyAnalyzer:
         transport: AnalysisComponent[AirPollutionTransportPredictionExecution],
         queried_at: datetime,
     ) -> AnalysisComponent[PopulationImpactContext]:
+        """How many people the screening corridor intersects."""
         if self._population_service is None:
             return AnalysisComponent[PopulationImpactContext](
                 status="unavailable",
@@ -191,6 +200,7 @@ class AirPollutionNonEmergencyAnalyzer:
     def _severity_component(
         self, analysis_input: AirPollutionAnalysisInput
     ) -> AnalysisComponent[EventSeverityAssessment]:
+        """The official air-quality index for this reading, when one exists."""
         if self._ministry_index_client is None:
             return AnalysisComponent[EventSeverityAssessment](
                 status="unavailable",
@@ -254,6 +264,7 @@ class AirPollutionNonEmergencyAnalyzer:
     def _transport_component(
         self, analysis_input: AirPollutionAnalysisInput
     ) -> AnalysisComponent[AirPollutionTransportPredictionExecution]:
+        """Where the pollution may drift, given the wind."""
         if self._transport_service is None:
             return AnalysisComponent[AirPollutionTransportPredictionExecution](
                 status="unavailable",
@@ -315,6 +326,7 @@ class AirPollutionNonEmergencyAnalyzer:
     def _origin_candidate(
         analysis_input: AirPollutionAnalysisInput,
     ) -> PollutionCorrelationCandidate | None:
+        """One possible source of the pollution, from the verification step."""
         matches = AirPollutionNonEmergencyAnalyzer._origin_candidates(analysis_input)
         return matches[0] if matches else None
 
@@ -322,6 +334,7 @@ class AirPollutionNonEmergencyAnalyzer:
     def _origin_candidates(
         analysis_input: AirPollutionAnalysisInput,
     ) -> list[PollutionCorrelationCandidate]:
+        """Every possible source found, strongest first."""
         state = analysis_input.current_state.result
         if state is None:
             return []
@@ -345,6 +358,7 @@ class AirPollutionNonEmergencyAnalyzer:
         analysis_input: AirPollutionAnalysisInput,
         result: AirPollutionTransportPredictionExecution,
     ) -> list[TransportEvidenceReference]:
+        """The wind readings the transport estimate was built from."""
         evidence = list(analysis_input.evidence)
         wind = result.wind_evidence
         if wind.evidence_id not in {item.evidence_id for item in evidence}:

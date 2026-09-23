@@ -53,6 +53,7 @@ class IMSWindEvidenceError(RuntimeError):
         *,
         diagnostics: Mapping[str, int] | None = None,
     ):
+        """Build the service. The client is injectable so tests make no requests."""
         super().__init__(category)
         self.category = category
         self.diagnostics = dict(diagnostics or {})
@@ -78,6 +79,7 @@ class IMSWindStationMetadata(ContractModel):
 
     @model_validator(mode="after")
     def channel_identifiers_are_unique(self):
+        """Reject metadata listing the same channel twice."""
         identifiers = [channel.channel_id for channel in self.channels]
         names = [channel.name for channel in self.channels]
         if len(set(identifiers)) != len(identifiers):
@@ -87,6 +89,7 @@ class IMSWindStationMetadata(ContractModel):
         return self
 
     def active_channel(self, name: str) -> IMSWindChannelMetadata | None:
+        """The named channel, if this station currently reports it."""
         return next(
             (
                 channel
@@ -98,6 +101,7 @@ class IMSWindStationMetadata(ContractModel):
 
     @property
     def wind_capable(self) -> bool:
+        """Whether this station reports both wind speed and direction."""
         return self.active and all(
             self.active_channel(name) is not None for name in REQUIRED_WIND_CHANNELS
         )
@@ -120,10 +124,12 @@ class IMSNormalizedWindObservation(ContractModel):
     @field_validator("observed_at", "aggregation_start", "aggregation_end")
     @classmethod
     def normalize_times(cls, value: AwareDatetime | None):
+        """Store times in UTC."""
         return value.astimezone(timezone.utc) if value is not None else None
 
     @model_validator(mode="after")
     def aggregation_is_coherent(self):
+        """Reject a reading whose averaging period contradicts its values."""
         if (self.aggregation_start is None) != (self.aggregation_end is None):
             raise ValueError("aggregation timestamps must be supplied together")
         if (
@@ -145,6 +151,7 @@ class IMSWindStationAlternative(ContractModel):
     @field_validator("wind_observed_at")
     @classmethod
     def normalize_time(cls, value: AwareDatetime):
+        """Store the time in UTC."""
         return value.astimezone(timezone.utc)
 
 
@@ -173,6 +180,7 @@ class IMSWindEvidenceSelection(ContractModel):
     @field_validator("selection_rationale")
     @classmethod
     def nonblank_rationale(cls, values: list[str]) -> list[str]:
+        """Reject an empty explanation, since a blank reason explains nothing."""
         stripped = [value.strip() for value in values]
         if any(not value for value in stripped):
             raise ValueError("selection rationale cannot contain blank entries")
@@ -180,6 +188,7 @@ class IMSWindEvidenceSelection(ContractModel):
 
 
 def _text(value: object | None) -> str | None:
+    """A value as trimmed text, or None when it is blank."""
     if value is None:
         return None
     text = str(value).strip()
@@ -187,6 +196,7 @@ def _text(value: object | None) -> str | None:
 
 
 def _first_present(values: Mapping[str, Any], *keys: str) -> object | None:
+    """The first of these keys that the mapping actually has."""
     for key in keys:
         if key in values and values[key] is not None:
             return values[key]
@@ -194,12 +204,14 @@ def _first_present(values: Mapping[str, Any], *keys: str) -> object | None:
 
 
 def _provider_id(value: object | None) -> str | None:
+    """A provider identifier as text, or None when absent."""
     if value is None or isinstance(value, bool):
         return None
     return _text(value)
 
 
 def _finite_number(value: object, *, field_name: str) -> float:
+    """A value as a real, finite number, naming the field when it is not."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{field_name} must be a finite number")
     result = float(value)
@@ -209,11 +221,13 @@ def _finite_number(value: object, *, field_name: str) -> float:
 
 
 def _canonical_channel_name(value: object | None) -> str | None:
+    """A channel name in the one spelling the rest of the code uses."""
     text = _text(value)
     return _CHANNEL_CANONICAL_NAMES.get(text.casefold()) if text else None
 
 
 def _timebase_minutes(value: object | None) -> int | None:
+    """How many minutes a reading is averaged over, when stated."""
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, int):
@@ -247,6 +261,7 @@ def normalize_ims_observation_timestamp(raw_value: object) -> tuple[datetime, st
 
 
 def _station_records(payload: object) -> list[Mapping[str, Any]]:
+    """The station entries in a provider response."""
     if isinstance(payload, Sequence) and not isinstance(payload, (str, bytes)):
         return [item for item in payload if isinstance(item, Mapping)]
     if isinstance(payload, Mapping):
@@ -260,6 +275,7 @@ def _station_records(payload: object) -> list[Mapping[str, Any]]:
 
 
 def parse_ims_station_metadata(raw: object) -> IMSWindStationMetadata:
+    """Read one weather station's description from the provider."""
     if not isinstance(raw, Mapping):
         raise ValueError("IMS station metadata must be an object")
     station_id = _provider_id(_first_present(raw, "stationId", "id"))
@@ -323,9 +339,11 @@ def parse_ims_station_metadata(raw: object) -> IMSWindStationMetadata:
 
 
 def _observation_records(payload: object) -> list[Mapping[str, Any]]:
+    """The reading entries in a provider response."""
     records: list[Mapping[str, Any]] = []
 
     def visit(value: object) -> None:
+        """Walk one nested value, collecting the records found inside it."""
         if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
             for item in value:
                 visit(item)
@@ -348,6 +366,7 @@ def _observation_records(payload: object) -> list[Mapping[str, Any]]:
 
 
 def _status_is_acceptable(value: object | None) -> bool:
+    """Whether the provider marked this reading as usable."""
     if value is None:
         return True
     if isinstance(value, bool):
@@ -361,6 +380,7 @@ def _status_is_acceptable(value: object | None) -> bool:
 
 
 def _direction_degrees(value: object, unit: str, *, field_name: str) -> float:
+    """A wind direction in degrees, converted from the stated unit."""
     normalized_unit = unit.strip().casefold().replace(" ", "")
     if normalized_unit not in {"deg", "degree", "degrees", "°"}:
         raise ValueError(f"unsupported {field_name} unit")
@@ -371,6 +391,7 @@ def _direction_degrees(value: object, unit: str, *, field_name: str) -> float:
 
 
 def _nonnegative_degrees(value: object, unit: str, *, field_name: str) -> float:
+    """A direction that must not be negative, in degrees."""
     normalized_unit = unit.strip().casefold().replace(" ", "")
     if normalized_unit not in {"deg", "degree", "degrees", "°"}:
         raise ValueError(f"unsupported {field_name} unit")
@@ -381,6 +402,7 @@ def _nonnegative_degrees(value: object, unit: str, *, field_name: str) -> float:
 
 
 def _speed_mps(value: object, unit: str, *, field_name: str) -> float:
+    """A wind speed in metres per second, converted from the stated unit."""
     result = _finite_number(value, field_name=field_name)
     if result < 0:
         raise ValueError(f"{field_name} cannot be negative")
@@ -398,6 +420,7 @@ def _resolved_channel_values(
     raw_record: Mapping[str, Any],
     station: IMSWindStationMetadata,
 ) -> dict[str, Mapping[str, Any]]:
+    """The readings for the channels this station actually reports."""
     raw_channels = _first_present(raw_record, "channels", "values")
     if not isinstance(raw_channels, Sequence) or isinstance(raw_channels, (str, bytes)):
         raise ValueError("IMS observation channel list is malformed")
@@ -426,6 +449,7 @@ def _valid_channel_value(
     *,
     required: bool,
 ) -> tuple[object, str | None] | None:
+    """One channel reading, or None when it is missing or rejected."""
     raw = channels.get(metadata.name)
     if raw is None:
         if required:
@@ -452,6 +476,7 @@ def normalize_ims_wind_observation(
     raw_record: object,
     station: IMSWindStationMetadata,
 ) -> IMSNormalizedWindObservation:
+    """One provider reading in the shape the analyzer uses."""
     if not station.wind_capable:
         raise ValueError("station is not active with active WD and WS channels")
     if not isinstance(raw_record, Mapping):
@@ -558,6 +583,7 @@ def parse_ims_wind_observations(
     payload: object,
     station: IMSWindStationMetadata,
 ) -> list[IMSNormalizedWindObservation]:
+    """Every usable wind reading in a provider response."""
     observations: list[IMSNormalizedWindObservation] = []
     for record in _observation_records(payload):
         try:
@@ -583,6 +609,7 @@ class IMSWindEvidenceService:
         *,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
+        """Build the selector with its station metadata and observation client."""
         self.client = client
         self.clock = clock
 
@@ -651,6 +678,11 @@ class IMSWindEvidenceService:
         maximum_observation_age_seconds: float,
         alternative_limit: int = 3,
     ) -> IMSWindEvidenceSelection:
+        """Choose the wind readings that best describe conditions at this place.
+
+        Prefers a nearby station reporting at the right time; says it could not
+        choose rather than settling for a distant or stale one.
+        """
         origin = GeographicCoordinate.model_validate(
             analysis_coordinates.model_dump()
             if isinstance(analysis_coordinates, GeographicCoordinate)

@@ -1,23 +1,7 @@
-"""Earthquake severity on the shared 0-100 operational risk scale.
+"""Turning shaking intensity into an operational severity band.
 
-Mirrors `analyzers/emergency/flood/risk_scale.py`. The point of both is that
-the allocator has to rank a fire, a flood and an earthquake competing for the
-same stations, and it can only do that if the three produce one comparable
-number.
-
-Earthquake carried none until now. It was given `risk_score=None` on purpose,
-with the comment that policy-driven requests do not receive a fabricated risk
-score, and that instinct was right: inventing a number so earthquakes would
-sort somewhere is exactly the failure to avoid. But the alternative it settled
-on was a flat "after everything else", which meant an M6.0 queued behind a
-brush fire.
-
-What changed is that there is something real to derive a score from. The
-impact analyser already counts the population inside the estimated impact area
-by PostGIS intersection, and the magnitude is observed. Both are facts, so the
-score below is derived rather than invented -- the same standard flood's scale
-meets.
-"""
+A fixed mapping rather than a judgement, so the same earthquake always
+produces the same band and a reviewer can check it."""
 
 from __future__ import annotations
 

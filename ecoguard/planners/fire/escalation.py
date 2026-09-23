@@ -1,29 +1,7 @@
-"""When a fire becomes a national event, decided in code and citing the clause.
+"""When a fire has grown enough to need more than it was first given.
 
-`נוהל אירועים ארציים` (הוראה 201, procedure 201.02.003) §2.1 lists the criteria
-as individually numbered clauses. They are thresholds, not judgements: ten
-teams or more, danger to a settlement, two or more trapped persons. Nothing is
-gained by making a model re-derive arithmetic that is already written down, and
-several things are lost — it is slower, it costs more, and it can arrive at a
-different answer on a second run for a question that has exactly one.
-
-So the criteria live here and the citation travels with the verdict. Retrieval
-is for the judgement-shaped parts of a plan — what the response should look
-like — not for thresholds.
-
-Which criteria this system can actually evaluate
-------------------------------------------------
-Four of the nine. The analyser knows where the fire is, what it threatens and
-how many people live there, so it can answer 2.1.6 (danger to a settlement) and
-contribute to 2.1.2 (a building with a large population). It knows nothing
-about trapped persons, injured firefighters or how many teams are committed —
-those are on-scene facts that arrive from the incident commander, not from a
-satellite.
-
-Unevaluable clauses are reported as unevaluable rather than as not met. A
-system that answers "this is not a national event" when what it means is "I
-cannot see five of the nine reasons it might be" is worse than one that says
-so, because the first answer stops somebody looking.
+Compares the current assessment against the one the existing plan was built
+from, and asks for more only on a real increase - not on every new reading.
 """
 
 from __future__ import annotations

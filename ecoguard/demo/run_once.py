@@ -1,16 +1,8 @@
-"""Run one full pipeline wave against a scenario, from the command line.
+"""Running one demo scenario from the command line.
 
-Does exactly what the scheduler does on a tick — text lane, then the five
-structured detectors, the coordinator, dispatch, allocation and projection —
-but once, synchronously, so a scenario can be driven and graded without
-waiting ten minutes per step.
-
-    python -m ecoguard.demo.run_once demo_a            # seed, run, grade
-    python -m ecoguard.demo.run_once demo_a --no-seed  # run again on what is there
-
-The sandbox is left populated on purpose: the whole point is to be able to show
-the result afterwards.
-"""
+Seeds the sandbox, runs one or more detection ticks against it, and prints what
+each stage did. The dashboard button does the same thing; this exists for
+running it without a browser."""
 
 from __future__ import annotations
 
@@ -51,6 +43,7 @@ def run_wave() -> dict[str, int]:
 
 
 def main() -> int:
+    """Run one demo scenario from the command line and report what happened."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("scenario", nargs="?", default="demo_a")
     parser.add_argument("--no-seed", action="store_true",

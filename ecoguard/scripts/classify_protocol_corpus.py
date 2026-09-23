@@ -1,30 +1,4 @@
-"""Assign `function` and `hazard` to each of the 84 procedures.
-
-    python -m ecoguard.scripts.classify_protocol_corpus
-
-Why this is a model pass and not a keyword rule
------------------------------------------------
-Because the titles do not say what the documents are for in any way a rule can
-catch. `נוהל שתפ כבה - מי - פתיחת דלתות ופריצה למבנה` is an interface procedure
-with the water utility; `מענה מבצעי לשריפות במערכות סולאריות` is tactical.
-Nothing lexical separates those, and a wrong label here silently degrades every
-retrieval afterwards — which is why the plan asks for a spot-check by hand
-rather than trust.
-
-Why the labels matter this much
--------------------------------
-Measured on this corpus with the e5 embeddings: for the query "fire approaching
-a settlement", high-rise structural tactics scores 0.804 against the correct
-clause's 0.827. Two points of cosine. The filter on `function` and `hazard` is
-what makes structural doctrine unreachable from a wildland question; the
-embedding only makes it unlikely.
-
-Cost
-----
-Batched twelve documents to a call on Haiku, title plus first page each. Seven
-calls for the corpus, a few cents. Re-running is cheap enough that fixing a bad
-label by editing the prompt and going again is the expected workflow.
-"""
+"""Deciding what each procedure is about, so search can filter before it ranks."""
 
 from __future__ import annotations
 
@@ -35,7 +9,7 @@ from pydantic import BaseModel, Field
 from pypdf import PdfReader
 
 from ecoguard.paths import PACKAGE_ROOT
-from ecoguard.response_planner.protocols.corpus_schema import FUNCTIONS, HAZARDS
+from ecoguard.data.protocols.corpus_schema import FUNCTIONS, HAZARDS
 from ecoguard.shared.llm import ClaudeLLMService, build_system_blocks
 
 RAW = PACKAGE_ROOT / "data" / "protocols" / "raw"
@@ -102,6 +76,7 @@ class Batch(BaseModel):
 
 
 def first_page(path) -> str:
+    """The opening page of a document, which is where its subject is stated."""
     try:
         return (PdfReader(path).pages[0].extract_text() or "")[:PAGE_ONE_CHARS]
     except Exception:
@@ -109,6 +84,7 @@ def first_page(path) -> str:
 
 
 def run() -> dict:
+    """Decide what each procedure is about and which hazard it covers."""
     manifest = json.loads((RAW / "manifest.json").read_text(encoding="utf-8"))
     documents = [
         {"key": key, "title": meta["title"], "opening": first_page(RAW / key)}
@@ -144,6 +120,7 @@ def run() -> dict:
 
 
 def main() -> None:
+    """Classify the corpus from the command line."""
     results = run()
     OUTPUT.write_text(
         json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8"

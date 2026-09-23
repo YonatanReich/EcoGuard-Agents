@@ -52,16 +52,19 @@ class HydrometricStationCatalog:
 
 
 def _canonical_json(value: Any) -> str:
+    """Stable JSON text, so unchanged data produces the same fingerprint."""
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def _required_mapping(value: Any, label: str) -> dict[str, Any]:
+    """A nested object that must be present."""
     if not isinstance(value, dict):
         raise HydrometricStationCatalogError(f"{label} must be an object")
     return value
 
 
 def _required_int(value: Any, label: str) -> int:
+    """A whole number that must be present."""
     if value is None or isinstance(value, bool):
         raise HydrometricStationCatalogError(f"{label} must be an integer")
     try:
@@ -71,10 +74,12 @@ def _required_int(value: Any, label: str) -> int:
 
 
 def _optional_int(value: Any, label: str) -> int | None:
+    """A whole number, or None when absent."""
     return None if value is None else _required_int(value, label)
 
 
 def _required_float(value: Any, label: str) -> float:
+    """A number that must be present."""
     if value is None or isinstance(value, bool):
         raise HydrometricStationCatalogError(f"{label} must be numeric")
     try:
@@ -84,10 +89,12 @@ def _required_float(value: Any, label: str) -> float:
 
 
 def _optional_float(value: Any, label: str) -> float | None:
+    """A number, or None when absent."""
     return None if value is None else _required_float(value, label)
 
 
 def _optional_text(value: Any) -> str | None:
+    """Text, or None when absent or blank."""
     if value is None:
         return None
     result = str(value).strip()
@@ -95,6 +102,7 @@ def _optional_text(value: Any) -> str | None:
 
 
 def _threshold(value: Any, label: str) -> float | None:
+    """One official flood threshold, or None when the gauge has none."""
     number = _required_float(value, label)
     if number == MISSING_THRESHOLD:
         return None

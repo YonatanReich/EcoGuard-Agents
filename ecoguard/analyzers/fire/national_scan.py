@@ -1,4 +1,6 @@
-"""Offline nationwide Current Risk scan over active persisted grid cells."""
+"""Scoring every grid cell for fire risk, in one pass.
+
+Reads only stored data, so a scan costs no provider calls and can be repeated."""
 
 from __future__ import annotations
 
@@ -30,6 +32,7 @@ class NationalCurrentRiskScanService:
                  prediction_agent: FireRiskPredictionAgent | None = None,
                  service_area_path: Path | str = DEFAULT_SERVICE_AREA_PATH,
                  prediction_workers: int = 4):
+        """Build the service. Readers and the model are injectable for testing."""
         self.grid_path = Path(grid_path)
         self.feature_builder = feature_builder or CurrentRiskFeatureBuilder(grid_path=self.grid_path)
         self.prediction_agent = prediction_agent or FireRiskPredictionAgent()
@@ -37,6 +40,7 @@ class NationalCurrentRiskScanService:
         self.prediction_workers = max(1, int(prediction_workers))
 
     def _active_cells(self) -> list[dict[str, Any]]:
+        """The grid cells with enough stored data to be scored."""
         if not self.grid_path.exists():
             raise NationalRiskScanError("risk grid is missing")
         connection = sqlite3.connect(self.grid_path); connection.row_factory = sqlite3.Row
@@ -54,12 +58,14 @@ class NationalCurrentRiskScanService:
 
     @staticmethod
     def _evaluation_time(value: datetime | None) -> datetime:
+        """The moment being scored, defaulting to now."""
         selected = value or datetime.now(timezone.utc)
         if selected.tzinfo is None:
             raise NationalRiskScanError("evaluation timestamp must include a UTC offset")
         return selected.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
 
     def scan(self, evaluation_time: datetime | None = None, *, highest_limit: int = 10) -> dict[str, Any]:
+        """Score every active cell for fire risk."""
         evaluation = self._evaluation_time(evaluation_time)
         cells, evaluated, unavailable, ready = self._active_cells(), [], [], []
         # One query for the whole grid's weather history, held for the loop.
@@ -115,6 +121,7 @@ class NationalCurrentRiskScanService:
 
     def scan_and_save(self, evaluation_time: datetime | None = None,
                       output_path: Path | str = DEFAULT_OUTPUT_PATH) -> dict[str, Any]:
+        """Score every active cell and write the result to disk."""
         result = self.scan(evaluation_time)
         path = Path(output_path); path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_suffix(path.suffix + ".tmp")
@@ -124,5 +131,12 @@ class NationalCurrentRiskScanService:
 
 
 class _null_session:
-    def __enter__(self): return None
-    def __exit__(self, exc_type, exc, traceback): return False
+    """Stands in for a database session where the caller needs one and nothing opens it."""
+
+    def __enter__(self):
+        """Hand back nothing, since there is no session to hand back."""
+        return None
+
+    def __exit__(self, exc_type, exc, traceback):
+        """Release nothing, and let any error through."""
+        return False

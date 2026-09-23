@@ -1,33 +1,8 @@
-"""Build the weather climatology from Open-Meteo's historical archive.
+"""Building the seasonal weather baselines from the historical archive.
 
-This is what turns "different from last week" into "unusual for mid-September",
-and it is a one-off backfill rather than something that accumulates: the archive
-serves hourly reanalysis back to 1940, so a decade of context is available now
-instead of in ten years' time.
-
-    python -m ecoguard.scripts.build_weather_baselines
-    python -m ecoguard.scripts.build_weather_baselines --years 5 --stride 3
-
-What it does, per cell: pull every hour of the last ten complete calendar years,
-sort those hours into 288 buckets by (month, hour-of-day), and reduce each
-bucket to a distribution — mean, spread, median, MAD and five percentiles.
-
-Three choices worth knowing:
-
-  * Complete calendar years only, ending last December. A partial current year
-    would weight recent months more heavily than old ones and quietly tilt
-    every bucket it touched.
-  * The coarse forecast subgrid, not all 1,174 cells. Climatology is a smooth
-    regional field — the Negev and the Galilee differ, two adjacent 5 km cells
-    do not — so ~15 km spacing captures it at an eighth of the fetch. The read
-    side maps any cell to its nearest baseline cell.
-  * Vapour pressure deficit is computed here rather than fetched, because the
-    archive does not serve it and it is exactly derivable from temperature and
-    humidity. It is the best single drying measure in the set, so it is worth
-    the four lines.
-
-A full run is about two minutes of provider time and 400 MB of transfer.
-"""
+One distribution per cell, season and hour, which is what lets a reading be
+called unusual for the time of year rather than merely different from
+yesterday."""
 
 from __future__ import annotations
 
@@ -43,7 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy import Table, MetaData
 
-from ecoguard.collection.shared.open_meteo.forecast import forecast_cells
+from ecoguard.collectors.shared.open_meteo.forecast import forecast_cells
 from ecoguard.database.engine import Session, engine
 
 ARCHIVE_ENDPOINT = "https://archive-api.open-meteo.com/v1/archive"
@@ -129,6 +104,7 @@ def fetch(
 
 
 def _retry_after(response) -> float | None:
+    """How long the provider asked us to wait, when it said."""
     value = response.headers.get("Retry-After")
     try:
         return float(value) if value is not None else None
@@ -137,6 +113,7 @@ def _retry_after(response) -> float | None:
 
 
 def _request(cells, start: date, end: date, session: Any):
+    """One batch of historical weather from the provider."""
     return session.get(
         ARCHIVE_ENDPOINT,
         params={
@@ -231,6 +208,7 @@ def already_built() -> set[str]:
 
 
 def build(years: int, stride: int, cells=None, rebuild: bool = False) -> tuple[int, str]:
+    """Build the seasonal weather baselines from the archive."""
     cells = list(cells if cells is not None else forecast_cells(stride))
     if not rebuild:
         done = already_built()
@@ -309,6 +287,7 @@ def build(years: int, stride: int, cells=None, rebuild: bool = False) -> tuple[i
 
 
 def main() -> None:
+    """Build the weather baselines from the command line."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--years", type=int, default=DEFAULT_YEARS)
     parser.add_argument(

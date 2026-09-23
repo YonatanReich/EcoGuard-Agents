@@ -12,7 +12,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
-from ecoguard.analyzers.emergency.fire.refresh_orchestrator import CurrentRiskRefreshOrchestrator
+from ecoguard.analyzers.fire.refresh_orchestrator import CurrentRiskRefreshOrchestrator
 
 
 NOW = datetime(2026, 8, 29, 18, 45, tzinfo=timezone.utc)
@@ -75,7 +75,7 @@ def test_overlapping_refresh_is_skipped(tmp_path):
 
 def test_latest_snapshot_is_reused_without_rescanning(tmp_path):
     service = orchestrator(tmp_path); expected = scan_result()
-    from ecoguard.analyzers.emergency.fire.refresh_orchestrator import _atomic_json
+    from ecoguard.analyzers.fire.refresh_orchestrator import _atomic_json
     _atomic_json(service.snapshot_path, expected)
     latest = service.latest_snapshot(now=NOW)
     assert latest["cells"] == expected["cells"]
@@ -95,7 +95,7 @@ def test_default_cadence_is_conservative(monkeypatch, tmp_path):
 def test_start_returns_without_waiting_for_immediate_refresh_and_preserves_snapshot(tmp_path):
     entered, release = threading.Event(), threading.Event()
     service = orchestrator(tmp_path, Scanner(entered=entered, release=release))
-    from ecoguard.analyzers.emergency.fire.refresh_orchestrator import _atomic_json
+    from ecoguard.analyzers.fire.refresh_orchestrator import _atomic_json
     _atomic_json(service.snapshot_path, scan_result())
 
     started = time.monotonic(); service.start(); elapsed = time.monotonic() - started

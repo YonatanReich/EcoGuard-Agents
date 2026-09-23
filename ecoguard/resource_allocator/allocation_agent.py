@@ -16,7 +16,7 @@ from ecoguard.database.repositories.towns import (
     town_at_location,
 )
 from ecoguard.coordinator import incidents as incident_store
-from ecoguard.analyzers.emergency.flood.risk_analysis_schemas import (
+from ecoguard.analyzers.flood.risk_analysis_schemas import (
     FloodRiskAssessment,
 )
 from ecoguard.resource_allocator.mapbox_client import MapboxClient, RoutingError
@@ -85,6 +85,7 @@ class ResourceAllocationAgent:
         flood_target_agent=None,
         incident_reader=None,
     ):
+        """Build the allocator. Every reader and the routing client are injectable for testing."""
         self.station_readers = (
             _default_station_readers()
             if station_readers is None
@@ -291,6 +292,7 @@ class ResourceAllocationAgent:
 
     @staticmethod
     def _planning_status(response_plan):
+        """Whether the plan this request came from succeeded."""
         return str((response_plan.get("metadata") or {}).get("planning_status") or "")
 
     @staticmethod
@@ -356,6 +358,7 @@ class ResourceAllocationAgent:
 
     @staticmethod
     def _flood_site_priority(site):
+        """How urgent one flooded road site is, relative to the others."""
         road = site.get("road") or {}
         verification = site.get("mapbox_verification") or {}
         snap_distance = verification.get("mapbox_snap_distance_m")
@@ -787,6 +790,12 @@ class ResourceAllocationAgent:
 
     @staticmethod
     def _priority_key(request):
+        """How one request ranks against the rest.
+
+        One key shape for every hazard. An earlier version gave earthquakes a
+        different leading value, which put every fire and every flood above every
+        earthquake at any magnitude - not ranked low, but not ranked at all.
+        """
         # One key for every hazard. Earthquake used to return a leading 1 here
         # against everyone else's 0, and tuple comparison decides at index 0 --
         # so every fire and every flood outranked every earthquake, at any
@@ -930,6 +939,7 @@ class ResourceAllocationAgent:
         return [self._allocation_view(allocation) for allocation in allocations]
 
     def _unavailable_route(self, metric, message):
+        """A route result saying no route could be obtained, and why."""
         metric = metric or {}
         return {
             "status": "unavailable",
@@ -1062,6 +1072,7 @@ class ResourceAllocationAgent:
 
     @staticmethod
     def _allocation_sort_key(station):
+        """How one candidate station ranks: by travel time, then distance."""
         route = station.get("route") or {}
         duration = route.get("duration_s")
         distance = station.get("distance_km")
@@ -1071,6 +1082,7 @@ class ResourceAllocationAgent:
         )
 
     def _allocate_batch_request(self, request):
+        """Allocate stations for one request."""
         response_plan = request["response_plan"]
         event_lat, event_lon = self._coordinates(response_plan.get("location"))
         event_location = {

@@ -54,6 +54,7 @@ def severity_level(discharge: float, thresholds: Sequence[float]) -> int:
 
 
 def _severity_hint(level: int) -> str:
+    """A plain word for a severity level, for the operator's card."""
     if level >= 5:
         return "critical"
     if level == 4:
@@ -82,6 +83,7 @@ StationSample = tuple[datetime, Mapping[str, Any], float, tuple[float, ...]]
 def _station_samples(
     observations: Iterable[Mapping[str, Any]],
 ) -> dict[int, list[tuple[datetime, Mapping[str, Any]]]]:
+    """Readings grouped by gauge, oldest first."""
     grouped: dict[int, list[tuple[datetime, Mapping[str, Any]]]] = defaultdict(list)
     for observation in observations:
         if observation.get("source") != HYDROMETRIC_SOURCE:
@@ -101,6 +103,7 @@ def _station_samples(
 def _valid_sample(
     sample: tuple[datetime, Mapping[str, Any]],
 ) -> StationSample | None:
+    """One usable reading, or None when its thresholds or flow are missing."""
     observed_at, station = sample
     thresholds = _threshold_vector(station)
     discharge = station.get("discharge_m3s")
@@ -123,6 +126,7 @@ def _evidence(
     stream_id: int | None,
     policy: FloodPolicy,
 ) -> dict[str, Any]:
+    """What the pair of readings showed, recorded on the signal."""
     observed_at, _, discharge, thresholds = current
     previous_level = severity_level(previous[2], previous[3])
     current_level = severity_level(discharge, thresholds)
@@ -158,6 +162,7 @@ def _signal(
     stream_id: int | None,
     policy: FloodPolicy,
 ) -> CellSignal:
+    """The signal for one confirmed threshold crossing."""
     observed_at, station, discharge, _ = current
     return CellSignal(
         cell_id=cell_id,

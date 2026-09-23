@@ -1,25 +1,8 @@
-"""The keyword safety net: four hazards, no model, no network.
+"""A plain word list, used as a floor under the model.
 
-Two jobs, and the second is the one that pays for it:
-
-**Fallback.** When the model call fails, keyword hits still become candidates.
-An API outage costs accuracy, not coverage.
-
-**Recall check.** It runs on every message even when the model succeeds, so the
-disagreement between them is measurable per hazard. Model-positive and
-keyword-negative says which stems to add; keyword-positive and model-negative,
-broken down by hazard, says where the prompt has grown too strict. A single
-classifier degrades first on its rare classes, and fire will always dominate
-this stream — without a per-hazard comparison, flood recall can fall to nothing
-behind a healthy-looking overall number.
-
-Tuned for recall, deliberately. A false positive costs one classification; a
-false negative is a missed event.
-
-Fire and flood defer to the curated filters already in the tree, which know far
-more inflections than a stem list does and return a confidence. Earthquake and
-air quality had nothing, and are stems.
-"""
+Runs on every message whether or not the model does: as the fallback when the
+model is unavailable, and as a standing check on what the model is missing.
+A word match says a word appeared, never that anything is happening."""
 
 from __future__ import annotations
 
@@ -27,7 +10,7 @@ import re
 import unicodedata
 
 from ecoguard.detectors.fire.telegram_candidate_filter import detect_fire_candidate
-from ecoguard.detectors.telegram.flood_candidate_filter import detect_flood_candidate
+from ecoguard.detectors.flood.telegram_candidate_filter import detect_flood_candidate
 
 FIRE = "fire"
 FLOOD = "flood"

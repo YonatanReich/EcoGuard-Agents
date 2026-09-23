@@ -1,4 +1,4 @@
-"""Evaluate land-cover and terrain additions using the established temporal method."""
+"""Measuring whether terrain and land cover actually improve the fire model, by the same method as the others."""
 
 from __future__ import annotations
 
@@ -43,6 +43,7 @@ class LandcoverTerrainTrainingError(RuntimeError): pass
 
 
 def assert_feature_allowlist(features=FULL_FEATURES):
+    """Refuse to train on anything outside the agreed inputs."""
     leaked = set(features) & FORBIDDEN_FEATURES
     if leaked: raise LandcoverTerrainTrainingError(f"forbidden features: {sorted(leaked)}")
     if len(features) != len(set(features)): raise LandcoverTerrainTrainingError("duplicate model features")
@@ -50,6 +51,7 @@ def assert_feature_allowlist(features=FULL_FEATURES):
 
 
 def load_dataset(path: Path = DATASET_PATH):
+    """The training records from disk."""
     with path.open(encoding="utf-8-sig", newline="") as handle: rows = list(csv.DictReader(handle))
     if not rows or not {"sample_id", "timestamp", "fire_label", *FULL_FEATURES}.issubset(rows[0]):
         raise LandcoverTerrainTrainingError("land-cover/terrain dataset schema is incompatible")
@@ -61,11 +63,13 @@ def load_dataset(path: Path = DATASET_PATH):
 
 
 def _atomic_json(path: Path, value) -> None:
+    """Write JSON in one step, so a crash cannot leave it half written."""
     path.parent.mkdir(parents=True, exist_ok=True); temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8"); temporary.replace(path)
 
 
 def _atomic_csv(path: Path, fields, rows) -> None:
+    """Write a CSV in one step, so a crash cannot leave it half written."""
     temporary = path.with_suffix(path.suffix + ".tmp")
     with temporary.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n"); writer.writeheader(); writer.writerows(rows)
@@ -73,6 +77,7 @@ def _atomic_csv(path: Path, fields, rows) -> None:
 
 
 def land_cover_audit(rows):
+    """Whether the model does noticeably worse on some land cover than others."""
     grouped = {}
     for row in rows:
         category = row.get("land_cover_source_class") or "unavailable"
@@ -81,6 +86,7 @@ def land_cover_audit(rows):
 
 
 def train(*, dataset_path=DATASET_PATH, output_directory=OUTPUT_DIRECTORY, seed=RANDOM_SEED, creation_time=None):
+    """Train the model and write the results."""
     rows = load_dataset(dataset_path); splits = temporal_split(rows); ablations = {}; fitted = {}
     for name, features in ABLATIONS.items():
         train_x, train_y = matrix_for(splits["train"], features); validation_x, validation_y = matrix_for(splits["validation"], features); test_x, test_y = matrix_for(splits["test"], features)
@@ -104,6 +110,7 @@ def train(*, dataset_path=DATASET_PATH, output_directory=OUTPUT_DIRECTORY, seed=
 
 
 def main() -> int:
+    """Run the training from the command line."""
     parser = argparse.ArgumentParser(description=__doc__); parser.add_argument("--dataset", type=Path, default=DATASET_PATH); parser.add_argument("--output-dir", type=Path, default=OUTPUT_DIRECTORY); args = parser.parse_args()
     metrics = train(dataset_path=args.dataset, output_directory=args.output_dir); print(json.dumps(metrics, ensure_ascii=False, indent=2)); return 0
 

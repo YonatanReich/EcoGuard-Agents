@@ -27,10 +27,12 @@ DEFAULT_OUTPUT = REPO_ROOT / "venv/phase2-output/five-minute-observation-baselin
 
 
 def _json_bytes(payload) -> bytes:
+    """A payload as JSON bytes."""
     return (json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
 def _write_atomic(path: Path, content: bytes) -> None:
+    """Write a file in one step, so a crash cannot leave it half written."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     try:
@@ -42,12 +44,14 @@ def _write_atomic(path: Path, content: bytes) -> None:
 
 
 def _profile_filename(profile) -> str:
+    """Where one station's baseline is written."""
     identity = profile["identity"]
     pollutant = identity["pollutant"].lower().replace(".", "_")
     return f"station_{identity['station_id']}_channel_{identity['channel_id']}_{pollutant}_2021_2025.json"
 
 
 def main(argv=None) -> int:
+    """Build the baselines from the command line."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)

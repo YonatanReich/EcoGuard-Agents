@@ -18,6 +18,7 @@ BatchReader = Callable[..., list[dict[str, Any]]]
 
 
 def _default_reader(**kwargs):
+    """Read one baseline row, importing the database layer only when needed."""
     # Lazy import keeps schema/service unit tests and non-DB callers independent
     # of DATABASE_URL. This function itself remains SELECT-only.
     from ecoguard.database.repositories.air_pollution_baseline_lookup import (
@@ -27,6 +28,7 @@ def _default_reader(**kwargs):
 
 
 def _default_batch_reader(**kwargs):
+    """Read many baseline rows in one query."""
     # As above, delay DB configuration until a real lookup is executed.
     from ecoguard.database.repositories.air_pollution_baseline_lookup import (
         read_exact_baseline_candidates_batch,
@@ -35,6 +37,7 @@ def _default_batch_reader(**kwargs):
 
 
 def _catalog_evidence(rows: list[dict[str, Any]], pollutant: str):
+    """The station's name, location and unit for this pollutant."""
     if not rows:
         return None, None, None
     station_name = rows[0].get("station_name")
@@ -47,6 +50,7 @@ def _catalog_evidence(rows: list[dict[str, Any]], pollutant: str):
 
 
 def _version(row: dict[str, Any]) -> BaselineVersionProvenance:
+    """Which published baseline version a row came from."""
     fields = (
         "baseline_version_id", "parent_version_id", "content_sha256",
         "coverage_status", "lifecycle_status", "schema_version", "method_version",
@@ -59,6 +63,7 @@ def _version(row: dict[str, Any]) -> BaselineVersionProvenance:
 
 
 def _bucket(row: dict[str, Any]) -> BaselineBucketStatistics:
+    """One month-and-hour bucket's statistics, including its p95."""
     return BaselineBucketStatistics(
         status=row["bucket_status"], sample_count=row["sample_count"],
         distinct_days=row["distinct_days"], distinct_years=row["distinct_years"],
@@ -74,6 +79,7 @@ class AirPollutionBaselineLookupService:
         reader: Reader = _default_reader,
         batch_reader: BatchReader = _default_batch_reader,
     ):
+        """Build a lookup service. Readers are injectable so tests need no database."""
         self.reader = reader
         self.batch_reader = batch_reader
 
@@ -109,6 +115,7 @@ class AirPollutionBaselineLookupService:
         )
 
     def _lookup(self, identity, *, month, hour, mode, lifecycle_status, baseline_version_id):
+        """Find the baseline for one reading's station, month and hour."""
         try:
             exact = BaselineIdentity.model_validate(identity)
             if type(month) is not int or not 1 <= month <= 12:
@@ -138,6 +145,7 @@ class AirPollutionBaselineLookupService:
     def _lookup_batch(
         self, requests, *, mode, lifecycle_status, allow_version_id,
     ) -> list[BaselineLookupResult]:
+        """Find baselines for many readings in one query."""
         supplied = list(requests)
         results: list[BaselineLookupResult | None] = [None] * len(supplied)
         valid: list[tuple[int, BaselineLookupRequest]] = []
@@ -192,6 +200,7 @@ class AirPollutionBaselineLookupService:
     def _result_from_rows(
         *, exact, month, hour, mode, rows, baseline_version_id,
     ) -> BaselineLookupResult:
+        """Turn returned rows into a result, or say why there is none."""
         # A VALUES-driven outer join emits one all-null catalog row for an
         # uncataloged station. Normalize it to the single-lookup empty-row
         # semantics before interpreting the result.

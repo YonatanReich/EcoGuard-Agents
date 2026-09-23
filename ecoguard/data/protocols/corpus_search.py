@@ -1,31 +1,17 @@
-"""Hybrid retrieval over the Israeli procedure corpus.
+"""Searching the protocol corpus, two ways at once.
 
-Two channels, fused. Semantic search answers "what is this about", which is the
-only thing that works on Hebrew here — a lexical matcher sees `בשריפה`,
-`לשריפה`, `השריפה` and `שריפה` as four unrelated tokens, because Hebrew
-prefixes attach directly to the word. Measured on the existing BM25 retriever:
-the probe `שריפה מתקרבת ליישוב` returned zero results. Not degraded — blind.
+Meaning-based search answers "what is this about", and is the only thing that
+works on Hebrew here: a keyword matcher sees four spellings of the same word as
+four unrelated words, and a test query returned nothing at all - not degraded,
+blind.
 
-Lexical search answers "find me exactly this", which is the one thing semantic
-search is bad at: procedure numbers. `201.02.003` embedded is a smear of digits
-near every other procedure number in the corpus, and an operator asking for a
-procedure by number wants that procedure.
+Keyword search answers "find me exactly this", which meaning-based search is
+bad at: a procedure number embeds as a smear of digits near every other
+procedure number, and somebody asking for a procedure by number wants that
+procedure.
 
-Filter before ranking
----------------------
-`function` and `hazard` are applied as SQL predicates, not as scoring hints,
-and this is where most of the quality comes from. Measured on this corpus: for
-"fire approaching a settlement", high-rise structural tactics scores 0.804
-against the correct clause's 0.827. Two points of cosine between the right
-answer and building doctrine. A filter makes the wrong document unreachable; a
-better embedding only makes it less likely.
-
-Recency breaks ties
--------------------
-These procedures supersede each other and the corpus holds both versions. A
-2016 document outranking its 2025 replacement is a correctness failure wearing
-the costume of a ranking preference, so `publish_date` breaks ties descending.
-"""
+Passages are filtered by subject before ranking, and the newer document wins a
+tie."""
 
 from __future__ import annotations
 

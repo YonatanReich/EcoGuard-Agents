@@ -30,6 +30,7 @@ class AirPollutionPopulationAnalysisService:
     """Adapt shared PostGIS population aggregation to the Analyzer contract."""
 
     def __init__(self, population_query: PopulationQuery | None = None) -> None:
+        """Build the analyzer. The population query is injectable for testing."""
         if population_query is None:
             # Lazy import keeps offline Analyzer composition independent from
             # database configuration until this optional service is enabled.
@@ -48,6 +49,11 @@ class AirPollutionPopulationAnalysisService:
         evidence_id: str,
         queried_at: datetime,
     ) -> AnalysisComponent[PopulationImpactContext]:
+        """How many people the screening corridor intersects.
+
+        An intersection count, not an exposure estimate: living inside a corridor
+        is not evidence of having breathed anything, and the result says so.
+        """
         spatial = PollutionTransportSpatialOutput.model_validate(
             spatial_output.model_dump(round_trip=True)
         )

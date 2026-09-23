@@ -1,20 +1,7 @@
-"""Hourly Open-Meteo conditions for every service-area cell.
+"""Hourly weather observations for every grid cell.
 
-The only thing in the system that calls Open-Meteo. The fire-risk model and
-the per-coordinate API endpoints read what this writes, through
-`ecoguard.database.repositories.weather_history`, rather than each holding
-their own provider client.
-
-What it fetches is decided by what the database is missing, not by a fixed
-window. That one change does three jobs at once:
-
-  * an outage of any length repairs itself, where a six-hour lookback could
-    only ever repair an outage shorter than six hours
-  * a freshly migrated database backfills to the depth the model needs instead
-    of being useless for a week
-  * a steady-state tick that finds nothing missing makes no provider calls at
-    all, so running more often costs nothing
-"""
+The provider publishes hourly, so nothing new exists sooner. The collector asks
+only for the hours it does not already have."""
 
 from __future__ import annotations
 
@@ -55,6 +42,7 @@ MAX_REQUESTS_PER_TICK = 48
 
 
 def _current_hour(now: datetime) -> datetime:
+    """The hour containing this moment, since the provider publishes hourly."""
     return now.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
 
 
@@ -145,6 +133,7 @@ class WeatherCollector(BaseCollector):
         max_cell_hours_per_tick: int = MAX_CELL_HOURS_PER_TICK,
         max_requests_per_tick: int = MAX_REQUESTS_PER_TICK,
     ):
+        """Build the collector. Client and clock are injectable for testing."""
         # One long-lived client for the process. The scheduler builds the
         # collector once at import, so the client's pacing clock and 429
         # cooldown persist across ticks — a fresh client per tick would forget
@@ -155,6 +144,11 @@ class WeatherCollector(BaseCollector):
         self.max_requests_per_tick = max_requests_per_tick
 
     def fetch(self) -> list[dict[str, Any]]:
+        """The hours of weather this cell is still missing.
+
+        Asks only for what is absent, so a tick with nothing to collect makes no
+        requests at all.
+        """
         cells = service_area_cells()
         by_id = {cell.cell_id: cell for cell in cells}
 

@@ -210,6 +210,7 @@ STREAM_NETWORK_INPUT = text(
 
 
 def _station_context_rows(session: Any, table: str) -> list[dict[str, Any]]:
+    """The stored context rows for one kind of station."""
     eligibility_filter = (
         "WHERE station.flow_threshold_status = 'complete_thresholds'"
         if table == "hydrometric_stations"

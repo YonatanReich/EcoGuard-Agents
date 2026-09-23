@@ -1,33 +1,4 @@
-"""Build settlement polygons for Israel, the West Bank and the Golan, from OSM.
-
-The Ministry of Interior layer (muni_il) stops at local authorities: 81% of the
-country's area is regional councils, and a regional council is one polygon
-covering dozens of separate villages. For spread analysis that is the wrong
-granularity — a forecast ring intersected against מטה יהודה tells you 477 km²
-of "affected" and names no village. This builds the missing level: one polygon
-per actual settlement, including the West Bank ones the Ministry layer omits
-entirely.
-
-OpenStreetMap is the source because it is the only one that covers all three
-territories, is current, and is redistributable (ODbL — attribution required).
-Settlements arrive two ways:
-
-  place polygons   a way or relation tagged place=city|town|village|...
-                   1,700-odd of these, and the preferred source.
-  built-up         a place *node* with no polygon, matched to the residential
-                   landuse around it. OSM maps a town as many small blocks
-                   split by streets, so the blocks are morphologically closed
-                   (dilate, union, erode) into one footprint before matching.
-
-Output geometry is Polygon, never MultiPolygon, because exposure.load_localities
-skips anything else; a settlement mapped in disjoint parts becomes one feature
-per part, sharing a name and carrying a suffixed locality_id.
-
-Run from the repo root:
-
-    python ecoguard/scripts/build_localities.py            # uses cached OSM
-    python ecoguard/scripts/build_localities.py --refresh  # re-downloads
-"""
+"""Building the settlement outlines from public map data."""
 
 from __future__ import annotations
 
@@ -130,6 +101,7 @@ def fetch(name: str, refresh: bool) -> list[dict]:
 
 
 def _ring(coords) -> list[tuple[float, float]]:
+    """One closed outline from a map feature."""
     return [(c["lon"], c["lat"]) for c in coords or ()]
 
 
@@ -207,6 +179,7 @@ def slugify(name: str, fallback: str) -> str:
 
 
 def main() -> None:
+    """Build the settlement outlines from the command line."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--refresh", action="store_true",
                         help="re-download from Overpass instead of using the cache")

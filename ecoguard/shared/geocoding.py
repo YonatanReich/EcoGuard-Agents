@@ -1,4 +1,12 @@
-"""Standalone, cache-first Nominatim geocoding for extracted fire locations."""
+"""Turning a written place name into a coordinate.
+
+Used by the text lane, where a report says "the industrial zone in Haifa"
+rather than giving a position.
+
+Answers are checked before they are accepted - a provider will happily match a
+street in one town with a street of the same name in another - and cached on
+disk, because the same places recur constantly and the provider is a free
+service with a rate limit."""
 
 from __future__ import annotations
 
@@ -41,6 +49,7 @@ _NIQQUD_PATTERN = re.compile(
 
 
 def _empty_result(status: str, query: str | None = None) -> dict:
+    """A result carrying no coordinate, and the reason there is none."""
     return {
         "latitude": None,
         "longitude": None,
@@ -53,6 +62,7 @@ def _empty_result(status: str, query: str | None = None) -> dict:
 
 
 def _normalize(value: object) -> str:
+    """A name in one spelling, so two writings of the same place compare equal."""
     text = _NIQQUD_PATTERN.sub("", str(value or ""))
     text = "".join(
         " " if unicodedata.category(character).startswith("P") else character
@@ -75,6 +85,7 @@ class NominatimGeocoder:
         sleep: Callable[[float], None] = time.sleep,
         country_codes: str = "il",
     ) -> None:
+        """Build the geocoder. Transport, cache and clock are injectable for testing."""
         configured_base_url = (
             os.getenv("NOMINATIM_BASE_URL") if base_url is None else base_url
         )
@@ -103,6 +114,7 @@ class NominatimGeocoder:
         self._initialize_cache()
 
     def _initialize_cache(self) -> None:
+        """Prepare the on-disk cache, so a place looked up once is not looked up again."""
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(self.cache_path) as connection:
             connection.execute(
@@ -116,6 +128,7 @@ class NominatimGeocoder:
             )
 
     def _cache_key(self, kind: str, components: dict) -> str:
+        """A stable key for one lookup."""
         payload = json.dumps(
             {
                 "base_url": self.base_url,
@@ -131,6 +144,7 @@ class NominatimGeocoder:
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def _cached(self, cache_key: str) -> dict | None:
+        """A previous answer for this lookup, when one is still fresh."""
         now = self.clock()
         with sqlite3.connect(self.cache_path) as connection:
             row = connection.execute(
@@ -147,6 +161,7 @@ class NominatimGeocoder:
         return json.loads(row[0])
 
     def _store(self, cache_key: str, result: dict, ttl_seconds: int) -> None:
+        """Keep an answer for later, for as long as it stays useful."""
         with sqlite3.connect(self.cache_path) as connection:
             connection.execute(
                 "INSERT OR REPLACE INTO geocode_cache VALUES (?, ?, ?)",
@@ -158,6 +173,7 @@ class NominatimGeocoder:
             )
 
     def _wait_for_rate_limit(self) -> None:
+        """Wait if necessary, so the provider's rate limit is respected."""
         now = self.clock()
         wait_until = self._blocked_until
         if self._last_request_at is not None:
@@ -170,6 +186,7 @@ class NominatimGeocoder:
             self.sleep(delay)
 
     def _record_retry_after(self, response: object) -> None:
+        """Note how long the provider asked us to wait."""
         value = getattr(response, "headers", {}).get("Retry-After")
         if value is None:
             return
@@ -180,6 +197,7 @@ class NominatimGeocoder:
         self._blocked_until = max(self._blocked_until, self.clock() + seconds)
 
     def _query(self, kind: str, components: dict) -> tuple[dict, str]:
+        """The request parameters for one kind of lookup."""
         common = {
             "format": "jsonv2",
             "addressdetails": 1,
@@ -202,6 +220,7 @@ class NominatimGeocoder:
 
     @staticmethod
     def _matches_expected(value: object, expected: str) -> bool:
+        """Whether two names refer to the same place, ignoring spelling differences."""
         return _normalize(value) == _normalize(expected)
 
     def _valid_candidate(
@@ -210,6 +229,12 @@ class NominatimGeocoder:
         kind: str,
         components: dict,
     ) -> tuple[float, float, float] | None:
+        """One candidate answer, or None when it is not the place that was asked for.
+
+        A provider will happily answer a street in one town with a street of the
+        same name in another, so the town, the street and the country all have to
+        match before a coordinate is accepted.
+        """
         address = candidate.get("address")
         if (
             not isinstance(address, dict)
@@ -256,6 +281,7 @@ class NominatimGeocoder:
         return latitude, longitude, importance
 
     def _request(self, kind: str, components: dict) -> dict:
+        """Make one lookup, answering from the cache when it can."""
         params, query_text = self._query(kind, components)
         cache_key = self._cache_key(kind, components)
         cached = self._cached(cache_key)

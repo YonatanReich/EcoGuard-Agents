@@ -1,31 +1,7 @@
-"""
-Response Planning Agent
+"""The fire planner used by the older single-point fire query.
 
-Responsible for turning an assessed fire event into a concrete, protocol-grounded
-response plan: which emergency units to activate, and what each should do by when.
-
-Why this is a separate agent and a second model call:
-    A single call producing both the risk score and the plan would be cheaper.
-    It retrieves worse, though, and that is the deciding factor. The risk agent
-    queries the corpus for classification and danger-rating language; this agent
-    queries the same corpus for action, mobilisation and evacuation language.
-    One blended query returns a compromise that serves neither well, and
-    "retrieve and cite protocol content" for both halves is the substance of
-    this sprint rather than an architectural nicety.
-
-    It also matches how the repo already reasons. FireDetectionAgent explicitly
-    refuses to compute a risk score, keeping detection, satellite confidence and
-    fire-weather severity distinct. Risk and response plan are distinct in the
-    same way. And separating them means a planning failure still leaves a usable
-    risk score on the map rather than losing both.
-
-The hard gate:
-    plan_response refuses to run unless the risk assessment succeeded. Producing
-    a response plan for a risk we could not determine would be fabrication of
-    the worst kind — an operator could act on it. It also means no model call is
-    made for the no-event scans that make up most requests.
-
-Consumed by: ecoguard.api.main.get_detected_events
+Wraps the shared emergency planner so the legacy endpoint keeps its original
+input and output shapes. Not part of the scheduled pipeline.
 """
 
 from __future__ import annotations
@@ -159,6 +135,7 @@ class ResponsePlanningAgent:
         retriever: object | None = None,
         top_k: int = DEFAULT_TOP_K,
     ) -> None:
+        """Build the planner. The retriever and model client are injectable for testing."""
         self.llm_service = llm_service if llm_service is not None else ClaudeLLMService()
         self.retriever = retriever if retriever is not None else ProtocolRetriever()
         self.top_k = top_k
@@ -203,6 +180,7 @@ class ResponsePlanningAgent:
         return self._legacy_wire_result(result)
 
     def _shared_query(self, analysis) -> str:
+        """The guidance search text, built from the legacy event shape."""
         context = analysis.additional_context
         legacy_terms = self.build_query(
             context["detected_event"], context["risk_assessment"]
@@ -210,6 +188,7 @@ class ResponsePlanningAgent:
         return f"{analysis.event_description} {legacy_terms}"
 
     def _shared_prompt(self, analysis, chunks):
+        """The model message, built from the legacy event shape."""
         context = analysis.additional_context
         system_blocks, legacy_prompt = self.build_prompt(
             context["detected_event"], context["risk_assessment"], chunks

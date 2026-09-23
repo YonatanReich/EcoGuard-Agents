@@ -1,1 +1,1 @@
-"""Non-emergency Air Pollution analysis and transport evidence."""
+"""How unusual a pollution reading is, where it may drift, and who is nearby."""

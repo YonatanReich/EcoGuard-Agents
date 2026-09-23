@@ -1,4 +1,4 @@
-"""Backend mirror of the frontend SharedEvent delivery contract."""
+"""The event shape the dashboard reads, defined here so the backend and the frontend cannot drift apart."""
 
 from __future__ import annotations
 
@@ -597,6 +597,7 @@ class AirPollutionDetails(EventContract):
 
     @model_validator(mode="after")
     def _ministry_index_matches_projected_anomaly(self):
+        """Reject an event whose official index disagrees with the reading it was built from."""
         index = self.ministry_aqi
         if index is None:
             return self

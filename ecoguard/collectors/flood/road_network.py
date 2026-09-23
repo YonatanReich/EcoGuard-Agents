@@ -1,11 +1,4 @@
-"""Import a routable road-line GeoJSON layer for flood spatial screening.
-
-The flood allocator needs complete line geometry; Mapbox Directions only
-answers routing questions after a destination is already known.  This module
-therefore accepts a local GeoJSON export (normally OpenStreetMap-derived),
-normalises its road taxonomy to Mapbox Streets classes, and replaces one
-source's rows atomically in ``road_segments``.
-"""
+"""Road geometry, used to say which roads a flood affects."""
 
 from __future__ import annotations
 
@@ -71,6 +64,7 @@ _TRUE_VALUES = {"yes", "true", "1", "designated", "permissive"}
 
 
 def _text(value: object) -> str | None:
+    """A value as text, or None when absent."""
     if value is None:
         return None
     result = str(value).strip()
@@ -118,6 +112,7 @@ def vehicle_access(properties: Mapping[str, Any]) -> bool | None:
 
 
 def _feature_identity(feature: Mapping[str, Any], properties: Mapping[str, Any]) -> str:
+    """A stable identifier for one road feature, so re-imports do not duplicate."""
     explicit = (
         feature.get("id")
         or properties.get("osm_id")

@@ -10,7 +10,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import TypeAdapter
 
-from ecoguard.analyzers.emergency.fire.incident_handler import FireIncidentHandler
+from ecoguard.analyzers.fire.incident_handler import FireIncidentHandler
 from ecoguard.api.events import (
     manual_fire_test_enabled,
     set_manual_test_feed,
@@ -29,7 +29,7 @@ from ecoguard.coordinator.event_projection import project_processing_results
 from ecoguard.detectors.fire.satellite import _report
 from ecoguard.resource_allocator.allocation_agent import ResourceAllocationAgent
 from ecoguard.resource_allocator.mapbox_client import MapboxClient
-from ecoguard.response_planner.emergency.schemas import (
+from ecoguard.planners.shared.schemas import (
     EmergencyResponsePlan,
     EmergencyResponsePlanInput,
 )
@@ -79,6 +79,7 @@ def _signal(
     novelty: float | None = 0.7,
     frp: float = 64.0,
 ) -> CellSignal:
+    """One synthetic fire detection, with the fields a real one would carry."""
     location = (
         CellLocation(latitude, longitude, 375.0, "frp_weighted_centroid")
         if latitude is not None and longitude is not None
@@ -135,6 +136,7 @@ def _signal(
 
 
 def _scenario_signals(scenario: str, start: datetime) -> list[CellSignal]:
+    """The detections that make up one named walkthrough."""
     routine = _signal(observed_at=start, rarity=0.90, novelty=0.20, frp=1.2)
     reportable = _signal(observed_at=start + timedelta(minutes=10))
     if scenario == "routine_suppressed":
@@ -174,10 +176,12 @@ class SyntheticRiskAnalyzer:
     """Deterministic RiskAnalysisAgent replacement that cannot call Claude."""
 
     def __init__(self, scenario: str) -> None:
+        """Build the stand-in for this walkthrough."""
         self.scenario = scenario
         self.calls: list[dict[str, Any]] = []
 
     def analyze_event(self, detected_event: dict[str, Any]) -> dict[str, Any]:
+        """Return the analysis this walkthrough is meant to produce."""
         self.calls.append(deepcopy(detected_event))
         if self.scenario == "risk_failure":
             return {
@@ -243,10 +247,12 @@ class SyntheticFirePlanner:
     """Schema-valid EmergencyResponsePlanner replacement with no model call."""
 
     def __init__(self, scenario: str) -> None:
+        """Build the stand-in for this walkthrough."""
         self.scenario = scenario
         self.calls: list[EmergencyResponsePlanInput] = []
 
     def plan_response(self, value: Any) -> EmergencyResponsePlan:
+        """Return the plan this walkthrough is meant to produce."""
         plan_input = EmergencyResponsePlanInput.model_validate(value)
         self.calls.append(plan_input)
         if self.scenario == "planner_failure":
@@ -307,6 +313,7 @@ class SyntheticFirePlanner:
 
 
 def _require_mode() -> None:
+    """Hide these routes entirely unless the walkthrough is switched on."""
     if not manual_fire_test_enabled():
         raise HTTPException(
             status_code=404,
@@ -316,12 +323,14 @@ def _require_mode() -> None:
 
 @router.get("")
 def scenarios() -> dict[str, str]:
+    """The walkthroughs available to run."""
     _require_mode()
     return SCENARIOS
 
 
 @router.get("/latest")
 def latest() -> dict[str, Any]:
+    """The report from the last walkthrough that ran."""
     _require_mode()
     if _latest_report is None:
         raise HTTPException(status_code=404, detail="No manual Fire test has run")
@@ -330,6 +339,7 @@ def latest() -> dict[str, Any]:
 
 @router.post("/{scenario}/run")
 def run_scenario(scenario: str) -> dict[str, Any]:
+    """Run one walkthrough end to end and report what each stage did."""
     global _latest_report
     _require_mode()
     if scenario not in SCENARIOS:

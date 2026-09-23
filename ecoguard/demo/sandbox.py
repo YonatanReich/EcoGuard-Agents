@@ -1,18 +1,10 @@
-"""Build, seed, enter and leave a controlled scenario world.
+"""Pointing the whole pipeline at a demo dataset instead of live data.
 
-A scenario run answers a question the live system cannot: *is the output
-correct?* On real data nobody knows what the right answer was. Here the events
-are authored first, the evidence is derived from them, and the expected result
-is written down before the pipeline runs — so "it detected three fires" can be
-checked rather than admired.
+Swaps the database schema the detectors read from, so everything downstream
+runs unchanged and unaware. Live collection is paused while a demo runs, and
+resumed when it ends.
 
-How the isolation works is in ecoguard.database.engine: a schema in front of
-`public` on the search path, holding only the tables the pipeline *writes*.
-Reference data is deliberately absent from it so those lookups fall through to
-the real country.
-
-Consumed by: ecoguard.api.scenario
-"""
+The demo data is kept, not dropped, so the same scenario can be shown again."""
 
 from __future__ import annotations
 
@@ -191,6 +183,7 @@ WAVE_JOB_ID = "detect_and_coordinate"
 
 
 def _scheduler():
+    """The running scheduler, imported late so this module can be used without one."""
     from ecoguard.scheduler import scheduler
 
     return scheduler
@@ -256,6 +249,7 @@ def kick_wave() -> bool:
         return False
 
     def run() -> None:
+        """Run one detection tick against the sandbox."""
         try:
             from ecoguard.scheduler import detect_and_coordinate
 
@@ -293,6 +287,7 @@ def _schedule_stop(*, keep_data: bool) -> None:
     waiting_for = _wave_thread
 
     def watcher() -> None:
+        """Wait for the demo to finish, then put everything back."""
         global _stopping
         try:
             if waiting_for is not None:

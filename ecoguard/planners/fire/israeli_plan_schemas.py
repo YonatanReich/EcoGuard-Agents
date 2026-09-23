@@ -1,49 +1,8 @@
-"""The shape of a fire response plan, and the vocabulary it may use.
+"""The shape of a fire response plan and the rules it must satisfy.
 
-Constrained at the schema rather than in the prompt, because a prompt is a
-request and a schema is a guarantee. The two things this file exists to make
-impossible:
-
-**A plan an Israeli dispatcher cannot act on.** International doctrine is in
-the corpus for fire-behaviour reasoning, not for vocabulary. "Two Type 3
-engines and a Type 1 hand crew" is unusable here and unassignable by the
-allocator, so the resource enum is drawn from the Hebrew corpus and anything
-outside it fails validation.
-
-**An unsourced recommendation.** Every action cites the procedure and clause it
-rests on. A plan that cannot show its authority is not a weaker plan, it is a
-different kind of object, and the validator refuses it.
-
-What the model writes, and what it does not
--------------------------------------------
-This schema holds only what the model produces: the shape of the response.
-The facts it reasons over — whether this is a national event, which stations
-are responsible, how many teams — are computed in code and travel beside the
-plan on `PlannerResult`, never inside it.
-
-That follows the pattern the air pollution planner already established, where
-the analyser's measured settlements and the planner's recommendations sit side
-by side in the event and neither swallows the other. The alternative — letting
-the model emit a station name and overwriting it afterwards — needs the
-overwrite to be remembered forever, and the first time somebody forgets, a
-plausible wrong station name reaches a dispatcher.
-
-On the size of a plan
----------------------
-Every list here is capped at what a duty officer reads at 2am, not at what a
-model can produce. The first version allowed fifteen actions, twelve resource
-requests and twelve citations with 600-character quotes — which exceeded the
-output token budget and came back as truncated JSON, failing validation with
-nothing useful in it. A plan too long to finish generating is also a plan too
-long to act on, so the caps were tightened rather than only the budget raised.
-
-On coverage gaps
-----------------
-`coverage_gaps` is required rather than optional, and the reason is the corpus
-rather than the code. There is no Israeli dispatch guidance table in these
-documents — it lives in שלהבת, the CAD system — so no plan here can say how
-many appliances with authority. Saying so is the honest output; inventing a
-number that looks identical on the page is the dishonest one.
+The validators here are the safety net: a plan whose status contradicts its
+contents, or whose actions name units it never recommended, is rejected before
+anyone sees it.
 """
 
 from __future__ import annotations
@@ -241,6 +200,7 @@ class PlannerResult(PlanContract):
 
     @model_validator(mode="after")
     def _status_is_coherent(self) -> "PlannerResult":
+        """Reject a result whose status and plan disagree."""
         if self.status == "success" and self.plan is None:
             raise ValueError("a successful result must carry a plan")
         if self.status != "success" and self.plan is not None:

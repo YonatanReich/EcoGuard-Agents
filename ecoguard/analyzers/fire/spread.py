@@ -1,32 +1,8 @@
-"""Where a fire that already exists is going, and how fast.
+"""How fast and in which direction a fire is likely to spread.
 
-`risk_prediction_agent.py` answers a different question — how likely a fire is
-to *start* in a cell. Once one has started that model has nothing further to
-say, and there is no trained model here to replace it with: spread supervision
-needs labelled perimeter time-series, and Israel produces a handful of fires a
-year large enough to have one. A neural spread model fitted on what exists
-would be a number that merely looks real.
-
-So this is physics, not statistics. Rothermel's 1972 surface equations give a
-rate of spread from the fuel bed, its moisture, the wind and the slope;
-Anderson's 1983 length-to-width ratio turns that scalar into the ellipse a
-point ignition actually grows into. Both are what FARSITE and BehavePlus run
-on, both need no training data, and every constant below is published and
-checkable against the Anderson 13 tables.
-
-Two rings come out, not one:
-
-  * **likely** — one ellipse at the forecast wind.
-  * **possible** — the union of an ensemble over the wind the forecast might be
-    wrong by. Every member contains the ignition point, so every member is
-    star-shaped about it, and the union is then exactly the per-bearing maximum
-    radius. That is the whole reason this needs no geometry library.
-
-What this does NOT model: suppression, spotting ahead of the front, crown fire
-as its own regime, and any barrier finer than the cover grid. The rings are
-where an unopposed flaming front can reach. A fire with an engine on it does
-not do this, and the report layer has to say so.
-"""
+Combines wind, slope and what is burning into a rate and a direction. The land
+cover decides how readily fire carries, so scrub and bare rock are not treated
+alike."""
 
 from __future__ import annotations
 
@@ -255,6 +231,7 @@ def rate_of_spread(
     # Weight each class by the surface area it presents, because that is what
     # exchanges heat — not by how much it weighs.
     def _areas(classes):
+        """How much ground each land-cover class covers in the area."""
         return [load * sav / PARTICLE_DENSITY_LB_FT3 for load, sav, _ in classes]
 
     dead_areas, live_areas = _areas(dead), _areas(live)
@@ -269,6 +246,7 @@ def rate_of_spread(
     live_share = live_area / total_area
 
     def _weighted(classes, weights, index):
+        """One value averaged across classes, weighted by how much ground each covers."""
         return sum(weight * item[index] for weight, item in zip(weights, classes))
 
     sigma_dead = _weighted(dead, dead_weights, 1)
@@ -337,6 +315,7 @@ def rate_of_spread(
     # Heat sink: what it costs to bring the next fuel up to ignition. Weighted
     # the same way, so wet live fuel raises the cost instead of vanishing.
     def _sink(classes, weights):
+        """How much of the area will not carry fire, such as water or bare rock."""
         return sum(
             weight * math.exp(-138.0 / sav) * (250.0 + 1116.0 * class_moisture)
             for weight, (_, sav, class_moisture) in zip(weights, classes)

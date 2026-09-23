@@ -73,6 +73,7 @@ class AirPollutionIncidentHandler:
         verification_service: AirPollutionAdditionalVerificationService | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
+        """Build the handler with its analyzer and planner."""
         self._analyzer = analyzer
         self._planner = planner
         self._verification_service = (
@@ -85,6 +86,11 @@ class AirPollutionIncidentHandler:
         incident: Mapping[str, Any],
         context: IncidentDispatchContext,
     ) -> IncidentProcessingResult:
+        """Analyse one pollution incident and produce advisory recommendations.
+
+        Rebuilds the evidence from what the incident stored, so the analysis does
+        not depend on the detector still being in memory.
+        """
         if context.hazard != "air_pollution" or context.route != "non_emergency":
             raise ValueError("Air Pollution handler requires its advisory route")
         try:
@@ -176,6 +182,7 @@ class AirPollutionIncidentHandler:
         classification,
         policy,
     ) -> AirPollutionEventAnalysis:
+        """Apply the publication rule that decides whether this reaches the map."""
         verification = self._verification_service.verify(
             incident=incident,
             analysis=analysis,
@@ -200,6 +207,7 @@ class AirPollutionIncidentHandler:
         latest: PollutionCorrelationCandidate,
         severity,
     ):
+        """Whether this episode qualifies for the dashboard, and why."""
         ministry = (
             severity.result.ministry_index
             if severity.result is not None
@@ -250,6 +258,7 @@ class AirPollutionIncidentHandler:
         analysis_status: str | None = None,
         analysis_result: Any | None = None,
     ) -> IncidentProcessingResult:
+        """A result carrying the stage and reason nothing could be produced."""
         logger.exception(
             "Air Pollution incident %s failed during %s",
             context.incident_id,
@@ -277,6 +286,7 @@ class AirPollutionIncidentHandler:
         )
 
     def _now(self) -> datetime:
+        """The current time, from the injected clock."""
         value = self._clock()
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("handler clock must carry a UTC offset")
@@ -320,6 +330,7 @@ def pollution_candidates_from_incident(
 def _candidate_reference(
     candidate: PollutionCorrelationCandidate,
 ) -> TransportEvidenceReference:
+    """A short pointer to the reading an analysis was built from."""
     anomaly = candidate.anomaly
     baseline = anomaly.baseline_evidence
     return TransportEvidenceReference(

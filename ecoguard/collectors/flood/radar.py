@@ -61,10 +61,12 @@ class RadarFrame:
 
     @property
     def height(self) -> int:
+        """The frame's height in pixels."""
         return int(self.data_mm_h.shape[0])
 
     @property
     def width(self) -> int:
+        """The frame's width in pixels."""
         return int(self.data_mm_h.shape[1])
 
 
@@ -80,6 +82,7 @@ class RadarCellMapping:
 
 
 def _text_attribute(value: Any) -> str:
+    """An image attribute as text."""
     if isinstance(value, bytes):
         return value.decode("utf-8")
     if isinstance(value, np.bytes_):
@@ -147,6 +150,7 @@ def read_radar_frame(content: bytes, *, source_name: str = "radar.h5") -> RadarF
 
 
 def radar_geometry_signature(frame: RadarFrame) -> str:
+    """A fingerprint of a radar frame's layout, so its grid mapping can be reused."""
     description = json.dumps(
         {
             "projection": frame.projection,
@@ -266,6 +270,7 @@ def records_from_frame(
 
 
 def _load_mapping(signature: str) -> list[RadarCellMapping]:
+    """A previously computed radar-to-cell mapping."""
     from ecoguard.database.engine import Session
 
     with Session() as session:
@@ -304,6 +309,7 @@ def _load_active_rain_cells() -> set[str]:
 
 
 def _save_mapping(signature: str, mappings: list[RadarCellMapping]) -> None:
+    """Store a radar-to-cell mapping for reuse."""
     if not mappings:
         return
     from ecoguard.database.engine import Session
@@ -337,6 +343,7 @@ def _save_mapping(signature: str, mappings: list[RadarCellMapping]) -> None:
 
 
 def load_or_build_mapping(frame: RadarFrame) -> list[RadarCellMapping]:
+    """The mapping from radar pixels to grid cells, computed once per layout."""
     signature = radar_geometry_signature(frame)
     mappings = _load_mapping(signature)
     if mappings:
@@ -347,6 +354,7 @@ def load_or_build_mapping(frame: RadarFrame) -> list[RadarCellMapping]:
 
 
 def _ppi_observed_at(name: str) -> datetime | None:
+    """The time a radar image was taken, from its filename."""
     match = PPI_TIMESTAMP.search(name)
     if match is None:
         return None
@@ -356,6 +364,7 @@ def _ppi_observed_at(name: str) -> datetime | None:
 
 
 def _all_ppi_links(index_html: str) -> list[tuple[datetime, str]]:
+    """Every radar image the provider currently lists, with its time."""
     links = {html.unescape(match) for match in PPI_LINK.findall(index_html)}
     parsed = [(_ppi_observed_at(name), name) for name in links]
     return sorted(
@@ -403,6 +412,7 @@ def ppi_links_since(
 
 
 def _latest_cached_frame_time() -> datetime | None:
+    """The newest radar frame already stored."""
     from ecoguard.database.engine import Session
 
     with Session() as session:
@@ -463,6 +473,7 @@ class RadarPPICollector(BaseCollector):
         username: str | None = None,
         password: str | None = None,
     ) -> None:
+        """Build the collector. Session and clock are injectable for testing."""
         self.http = http_session or requests.Session()
         self.index_url = index_url
         self.initial_frames = initial_frames
@@ -513,6 +524,7 @@ class RadarPPICollector(BaseCollector):
         response.raise_for_status()
 
     def _fetch_batch(self) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Download one batch of radar frames and turn them into readings."""
         index = self.http.get(self.index_url, timeout=REQUEST_TIMEOUT_SECONDS)
         self._require_success(index)
         records: list[dict[str, Any]] = []
@@ -549,6 +561,7 @@ class RadarPPICollector(BaseCollector):
         return records, frames
 
     def fetch(self) -> list[dict[str, Any]]:
+        """Every radar frame published since the last one stored."""
         records, _ = self._fetch_batch()
         return records
 

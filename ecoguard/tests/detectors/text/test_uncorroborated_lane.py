@@ -14,10 +14,10 @@ from ecoguard.coordinator.dispatcher import (
     is_uncorroborated_report,
 )
 from ecoguard.detectors.text.triage import Report, triage
-from ecoguard.response_planner.uncorroborated.incident_handler import (
+from ecoguard.planners.uncorroborated.incident_handler import (
     UncorroboratedReportHandler,
 )
-from ecoguard.response_planner.uncorroborated.planner import (
+from ecoguard.planners.uncorroborated.planner import (
     UncorroboratedReportPlanner,
 )
 

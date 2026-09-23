@@ -40,7 +40,9 @@ LIMITATIONS = [
 class GeospatialProvider(Protocol):
     def fetch_nearby_context(
         self, latitude: float, longitude: float, radius_km: float = 2
-    ) -> dict: ...
+    ) -> dict:
+        """Look up what is near a point: towns, roads and other map features."""
+        ...
 
 
 TownLookup = Callable[..., TownLookupResult]
@@ -55,6 +57,7 @@ class AirPollutionSpatialEnricher:
         *,
         town_lookup: TownLookup = nearby_towns,
     ):
+        """Build the enricher. The lookup is injectable so tests need no database."""
         # Deliberately no default Overpass provider. Fire and the shared
         # geospatial service retain their existing behavior.
         self.provider = geospatial_provider
@@ -85,6 +88,11 @@ class AirPollutionSpatialEnricher:
         radius_km: float = 2.0,
         geospatial_context: Mapping | None = None,
     ) -> SpatiallyEnrichedAirPollutionAnomaly:
+        """Attach nearby places to an anomaly.
+
+        Context only: being near a town is not evidence that anyone was exposed,
+        and the result says so.
+        """
         validated = AirPollutionAnomaly.model_validate(anomaly.model_dump())
         context = PollutionSpatialContext(
             location=validated.location,
@@ -146,6 +154,7 @@ class AirPollutionSpatialEnricher:
         location: GeographicCoordinate,
         radius_km: float,
     ) -> None:
+        """Attach nearby settlements and their populations."""
         try:
             result = self.town_lookup(
                 latitude=location.latitude,
@@ -191,6 +200,7 @@ class AirPollutionSpatialEnricher:
         anomaly_location: GeographicCoordinate,
         radius_km: float,
     ) -> None:
+        """Attach the remaining nearby features, such as roads and industry."""
         if not isinstance(response, Mapping):
             context.errors.append("malformed_geospatial_response")
             return
@@ -250,6 +260,7 @@ class AirPollutionSpatialEnricher:
         anomaly_location: GeographicCoordinate,
         radius_km: float,
     ) -> bool:
+        """Run one nearby-feature query and return what it found."""
         try:
             if not isinstance(lookup, Mapping):
                 return False
