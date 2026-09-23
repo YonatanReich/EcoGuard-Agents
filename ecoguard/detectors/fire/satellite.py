@@ -26,6 +26,7 @@ from ecoguard.database.repositories.collector_runs import (
     log_finish,
     log_start,
 )
+from ecoguard.detectors.shared.window import catchup_floor
 from ecoguard.shared.signals import (
     FIRE,
     GEOSTATIONARY_PIXEL_M,
@@ -347,10 +348,10 @@ def detect_new(*, reportable_only: bool = True) -> list[CellSignal]:
     the read is seen now and again next time. The coordinator absorbs the
     repeat. Nothing is dropped.
     """
-    since = last_success_at(RUN_SOURCE)
+    now = datetime.now(timezone.utc)
+    since = catchup_floor(last_success_at(RUN_SOURCE), now)
     run_id = log_start(RUN_SOURCE)
     try:
-        now = datetime.now(timezone.utc)
         signals = _signals_from(
             arrivals_since(since, now), now, reportable_only=reportable_only
         )

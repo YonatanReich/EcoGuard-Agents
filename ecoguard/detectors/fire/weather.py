@@ -30,6 +30,7 @@ from ecoguard.shared.signals import (
     direction_for,
     rarity_from_baseline,
 )
+from ecoguard.detectors.shared.window import catchup_floor
 
 logger = logging.getLogger(__name__)
 
@@ -267,10 +268,10 @@ def detect_new(*, reportable_only: bool = True) -> list[CellSignal]:
     then read the rows, so the overlap falls on the safe side. A tick that never
     happened costs nothing but latency.
     """
-    since = last_success_at(RUN_SOURCE)
+    now = datetime.now(timezone.utc)
+    since = catchup_floor(last_success_at(RUN_SOURCE), now)
     run_id = log_start(RUN_SOURCE)
     try:
-        now = datetime.now(timezone.utc)
         signals = _signals_from(
             arrivals_since(since, now), reportable_only=reportable_only
         )

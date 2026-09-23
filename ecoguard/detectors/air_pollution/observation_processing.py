@@ -39,6 +39,7 @@ from ecoguard.detectors.air_pollution.live_baseline import (
 )
 from ecoguard.shared.air_quality_schemas import AirQualityObservation
 from ecoguard.shared.signals import CellSignal
+from ecoguard.detectors.shared.window import catchup_floor
 
 logger = logging.getLogger(__name__)
 
@@ -247,13 +248,14 @@ def detect_new(
         log_start,
     )
 
-    since = last_success_at(RUN_SOURCE)
+    bookmark = last_success_at(RUN_SOURCE)
     run_id = log_start(RUN_SOURCE)
     try:
         through = at or datetime.now(timezone.utc)
         if through.tzinfo is None or through.utcoffset() is None:
             raise ValueError("at must carry a UTC offset")
         through = through.astimezone(timezone.utc)
+        since = catchup_floor(bookmark, through)
         cursor_at = since
         cursor_id = 0 if since is not None else None
         service = processor or AirPollutionObservationProcessor()

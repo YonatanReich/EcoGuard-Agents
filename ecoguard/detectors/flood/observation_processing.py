@@ -22,6 +22,7 @@ from ecoguard.database.repositories.observations import read_observations_batch
 from ecoguard.detectors.flood.detection_agent import FloodDetectionAgent
 from ecoguard.detectors.flood.station_rules import HYDROMETRIC_SOURCE
 from ecoguard.shared.signals import CellSignal
+from ecoguard.detectors.shared.window import catchup_floor
 
 
 RUN_SOURCE = "flood_detection"
@@ -58,7 +59,7 @@ def detect_new(
     if through.tzinfo is None or through.utcoffset() is None:
         raise ValueError("at must carry a UTC offset")
     through = through.astimezone(timezone.utc)
-    since = last_success_at(RUN_SOURCE)
+    since = catchup_floor(last_success_at(RUN_SOURCE), through)
     run_id = log_start(RUN_SOURCE)
 
     try:

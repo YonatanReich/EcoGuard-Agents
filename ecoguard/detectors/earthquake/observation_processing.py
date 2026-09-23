@@ -10,6 +10,7 @@ from ecoguard.collectors.earthquake.gsi import SOURCE
 from ecoguard.database.repositories.collector_runs import last_success_at, log_finish, log_start
 from ecoguard.database.repositories.observations import read_observations_batch
 from ecoguard.shared.signals import EARTHQUAKE, HIGH, CellLocation, CellSignal
+from ecoguard.detectors.shared.window import catchup_floor
 
 RUN_SOURCE = "earthquake_detection"
 MIN_DASHBOARD_MAGNITUDE = 3.5
@@ -53,7 +54,7 @@ def detect_new(*, at: datetime | None = None) -> list[CellSignal]:
     once however often this runs.
     """
     through = (at or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    since = last_success_at(RUN_SOURCE)
+    since = catchup_floor(last_success_at(RUN_SOURCE), through)
     run_id = log_start(RUN_SOURCE)
     try:
         rows = read_observations_batch(
