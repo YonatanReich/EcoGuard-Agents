@@ -15,6 +15,7 @@ from ecoguard.resource_allocator.allocation_agent import (
     EARTHQUAKE_MINIMUM_RESPONSE_POLICY,
 )
 from ecoguard.resource_allocator.geo import coordinates
+from ecoguard.resource_allocator.station_catalog import resource_key
 from ecoguard.resource_allocator.mapbox_client import RoutingError
 
 
@@ -334,7 +335,7 @@ def test_coordinator_incident_id_owns_allocation_and_release():
         {"fire_department": fire_reader},
         allocation_repository=allocation_repository,
     )
-    catalog_station = agent._station_catalogs["fire_department"][0]
+    catalog_station = agent.station_catalog.catalogs["fire_department"][0]
 
     assert fire_reader.call_count == 1
     assert catalog_station["resource_key"] == ("fire_department", 1)
@@ -1264,7 +1265,7 @@ def test_repeated_allocation_for_same_incident_is_idempotent():
     ["fire_department", "police", "medical_services"],
 )
 def test_every_supported_resource_uses_its_database_id(recommended_unit):
-    assert ResourceAllocationAgent._resource_key(
+    assert resource_key(
         recommended_unit,
         {"database_id": 42},
     ) == (recommended_unit, 42)
@@ -1272,7 +1273,7 @@ def test_every_supported_resource_uses_its_database_id(recommended_unit):
 
 def test_unknown_resource_type_has_no_implicit_identity_rule():
     with pytest.raises(ValueError, match="unsupported resource type"):
-        ResourceAllocationAgent._resource_key(
+        resource_key(
             "unknown_resource",
             {"database_id": 42},
         )

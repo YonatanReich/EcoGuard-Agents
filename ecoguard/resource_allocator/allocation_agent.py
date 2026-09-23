@@ -5,9 +5,6 @@ import math
 from copy import deepcopy
 from datetime import datetime, timezone
 
-from ecoguard.database.repositories.fire_stations import fire_stations_geojson
-from ecoguard.database.repositories.mda_stations import mda_stations_geojson
-from ecoguard.database.repositories.police_stations import police_stations_geojson
 from ecoguard.database.repositories.resource_allocations import (
     ResourceAllocationRepository,
 )
@@ -24,6 +21,10 @@ from ecoguard.resource_allocator.geo import coordinates
 from ecoguard.resource_allocator.mapbox_client import MapboxClient
 from ecoguard.resource_allocator.flood_road_targets import FloodRoadTargetAgent
 from ecoguard.resource_allocator.station_selection import StationSelectionService
+from ecoguard.resource_allocator.station_catalog import (
+    STATION_TYPES,
+    StationCatalog,
+)
 
 RISK_LEVELS = frozenset({"low", "medium", "high", "critical"})
 
@@ -36,12 +37,6 @@ TIMEFRAME_PRIORITY = {
     "within_6_hours": 1,
     "within_1_hour": 2,
     "immediate": 3,
-}
-
-STATION_TYPES = {
-    "fire_department": ("fire_station", "fire_stations"),
-    "police": ("police_station", "police_stations"),
-    "medical_services": ("mda_station", "mda_stations"),
 }
 
 FLOOD_ROAD_PRIORITY = {
@@ -65,17 +60,6 @@ SETTLEMENT_FIELDS = (
     "area_km2",
 )
 
-
-def _default_station_readers():
-    """Return readers for the emergency-station tables already in the DB."""
-
-    return {
-        "fire_department": fire_stations_geojson,
-        "police": police_stations_geojson,
-        "medical_services": mda_stations_geojson,
-    }
-
-
 class ResourceAllocationAgent:
 
     def __init__(
@@ -89,11 +73,6 @@ class ResourceAllocationAgent:
         incident_reader=None,
     ):
         """Build the allocator. Every reader and the routing client are injectable for testing."""
-        self.station_readers = (
-            _default_station_readers()
-            if station_readers is None
-            else station_readers
-        )
         self.routing_client = routing_client or MapboxClient()
         self.routing_service = AllocationRoutingService(self.routing_client)
         self.allocation_repository = (
@@ -112,36 +91,7 @@ class ResourceAllocationAgent:
             mapbox_client=self.routing_client
         )
         self.incident_reader = incident_reader or incident_store.incident_by_id
-        self._station_catalogs = {}
-        self._stations_by_key = {}
-        self._station_catalog_errors = {}
-
-        # Station rosters are static reference data. Assignment state remains
-        # in PostgreSQL so it is shared by every allocator process.
-        for recommended_unit, (station_type, _) in STATION_TYPES.items():
-            stations, error = self._load_station_catalog(
-                recommended_unit, station_type
-            )
-            self._station_catalogs[recommended_unit] = stations
-            if error is not None:
-                self._station_catalog_errors[recommended_unit] = error
-            for station in stations:
-                self._stations_by_key[station["resource_key"]] = station
-
-    @staticmethod
-    def _resource_key(recommended_unit, properties):
-        """Identify every station by its stable primary key in the DB."""
-        if recommended_unit not in STATION_TYPES:
-            raise ValueError(f"unsupported resource type: {recommended_unit}")
-
-        database_id = properties.get("database_id")
-        if (
-            not isinstance(database_id, int)
-            or isinstance(database_id, bool)
-            or database_id <= 0
-        ):
-            raise ValueError(f"{recommended_unit} database_id is missing")
-        return recommended_unit, database_id
+        self.station_catalog = StationCatalog(station_readers)
 
     @staticmethod
     def _utc(value=None):
@@ -590,67 +540,13 @@ class ResourceAllocationAgent:
             request["incident_id"],
         )
 
-    @staticmethod
-    def _stations_from_geojson(payload, recommended_unit, station_type):
-        """Normalize one DB station catalog and ignore unlocated rows."""
-        if not isinstance(payload, dict) or not isinstance(
-            payload.get("features"), list
-        ):
-            raise ValueError("station catalog must be a GeoJSON FeatureCollection")
-
-        stations = []
-        for feature in payload["features"]:
-            if not isinstance(feature, dict):
-                continue
-            geometry = feature.get("geometry") or {}
-            point_coordinates = geometry.get("coordinates") or []
-            if geometry.get("type") != "Point" or len(point_coordinates) < 2:
-                continue
-
-            properties = feature.get("properties") or {}
-            if not isinstance(properties, dict):
-                continue
-            try:
-                resource_key = ResourceAllocationAgent._resource_key(
-                    recommended_unit, properties
-                )
-            except ValueError:
-                continue
-            station = {
-                **properties,
-                "latitude": point_coordinates[1],
-                "longitude": point_coordinates[0],
-                "unit_type": station_type,
-                "recommended_unit": recommended_unit,
-                "resource_key": resource_key,
-            }
-            try:
-                coordinates(station)
-            except ValueError:
-                continue
-            stations.append(station)
-
-        return stations
-
-    def _load_station_catalog(self, recommended_unit, station_type):
-        """Read all located stations for one Planner unit type."""
-        reader = self.station_readers.get(recommended_unit)
-        if reader is None:
-            return [], "station catalog reader is unavailable"
-        try:
-            return self._stations_from_geojson(
-                reader(), recommended_unit, station_type
-            ), None
-        except Exception as error:
-            return [], str(error)
-
     def _allocation_view(self, allocation, status="assigned"):
         """Combine a durable allocation with its cached station details."""
         station_key = (
             allocation["recommended_unit"],
             allocation["station_id"],
         )
-        station = self._stations_by_key.get(station_key, {})
+        station = self.station_catalog.stations_by_key.get(station_key, {})
         result = {
             **station,
             "database_id": allocation["station_id"],
@@ -801,8 +697,8 @@ class ResourceAllocationAgent:
                 continue
 
             station_type, output_key = mapping
-            catalog_error = self._station_catalog_errors.get(recommended_unit)
-            stations = self._station_catalogs.get(recommended_unit, [])
+            catalog_error = self.station_catalog.errors.get(recommended_unit)
+            stations = self.station_catalog.catalogs.get(recommended_unit, [])
             selection = self.station_selector.choose(
                 stations=stations,
                 event_location=event_location,
