@@ -60,6 +60,12 @@ UNIT = "MW"
 # a detection can still find the incident it belongs to.
 MAX_AGE = timedelta(hours=6)
 
+# How far back to read arrivals when resuming after a gap. Six hours rather
+# than the shared default because FIRMS publishes about three hours behind the
+# overpass: a shorter window would resume past its own provider's lag and see
+# nothing. Matches MAX_AGE, so nothing is read that would then be discarded.
+CATCHUP = timedelta(hours=6)
+
 # How much of the recent past to hand the analysers as the growth curve.
 HISTORY = timedelta(hours=24)
 
@@ -349,7 +355,7 @@ def detect_new(*, reportable_only: bool = True) -> list[CellSignal]:
     repeat. Nothing is dropped.
     """
     now = datetime.now(timezone.utc)
-    since = catchup_floor(last_success_at(RUN_SOURCE), now)
+    since = catchup_floor(last_success_at(RUN_SOURCE), now, limit=CATCHUP)
     run_id = log_start(RUN_SOURCE)
     try:
         signals = _signals_from(

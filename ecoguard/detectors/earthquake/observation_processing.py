@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ecoguard.shared.activity import live_actor
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from ecoguard.collectors.earthquake.gsi import SOURCE
 from ecoguard.database.repositories.collector_runs import last_success_at, log_finish, log_start
@@ -14,6 +14,13 @@ from ecoguard.detectors.shared.window import catchup_floor
 
 RUN_SOURCE = "earthquake_detection"
 MIN_DASHBOARD_MAGNITUDE = 3.5
+
+# How far back to read arrivals when resuming after a gap. A day, where every
+# other detector reads hours, because an earthquake is not a condition that
+# passes: a magnitude 4.5 last night is still worth an operator's attention
+# this morning, and the aftershock sequence it belongs to is still running.
+# Matches the coordinator's earthquake quiet period for the same reason.
+CATCHUP = timedelta(hours=24)
 
 
 def signals_from_observations(rows: list[dict]) -> list[CellSignal]:
@@ -54,7 +61,7 @@ def detect_new(*, at: datetime | None = None) -> list[CellSignal]:
     once however often this runs.
     """
     through = (at or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    since = catchup_floor(last_success_at(RUN_SOURCE), through)
+    since = catchup_floor(last_success_at(RUN_SOURCE), through, limit=CATCHUP)
     run_id = log_start(RUN_SOURCE)
     try:
         rows = read_observations_batch(

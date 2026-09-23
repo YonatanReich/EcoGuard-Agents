@@ -48,9 +48,15 @@ def _configured_hours(default: float) -> float:
     return hours
 
 
-# Three hours is longer than any detector's own evidence window and shorter
-# than every hazard's quiet period, so a resumed detector can still find the
-# incident a reading belongs to without reaching back into finished events.
+# What a detector with no opinion of its own reads on resume. Three hours is
+# longer than any detector's evidence window and shorter than every hazard's
+# quiet period, so a resumed detector can still find the incident a reading
+# belongs to without reaching back into finished events.
+#
+# A detector that needs a different span says so where its other windows are
+# defined, because the reason is always about its source: how far behind the
+# provider publishes, how much history a judgement needs, how long that kind
+# of event stays worth reporting.
 DEFAULT_MAX_CATCHUP = timedelta(hours=_configured_hours(3.0))
 
 

@@ -69,6 +69,11 @@ if None in DIRECTIONS.values():
 # the run log while a confident four-hour-old anomaly is not.
 MAX_AGE = timedelta(hours=2)
 
+# How far back to read arrivals when resuming after a gap. One hour more than
+# MAX_AGE, which is one missed collector tick of slack: reading further would
+# only find readings the sweep then refuses as stale.
+CATCHUP = timedelta(hours=3)
+
 # How old an observation may be before it is history rather than news. Wider
 # than MAX_AGE because the bookmark, not a window, decides what gets read: this
 # only exists to stop a backfill of last year's weather opening incidents.
@@ -269,7 +274,7 @@ def detect_new(*, reportable_only: bool = True) -> list[CellSignal]:
     happened costs nothing but latency.
     """
     now = datetime.now(timezone.utc)
-    since = catchup_floor(last_success_at(RUN_SOURCE), now)
+    since = catchup_floor(last_success_at(RUN_SOURCE), now, limit=CATCHUP)
     run_id = log_start(RUN_SOURCE)
     try:
         signals = _signals_from(

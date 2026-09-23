@@ -6,7 +6,7 @@ from ecoguard.shared.activity import live_actor
 
 import logging
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from ecoguard.database.repositories.collector_runs import (
@@ -27,6 +27,12 @@ from ecoguard.detectors.shared.window import catchup_floor
 
 RUN_SOURCE = "flood_detection"
 DETECTION_BATCH_SIZE = 1000
+
+# How far back to read arrivals when resuming after a gap. Three hours is the
+# flood quiet period, so anything older belongs to an episode the coordinator
+# would already have closed. The consecutive-reading history a judgement needs
+# is loaded separately and is unaffected by this.
+CATCHUP = timedelta(hours=3)
 logger = logging.getLogger(__name__)
 
 
@@ -59,7 +65,7 @@ def detect_new(
     if through.tzinfo is None or through.utcoffset() is None:
         raise ValueError("at must carry a UTC offset")
     through = through.astimezone(timezone.utc)
-    since = catchup_floor(last_success_at(RUN_SOURCE), through)
+    since = catchup_floor(last_success_at(RUN_SOURCE), through, limit=CATCHUP)
     run_id = log_start(RUN_SOURCE)
 
     try:
