@@ -25,11 +25,11 @@ class StationSelectionService:
     def __init__(
         self,
         *,
-        allocation_repository,
+        active_allocations_reader,
         police_responsibility_reader,
         routing_service,
     ):
-        self.allocation_repository = allocation_repository
+        self.active_allocations_reader = active_allocations_reader
         self.police_responsibility_reader = police_responsibility_reader
         self.routing_service = routing_service
 
@@ -146,7 +146,7 @@ class StationSelectionService:
             return candidates
         occupied = {
             allocation["station_id"]
-            for allocation in self.allocation_repository.active_allocations()
+            for allocation in self.active_allocations_reader()
             if allocation["recommended_unit"] == recommended_unit
             and allocation["incident_id"] != incident_id
         }

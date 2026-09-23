@@ -20,11 +20,12 @@ from ecoguard.resource_allocator.allocation_routing import AllocationRoutingServ
 from ecoguard.resource_allocator.geo import coordinates
 from ecoguard.resource_allocator.mapbox_client import MapboxClient
 from ecoguard.resource_allocator.flood_road_targets import FloodRoadTargetAgent
-from ecoguard.resource_allocator.station_selection import StationSelectionService
+from ecoguard.resource_allocator.station_allocation import StationAllocationService
 from ecoguard.resource_allocator.station_catalog import (
     STATION_TYPES,
     StationCatalog,
 )
+from ecoguard.resource_allocator.station_selection import StationSelectionService
 
 RISK_LEVELS = frozenset({"low", "medium", "high", "critical"})
 
@@ -60,6 +61,7 @@ SETTLEMENT_FIELDS = (
     "area_km2",
 )
 
+
 class ResourceAllocationAgent:
 
     def __init__(
@@ -75,16 +77,11 @@ class ResourceAllocationAgent:
         """Build the allocator. Every reader and the routing client are injectable for testing."""
         self.routing_client = routing_client or MapboxClient()
         self.routing_service = AllocationRoutingService(self.routing_client)
-        self.allocation_repository = (
+        allocation_repository = (
             allocation_repository or ResourceAllocationRepository()
         )
         self.police_responsibility_reader = (
             police_responsibility_reader or responsible_police_stations
-        )
-        self.station_selector = StationSelectionService(
-            allocation_repository=self.allocation_repository,
-            police_responsibility_reader=self.police_responsibility_reader,
-            routing_service=self.routing_service,
         )
         self.town_reader = town_reader or town_at_location
         self.flood_target_agent = flood_target_agent or FloodRoadTargetAgent(
@@ -92,6 +89,15 @@ class ResourceAllocationAgent:
         )
         self.incident_reader = incident_reader or incident_store.incident_by_id
         self.station_catalog = StationCatalog(station_readers)
+        self.station_allocator = StationAllocationService(
+            allocation_repository=allocation_repository,
+            station_catalog=self.station_catalog,
+        )
+        self.station_selector = StationSelectionService(
+            active_allocations_reader=self.station_allocator.active_claims,
+            police_responsibility_reader=self.police_responsibility_reader,
+            routing_service=self.routing_service,
+        )
 
     @staticmethod
     def _utc(value=None):
@@ -540,82 +546,6 @@ class ResourceAllocationAgent:
             request["incident_id"],
         )
 
-    def _allocation_view(self, allocation, status="assigned"):
-        """Combine a durable allocation with its cached station details."""
-        station_key = (
-            allocation["recommended_unit"],
-            allocation["station_id"],
-        )
-        station = self.station_catalog.stations_by_key.get(station_key, {})
-        result = {
-            **station,
-            "database_id": allocation["station_id"],
-            "recommended_unit": allocation["recommended_unit"],
-            "allocation_scope": "station",
-            "resource_key": station_key,
-            "allocation_id": allocation.get("id"),
-            "assigned_incident_id": allocation["incident_id"],
-            "distance_km": allocation["distance_km"],
-            "risk_score": allocation.get("risk_score"),
-            "risk_level": allocation.get("risk_level"),
-            "severity": allocation.get("risk_level"),
-            "allocation_status": status,
-            "available_for_ecoguard": (
-                allocation["recommended_unit"] == "police"
-                or status == "released"
-            ),
-            "real_world_availability": "unknown",
-            "selection_reason": "nearest_available_station",
-        }
-        if allocation.get("allocation_policy") is not None:
-            result.update({
-                "allocation_policy": allocation["allocation_policy"],
-                "allocation_basis": allocation.get("allocation_basis"),
-                "quantity_source": allocation.get("quantity_source"),
-            })
-        for field in ("allocated_at", "released_at"):
-            value = allocation.get(field)
-            result[field] = (
-                value.isoformat() if isinstance(value, datetime) else value
-            )
-        if allocation.get("release_reason") is not None:
-            result["release_reason"] = allocation["release_reason"]
-        return result
-
-    def _claim_stations(
-        self,
-        incident_id,
-        recommended_unit,
-        candidates,
-        required_count,
-        risk_score,
-        risk_level,
-        allocated_at,
-        allocation_policy=None,
-        allocation_basis=None,
-        quantity_source=None,
-    ):
-        """Atomically claim stations through the shared DB repository."""
-        claim = {
-            "incident_id": incident_id,
-            "recommended_unit": recommended_unit,
-            "candidates": candidates,
-            "required_count": required_count,
-            "risk_score": risk_score,
-            "risk_level": risk_level,
-            "allocated_at": allocated_at,
-        }
-        if allocation_policy is not None:
-            claim.update({
-                "allocation_policy": allocation_policy,
-                "allocation_basis": allocation_basis,
-                "quantity_source": quantity_source,
-            })
-        allocations = self.allocation_repository.claim_stations(
-            **claim,
-        )
-        return [self._allocation_view(allocation) for allocation in allocations]
-
     def _allocate_batch_request(self, request):
         """Allocate stations for one request."""
         response_plan = request["response_plan"]
@@ -729,17 +659,17 @@ class ResourceAllocationAgent:
                 result["road_access"] = selection.road_access
 
             try:
-                assigned = self._claim_stations(
-                    request["incident_id"],
-                    recommended_unit,
-                    candidates,
-                    required_count,
-                    request["risk_score"],
-                    request["risk_level"],
-                    request["allocation_time"],
-                    request.get("allocation_policy"),
-                    request.get("allocation_basis"),
-                    request.get("quantity_source"),
+                assigned = self.station_allocator.claim(
+                    incident_id=request["incident_id"],
+                    recommended_unit=recommended_unit,
+                    candidates=candidates,
+                    required_count=required_count,
+                    risk_score=request["risk_score"],
+                    risk_level=request["risk_level"],
+                    allocated_at=request["allocation_time"],
+                    allocation_policy=request.get("allocation_policy"),
+                    allocation_basis=request.get("allocation_basis"),
+                    quantity_source=request.get("quantity_source"),
                 )
             except Exception as error:
                 assigned = []
@@ -1018,28 +948,12 @@ class ResourceAllocationAgent:
         reason="incident_closed",
     ):
         """Release every station assigned to one incident; safe to call twice."""
-        allocations = self.allocation_repository.release_incident(
-            str(incident_id),
+        return self.station_allocator.release_incident(
+            incident_id,
             released_at=self._utc(released_at),
             reason=reason,
         )
-        released = [
-            self._allocation_view(allocation, status="released")
-            for allocation in allocations
-        ]
-        return sorted(released, key=lambda station: station["distance_km"])
 
     def active_allocations(self):
         """Return a read-only snapshot of durable active allocations."""
-        grouped = {}
-        for allocation in self.allocation_repository.active_allocations():
-            grouped.setdefault(allocation["incident_id"], []).append(
-                self._allocation_view(allocation)
-            )
-        return {
-            incident_id: sorted(
-                allocations,
-                key=lambda station: station["distance_km"],
-            )
-            for incident_id, allocations in grouped.items()
-        }
+        return self.station_allocator.active_allocations()
