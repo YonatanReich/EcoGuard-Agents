@@ -861,6 +861,30 @@ def test_earthquake_policy_requests_one_station_per_supported_unit_type():
     assert fire_station["route"]["estimated_arrival_at"] is not None
 
 
+def test_team_quantity_does_not_change_the_number_of_allocated_stations():
+    agent = allocation_agent({
+        "fire_department": lambda: catalog(
+            station(1, "Fire one", 31.01, 35.0),
+            station(2, "Fire two", 31.02, 35.0),
+            station(3, "Fire three", 31.03, 35.0),
+        ),
+    })
+    plan = response_plan("event-1")
+    plan["teams_required"] = 3
+
+    result = agent.allocate_batch(
+        [allocation_request("incident-1", plan)],
+        now=NOW,
+    )[0]
+
+    assert result["requirements"]["fire_department"] == {
+        "requested": 1,
+        "assigned": 1,
+        "shortfall": 0,
+    }
+    assert len(result["allocated_units"]["fire_stations"]) == 1
+
+
 def test_allocator_attaches_successful_earthquake_allocation_directly():
     agent = allocation_agent({
         "fire_department": lambda: catalog(
