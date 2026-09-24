@@ -3,10 +3,11 @@
 One collector talks to Open-Meteo. Everything else reads what it wrote.
 
 This replaced three independent paths to the same API — the scheduled
-collector, a rolling SQLite cache that fed the fire-risk model, and
-`WeatherDataAgent` calling the provider live on every HTTP request. Each held
-its own rate-limiter state and could not see the others' traffic. Two of them
-stored the same seven variables in two different places.
+collector, a retired rolling SQLite cache, and `WeatherDataAgent` calling the
+provider live on every HTTP request. Each held its own rate-limiter state and
+could not see the others' traffic. Two of them stored the same seven variables
+in two different places. Offline fire-model research may read the stored
+history, but no fire-risk endpoint exists in the running service.
 
 ```
                     api.open-meteo.com
@@ -17,11 +18,10 @@ stored the same seven variables in two different places.
                             |
                 observations (source='weather')   <- Postgres, one row per cell-hour
                             |
-        +-------------------+
-        |                   |
-  StoredWeatherFeatures  WeatherDataAgent
-  (fire-risk model)      (/api/environmental-
-                          data, detection)
+                            |
+                     WeatherDataAgent
+                     (/api/environmental-
+                      data, detection)
 ```
 
 Every read goes through `ecoguard/database/repositories/weather_history.py`.
@@ -33,7 +33,7 @@ Every read goes through `ecoguard/database/repositories/weather_history.py`.
 | Grid | 1,174 cells of the 5 km service area |
 | Variables | `temperature_2m`, `relative_humidity_2m`, `precipitation`, `rain`, `wind_speed_10m`, `wind_direction_10m`, `wind_gusts_10m`, `weather_code` |
 | Interval | 60 minutes — Open-Meteo publishes hourly, so nothing new exists sooner |
-| Depth | 168 hours (7 days), which is the widest window the model's features read |
+| Depth | 168 hours (7 days), supporting operational lookbacks and offline research |
 | Batch | 50 coordinates per request, 15 s apart |
 
 The current hour is never stored. Open-Meteo serves forecast from the same

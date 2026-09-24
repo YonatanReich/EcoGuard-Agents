@@ -17,7 +17,8 @@ corpus.
 the fire risk grid.
 
 **Checking** - `preflight.py` says whether this machine is ready to run a live
-demonstration, and `claude_smoke_check.py` confirms the model lane works.
+demonstration. `claude_smoke_check.py` is retained as documentation of the
+retired point-query model flow; it is not part of the runnable system.
 
 ## Things worth knowing
 

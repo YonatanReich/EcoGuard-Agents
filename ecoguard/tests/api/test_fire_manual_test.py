@@ -98,8 +98,8 @@ def test_risk_failure_skips_planner_and_allocation_handoff():
     assert processing[0].requires_resource_allocation is False
 
 
-def test_wrong_risk_semantics_is_rejected_before_planner():
-    *_, planner, processing = _process("wrong_risk_semantics")
+def test_invalid_risk_semantics_is_rejected_before_planner():
+    *_, planner, processing = _process("invalid_risk_semantics")
 
     assert planner.calls == []
     assert processing[0].failure_stage == "planning_input"

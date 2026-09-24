@@ -52,7 +52,7 @@ SCENARIOS = {
     "separate_fires": "Two distant observations remain two independent incidents.",
     "missing_location": "A reportable signal without a dispatch location fails adaptation safely.",
     "risk_failure": "Risk analysis fails, so planning and allocation are skipped.",
-    "wrong_risk_semantics": "Ignition-risk semantics are rejected by the operational planner adapter.",
+    "invalid_risk_semantics": "Unsupported risk semantics are rejected by the operational planner adapter.",
     "planner_failure": "A valid risk assessment followed by a failed planner result.",
     "ended": "A full event closes only after more than six quiet hours.",
 }
@@ -207,8 +207,8 @@ class SyntheticRiskAnalyzer:
                 "error": "synthetic_risk_failure",
             }
         semantics = (
-            "estimated_fire_risk"
-            if self.scenario == "wrong_risk_semantics"
+            "unsupported_risk_semantics"
+            if self.scenario == "invalid_risk_semantics"
             else "detected_event_operational_risk"
         )
         return {

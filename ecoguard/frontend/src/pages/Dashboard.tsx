@@ -108,10 +108,6 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
   const [floodPreviewEvents, setFloodPreviewEvents] =
     useState<SharedEvent[]>([])
 
-  // One feed, one id scheme. The legacy /api/detected-events point query used
-  // to be merged in here, and because its ids are hotspot hashes rather than
-  // incident ids, a fire seen by both paths rendered as two cards — the legacy
-  // one with no detection verdict, spread or exposure.
   const liveEvents = projectedEvents
 
   const events = useMemo(
