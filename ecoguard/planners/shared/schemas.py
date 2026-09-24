@@ -13,7 +13,11 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from ecoguard.shared.schemas import ProtocolCitation, Timeframe, UnitId
 
 HazardType = Literal["fire", "flood", "earthquake"]
-PlanningStatus = Literal["success", "failed", "skipped"]
+# "partial" covers two cases the operator needs told apart, and the plan's
+# limitations say which: a plan whose grounded actions were kept and whose
+# ungrounded ones were dropped, and a plan nothing could be verified against,
+# kept as advice but stripped of the citations that did not hold up.
+PlanningStatus = Literal["success", "partial", "failed", "skipped"]
 
 
 class EmergencyContract(BaseModel):
@@ -81,6 +85,13 @@ class EmergencyPlanGrounding(EmergencyContract):
     retrieved_chunk_ids: list[str] = Field(default_factory=list)
     citations: list[dict[str, Any]] = Field(default_factory=list)
     unverified_citation_count: int = Field(default=0, ge=0)
+    # Recommendations dropped because the protocol text they claimed did not
+    # verify. Non-zero means the plan is narrower than the model proposed.
+    ungrounded_action_count: int = Field(default=0, ge=0)
+    # False means nothing in this plan could be traced to the protocols and it
+    # is the model's own judgement. The card must say so; see the coherence
+    # rule on EmergencyResponsePlan, which refuses a plan that does not.
+    protocol_grounded: bool = True
     # How many model calls this plan took. 2 means the first was ungrounded and
     # the retry recovered it; read it to learn whether retrying pays.
     attempts: int = Field(default=1, ge=1)
@@ -105,7 +116,16 @@ class EmergencyResponsePlan(EmergencyContract):
 
     @model_validator(mode="after")
     def _status_is_coherent(self) -> "EmergencyResponsePlan":
-        """Reject a plan whose status contradicts its contents."""
+        """Reject a plan whose status contradicts its contents.
+
+        This used to say that only a fully grounded plan could carry
+        recommendations at all, which meant one paraphrased quote out of eight
+        left an operator with a blank card. A plausible plan they can weigh is
+        more use than nothing, so `partial` may now carry recommendations — but
+        it has to admit what it is. A partial plan with no limitation explaining
+        why is refused here, so "unverified" can never be lost between the
+        planner and the screen.
+        """
         if self.metadata.planning_status == "success":
             if (
                 self.error is not None
@@ -115,6 +135,19 @@ class EmergencyResponsePlan(EmergencyContract):
                 or not self.grounding.citations
             ):
                 raise ValueError("successful plans require grounded recommendations")
+            if not self.grounding.protocol_grounded:
+                raise ValueError("a successful plan must be protocol-grounded")
+        elif self.metadata.planning_status == "partial":
+            if not self.plan_summary or not self.response_actions:
+                raise ValueError("a partial plan must still carry recommendations")
+            if not self.limitations:
+                raise ValueError(
+                    "a partial plan must state what could not be verified"
+                )
+            if not self.grounding.protocol_grounded and self.grounding.citations:
+                raise ValueError(
+                    "an ungrounded plan must not show citations that failed to verify"
+                )
         elif self.recommended_units or self.response_actions or self.plan_summary is not None:
             raise ValueError("non-success plans cannot contain recommendations")
         return self
