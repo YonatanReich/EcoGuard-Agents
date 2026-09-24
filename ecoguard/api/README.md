@@ -16,7 +16,7 @@ scenario controls and the developer-only collector trigger.
 | `scenario.py` | Start, stop and grade a controlled demo scenario |
 | `demo.py` | Pre-made example events from a separate database, for screenshots |
 | `weak_events.py` | The older unconfirmed-report feed, now superseded |
-| `area_schemas.py`, `fire_risk_schemas.py` | Request and response shapes |
+| `area_schemas.py` | Request and response shapes |
 
 ## Things worth knowing
 

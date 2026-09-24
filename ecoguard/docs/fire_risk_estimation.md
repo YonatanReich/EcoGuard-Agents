@@ -1,5 +1,13 @@
 # Fire Risk Estimation
 
+> **Removed from the running system on 2026-09-24.** The serving path
+> (`risk_prediction_agent.py`, `feature_builder.py`, `static_feature_store.py`,
+> `national_scan.py`, `refresh_orchestrator.py`, both `/api/fire-risk`
+> endpoints and the map layer) is gone: the trained model was never committed,
+> so the lane had never produced a score, and nothing in detection, analysis or
+> spread read it. This document is kept as the record of the method. The
+> training scripts it describes are still under `analyzers/fire/ml/`.
+
 ## Product meaning
 
 `FireRiskPredictionAgent` estimates how strongly a complete set of current conditions resembles conditions associated with historical fire occurrence. It returns a continuous score and `low`, `medium`, or `high`. The score is **not** a guaranteed fire probability and is not evidence that a fire exists.

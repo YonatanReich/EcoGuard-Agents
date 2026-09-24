@@ -227,6 +227,77 @@ body {
 .home--leaving .home__actions  { animation: slideUpOut .4s ease .16s both; }
 .home--leaving .home__stage    { animation: slideUpOut .5s ease .1s both; }
 
+/* The boot cover, rendered by the dashboard (LoadingScreen) once the landing
+   page has slid away. Opaque from its first frame on purpose: fading it in
+   would flash the empty map underneath, which is the thing it exists to hide.
+   The outline snakes round the country — dashoffset 1 draws it, then -1 erases
+   it from the same end — and the land pulses green as the line closes. */
+@keyframes boot-trace { from { stroke-dashoffset: 1; } to { stroke-dashoffset: -1; } }
+@keyframes boot-land  { 0%, 100% { fill-opacity: .05; } 45% { fill-opacity: .32; } }
+@keyframes boot-label { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
+
+.boot {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  background: radial-gradient(circle at 50% 45%, #012a63 0%, var(--bg-dark-blue) 62%);
+  font-family: "Plus Jakarta Sans", sans-serif;
+  transition: opacity .6s ease;
+}
+
+.boot--done {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The glow lives on the <svg>, not the path: a CSS filter length inside the
+   viewBox would be read in the outline's own units, where 8px is wider than
+   the country. */
+.boot__map {
+  height: min(44vh, 20rem);
+  width: auto;
+  overflow: visible;
+  filter: drop-shadow(0 0 10px rgba(0, 94, 255, .75));
+}
+
+.boot__outline {
+  fill: #8cc63f;
+  stroke: #eaf2ff;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  animation:
+    boot-trace 2.8s linear infinite,
+    boot-land 2.8s ease-in-out infinite;
+}
+
+.boot__label {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  animation: boot-label 2.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boot__outline,
+  .boot__label {
+    animation: none;
+  }
+
+  .boot__outline {
+    stroke-dasharray: none;
+    fill-opacity: .25;
+  }
+}
+
 /* Narrow screens: stage on top, text centred under it. */
 @media (max-width: 860px) {
   .home {

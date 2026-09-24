@@ -220,6 +220,43 @@ def _fire_danger(session, geojson: str) -> dict[str, Any]:
     }
 
 
+def _vegetation(session, geojson: str) -> dict[str, Any]:
+    """Mean NDVI over the same cells: whether the fuel is alive or cured.
+
+    `_surface` says what the fuel is and never changes. This says how green it
+    is, which is what the spread model needs to pick a live fuel moisture. The
+    composite is eight days old at best, which is the right resolution for a
+    quantity that moves over weeks.
+    """
+    rows = session.execute(
+        text(
+            AREA_CTE
+            + """
+            , latest AS (
+              SELECT DISTINCT ON (o.cell_id) o.cell_id, o.observed_at, o.payload
+              FROM observations o, area
+              WHERE o.source = 'vegetation'
+                AND ST_DWithin(o.location, area.geom::geography, :radius)
+              ORDER BY o.cell_id, o.observed_at DESC
+            )
+            SELECT (payload->>'ndvi')::float AS ndvi, observed_at FROM latest
+            """
+        ),
+        {"geojson": geojson, "radius": SAMPLE_RADIUS_M},
+    ).mappings().all()
+
+    values = [row["ndvi"] for row in rows if row["ndvi"] is not None]
+    if not values:
+        return {"ndvi": None, "cell_count": 0, "observed_at": None}
+    return {
+        # Three places, not the one `_rounded` gives: NDVI lives in [-1, 1] and
+        # the whole cured-to-green range is three tenths wide.
+        "ndvi": round(sum(values) / len(values), 3),
+        "cell_count": len(values),
+        "observed_at": max(row["observed_at"] for row in rows).isoformat(),
+    }
+
+
 def _surface(session, geojson: str) -> tuple[dict[str, Any], dict[str, Any]]:
     """The static ground inside the polygon: its shape, and what grows on it.
 
@@ -279,7 +316,8 @@ def summarize_area(geometry: dict[str, Any]) -> dict[str, Any]:
             PostGIS as a bound parameter, never interpolated into the SQL.
 
     Returns:
-        dict: area_km2, population, weather, fire_danger and stations. Sections
+        dict: area_km2, population, weather, fire_danger, vegetation and
+            stations. Sections
             with no data behind them report null values and a cell_count of 0
             rather than being omitted, so the UI can say "no reading here"
             instead of silently dropping a row.
@@ -296,5 +334,6 @@ def summarize_area(geometry: dict[str, Any]) -> dict[str, Any]:
             "fire_danger": _fire_danger(session, geojson),
             "terrain": terrain,
             "fuel": fuel,
+            "vegetation": _vegetation(session, geojson),
             "stations": _stations(session, geojson),
         }

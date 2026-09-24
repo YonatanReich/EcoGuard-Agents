@@ -1,5 +1,5 @@
 /**
- * Home page — the landing and "log in" screen at /.
+ * Home page — the landing screen at /.
  *
  * Responsible for introducing the product and sending the user through to
  * the dashboard. There is no real authentication yet: the button is a
@@ -109,7 +109,7 @@ function Home() {
         </p>
         <div className="home__actions">
           <button className="login-button" onClick={() => leaveTo('/dashboard')}>
-            Log in
+            Monitor
           </button>
           <button className="demo-button" onClick={() => leaveTo('/demo')}>
             View demo
