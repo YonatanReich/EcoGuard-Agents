@@ -246,7 +246,14 @@ def test_provider_errors_propagate_their_category(kind):
     assert result["error"] == kind
 
 
-def test_ungrounded_plan_is_discarded():
+def test_ungrounded_plan_is_labelled_not_discarded():
+    """An invented citation costs the plan its evidence, not its existence.
+
+    The model here cites an "Official Sounding Manual" that does not exist. The
+    plan is still shown, because a blank card helps nobody — but it arrives
+    marked unverified and with that fabricated citation removed, so the fake
+    provenance never reaches the operator.
+    """
     plan = build_valid_plan(
         protocol_citations=[
             {
@@ -261,9 +268,11 @@ def test_ungrounded_plan_is_discarded():
 
     result = agent.plan_response(detected_event(), successful_assessment())
 
-    assert result["metadata"]["planning_status"] == "failed"
-    assert result["error"] == "ungrounded response"
-    assert result["recommended_units"] == []
+    assert result["metadata"]["planning_status"] == "partial"
+    assert result["response_actions"], "advice survives"
+    assert result["grounding"]["protocol_grounded"] is False
+    assert result["grounding"]["citations"] == [], "the invented manual is gone"
+    assert result["limitations"][0].startswith("NOT PROTOCOL-VERIFIED")
 
 
 def test_action_grounding_is_required_not_synthesized_from_plan_citations():

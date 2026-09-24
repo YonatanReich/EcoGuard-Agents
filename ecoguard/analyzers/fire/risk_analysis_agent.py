@@ -947,11 +947,12 @@ def build_situational_facts(detected_event: dict) -> dict:
 
     return {
         "geospatial_available": True,
-        # Not recoverable from the event: build_detected_event keeps the
-        # geospatial context but drops the radius it was collected at. This is
-        # the documented default, and the prompt says so, because a population
-        # figure means nothing without the radius it was gathered over.
-        "search_radius_km": DEFAULT_GEOSPATIAL_RADIUS_KM,
+        # The context says what radius it was gathered over when it knows;
+        # older events that dropped it fall back to the documented default. A
+        # population figure means nothing without the radius behind it, so the
+        # prompt always states one.
+        "search_radius_km": geospatial.get("search_radius_km")
+        or DEFAULT_GEOSPATIAL_RADIUS_KM,
         "settlements_count": len(settlements),
         "settlement_types": sorted(
             {s["type"] for s in settlements if s.get("type")}

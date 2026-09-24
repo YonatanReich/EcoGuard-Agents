@@ -5,7 +5,7 @@
  * a page component; pages own their own data fetching and layout.
  *
  * Routes:
- *   /           Home — the landing and login screen.
+ *   /           Home — the landing screen, with the Monitor entry button.
  *   /dashboard  Dashboard — the live map and environmental data view.
  *   /demo       Dashboard again, reading fabricated incidents instead of the
  *               live feed, so the allocator and the response plans can be
@@ -13,7 +13,7 @@
  *   /system     System — every pipeline actor, lit while it is running.
  *
  * Note there is no auth guard: /dashboard is reachable directly by URL. The
- * "log in" button is presentational for now.
+ * "Monitor" button is a navigation trigger, not a credential check.
  */
 
 import { Routes, Route } from 'react-router-dom'

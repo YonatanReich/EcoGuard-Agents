@@ -66,6 +66,26 @@ def _air_pollution_signal() -> CellSignal:
     )
 
 
+@pytest.fixture(autouse=True)
+def _pipeline_enabled():
+    """Run these against a live pipeline whatever the developer's .env says.
+
+    The switch reads ECOGUARD_PIPELINE at import, and a machine set up for a
+    demo has it off. Without this the whole file would silently test the paused
+    path and pass by doing nothing. Tests that care about pausing set it
+    themselves inside the test.
+    """
+    from ecoguard import pipeline_switch
+
+    previously = pipeline_switch.is_enabled()
+    pipeline_switch.set_enabled(True)
+    try:
+        yield
+    finally:
+        pipeline_switch.set_enabled(previously)
+
+
+
 def test_fire_and_air_pollution_share_one_coordinator_batch(monkeypatch):
     from ecoguard import scheduler as shared_runtime
     from ecoguard.coordinator import agent
@@ -572,3 +592,86 @@ def test_advisory_plans_publish_before_the_allocator_runs(monkeypatch):
         ("allocate", ["INC-FIRE"]),
         ("publish", ["INC-FIRE"]),
     ]
+
+
+def test_paused_pipeline_skips_the_wave_without_touching_collectors(monkeypatch):
+    """A paused pipeline runs no detector and opens no incident.
+
+    The reason this matters is not the saved model call. With the key absent
+    every wave still wrote a failed projection, and six failures abandon an
+    incident for good — so a backend left running keyless burned the retry
+    budget of every open incident and left them broken when the key returned.
+    """
+    from ecoguard import pipeline_switch
+    from ecoguard import scheduler as shared_runtime
+
+    ran = []
+    monkeypatch.setattr(shared_runtime, "_detect_and_coordinate", lambda: ran.append(1))
+
+    pipeline_switch.set_enabled(False)
+    assert shared_runtime.detect_and_coordinate() == []
+    assert ran == []
+
+    pipeline_switch.set_enabled(True)
+    shared_runtime.detect_and_coordinate()
+    assert ran == [1]
+
+    # Collection is on its own timers and is never gated by the switch.
+    collectors = [j for j in shared_runtime.scheduler.get_jobs()
+                  if j.id.startswith("collect_")]
+    assert collectors, "collectors must stay scheduled while the pipeline is paused"
+
+
+def test_the_pipeline_switch_reads_dotenv_rather_than_trusting_import_order():
+    """`ECOGUARD_PIPELINE=off` in .env must actually pause the pipeline.
+
+    It did not. The module read the environment at import and never loaded
+    .env, so whether the setting applied depended on whether something else had
+    loaded it first — and the failure was silent in the worst direction: the
+    setting was ignored and the pipeline ran, burning the retry budget it was
+    set to protect.
+    """
+    import inspect
+
+    from ecoguard import pipeline_switch
+
+    source = inspect.getsource(pipeline_switch)
+    assert "load_dotenv()" in source, (
+        "pipeline_switch must load .env itself; relying on import order makes "
+        "ECOGUARD_PIPELINE=off silently ineffective"
+    )
+    assert source.index("load_dotenv()") < source.index("_enabled = _from_environment()")
+
+
+def test_a_demo_run_is_not_blocked_by_the_pipeline_switch(monkeypatch):
+    """The Run Demo button must work while the live pipeline is paused.
+
+    Pausing is for the timer, not for a person asking. The presentation state
+    is `ECOGUARD_PIPELINE=off`, so a demo that silently did nothing in that
+    state would fail in exactly the moment it exists for.
+    """
+    from ecoguard import pipeline_switch
+    from ecoguard import scheduler as shared_runtime
+
+    ran = []
+    monkeypatch.setattr(shared_runtime, "_detect_and_coordinate", lambda: ran.append(1))
+
+    pipeline_switch.set_enabled(False)
+
+    assert shared_runtime.detect_and_coordinate() == [], "the timer still skips"
+    assert ran == []
+
+    shared_runtime.detect_and_coordinate(force=True)
+    assert ran == [1], "a deliberate run goes ahead"
+
+
+def test_the_scenario_runner_asks_for_a_forced_wave():
+    """The bug this guards: sandbox called the gated entry point and did nothing."""
+    import inspect
+
+    from ecoguard.demo import sandbox
+
+    source = inspect.getsource(sandbox)
+    assert "detect_and_coordinate(force=True)" in source, (
+        "the demo wave must bypass the pause, or the button is dead while paused"
+    )

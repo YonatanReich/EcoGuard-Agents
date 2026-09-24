@@ -188,10 +188,10 @@ export const ACTORS: Actor[] = [
     name: 'Fire analyser',
     accent: '#f97316',
     icon: 'fire',
-    summary: 'Scores national fire risk and a fire’s likely spread.',
-    role: 'Keeps the national fire-risk picture current, which drives the high-risk alerts, and assesses detected fires: how they may spread and who is in the way.',
+    summary: 'Assesses a detected fire and its likely spread.',
+    role: 'Assesses detected fires: how they may spread, how fast the fuel will carry them, and who is in the way.',
     how: [
-      'Scores every map cell’s fire risk from the stored weather, fuel and vegetation data.',
+      'Reads the fuel’s greenness from the stored NDVI composite, which sets how readily it burns.',
       'For a detected fire, models the likely and possible spread and the settlements and sites inside it.',
       'Grounds its assessment in fire-protocol text, checking every citation against the source.',
     ],

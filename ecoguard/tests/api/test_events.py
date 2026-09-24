@@ -439,7 +439,12 @@ def test_repository_query_has_stable_order_and_bounded_limit(monkeypatch):
         "ORDER BY event_projections.updated_at DESC, "
         "event_projections.incident_id ASC"
     ) in calls[0][0]
-    assert calls[0][1] == {"limit": 25}
+    # A closed incident leaves the feed. Without this the map accumulated every
+    # event the system had ever produced, drawn as though it were still running.
+    assert "incidents.status = 'open'" in calls[0][0]
+    assert "incidents.closed_at >= :closed_after" in calls[0][0]
+    assert calls[0][1]["limit"] == 25
+    assert calls[0][1]["closed_after"] < datetime.now(timezone.utc)
 
 
 def test_persisted_observation_reaches_shared_api_contract(monkeypatch):

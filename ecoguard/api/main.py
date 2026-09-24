@@ -17,27 +17,19 @@ from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from ecoguard.detectors.fire.detection_agent import FireDetectionAgent
-from ecoguard.analyzers.fire.risk_prediction_agent import FireRiskPredictionAgent
 from ecoguard.shared.geospatial_context import GeospatialContextAgent
 from ecoguard.planners.fire.planning_agent import ResponsePlanningAgent
 from ecoguard.analyzers.fire.risk_analysis_agent import RiskAnalysisAgent, build_event_id
 from ecoguard.shared.weather_reader import WeatherDataAgent
 from ecoguard.api.area_schemas import AreaSummaryRequest, AreaSummaryResponse
-from ecoguard.api.fire_risk_schemas import (
-    FireRiskRequest,
-    FireRiskResponse,
-    NationalRiskScanResponse,
-)
 from ecoguard.shared.llm import ClaudeLLMService
-from ecoguard.analyzers.fire.feature_builder import CurrentRiskFeatureBuilder
-from ecoguard.analyzers.fire.refresh_orchestrator import CurrentRiskRefreshOrchestrator
-from ecoguard.analyzers.fire.national_scan import NationalCurrentRiskScanService
 from ecoguard.api.fire_danger_surface import build_surface as build_fire_danger_surface
 from ecoguard.shared.protocols import ProtocolRetriever
 from ecoguard.api.events import router as events_router
 from ecoguard.api.scenario import router as scenario_router
 from ecoguard.api.weak_events import router as weak_events_router
 from ecoguard.api.demo import router as demo_router
+from ecoguard.api.pipeline import router as pipeline_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -62,7 +54,6 @@ async def lifespan(app: FastAPI):
     except Exception:
         logging.exception("Claude reachability probe itself failed")
 
-    current_risk_refresh.start()
     collection_scheduler = None
     try:
         from ecoguard.scheduler import scheduler as collection_scheduler
@@ -75,7 +66,6 @@ async def lifespan(app: FastAPI):
     finally:
         if collection_scheduler is not None and collection_scheduler.running:
             collection_scheduler.shutdown()
-        current_risk_refresh.stop()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -83,6 +73,7 @@ app.include_router(events_router)
 app.include_router(weak_events_router)
 app.include_router(scenario_router)
 app.include_router(demo_router)
+app.include_router(pipeline_router)
 
 # Allow the Vite dev server to call the API directly during development.
 # Both localhost and 127.0.0.1 are listed because browsers treat them as
@@ -115,15 +106,6 @@ app.add_middleware(
 weather_agent = WeatherDataAgent()
 geo_agent = GeospatialContextAgent()
 fire_detection_agent = FireDetectionAgent()
-
-# --- Fire risk prediction (ML) -------------------------------------------
-# Estimates fire likelihood for a location from weather, terrain and land
-# cover. This answers "where might a fire start", independently of whether
-# any fire has been detected.
-current_risk_feature_builder = CurrentRiskFeatureBuilder()
-fire_risk_prediction_agent = FireRiskPredictionAgent()
-national_risk_scan_service = NationalCurrentRiskScanService()
-current_risk_refresh = CurrentRiskRefreshOrchestrator(scan_service=national_risk_scan_service)
 
 # --- Risk analysis and response planning (LLM + RAG) ----------------------
 # Interprets a *detected* fire event and plans a response, grounded in the
@@ -595,6 +577,123 @@ def national_fire_risk_scan(evaluation_time: datetime | None = Query(default=Non
     if latest is not None:
         return latest
     return current_risk_refresh.with_freshness(national_risk_scan_service.scan_and_save())
+
+
+@app.get("/api/detected-events")
+def get_detected_events(
+    latitude: float = Query(
+        default=31.783333,
+        ge=ISRAEL_MIN_LATITUDE,
+        le=ISRAEL_MAX_LATITUDE,
+        description="Latitude must be within Israel's borders",
+    ),
+    longitude: float = Query(
+        default=35.216667,
+        ge=ISRAEL_MIN_LONGITUDE,
+        le=ISRAEL_MAX_LONGITUDE,
+        description="Longitude must be within Israel's borders",
+    ),
+    radius_km: float = Query(
+        default=5.0,
+        ge=1.0,
+        le=50.0,
+        description="How far from the requested point a hotspot counts as relevant",
+    ),
+    day_range: int = Query(
+        default=2,
+        ge=1,
+        le=10,
+        description="How many recent days of satellite data to inspect",
+    ),
+    include_analysis: bool = Query(
+        default=True,
+        description="Set false to skip risk analysis and response planning for a fast map render",
+    ),
+):
+    """
+    Detect fires near a coordinate, assess their risk, and plan a response.
+
+    Runs the full pipeline: FireDetectionAgent (NASA FIRMS satellite hotspots,
+    enriched with GWIS/EFFIS fire weather, Open-Meteo conditions and
+    OpenStreetMap context), then RiskAnalysisAgent, then ResponsePlanningAgent.
+    Both reasoning agents are grounded in the protocol corpus and cite it.
+
+    Args:
+        latitude (float): 29.45 to 33.35. Defaults to Jerusalem.
+        longitude (float): 34.26 to 35.90. Defaults to Jerusalem.
+        radius_km (float): Hotspot relevance radius from the requested point.
+        day_range (int): Recent days of FIRMS data to inspect.
+        include_analysis (bool): When false, detection runs but both model calls
+            are skipped and the event is returned with analysis and planning
+            marked "skipped".
+
+    Returns:
+        dict: metadata (including a per-service status breakdown), the query
+            that produced it, and an events list holding zero or one event.
+
+    Raises:
+        HTTPException: 500 for an unexpected internal error, with the detail
+            masked and the real exception logged. FastAPI returns 422 for
+            out-of-bounds coordinates.
+
+    Note this returns 200 with an empty events list when satellite detection
+    fails, rather than 502. The dashboard fetches this on page load and its only
+    failure handler logs to the console, so a 502 would blank the map with no
+    user-visible explanation. /api/environmental-data does return 502 because it
+    is user-initiated and has an error modal behind it.
+
+    Performance: this is slow, typically 20-90 seconds. The OpenStreetMap
+    Overpass lookup alone can take 30 seconds under load, and each of the two
+    model calls adds several more. Pass include_analysis=false for a detection-
+    only response. A background-job endpoint is the real fix and is not built.
+    """
+    logging.info(
+        "Detected-events request for lat=%s, lon=%s, radius=%skm, days=%s, analysis=%s",
+        latitude, longitude, radius_km, day_range, include_analysis,
+    )
+
+    try:
+        event = fire_detection_agent.detect_fire(
+            latitude=latitude,
+            longitude=longitude,
+            day_range=day_range,
+            max_hotspot_distance_km=radius_km,
+        )
+
+        if include_analysis:
+            risk = risk_agent.analyze_event(event)
+            plan = planning_agent.plan_response(event, risk)
+        else:
+            # Detection only. Build the skipped shapes directly rather than
+            # calling the agents, so no retrieval or model work happens at all.
+            risk = risk_agent.build_skipped_assessment(event, "analysis_not_requested")
+            plan = planning_agent.build_skipped_plan("analysis_not_requested", event)
+
+        return build_detected_events_response(
+            event=event,
+            risk=risk,
+            plan=plan,
+            query={
+                "latitude": latitude,
+                "longitude": longitude,
+                "radius_km": radius_km,
+                "day_range": day_range,
+                "include_analysis": include_analysis,
+            },
+        )
+
+    except HTTPException:
+        raise
+
+    except Exception as error:
+        logging.error(
+            "Unexpected internal error detecting events for lat=%s, lon=%s. Error: %s",
+            latitude, longitude, str(error), exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error. Please try again later.",
+        )
 
 
 def build_event_title(event: dict) -> str:

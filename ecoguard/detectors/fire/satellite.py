@@ -26,6 +26,7 @@ from ecoguard.database.repositories.collector_runs import (
     log_finish,
     log_start,
 )
+from ecoguard.detectors.shared.window import catchup_floor
 from ecoguard.shared.signals import (
     FIRE,
     GEOSTATIONARY_PIXEL_M,
@@ -58,6 +59,12 @@ UNIT = "MW"
 # arrival. Six hours also matches the fire quiet period in the coordinator, so
 # a detection can still find the incident it belongs to.
 MAX_AGE = timedelta(hours=6)
+
+# How far back to read arrivals when resuming after a gap. Six hours rather
+# than the shared default because FIRMS publishes about three hours behind the
+# overpass: a shorter window would resume past its own provider's lag and see
+# nothing. Matches MAX_AGE, so nothing is read that would then be discarded.
+CATCHUP = timedelta(hours=6)
 
 # How much of the recent past to hand the analysers as the growth curve.
 HISTORY = timedelta(hours=24)
@@ -347,10 +354,10 @@ def detect_new(*, reportable_only: bool = True) -> list[CellSignal]:
     the read is seen now and again next time. The coordinator absorbs the
     repeat. Nothing is dropped.
     """
-    since = last_success_at(RUN_SOURCE)
+    now = datetime.now(timezone.utc)
+    since = catchup_floor(last_success_at(RUN_SOURCE), now, limit=CATCHUP)
     run_id = log_start(RUN_SOURCE)
     try:
-        now = datetime.now(timezone.utc)
         signals = _signals_from(
             arrivals_since(since, now), now, reportable_only=reportable_only
         )

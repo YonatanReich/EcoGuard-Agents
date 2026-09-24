@@ -18,7 +18,7 @@ from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from ecoguard import retention
+from ecoguard import pipeline_switch, retention
 from ecoguard.collectors.flood.hydrometric_observations import (
     SOURCE as HYDROMETRIC_OBSERVATIONS_SOURCE,
     HydrometricObservationCollector,
@@ -269,7 +269,7 @@ def publish(results):
         )
 
 
-def detect_and_coordinate():
+def detect_and_coordinate(*, force: bool = False):
     """One wave: every detector, one coordinator, the analysers, then publish.
 
     Detectors and the media lane all run first and their candidates are
@@ -317,6 +317,21 @@ def detect_and_coordinate():
     # plans need rebuilding. Every model call in the pipeline is then paid
     # twice. The collectors have had this lock since they were written; this
     # job is the expensive one and did not.
+    # Checked before the lock, not inside it: a paused wave should not queue
+    # behind a running one, and should not hold the lock other processes want.
+    #
+    # `force` is for a person asking for a wave rather than a timer firing one.
+    # The switch exists to stop the system spending money on its own schedule,
+    # not to disable the demo button - and a scenario that quietly did nothing
+    # because the pipeline was paused is exactly the failure to avoid in front
+    # of an audience.
+    if not force and not pipeline_switch.is_enabled():
+        logger.info(
+            "detect_and_coordinate: pipeline is paused, skipping "
+            "(collectors are unaffected)"
+        )
+        return []
+
     with single_flight("detect_and_coordinate") as acquired:
         if not acquired:
             logger.info(

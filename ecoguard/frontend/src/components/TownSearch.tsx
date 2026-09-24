@@ -355,12 +355,27 @@ function TownSearch() {
           <Layer
             id={FILL_LAYER_ID}
             type="fill"
-            paint={{ 'fill-color': '#38bdf8', 'fill-opacity': 0.22 }}
+            paint={{ 'fill-color': '#38bdf8', 'fill-opacity': 0.22, 'fill-emissive-strength': 1 }}
+          />
+          {/* Blurred edge under the crisp one: the outline glows instead of
+              sinking into the dusk basemap. emissive-strength keeps both lit. */}
+          <Layer
+            id="town-selected-glow"
+            type="line"
+            layout={{ 'line-join': 'round' }}
+            paint={{
+              'line-color': '#38bdf8',
+              'line-width': 9,
+              'line-blur': 7,
+              'line-opacity': 0.5,
+              'line-emissive-strength': 1,
+            }}
           />
           <Layer
             id="town-selected-outline"
             type="line"
-            paint={{ 'line-color': '#38bdf8', 'line-width': 2.4 }}
+            layout={{ 'line-join': 'round' }}
+            paint={{ 'line-color': '#7dd3fc', 'line-width': 2.4, 'line-emissive-strength': 1 }}
           />
         </Source>
       )}

@@ -7,7 +7,7 @@ its indexes straight, that the disagreement count means what the Phase 2
 checkpoint says it means.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -299,19 +299,25 @@ def test_classify_new_text_reads_from_the_bookmark_not_the_full_window(monkeypat
     """The regression that made the lane re-send a day of messages every tick.
 
     A message the model judged and found nothing in writes no candidate row, so
-    the row-existence check alone re-offers it until it ages out of the 24 hour
-    window. With a bookmark, the floor is the last successful run instead.
+    the row-existence check alone re-offers it until it ages out of the window.
+    With a bookmark, the floor is the last successful run instead.
+
+    The bookmark is relative to now rather than a fixed date. Pinned to one, it
+    aged past the catch-up limit as real time moved on, and the test failed for
+    a reason that had nothing to do with what it checks.
     """
     from ecoguard.detectors.text import classifier as module
 
-    bookmark = datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc)
-    seen: dict[str, datetime] = {}
+    bookmark = datetime.now(timezone.utc) - timedelta(minutes=20)
+    seen: dict[str, object] = {}
 
     monkeypatch.setattr(module, "last_success_at", lambda source: bookmark)
     monkeypatch.setattr(module, "log_start", lambda source: 1)
     monkeypatch.setattr(module, "log_finish", lambda *a, **k: None)
-    def record(*, since, limit):
+
+    def record(*, since, limit, published_after=None):
         seen["since"] = since
+        seen["published_after"] = published_after
         return []
 
     monkeypatch.setattr(module, "unclassified_text_observations", record)
@@ -319,3 +325,34 @@ def test_classify_new_text_reads_from_the_bookmark_not_the_full_window(monkeypat
     module.classify_new_text()
 
     assert seen["since"] == bookmark
+    # And the other bound: a message older than the window is not news, however
+    # recently the collector happened to fetch it.
+    assert seen["published_after"] is not None
+    assert seen["published_after"] < datetime.now(timezone.utc)
+
+
+def test_classify_new_text_does_not_read_past_the_catch_up_limit(monkeypatch):
+    """A bookmark older than the limit means resuming, not replaying."""
+    from ecoguard.detectors.text import classifier as module
+
+    stale = datetime.now(timezone.utc) - timedelta(days=2)
+    seen: dict[str, object] = {}
+
+    monkeypatch.setattr(module, "last_success_at", lambda source: stale)
+    monkeypatch.setattr(module, "log_start", lambda source: 1)
+    monkeypatch.setattr(module, "log_finish", lambda *a, **k: None)
+
+    def record(*, since, limit, published_after=None):
+        seen["since"] = since
+        return []
+
+    monkeypatch.setattr(module, "unclassified_text_observations", record)
+
+    module.classify_new_text()
+
+    assert seen["since"] > stale
+    # A second of slack: the floor is computed a moment before this comparison.
+    assert (
+        datetime.now(timezone.utc) - seen["since"]
+        <= module.DEFAULT_LOOKBACK + timedelta(seconds=1)
+    )

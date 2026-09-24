@@ -198,6 +198,7 @@ class EmergencyResponsePlanner:
             else self.build_prompt(validated, chunks)
         )
         dropped = 0
+        last_payload: dict | None = None
         for attempt in range(MAX_PLAN_ATTEMPTS):
             try:
                 raw_proposal = self.llm_service.parse_structured(
@@ -226,6 +227,7 @@ class EmergencyResponsePlanner:
                 )
                 continue
 
+            last_payload = payload
             plan, dropped = self._verified_plan(validated, payload, chunks, attempt)
             if plan is not None:
                 return plan
@@ -233,6 +235,16 @@ class EmergencyResponsePlanner:
             # Name the failure in the retry rather than resampling blind. The
             # cached system prefix is untouched, so caching still applies.
             user_text += UNGROUNDED_RETRY_NOTE
+
+        # Nothing verified, twice. The model still produced advice, and an
+        # operator with a plausible plan clearly marked unverified is better off
+        # than one with a blank card — but it travels without the citations,
+        # because those are the part that did not hold up and showing them would
+        # lend invented text the authority of the protocol.
+        if last_payload is not None:
+            advisory = self._advisory_plan(validated, last_payload, chunks, dropped)
+            if advisory is not None:
+                return advisory
 
         return self._empty(
             validated,
@@ -248,30 +260,53 @@ class EmergencyResponsePlanner:
         chunks: list[dict],
         attempt: int,
     ) -> tuple[EmergencyResponsePlan | None, int]:
-        """Return the grounded plan, or None when a citation or action fails."""
+        """Return the plan built from whatever grounded, or None if nothing did.
+
+        Returning None drives a retry, so this says "nothing here held up" only
+        when no action survived at all. A plan that lost one action out of six
+        is still a plan worth having, and discarding it used to be the single
+        largest source of incidents with no advice attached.
+        """
         citations, dropped = verify_citations(
             payload.get("protocol_citations") or [], chunks
         )
-        # A partially fabricated citation set is still an ungrounded response;
-        # silently retaining its valid half hides that the model invented evidence.
-        if dropped or not citations:
+        if not citations:
             return None, dropped
 
         verified_ids = {citation["chunk_id"] for citation in citations}
-        actions = []
+        actions, ungrounded = [], 0
         for raw_action in payload.get("actions") or []:
             action = dict(raw_action)
             supporting = action.get("supporting_protocol_chunk_ids")
+            # An action whose protocol backing did not verify is dropped rather
+            # than shown. The action itself may be sensible, but it arrives
+            # claiming the protocol says something, and that claim is what could
+            # not be confirmed — printing it anyway is how an invented
+            # instruction acquires the authority of a cited one.
             if not supporting or not set(supporting).issubset(verified_ids):
-                return None, dropped
+                ungrounded += 1
+                continue
             actions.append(action)
+
+        if not actions:
+            return None, dropped
+
+        limitations = list(validated.limitations or [])
+        if dropped or ungrounded:
+            limitations.append(
+                f"Partly grounded: {ungrounded} recommended action(s) and "
+                f"{dropped} citation(s) could not be traced to the retrieved "
+                "protocol text and were removed. What remains is verified."
+            )
 
         return (
             EmergencyResponsePlan(
                 metadata={
                     "timestamp": self._timestamp(),
                     "agent": AGENT_NAME,
-                    "planning_status": "success",
+                    "planning_status": (
+                        "success" if not (dropped or ungrounded) else "partial"
+                    ),
                     "model": getattr(self.llm_service, "model", None),
                     "reason": None,
                 },
@@ -284,18 +319,86 @@ class EmergencyResponsePlanner:
                 response_actions=actions,
                 assumptions=payload.get("assumptions") or [],
                 evidence_gaps=validated.evidence_gaps,
-                limitations=validated.limitations,
+                limitations=limitations,
                 grounding={
                     "retriever": "bm25",
                     "retrieved_chunk_ids": [chunk["chunk_id"] for chunk in chunks],
                     "citations": citations,
                     "unverified_citation_count": dropped,
+                    "ungrounded_action_count": ungrounded,
+                    "protocol_grounded": True,
                     "attempts": attempt + 1,
                 },
                 error=None,
             ),
             dropped,
         )
+
+    def _advisory_plan(
+        self,
+        validated: EmergencyResponsePlanInput,
+        payload: dict,
+        chunks: list[dict],
+        dropped: int,
+    ) -> EmergencyResponsePlan | None:
+        """The model's plan with its unverified citations removed, marked as advice.
+
+        Reached only when nothing could be traced to the protocol after every
+        attempt. The judgement is that an operator is better served by a
+        plausible plan labelled unverified than by an empty card — but the
+        labelling has to be structural rather than a note someone may not read,
+        so the citations are stripped and the limitation is the first thing the
+        card lists.
+
+        Returns None when the payload cannot even be assembled, which falls back
+        to reporting a failure.
+        """
+        actions = [dict(action) for action in payload.get("actions") or []]
+        if not actions or not payload.get("plan_summary"):
+            return None
+
+        limitations = [
+            "NOT PROTOCOL-VERIFIED. No part of this plan could be traced back to "
+            "the retrieved emergency protocols, so it reflects the model's "
+            "general judgement rather than published doctrine. Treat it as a "
+            "starting point to check, not as an instruction to follow.",
+            *(validated.limitations or []),
+        ]
+
+        try:
+            return EmergencyResponsePlan(
+                metadata={
+                    "timestamp": self._timestamp(),
+                    "agent": AGENT_NAME,
+                    "planning_status": "partial",
+                    "model": getattr(self.llm_service, "model", None),
+                    "reason": "ungrounded_response",
+                },
+                incident_id=validated.incident_id,
+                hazard_type=validated.hazard_type,
+                location=validated.location,
+                responding_to=validated.risk_context,
+                plan_summary=payload["plan_summary"],
+                recommended_units=payload["recommended_units"],
+                response_actions=actions,
+                assumptions=payload.get("assumptions") or [],
+                evidence_gaps=validated.evidence_gaps,
+                limitations=limitations,
+                grounding={
+                    "retriever": "bm25",
+                    "retrieved_chunk_ids": [chunk["chunk_id"] for chunk in chunks],
+                    # Deliberately empty: every citation the model offered failed
+                    # verification, and the card renders no citation block at all
+                    # rather than one the reader would take as evidence.
+                    "citations": [],
+                    "unverified_citation_count": dropped,
+                    "protocol_grounded": False,
+                    "attempts": MAX_PLAN_ATTEMPTS,
+                },
+                error=None,
+            )
+        except (ValidationError, KeyError, TypeError):
+            return None
 
     def _scoped_retriever(self, hazard: str) -> tuple[object, str | None]:
         """The protocol retriever limited to one hazard's documents."""

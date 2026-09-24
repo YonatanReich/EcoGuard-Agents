@@ -150,18 +150,35 @@ def main() -> int:
     print("\nResponse planning (second real Claude call)")
     plan = planning_agent.plan_response(SAMPLE_EVENT, risk)
 
+    # "partial" is a working plan, not a failure. The planner keeps the actions
+    # it could ground and labels the rest, so a run that lands there has done
+    # its job — reporting it as a failure here would train a reader to ignore
+    # the one line that says whether the model is reachable at all.
+    status = plan["metadata"]["planning_status"]
+    grounded = plan.get("grounding", {}).get("protocol_grounded", True)
     passed &= report(
-        "plan succeeded",
-        plan["metadata"]["planning_status"] == "success",
-        plan.get("error") or "",
+        "plan produced",
+        status in {"success", "partial"} and bool(plan.get("response_actions")),
+        plan.get("error") or status,
     )
 
-    if plan["metadata"]["planning_status"] == "success":
-        passed &= report(
-            "plan cites the corpus",
-            len(plan["grounding"]["citations"]) > 0,
-            f"{len(plan['grounding']['citations'])} verified",
-        )
+    if status in {"success", "partial"}:
+        citations = len(plan["grounding"]["citations"])
+        if grounded:
+            passed &= report(
+                "plan cites the corpus",
+                citations > 0,
+                f"{citations} verified"
+                + ("" if status == "success" else ", some actions dropped as ungrounded"),
+            )
+        else:
+            # Not a failure of the run, but the operator-visible outcome is
+            # advice rather than doctrine, and a demo should know which it got.
+            report(
+                "plan is NOT protocol-verified",
+                True,
+                "returned as advice; citations withheld",
+            )
         print("\n  Units:", ", ".join(plan["recommended_units"]))
         print("  Actions:")
         for action in plan["response_actions"]:

@@ -1,15 +1,26 @@
-"""Durable, incident-keyed SharedEvent projection repository."""
+"""The stored event for each incident, and the feed the dashboard reads.
+
+A projection outlives the incident it describes, on purpose: it is what the
+dashboard drew, kept so a closed event can still be looked up. That makes the
+feed responsible for deciding what is current, which is what `projected_events`
+does - otherwise the map shows every event the system has ever produced.
+"""
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import text
 
 from ecoguard.database.engine import Session
+
+# How long a closed incident stays on the map. Long enough that an operator
+# watching one resolve sees it resolve rather than blink out between refreshes,
+# short enough that it is gone by the next shift.
+CLOSED_GRACE = timedelta(minutes=30)
 
 
 @dataclass(frozen=True)
@@ -119,8 +130,20 @@ def event_projection_by_incident(incident_id: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
-def projected_events(*, limit: int = 100) -> list[dict[str, Any]]:
-    """Newest projectable incidents, with a deterministic identity tie-break."""
+def projected_events(
+    *, limit: int = 100, include_closed_for: timedelta = CLOSED_GRACE
+) -> list[dict[str, Any]]:
+    """What is happening now, newest first, with a deterministic tie-break.
+
+    Closed incidents drop off. A projection outlives the incident it describes,
+    so without this the map accumulated every fire the system had ever seen -
+    eleven of them, ten closed, one quiet for thirty-five hours, all drawn as
+    though they were burning.
+
+    The grace window keeps an incident visible for a short while after it
+    closes, because an operator watching a fire resolve should see it resolve
+    rather than have it vanish between refreshes.
+    """
 
     if not 1 <= limit <= 200:
         raise ValueError("event projection limit must be between 1 and 200")
@@ -129,15 +152,21 @@ def projected_events(*, limit: int = 100) -> list[dict[str, Any]]:
         rows = session.execute(
             text(
                 "SELECT event_projections.*, "
-                "       incidents.signals AS incident_signals "
+                "       incidents.signals AS incident_signals, "
+                "       incidents.status AS incident_status "
                 "FROM event_projections "
                 "JOIN incidents ON incidents.id = event_projections.incident_id "
                 "WHERE incidents.status = 'open' "
                 "AND (event_projections.event_payload IS NOT NULL "
                 "   OR event_projections.last_successful_event_payload IS NOT NULL) "
+                "  AND (incidents.status = 'open' "
+                "   OR incidents.closed_at >= :closed_after) "
                 "ORDER BY event_projections.updated_at DESC, "
                 "         event_projections.incident_id ASC LIMIT :limit"
             ),
-            {"limit": limit},
+            {
+                "limit": limit,
+                "closed_after": datetime.now(timezone.utc) - include_closed_for,
+            },
         ).mappings().all()
     return [dict(row) for row in rows]

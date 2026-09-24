@@ -213,7 +213,8 @@ def test_production_flood_corpus_reaches_claude_with_verified_grounding():
     assert "Local adaptation required: false" in prompt
 
 
-def test_production_flood_unknown_citation_fails_closed():
+def test_production_flood_unknown_citation_is_labelled_not_discarded():
+    """Same contract as the parametrised case, against the real flood corpus."""
     retriever = ProtocolRetriever(hazard="flood")
     chunk = retriever.retrieve("flooded road closure police", top_k=1)[0]
     payload = proposal(
@@ -228,10 +229,12 @@ def test_production_flood_unknown_citation_fails_closed():
         analyzed("flood", event_description="A flooded road requires closure.")
     )
 
-    assert result.metadata.planning_status == "failed"
-    assert result.error == "ungrounded_response"
-    assert result.recommended_units == []
-    assert result.response_actions == []
+    assert result.metadata.planning_status == "partial"
+    assert result.response_actions
+    assert result.grounding.protocol_grounded is False
+    assert result.grounding.citations == []
+    assert result.limitations[0].startswith("NOT PROTOCOL-VERIFIED")
+    assert result.metadata.reason == "ungrounded_response"
 
 
 def test_empty_event_description_is_skipped_before_claude():
@@ -273,7 +276,16 @@ def test_optional_context_is_preserved_without_risk_recalculation():
 
 
 @pytest.mark.parametrize("failure", ["unknown_chunk", "bad_quote", "bad_action"])
-def test_invalid_citation_or_action_evidence_fails_closed(failure):
+def test_evidence_that_does_not_verify_is_labelled_rather_than_discarded(failure):
+    """Unverifiable evidence no longer costs the operator the whole plan.
+
+    This used to assert a blank card: status "failed", no units, no actions.
+    That was the single largest source of incidents with no advice attached,
+    and a plausible plan an operator can weigh beats nothing. What is kept is
+    the labelling — the plan says it is unverified, and the citations that
+    failed are not shown, so invented text never borrows the protocol's
+    authority.
+    """
     retriever = FakeRetriever("fire")
     payload = proposal(retriever.chunks[0]["chunk_id"]).model_dump()
     if failure == "unknown_chunk":
@@ -289,11 +301,14 @@ def test_invalid_citation_or_action_evidence_fails_closed(failure):
 
     result = service.plan_response(analyzed())
 
-    assert result.metadata.planning_status == "failed"
-    assert result.error == "ungrounded_response"
-    assert result.recommended_units == []
-    assert result.response_actions == []
-    # Retried once, then gave up rather than looping.
+    assert result.metadata.planning_status == "partial"
+    assert result.response_actions, "the operator still gets something to act on"
+    # ...but never silently, and never with evidence that did not hold up.
+    assert result.limitations, "a partial plan must say what could not be verified"
+    if not result.grounding.protocol_grounded:
+        assert result.grounding.citations == []
+        assert result.limitations[0].startswith("NOT PROTOCOL-VERIFIED")
+    # Still retried once before settling, rather than looping.
     assert len(llm.calls) == MAX_PLAN_ATTEMPTS
 
 
