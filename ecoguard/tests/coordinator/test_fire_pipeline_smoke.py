@@ -6,7 +6,11 @@ from datetime import datetime, timezone
 
 from ecoguard.analyzers.fire.incident_handler import FireIncidentHandler
 from ecoguard.api.events import shared_event_feed
-from ecoguard.coordinator.dispatcher import default_handler_registry, dispatch_incidents
+from ecoguard.coordinator.dispatcher import (
+    IncidentDispatchContext,
+    default_handler_registry,
+    dispatch_incidents,
+)
 from ecoguard.coordinator.event_projection import project_processing_results
 from ecoguard.resource_allocator.allocation_agent import ResourceAllocationAgent
 from ecoguard.planners.shared.schemas import EmergencyResponsePlan
@@ -427,3 +431,31 @@ def test_fire_planning_failure_allocates_one_police_station():
         "shortfall": 0,
     }
     assert len(allocation["allocated_units"]["police_stations"]) == 1
+
+
+def test_fire_risk_failure_is_reported_without_automatic_allocation():
+    class FailingRiskAnalyzer:
+        def analyze_event(self, _detected_event):
+            raise RuntimeError("missing credentials")
+
+    result = FireIncidentHandler(
+        risk_analyzer=FailingRiskAnalyzer(),
+        clock=lambda: NOW,
+    ).process(
+        _incident(),
+        IncidentDispatchContext(
+            incident_id="INC-FIRE-SMOKE",
+            hazard="fire",
+            route="emergency",
+            analysis_id="analysis-fire-smoke",
+            coordinator_routing_id="routing-fire-smoke",
+            routed_by="test",
+            routed_at=NOW,
+            requested_at=NOW,
+        ),
+    )
+
+    assert result.planner_status == "skipped"
+    assert result.risk_status == "failed"
+    assert result.requires_resource_allocation is False
+    assert result.fallback_allocation_context is None

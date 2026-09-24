@@ -5,7 +5,7 @@ database for screenshots. This runs the *real* pipeline — the same detectors,
 coordinator, analysers and planners — over authored evidence, so the output can
 be graded against what the evidence was built to mean.
 
-Consumed by: the dashboard's "Run Demo A" control.
+Consumed by: the dashboard's Demo A and Demo B controls.
 """
 
 from __future__ import annotations
@@ -21,7 +21,10 @@ router = APIRouter(prefix="/api/scenario")
 
 # Only scenarios listed here can be started, so the endpoint cannot be used to
 # point the pipeline at an arbitrary schema.
-SCENARIOS = {"demo_a": "ecoguard.demo.scenarios.demo_a"}
+SCENARIOS = {
+    "demo_a": "ecoguard.demo.scenarios.demo_a",
+    "demo_b": "ecoguard.demo.scenarios.demo_b",
+}
 
 
 def _seeder(scenario: str):

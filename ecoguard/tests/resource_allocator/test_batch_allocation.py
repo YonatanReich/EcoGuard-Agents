@@ -695,6 +695,37 @@ def test_earthquake_planning_failure_allocates_one_police_station():
     assert len(allocation["allocated_units"]["police_stations"]) == 1
 
 
+def test_planning_failure_with_location_but_no_risk_is_not_allocatable():
+    agent = allocation_agent({
+        "police": lambda: catalog(
+            station(2, "Police station", 31.76, 35.20, kind="station")
+        ),
+    })
+    result = SimpleNamespace(
+        incident_id="INC-NO-RISK",
+        hazard="fire",
+        route="emergency",
+        requested_at=NOW,
+        planner_status="skipped",
+        planner_result=None,
+        failure_reason="operational analysis unavailable",
+        fallback_allocation_context={
+            "location": {"latitude": 31.75, "longitude": 35.21},
+            "risk_context": None,
+        },
+        requires_resource_allocation=True,
+        resource_allocation_result=None,
+    )
+
+    agent.allocate_processing_results([result])
+
+    allocation = result.resource_allocation_result
+    assert allocation["status"] == "failed"
+    assert allocation["reason"] == "invalid_allocation_request"
+    assert allocation["allocated_units"] == {}
+    assert "requires operational risk" in allocation["errors"][0]
+
+
 def test_planning_failure_does_not_derive_missing_location_or_risk():
     incident_reader = Mock(return_value={
         "latitude": 31.75,

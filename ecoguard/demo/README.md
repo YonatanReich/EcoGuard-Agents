@@ -16,6 +16,7 @@ analyzers and planners do the work.
 |---|---|
 | `sandbox.py` | Builds an isolated copy of the tables the pipeline writes, switches to it, and switches back |
 | `scenarios/demo_a.py` | Five authored events, the evidence they would have produced, and the noise the system should ignore |
+| `scenarios/demo_b.py` | Four initial complex events focused on merge/separation boundaries and emergency allocation |
 | `grade.py` | Compares what came out against what was expected |
 | `run_once.py` | Seeds, runs one pass and grades it, from the command line |
 
@@ -28,5 +29,14 @@ left out so a demo incident is still reasoned about against the real country.
 Collectors are paused while a scenario runs, so live data cannot wander in and
 be mistaken for seeded evidence.
 
-There is a button for this on the dashboard. The command line does the same
-thing without waiting for the next ten-minute cycle.
+There are buttons for both scenarios on the dashboard. The command line does
+the same thing without waiting for the next ten-minute cycle:
+
+```text
+python -m ecoguard.demo.run_once demo_a
+python -m ecoguard.demo.run_once demo_b
+```
+
+Demo B also grades the identity evidence itself (minimum signal counts),
+station allocation and route completion. One incident cannot satisfy two
+authored events, which is essential when evaluating its two nearby fires.

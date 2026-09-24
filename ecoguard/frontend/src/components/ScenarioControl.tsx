@@ -24,8 +24,10 @@ export type ScenarioStatus = {
   counts?: Record<string, number>
 }
 
-const SCENARIO = 'demo_a'
-const LABEL = 'Demo A'
+const SCENARIOS = [
+  { id: 'demo_a', label: 'Demo A' },
+  { id: 'demo_b', label: 'Demo B' },
+] as const
 
 /** While a scenario runs the map changes as each wave lands, so it is polled
  *  faster than a dashboard normally would be. Cheap: it reads process memory
@@ -99,29 +101,42 @@ function ScenarioControl({
   const stopping = status?.stopping ?? false
   const incidents = status?.counts?.incidents ?? 0
   const projected = status?.counts?.event_projections ?? 0
+  const runningLabel =
+    SCENARIOS.find((scenario) => scenario.id === status?.scenario)?.label ??
+    status?.scenario ??
+    'Demo'
 
   return (
     <div className="scenario">
-      <button
-        type="button"
-        className={`scenario__button${running ? ' scenario__button--stop' : ''}`}
-        disabled={busy || stopping}
-        onClick={() =>
-          void send(running ? '/api/scenario/stop' : `/api/scenario/start/${SCENARIO}`)
-        }
-        title={
-          running
-            ? 'Return the detectors to the live observations table'
-            : 'Point the detectors at an authored scenario and wake them now'
-        }
-      >
-        {busy ? '…' : stopping ? 'Ending…' : running ? `End ${LABEL}` : `Run ${LABEL}`}
-      </button>
+      {running ? (
+        <button
+          type="button"
+          className="scenario__button scenario__button--stop"
+          disabled={busy || stopping}
+          onClick={() => void send('/api/scenario/stop')}
+          title="Return the detectors to the live observations table"
+        >
+          {busy ? '…' : stopping ? 'Ending…' : `End ${runningLabel}`}
+        </button>
+      ) : (
+        SCENARIOS.map((scenario) => (
+          <button
+            key={scenario.id}
+            type="button"
+            className="scenario__button"
+            disabled={busy}
+            onClick={() => void send(`/api/scenario/start/${scenario.id}`)}
+            title={`Run the authored ${scenario.label} scenario`}
+          >
+            {busy ? '…' : `Run ${scenario.label}`}
+          </button>
+        ))
+      )}
 
       {running && (
         <span className="scenario__banner" role="status">
           <span className="scenario__dot" aria-hidden="true" />
-          {LABEL} — showing authored evidence, not live data
+          {runningLabel} — showing authored evidence, not live data
           <span className="scenario__counts">
             {incidents} incident{incidents === 1 ? '' : 's'} · {projected} projected
             {stopping

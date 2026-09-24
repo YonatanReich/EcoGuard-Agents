@@ -36,6 +36,7 @@ from ecoguard.shared.events import (
     EarthquakeSharedEvent,
     EarthquakeTown,
     GeoJsonPolygon,
+    EarthquakeResourceAllocationSummary,
 )
 
 NOW = datetime(2026, 9, 20, 10, 30, tzinfo=timezone.utc)
@@ -597,6 +598,22 @@ def test_earthquake_projection_exposes_plan_allocation_route_and_policy(monkeypa
     api_allocation = response.json()["events"][0]["details"]["resource_allocation"]
     assert api_allocation["stations"][0]["route"]["duration_s"] == 600
     assert api_allocation["quantity_source"] == "ecoguard_minimum_response_policy"
+
+
+def test_earthquake_event_contract_accepts_the_planning_failure_police_policy():
+    summary = EarthquakeResourceAllocationSummary.model_validate({
+        "status": "fulfilled",
+        "routing_status": "complete",
+        "requirements": {
+            "police": {"requested": 1, "assigned": 1, "shortfall": 0},
+        },
+        "stations": [],
+        "allocation_policy": "planning_failure_police_minimum_v1",
+        "allocation_basis": "planner_unavailable_emergency_minimum",
+        "quantity_source": "ecoguard_fallback_policy",
+    })
+
+    assert summary.allocation_policy == "planning_failure_police_minimum_v1"
 
 
 # The rows below are copied from a real GSI FDSN response, not composed. The
