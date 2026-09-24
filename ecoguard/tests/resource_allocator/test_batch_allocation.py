@@ -737,6 +737,74 @@ def test_planning_failure_does_not_derive_missing_location_or_risk():
     incident_reader.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    ("hazard", "protocol_grounded", "expected_resource_key"),
+    [
+        ("fire", True, "fire_stations"),
+        ("earthquake", True, "fire_stations"),
+        ("fire", False, "police_stations"),
+        ("earthquake", False, "police_stations"),
+    ],
+)
+def test_partial_plan_uses_verified_units_or_police_fallback(
+    hazard,
+    protocol_grounded,
+    expected_resource_key,
+):
+    agent = allocation_agent({
+        "fire_department": lambda: catalog(
+            station(1, "Fire station", 31.76, 35.20)
+        ),
+        "police": lambda: catalog(
+            station(2, "Police station", 31.77, 35.19, kind="station")
+        ),
+    })
+    plan = response_plan(
+        "INC-PARTIAL-PLAN",
+        planning_status="partial",
+        units=["fire_department"],
+    )
+    plan["grounding"] = {"protocol_grounded": protocol_grounded}
+    if hazard == "earthquake":
+        plan["hazard_type"] = "earthquake"
+
+    result = SimpleNamespace(
+        incident_id="INC-PARTIAL-PLAN",
+        hazard=hazard,
+        route="emergency",
+        requested_at=NOW,
+        planner_status="partial",
+        planner_result=plan,
+        failure_reason=(
+            "partially_grounded_response"
+            if protocol_grounded
+            else "ungrounded_response"
+        ),
+        fallback_allocation_context={
+            "location": {"latitude": 31.0, "longitude": 35.0},
+            "risk_context": dict(plan["responding_to"]),
+        },
+        requires_resource_allocation=True,
+        resource_allocation_result=None,
+    )
+
+    agent.allocate_processing_results([result])
+
+    allocation = result.resource_allocation_result
+    assert list(allocation["allocated_units"]) == [expected_resource_key]
+    if protocol_grounded:
+        expected_policy = (
+            EARTHQUAKE_MINIMUM_RESPONSE_POLICY
+            if hazard == "earthquake"
+            else None
+        )
+        assert allocation.get("allocation_policy") == expected_policy
+    else:
+        assert allocation["allocation_policy"] == (
+            "planning_failure_police_minimum_v1"
+        )
+
+
 def test_flood_deescalation_preserves_existing_allocation_without_retargeting():
     flood_target_agent = Mock()
     agent = allocation_agent(

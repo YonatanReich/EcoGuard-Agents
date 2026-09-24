@@ -76,9 +76,10 @@ class AllocationRequestPreparer:
             raise ValueError("incident_id is required")
 
         planner_status = str(item.get("planner_status") or "failed")
-        if planner_status not in {"failed", "skipped"}:
+        if planner_status not in {"partial", "failed", "skipped"}:
             raise ValueError(
-                "planning-failure fallback requires a failed or skipped plan"
+                "planning-failure fallback requires a partial, failed, or "
+                "skipped plan"
             )
 
         location = item.get("location")
@@ -477,12 +478,18 @@ class AllocationRequestPreparer:
         if not incident_id:
             raise ValueError("incident_id is required")
 
-        # Failed and skipped plans are terminal outcomes, not malformed
-        # allocation requests. Preserve their reason for the caller.
+        # A partial plan is allocatable only when at least one verified action
+        # survived grounding. Failed, skipped, and wholly ungrounded plans are
+        # terminal here; the explicit police fallback uses its own policy path.
         planning_status = self._planning_status(response_plan)
-        if planning_status not in {"success", "failed", "skipped"}:
+        if planning_status not in {"success", "partial", "failed", "skipped"}:
             raise ValueError("response plan has an invalid planning_status")
-        if planning_status != "success":
+        grounding = response_plan.get("grounding") or {}
+        verified_partial = (
+            planning_status == "partial"
+            and grounding.get("protocol_grounded") is True
+        )
+        if planning_status != "success" and not verified_partial:
             return self._terminal_plan_result(
                 incident_id,
                 response_plan,

@@ -115,7 +115,7 @@ class EarthquakeIncidentHandler:
             planner_result=planner_result,
             fallback_allocation_context=(
                 fallback_allocation_context
-                if planner_status in {"failed", "skipped"}
+                if planner_status in {"partial", "failed", "skipped"}
                 else None
             ),
             failure_stage=(None if planner_status == "success" else "planning"),
@@ -124,9 +124,13 @@ class EarthquakeIncidentHandler:
                 if planner_status == "success"
                 else planner_result.get("error")
                 or (planner_result.get("metadata") or {}).get("reason")
-                or "earthquake_planning_failed"
+                or (
+                    "partially_grounded_response"
+                    if planner_status == "partial"
+                    else "earthquake_planning_failed"
+                )
             ),
             requires_resource_allocation=(
-                planner_status in {"success", "failed", "skipped"}
+                planner_status in {"success", "partial", "failed", "skipped"}
             ),
         )

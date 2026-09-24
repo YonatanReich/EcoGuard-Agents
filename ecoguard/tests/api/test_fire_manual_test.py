@@ -107,13 +107,13 @@ def test_invalid_risk_semantics_is_rejected_before_planner():
     assert processing[0].requires_resource_allocation is False
 
 
-def test_planner_failure_does_not_request_allocation():
+def test_planner_failure_requests_minimum_allocation():
     *_, planner, processing = _process("planner_failure")
 
     assert len(planner.calls) == 1
     assert processing[0].status == "partial"
     assert processing[0].planner_status == "failed"
-    assert processing[0].requires_resource_allocation is False
+    assert processing[0].requires_resource_allocation is True
 
 
 def test_missing_location_fails_before_risk_analysis():

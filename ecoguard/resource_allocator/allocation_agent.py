@@ -151,6 +151,19 @@ class ResourceAllocationAgent:
             )
         return "failed"
 
+    @staticmethod
+    def _planner_response_is_allocatable(response_plan, planning_status):
+        """Accept complete plans and the verified remainder of partial plans."""
+        if not isinstance(response_plan, dict):
+            return False
+        if planning_status == "success":
+            return True
+        grounding = response_plan.get("grounding") or {}
+        return (
+            planning_status == "partial"
+            and grounding.get("protocol_grounded") is True
+        )
+
     def _planning_failure_request(self, result):
         """Forward analyzer-owned location and risk to the fallback policy."""
         hazard = str(getattr(result, "hazard", None) or "unknown")
@@ -195,15 +208,8 @@ class ResourceAllocationAgent:
             if hazard == "fire":
                 response_plan = getattr(result, "planner_result", None)
                 planning_status = self._planner_status(result, response_plan)
-                if planning_status in {"failed", "skipped"}:
-                    if getattr(
-                        result, "requires_resource_allocation", None
-                    ) is False:
-                        continue
-                    request = self._planning_failure_request(result)
-                elif (
-                    isinstance(response_plan, dict)
-                    and planning_status == "success"
+                if self._planner_response_is_allocatable(
+                    response_plan, planning_status
                 ):
                     request = {
                         "incident_id": result.incident_id,
@@ -211,6 +217,12 @@ class ResourceAllocationAgent:
                         "queued_at": result.requested_at,
                         "response_plan": response_plan,
                     }
+                elif planning_status in {"partial", "failed", "skipped"}:
+                    if getattr(
+                        result, "requires_resource_allocation", None
+                    ) is False:
+                        continue
+                    request = self._planning_failure_request(result)
                 else:
                     continue
                 targeting = None
@@ -260,9 +272,8 @@ class ResourceAllocationAgent:
             elif hazard == "earthquake":
                 response_plan = getattr(result, "planner_result", None)
                 planning_status = self._planner_status(result, response_plan)
-                if (
-                    isinstance(response_plan, dict)
-                    and planning_status == "success"
+                if self._planner_response_is_allocatable(
+                    response_plan, planning_status
                 ):
                     request = {
                         "incident_id": result.incident_id,
@@ -271,7 +282,7 @@ class ResourceAllocationAgent:
                         "response_plan": response_plan,
                         "allocation_policy": EARTHQUAKE_MINIMUM_RESPONSE_POLICY,
                     }
-                elif planning_status in {"failed", "skipped"}:
+                elif planning_status in {"partial", "failed", "skipped"}:
                     if getattr(
                         result, "requires_resource_allocation", None
                     ) is False:

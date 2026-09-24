@@ -72,10 +72,15 @@ Allocation result attached to the Coordinator result
 An emergency with analyzer-provided location and operational risk must not
 receive no field presence only because protocol planning failed. Fire and
 Earthquake therefore use the explicit `planning_failure_police_minimum_v1`
-policy when the Planner returns `failed`/`skipped` or raises. The original
-planning status remains failed; the fallback is recorded separately as
-allocation policy and assigns exactly one police station for initial on-scene
-assessment and coordination.
+policy when the Planner returns `failed`/`skipped`, returns a wholly ungrounded
+`partial` plan, or raises. The original planning status is preserved; the
+fallback is recorded separately as allocation policy and assigns exactly one
+police station for initial on-scene assessment and coordination.
+
+A `partial` plan with `grounding.protocol_grounded: true` follows the normal
+allocation path using only the verified actions that survived grounding. A
+`partial` plan with `protocol_grounded: false` cannot authorize its proposed
+units and therefore uses the police minimum instead.
 
 The allocator never derives these facts and never fills a missing location
 from the incident record. If the handler cannot supply both fields, the

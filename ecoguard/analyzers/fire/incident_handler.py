@@ -290,25 +290,10 @@ class FireIncidentHandler:
                 requires_resource_allocation=False,
             )
 
-        fallback_allocation_context = {
-            "location": (
-                _as_dict(risk.get("location"))
-                or _as_dict(detected_event.get("location"))
-            ),
-            "risk_context": {
-                "risk_semantics": risk.get("risk_semantics"),
-                "risk_score": risk.get("risk_score"),
-                "risk_level": risk.get("risk_level"),
-                "confidence": risk.get("confidence"),
-            },
-        }
-
         try:
             plan_input = build_fire_plan_input(detected_event, risk).model_copy(
                 update={"incident_id": context.incident_id}
             )
-            plan = self._planner.plan_response(plan_input)
-            planner_result = _as_dict(plan)
         except OperationalAnalysisUnavailable as error:
             return IncidentProcessingResult(
                 incident_id=context.incident_id,
@@ -325,11 +310,22 @@ class FireIncidentHandler:
                 planner_status="skipped",
                 analysis_result=detected_event,
                 risk_assessment=risk,
-                fallback_allocation_context=fallback_allocation_context,
                 failure_stage="planning_input",
                 failure_reason=str(error),
-                requires_resource_allocation=True,
+                requires_resource_allocation=False,
             )
+
+        fallback_allocation_context = {
+            "location": (
+                plan_input.location.model_dump(mode="json")
+                if plan_input.location is not None
+                else None
+            ),
+            "risk_context": dict(plan_input.risk_context or {}),
+        }
+        try:
+            plan = self._planner.plan_response(plan_input)
+            planner_result = _as_dict(plan)
         except Exception as error:
             return IncidentProcessingResult(
                 incident_id=context.incident_id,
@@ -373,7 +369,7 @@ class FireIncidentHandler:
             planner_result=planner_result,
             fallback_allocation_context=(
                 fallback_allocation_context
-                if planner_status in {"failed", "skipped"}
+                if planner_status in {"partial", "failed", "skipped"}
                 else None
             ),
             failure_stage=None if planner_succeeded else "planning",
@@ -383,11 +379,15 @@ class FireIncidentHandler:
                 else str(
                     planner_result.get("error")
                     or metadata.get("reason")
-                    or "fire_planning_failed"
+                    or (
+                        "partially_grounded_response"
+                        if planner_status == "partial"
+                        else "fire_planning_failed"
+                    )
                 )
             ),
             requires_resource_allocation=(
-                planner_status in {"success", "failed", "skipped"}
+                planner_status in {"success", "partial", "failed", "skipped"}
             ),
         )
 
