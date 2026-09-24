@@ -81,3 +81,45 @@ def test_an_unknown_source_is_not_swept_up_by_a_default():
 def test_retention_days_are_positive_where_set():
     for source, days in RETENTION_DAYS.items():
         assert days is None or days > 0, f"{source} has a non-positive retention"
+
+
+def test_air_pollution_retention_outlives_what_actually_reads_it():
+    """The window must stay well clear of the longest read-back, or trends break.
+
+    Air pollution is 63% of the observations table and the only source that
+    forced a policy at all. What makes pruning it safe is that nothing reads
+    these rows for long: the trend model's feature window is the deepest look
+    back, and the baselines come from the month files on disk rather than from
+    this table. Lowering the window under that would not fail loudly — the
+    trend service would just start reporting "unavailable" for every series.
+    """
+    from datetime import timedelta
+
+    from ecoguard.shared.air_pollution_trend_features import LOOKBACK_MINUTES
+
+    window = timedelta(days=RETENTION_DAYS["air_pollution"])
+    deepest_read = timedelta(minutes=LOOKBACK_MINUTES)
+
+    assert window > deepest_read * 10, (
+        f"retention of {window} leaves too little margin over the {deepest_read} "
+        "the trend model reads"
+    )
+
+
+def test_the_raw_text_lanes_are_kept_for_the_same_reason_as_each_other():
+    """RSS and Telegram are one lane; a policy on one and not the other is an accident.
+
+    Both store raw unclassified text so old messages can be re-read when the
+    extractor improves, and both are the only copy — feeds and channels drop
+    and edit their items within days.
+    """
+    assert RETENTION_DAYS["rss"] is None
+    assert RETENTION_DAYS["telegram"] is None
+
+
+def test_every_source_in_the_table_has_a_deliberate_policy():
+    """A source with no entry is warned about and left to grow without bound."""
+    from ecoguard.scheduler import COLLECTORS
+
+    undecided = set(COLLECTORS) - set(RETENTION_DAYS)
+    assert not undecided, f"no retention decided for: {sorted(undecided)}"

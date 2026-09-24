@@ -31,7 +31,14 @@ def test_flood_manifest_and_all_approved_documents_load():
     manifest = json.loads(
         (retriever.corpus_path / "manifest.json").read_text(encoding="utf-8")
     )
-    on_disk = {path.name for path in retriever.corpus_path.glob("*.md")}
+    # README.md documents the folder for a reader; it is not corpus. The
+    # retriever loads from the manifest so it never saw it, but this check
+    # reads the directory directly and would count it as a document.
+    on_disk = {
+        path.name
+        for path in retriever.corpus_path.glob("*.md")
+        if path.name != "README.md"
+    }
 
     assert retriever.available is True
     assert manifest["hazard"] == "flood"

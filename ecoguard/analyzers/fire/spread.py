@@ -58,12 +58,24 @@ SHELTERED_TREE_COVER = 0.5
 # difference between brush that will not carry fire and brush that carried the
 # Carmel fire.
 #
-# ponytail: a two-value season switch rather than a live fuel moisture model.
-# The upgrade path is NDVI, which the collection layer can already reach and
-# which tracks curing directly. Until then this is the knob to turn.
+# They are now the two ends of a ramp rather than a switch: the calendar is the
+# fallback, and `live_moisture_from_ndvi` interpolates between them when the
+# vegetation collector has seen the ground.
 LIVE_FUEL_MOISTURE_GREEN = 1.00
 LIVE_FUEL_MOISTURE_CURED = 0.60
 CURED_SEASON_MONTHS = (6, 7, 8, 9, 10, 11)
+
+# The NDVI readings those two endpoints correspond to. Fully cured
+# Mediterranean shrub and grass sit near 0.15 and fully green near 0.45 in the
+# MODIS 8-day composite the vegetation collector reads.
+#
+# ponytail: a straight line between two anchors, not a relative-greenness model
+# with a per-cell historical NDVI range. These are calibration knobs — a
+# different sensor, or a year wet enough to move the seasonal maximum, moves
+# them, and a burnt scar reads below NDVI_CURED and is correctly clamped to
+# cured rather than being treated as wetter than it is.
+NDVI_CURED = 0.15
+NDVI_GREEN = 0.45
 
 # Vertices on a returned ring. 72 is one every five degrees, which at a few
 # kilometres is a sub-cell error on the boundary and keeps the ring small
@@ -132,6 +144,24 @@ def live_moisture_for_month(month: int) -> float:
         LIVE_FUEL_MOISTURE_CURED
         if int(month) in CURED_SEASON_MONTHS
         else LIVE_FUEL_MOISTURE_GREEN
+    )
+
+
+def live_moisture_from_ndvi(ndvi: float) -> float:
+    """Live fuel moisture from how green the satellite says the fuel is.
+
+    The calendar says what the hillside usually does in September. NDVI says
+    what it is doing this September, and the difference is the fire: brush that
+    cured three weeks early in a dry year reads cured here and reads green to
+    the month switch.
+
+    Clamped at both ends, so a burnt scar or an irrigated field cannot push the
+    moisture outside the range the endpoints were measured over.
+    """
+    greenness = (float(ndvi) - NDVI_CURED) / (NDVI_GREEN - NDVI_CURED)
+    greenness = min(1.0, max(0.0, greenness))
+    return LIVE_FUEL_MOISTURE_CURED + greenness * (
+        LIVE_FUEL_MOISTURE_GREEN - LIVE_FUEL_MOISTURE_CURED
     )
 
 

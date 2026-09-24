@@ -9,7 +9,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
-from ecoguard.analyzers.fire.spread import offset_point
+from ecoguard.analyzers.fire.spread import live_moisture_from_ndvi, offset_point
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +128,7 @@ def environment_for(
 
     terrain = summary.get("terrain") or {}
     fuel = summary.get("fuel") or {}
+    vegetation = summary.get("vegetation") or {}
 
     # Weather is read at the incident's own hour, not at the wall clock.
     #
@@ -152,6 +153,12 @@ def environment_for(
         gaps.append("no_terrain_data_for_the_location")
     if not fuel.get("cell_count"):
         gaps.append("no_land_cover_for_the_location")
+    if vegetation.get("ndvi") is None:
+        # Not fatal: `analyze()` falls back to the calendar. Named anyway,
+        # because a live moisture guessed from the month is a weaker claim than
+        # one read off the ground, and the reader cannot tell them apart from
+        # the number alone.
+        gaps.append("no_ndvi_for_the_location_live_moisture_from_the_calendar")
 
     environment: dict[str, Any] = {
         "cover_fractions": dict(fuel.get("fractions") or {}),
@@ -168,7 +175,19 @@ def environment_for(
         "burnable_fraction": fuel.get("burnable_fraction"),
         "dominant_fuel": fuel.get("dominant"),
         "fire_danger": summary.get("fire_danger"),
+        # Carried for the report so the live moisture below can be read rather
+        # than taken on trust.
+        "ndvi": vegetation.get("ndvi"),
+        "ndvi_observed_at": vegetation.get("observed_at"),
     }
+
+    # The one place NDVI changes an answer: live fuel moisture off the ground
+    # instead of off the calendar. Absent, `analyze()` uses the month, which is
+    # why this is set rather than defaulted here.
+    if vegetation.get("ndvi") is not None:
+        environment["live_fuel_moisture"] = round(
+            live_moisture_from_ndvi(vegetation["ndvi"]), 4
+        )
 
     for key, value in (
         ("temperature_c", (weather or {}).get("temperature_c")),

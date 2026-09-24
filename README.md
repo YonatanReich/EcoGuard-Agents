@@ -77,6 +77,7 @@ aggregator.
 
 ## Architecture
 
+<img src="ecoguard\data\Capture.PNG" alt="Seven-stage pipeline" width="720">
 
 
 The stages never call each other. Each one reads what the previous stage wrote

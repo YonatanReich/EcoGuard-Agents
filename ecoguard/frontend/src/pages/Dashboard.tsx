@@ -22,6 +22,7 @@ import { useNavigate } from 'react-router-dom'
 import { MapProvider, useMap } from 'react-map-gl/mapbox'
 
 import MapView from '../components/MapView'
+import LoadingScreen from '../components/LoadingScreen'
 
 
 import EventCard from '../components/EventCard'
@@ -29,14 +30,10 @@ import WeakEventCard from '../components/WeakEventCard'
 import EventLegend from '../components/EventLegend'
 import EventModal from '../components/EventModal'
 import { classify } from '../components/hazards'
-import FireRiskLayer from '../components/layers/FireRiskLayer'
 
 import FloodLegend from '../components/FloodLegend'
-import FireRiskAlert from '../components/FireRiskAlert'
 import KinneretLevelCard from '../components/KinneretLevelCard'
 import ScenarioControl from '../components/ScenarioControl'
-import { clusterHighRiskCells, type FireRiskCluster } from '../components/fireRiskClusters'
-import { normalizeNationalRiskScanResponse, type NationalRiskScan } from '../components/fireRiskScan'
 import FireDistrictsLayer from '../components/layers/FireDistrictsLayer'
 import MdaDistrictsLayer from '../components/layers/MdaDistrictsLayer'
 import TownSearch from '../components/TownSearch'
@@ -266,6 +263,32 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
   const [isLoadingEvents, setIsLoadingEvents] =
     useState(true)
 
+  /**
+   * The boot cover, held over the whole page until the map has painted and the
+   * first feed has answered — so nobody arrives to an empty map with both
+   * panels reading "Scanning…". `booted` starts its fade; `showBoot` unmounts
+   * it once the fade has run, and must stay in step with the .boot transition
+   * in index.css.
+   */
+  const [mapLoaded, setMapLoaded] = useState(false)
+  const [bootTimedOut, setBootTimedOut] = useState(false)
+  const booted = (mapLoaded && !isLoadingEvents) || bootTimedOut
+  const [showBoot, setShowBoot] = useState(true)
+
+  useEffect(() => {
+    if (!booted) return
+    const done = setTimeout(() => setShowBoot(false), 600)
+    return () => clearTimeout(done)
+  }, [booted])
+
+  // ponytail: a failsafe, because a missing VITE_MAPBOX_KEY (or a tile error,
+  // or a feed that never answers) means the cover would sit there for good.
+  // Raise it if a cold start ever legitimately takes longer.
+  useEffect(() => {
+    const giveUp = setTimeout(() => setBootTimedOut(true), 10_000)
+    return () => clearTimeout(giveUp)
+  }, [])
+
   const [leaving, setLeaving] =
     useState(false)
 
@@ -320,15 +343,6 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
     mdaStationCount,
     setMdaStationCount,
   ] = useState<{ located: number; total: number } | null>(null)
-
-  const [nationalRiskScan, setNationalRiskScan] =
-    useState<NationalRiskScan | null>(null)
-  const [nationalRiskError, setNationalRiskError] =
-    useState<string | null>(null)
-  const [focusedFireRiskCluster, setFocusedFireRiskCluster] =
-    useState<FireRiskCluster | null>(null)
-  const [dismissedFireRiskSnapshot, setDismissedFireRiskSnapshot] =
-    useState<string | null>(null)
 
 
   const navigate = useNavigate()
@@ -395,50 +409,6 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
     setWeakEvents((current) => current.filter((weak) => weak.id !== id))
   }
 
-  useEffect(() => {
-    let active = true
-    let requestInFlight = false
-    let controller: AbortController | null = null
-
-    const loadNationalRiskScan = async () => {
-      if (requestInFlight) return
-      requestInFlight = true
-      controller = new AbortController()
-      try {
-        const response = await fetch('/api/fire-risk/national-scan', { signal: controller.signal })
-        if (!response.ok) throw new Error('National risk scan is unavailable')
-        const scan = normalizeNationalRiskScanResponse(await response.json() as unknown)
-        if (active) {
-          setNationalRiskScan(scan)
-          setNationalRiskError(null)
-        }
-      } catch (reason: unknown) {
-        if (active && !controller.signal.aborted) {
-          setNationalRiskError(reason instanceof Error ? reason.message : 'National risk scan is unavailable')
-        }
-      } finally {
-        requestInFlight = false
-      }
-    }
-
-    void loadNationalRiskScan()
-    const intervalId = window.setInterval(() => void loadNationalRiskScan(), 5 * 60 * 1000)
-    return () => {
-      active = false
-      controller?.abort()
-      window.clearInterval(intervalId)
-    }
-  }, [])
-
-  const highRiskClusters = useMemo(
-    () => clusterHighRiskCells(nationalRiskScan?.cells ?? []),
-    [nationalRiskScan],
-  )
-
-  const viewHighRiskOnMap = (cluster: FireRiskCluster) => {
-    setFocusedFireRiskCluster(cluster)
-  }
-
 
   // =========================================================
   // Logout
@@ -464,6 +434,8 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
         }`
       }
     >
+
+      {showBoot && <LoadingScreen done={booted} />}
 
       <header className="dashboard__header">
 
@@ -612,18 +584,9 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
           <MapView
             events={events}
             onEventClick={selectAndOpenEvent}
+            onLoad={() => setMapLoaded(true)}
             style={{ flex: '1 1 auto', minHeight: 0 }}
           >
-
-            {nationalRiskScan && highRiskClusters.length > 0 && dismissedFireRiskSnapshot !== nationalRiskScan.evaluation_time && (
-              <FireRiskAlert
-                clusters={highRiskClusters}
-                evaluationTime={nationalRiskScan.evaluation_time}
-                snapshotStale={nationalRiskScan.refresh_metadata?.stale === true}
-                onViewOnMap={viewHighRiskOnMap}
-                onDismiss={() => setDismissedFireRiskSnapshot(nationalRiskScan.evaluation_time)}
-              />
-            )}
 
             {showFireDistricts && (
               <FireDistrictsLayer />
@@ -650,16 +613,6 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
 
             {events.some((event) => event.type === 'flood') && (
               <FloodLegend />
-            )}
-
-            {focusedFireRiskCluster && (
-              <FireRiskLayer
-                scan={nationalRiskScan}
-                error={nationalRiskError}
-                visible={false}
-                focusedCluster={focusedFireRiskCluster}
-                onClearFocusedCluster={() => setFocusedFireRiskCluster(null)}
-              />
             )}
 
             {corridorEvent?.details.transport?.corridor && (

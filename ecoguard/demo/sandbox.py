@@ -249,11 +249,16 @@ def kick_wave() -> bool:
         return False
 
     def run() -> None:
-        """Run one detection tick against the sandbox."""
+        """Run one detection tick against the sandbox.
+
+        Forced past the pipeline switch on purpose. Somebody pressed a button
+        asking for this, which is a different thing from a timer firing on its
+        own, and the switch is there to stop the latter.
+        """
         try:
             from ecoguard.scheduler import detect_and_coordinate
 
-            detect_and_coordinate()
+            detect_and_coordinate(force=True)
         except Exception:
             logger.exception("scenario wave failed")
 
