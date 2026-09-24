@@ -20,6 +20,7 @@ from ecoguard.resource_allocator.station_selection import StationSelectionServic
 from ecoguard.resource_allocator.request_preparation import (
     AllocationRequestPreparer,
     EARTHQUAKE_MINIMUM_RESPONSE_POLICY,
+    PLANNING_FAILURE_POLICE_POLICY,
     normalize_utc,
 )
 
@@ -137,6 +138,38 @@ class ResourceAllocationAgent:
         allocated = [self.allocation_executor.execute(item) for item in prepared]
         return [*allocated, *terminal_results]
 
+    @staticmethod
+    def _planner_status(result, response_plan):
+        """Read the explicit handler status before consulting plan metadata."""
+        status = getattr(result, "planner_status", None)
+        if status:
+            return str(status)
+        if isinstance(response_plan, dict):
+            return str(
+                (response_plan.get("metadata") or {}).get("planning_status")
+                or "failed"
+            )
+        return "failed"
+
+    def _planning_failure_request(self, result):
+        """Forward analyzer-owned location and risk to the fallback policy."""
+        hazard = str(getattr(result, "hazard", None) or "unknown")
+        context = getattr(result, "fallback_allocation_context", None)
+        if not isinstance(context, dict):
+            context = {}
+
+        response_plan = getattr(result, "planner_result", None)
+        return {
+            "incident_id": result.incident_id,
+            "hazard": hazard,
+            "queued_at": result.requested_at,
+            "allocation_policy": PLANNING_FAILURE_POLICE_POLICY,
+            "planner_status": self._planner_status(result, response_plan),
+            "planner_reason": getattr(result, "failure_reason", None),
+            "location": context.get("location"),
+            "risk_context": context.get("risk_context"),
+        }
+
     @live_actor("allocator")
     def allocate_processing_results(self, processing_results):
         """Build and allocate every eligible emergency request in one batch.
@@ -161,14 +194,25 @@ class ResourceAllocationAgent:
 
             if hazard == "fire":
                 response_plan = getattr(result, "planner_result", None)
-                if not isinstance(response_plan, dict):
+                planning_status = self._planner_status(result, response_plan)
+                if planning_status in {"failed", "skipped"}:
+                    if getattr(
+                        result, "requires_resource_allocation", None
+                    ) is False:
+                        continue
+                    request = self._planning_failure_request(result)
+                elif (
+                    isinstance(response_plan, dict)
+                    and planning_status == "success"
+                ):
+                    request = {
+                        "incident_id": result.incident_id,
+                        "hazard": "fire",
+                        "queued_at": result.requested_at,
+                        "response_plan": response_plan,
+                    }
+                else:
                     continue
-                request = {
-                    "incident_id": result.incident_id,
-                    "hazard": "fire",
-                    "queued_at": result.requested_at,
-                    "response_plan": response_plan,
-                }
                 targeting = None
             elif hazard == "flood":
                 if getattr(result, "requires_resource_allocation", None) is False:
@@ -215,22 +259,26 @@ class ResourceAllocationAgent:
                 }
             elif hazard == "earthquake":
                 response_plan = getattr(result, "planner_result", None)
-                if not isinstance(response_plan, dict):
+                planning_status = self._planner_status(result, response_plan)
+                if (
+                    isinstance(response_plan, dict)
+                    and planning_status == "success"
+                ):
+                    request = {
+                        "incident_id": result.incident_id,
+                        "hazard": "earthquake",
+                        "queued_at": result.requested_at,
+                        "response_plan": response_plan,
+                        "allocation_policy": EARTHQUAKE_MINIMUM_RESPONSE_POLICY,
+                    }
+                elif planning_status in {"failed", "skipped"}:
+                    if getattr(
+                        result, "requires_resource_allocation", None
+                    ) is False:
+                        continue
+                    request = self._planning_failure_request(result)
+                else:
                     continue
-                # Only a successfully planned earthquake is allocatable. The
-                # minimum-response policy commits stations on the plan's
-                # authority, and a plan that failed has none to lend.
-                if (response_plan.get("metadata") or {}).get(
-                    "planning_status"
-                ) != "success":
-                    continue
-                request = {
-                    "incident_id": result.incident_id,
-                    "hazard": "earthquake",
-                    "queued_at": result.requested_at,
-                    "response_plan": response_plan,
-                    "allocation_policy": EARTHQUAKE_MINIMUM_RESPONSE_POLICY,
-                }
                 targeting = None
 
             else:

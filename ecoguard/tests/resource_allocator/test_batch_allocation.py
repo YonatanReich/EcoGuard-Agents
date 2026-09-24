@@ -652,6 +652,91 @@ def test_resource_allocator_discovers_flood_roads_and_assigns_one_police_station
     assert allocations["INC-FLOOD-1"] is station_allocation
 
 
+def test_earthquake_planning_failure_allocates_one_police_station():
+    agent = allocation_agent({
+        "police": lambda: catalog(
+            station(2, "Police station", 31.76, 35.20, kind="station")
+        ),
+    })
+    result = SimpleNamespace(
+        incident_id="INC-EQ-FAILED-PLAN",
+        hazard="earthquake",
+        route="emergency",
+        requested_at=NOW,
+        planner_status="failed",
+        planner_result=None,
+        failure_reason="planner unavailable",
+        fallback_allocation_context={
+            "location": {"latitude": 31.75, "longitude": 35.21},
+            "risk_context": {
+                "risk_semantics": "detected_event_operational_risk",
+                "risk_score": 50,
+                "risk_level": "medium",
+            },
+        },
+        analysis_result=None,
+        risk_assessment=None,
+        requires_resource_allocation=True,
+        resource_allocation_result=None,
+    )
+
+    allocations = agent.allocate_processing_results([result])
+
+    allocation = result.resource_allocation_result
+    assert allocations[result.incident_id] is allocation
+    assert allocation["allocation_policy"] == (
+        "planning_failure_police_minimum_v1"
+    )
+    assert allocation["requirements"]["police"] == {
+        "requested": 1,
+        "assigned": 1,
+        "shortfall": 0,
+    }
+    assert len(allocation["allocated_units"]["police_stations"]) == 1
+
+
+def test_planning_failure_does_not_derive_missing_location_or_risk():
+    incident_reader = Mock(return_value={
+        "latitude": 31.75,
+        "longitude": 35.21,
+    })
+    agent = allocation_agent(
+        {
+            "police": lambda: catalog(
+                station(2, "Police station", 31.76, 35.20, kind="station")
+            ),
+        },
+        incident_reader=incident_reader,
+    )
+    result = SimpleNamespace(
+        incident_id="INC-EQ-NO-CONTEXT",
+        hazard="earthquake",
+        route="emergency",
+        requested_at=NOW,
+        planner_status="failed",
+        planner_result=None,
+        failure_reason="planner unavailable",
+        fallback_allocation_context=None,
+        analysis_result=SimpleNamespace(
+            latitude=31.75,
+            longitude=35.21,
+            magnitude=4.6,
+        ),
+        risk_assessment={"risk_score": 50, "risk_level": "high"},
+        requires_resource_allocation=True,
+        resource_allocation_result=None,
+    )
+
+    allocations = agent.allocate_processing_results([result])
+
+    allocation = result.resource_allocation_result
+    assert allocations[result.incident_id] is allocation
+    assert allocation["status"] == "failed"
+    assert allocation["reason"] == "invalid_allocation_request"
+    assert "requires a location" in allocation["errors"][0]
+    incident_reader.assert_not_called()
+
+
 def test_flood_deescalation_preserves_existing_allocation_without_retargeting():
     flood_target_agent = Mock()
     agent = allocation_agent(

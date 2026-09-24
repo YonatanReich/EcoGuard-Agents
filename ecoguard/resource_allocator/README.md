@@ -39,10 +39,11 @@ Coordinator emergency result
         v
 ResourceAllocationAgent.allocate_processing_results
         |
-        +-- Fire: use the successful Planner response
+        +-- Fire: use the successful Planner response; if planning failed,
+        |         apply the one-police-station minimum fallback
         |
-        +-- Earthquake: require a successful Planner response and apply the
-        |                minimum-response allocation policy
+        +-- Earthquake: apply the normal minimum-response policy to a
+        |                successful plan; otherwise use the police fallback
         |
         +-- Flood: identify road targets, validate hydrometric risk, and adapt
                    the Planner response or build a deterministic fallback
@@ -65,6 +66,24 @@ AllocationExecutor
         v
 Allocation result attached to the Coordinator result
 ```
+
+## Planning-failure minimum
+
+An emergency with analyzer-provided location and operational risk must not
+receive no field presence only because protocol planning failed. Fire and
+Earthquake therefore use the explicit `planning_failure_police_minimum_v1`
+policy when the Planner returns `failed`/`skipped` or raises. The original
+planning status remains failed; the fallback is recorded separately as
+allocation policy and assigns exactly one police station for initial on-scene
+assessment and coordination.
+
+The allocator never derives these facts and never fills a missing location
+from the incident record. If the handler cannot supply both fields, the
+fallback request fails validation and no station is allocated.
+
+Flood keeps its existing deterministic fallback, which also assigns one police
+station when validated risk and a routable road or hydrometric target are
+available. Advisory routes are not resource-allocation requests.
 
 ## Prepared request contract
 
@@ -155,11 +174,13 @@ durable assignment.
 ### Fire
 
 Fire uses the successful Planner response directly after validating operational
-risk and ensuring that every recommended unit has a valid response action.
+risk and ensuring that every recommended unit has a valid response action. If
+planning fails after operational risk is available, the allocator ignores the
+failed plan's unit list and applies the one-police-station fallback.
 
 ### Earthquake
 
-Earthquake allocation requires:
+Normal Earthquake allocation requires:
 
 - a successful Earthquake Planner response;
 - `earthquake_minimum_response_v1` as the allocation policy;
@@ -169,6 +190,10 @@ The allocator assigns one station per supported recommended unit type and
 persists the policy, basis, and quantity-source metadata. The prepared request
 retains `hazard: "earthquake"`, so Coordinator results are matched by both
 incident id and hazard like the other emergency types.
+
+If Earthquake planning fails, the handler forwards the epicenter and operational
+risk already produced while building the validated Planner input. The allocator
+does not recalculate either value.
 
 ### Flood
 

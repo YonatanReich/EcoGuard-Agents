@@ -8,10 +8,15 @@ from ecoguard.analyzers.flood.risk_analysis_schemas import FloodRiskAssessment
 
 
 RISK_LEVELS = frozenset({"low", "medium", "high", "critical"})
+OPERATIONAL_RISK_SEMANTICS = "detected_event_operational_risk"
 
 EARTHQUAKE_MINIMUM_RESPONSE_POLICY = "earthquake_minimum_response_v1"
 EARTHQUAKE_ALLOCATION_BASIS = "protocol_recommended_units"
 EARTHQUAKE_QUANTITY_SOURCE = "ecoguard_minimum_response_policy"
+
+PLANNING_FAILURE_POLICE_POLICY = "planning_failure_police_minimum_v1"
+PLANNING_FAILURE_ALLOCATION_BASIS = "planner_unavailable_emergency_minimum"
+PLANNING_FAILURE_QUANTITY_SOURCE = "ecoguard_fallback_policy"
 
 TIMEFRAME_PRIORITY = {
     "ongoing": 0,
@@ -50,11 +55,99 @@ class AllocationRequestPreparer:
         if not isinstance(item, dict):
             raise ValueError("allocation request must be an object")
 
+        if item.get("allocation_policy") == PLANNING_FAILURE_POLICE_POLICY:
+            return self._prepare_planning_failure_police(item, now)
+
         # Flood first resolves its operational destination from road or gauge
         # evidence. Every other hazard already arrives with a dispatch plan.
         if item.get("hazard") == "flood":
             return self._prepare_flood(item, now)
         return self._prepare_response_plan(item, now)
+
+    def _prepare_planning_failure_police(self, item, now):
+        """Build the explicit one-police-station emergency fallback.
+
+        This is an allocation policy, not a successful response plan. The
+        original Planner status remains on the synthetic plan so downstream
+        consumers can see why the minimum allocation was used.
+        """
+        incident_id = str(item.get("incident_id") or "").strip()
+        if not incident_id:
+            raise ValueError("incident_id is required")
+
+        planner_status = str(item.get("planner_status") or "failed")
+        if planner_status not in {"failed", "skipped"}:
+            raise ValueError(
+                "planning-failure fallback requires a failed or skipped plan"
+            )
+
+        location = item.get("location")
+        if not isinstance(location, dict):
+            raise ValueError("planning-failure fallback requires a location")
+        latitude = location.get("latitude")
+        longitude = location.get("longitude")
+        if (
+            not isinstance(latitude, (int, float))
+            or isinstance(latitude, bool)
+            or not math.isfinite(latitude)
+            or not isinstance(longitude, (int, float))
+            or isinstance(longitude, bool)
+            or not math.isfinite(longitude)
+        ):
+            raise ValueError(
+                "planning-failure fallback requires finite coordinates"
+            )
+
+        risk_context = item.get("risk_context")
+        if not isinstance(risk_context, dict):
+            raise ValueError(
+                "planning-failure fallback requires operational risk"
+            )
+        if risk_context.get("risk_semantics") != OPERATIONAL_RISK_SEMANTICS:
+            raise ValueError(
+                "planning-failure fallback requires operational risk semantics"
+            )
+        risk_score, risk_level = self._validated_risk(risk_context)
+        queued_at = normalize_utc(item.get("queued_at") or now)
+        waited_seconds = max(0, (now - queued_at).total_seconds())
+
+        fallback_plan = {
+            "metadata": {
+                "planning_status": planner_status,
+                "reason": item.get("planner_reason") or "planning_unavailable",
+                "agent": "deterministic_planning_failure_fallback",
+            },
+            "event_id": incident_id,
+            "hazard_type": str(item.get("hazard") or "unknown"),
+            "location": {
+                "latitude": float(latitude),
+                "longitude": float(longitude),
+            },
+            "responding_to": dict(risk_context),
+            "recommended_units": ["police"],
+            "response_actions": [{
+                "action": (
+                    "Establish police presence and coordinate an initial "
+                    "on-scene assessment while the response plan is unavailable."
+                ),
+                "responsible_unit": "police",
+                "timeframe": "immediate",
+            }],
+        }
+        return {
+            "incident_id": incident_id,
+            "hazard": str(item.get("hazard") or "unknown"),
+            "response_plan": fallback_plan,
+            "risk_score": risk_score,
+            "risk_level": risk_level,
+            "queued_at": queued_at,
+            "allocation_time": now,
+            "urgency": TIMEFRAME_PRIORITY["immediate"],
+            "effective_priority": risk_score + int(waited_seconds // 300),
+            "allocation_policy": PLANNING_FAILURE_POLICE_POLICY,
+            "allocation_basis": PLANNING_FAILURE_ALLOCATION_BASIS,
+            "quantity_source": PLANNING_FAILURE_QUANTITY_SOURCE,
+        }
 
     @staticmethod
     def _planning_status(response_plan):
@@ -349,7 +442,7 @@ class AllocationRequestPreparer:
                 "longitude": float(location["longitude"]),
             },
             "responding_to": {
-                "risk_semantics": "detected_event_operational_risk",
+                "risk_semantics": OPERATIONAL_RISK_SEMANTICS,
                 "risk_score": risk.risk_score,
                 "risk_level": risk.risk_level,
                 "severity_level": severity,
@@ -406,9 +499,7 @@ class AllocationRequestPreparer:
             )
 
         responding_to = response_plan.get("responding_to") or {}
-        if responding_to.get("risk_semantics") != (
-            "detected_event_operational_risk"
-        ):
+        if responding_to.get("risk_semantics") != OPERATIONAL_RISK_SEMANTICS:
             raise ValueError("response plan does not contain operational risk")
 
         risk_score, risk_level = self._validated_risk(responding_to)

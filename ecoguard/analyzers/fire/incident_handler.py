@@ -290,6 +290,19 @@ class FireIncidentHandler:
                 requires_resource_allocation=False,
             )
 
+        fallback_allocation_context = {
+            "location": (
+                _as_dict(risk.get("location"))
+                or _as_dict(detected_event.get("location"))
+            ),
+            "risk_context": {
+                "risk_semantics": risk.get("risk_semantics"),
+                "risk_score": risk.get("risk_score"),
+                "risk_level": risk.get("risk_level"),
+                "confidence": risk.get("confidence"),
+            },
+        }
+
         try:
             plan_input = build_fire_plan_input(detected_event, risk).model_copy(
                 update={"incident_id": context.incident_id}
@@ -312,9 +325,10 @@ class FireIncidentHandler:
                 planner_status="skipped",
                 analysis_result=detected_event,
                 risk_assessment=risk,
+                fallback_allocation_context=fallback_allocation_context,
                 failure_stage="planning_input",
                 failure_reason=str(error),
-                requires_resource_allocation=False,
+                requires_resource_allocation=True,
             )
         except Exception as error:
             return IncidentProcessingResult(
@@ -332,9 +346,10 @@ class FireIncidentHandler:
                 planner_status="failed",
                 analysis_result=detected_event,
                 risk_assessment=risk,
+                fallback_allocation_context=fallback_allocation_context,
                 failure_stage="planning",
                 failure_reason=type(error).__name__,
-                requires_resource_allocation=False,
+                requires_resource_allocation=True,
             )
 
         metadata = planner_result.get("metadata") or {}
@@ -356,6 +371,11 @@ class FireIncidentHandler:
             analysis_result=detected_event,
             risk_assessment=risk,
             planner_result=planner_result,
+            fallback_allocation_context=(
+                fallback_allocation_context
+                if planner_status in {"failed", "skipped"}
+                else None
+            ),
             failure_stage=None if planner_succeeded else "planning",
             failure_reason=(
                 None
@@ -366,7 +386,9 @@ class FireIncidentHandler:
                     or "fire_planning_failed"
                 )
             ),
-            requires_resource_allocation=planner_succeeded,
+            requires_resource_allocation=(
+                planner_status in {"success", "failed", "skipped"}
+            ),
         )
 
 

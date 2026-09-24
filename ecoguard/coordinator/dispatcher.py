@@ -187,6 +187,7 @@ class IncidentProcessingResult:
     analysis_result: Any | None = None
     risk_assessment: Any | None = None
     planner_result: Any | None = None
+    fallback_allocation_context: dict[str, Any] | None = None
     failure_stage: str | None = None
     failure_reason: str | None = None
     resource_allocation_result: dict[str, Any] | None = None
