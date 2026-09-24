@@ -26,8 +26,29 @@ keep what cannot**:
   * Telegram is never pruned because the collector deliberately stores raw
     unclassified text so old messages can be re-read when the extractor
     improves. Upstream messages get edited and deleted; this is the only copy.
+  * RSS is never pruned for exactly the same reason as Telegram: it is the same
+    lane, the same raw unclassified text, and a feed drops an item within days
+    so this is the only copy of it. At a megabyte it is not worth a policy that
+    could lose the material the classifier is improved against.
+  * Air pollution is the one that forces the issue. It is 63% of the table and
+    grows by roughly a hundred megabytes a day, and unlike weather it cannot be
+    re-fetched at all: the provider serves only the latest reading per station.
+    What saves it is that nothing reads these rows for long. The longest
+    programmatic read-back is the trend model's two-hour feature window, and
+    the baselines are built from the month files in the five-minute cache on
+    disk, never from this table. A week is therefore eighty times the longest
+    functional need, kept so a question about yesterday still has data behind
+    it, and it caps the source at well under a gigabyte instead of unbounded.
+  * Rainfall and radar are nowcasting inputs for flood detection, worthless
+    once the storm they describe has passed, and they come from the same
+    provider and serve the same lane as the hydrometric readings already set to
+    thirty days. They get the same number for the same reason.
+  * Earthquakes are never pruned. There are eleven rows in total and the source
+    has produced under six kilobytes in its lifetime, so a policy here would
+    save nothing and could only ever lose the record of a real event.
 
-Steady state under this policy is roughly 1.6 GB rather than unbounded growth.
+Steady state under this policy is roughly 2.5 GB rather than unbounded growth,
+almost all of it the week of air pollution.
 
 Deletes here are small and routine, so ordinary autovacuum reclaims the space
 for reuse. If the volumes ever grow enough that this stops being true, the
@@ -65,6 +86,19 @@ RETENTION_DAYS: dict[str, int | None] = {
     # retention window here would quietly shorten the longest trend the
     # system can ever report.
     "kinneret_level": None,
+    # The reason this file exists. See the module docstring: not re-fetchable,
+    # but nothing reads it further back than two hours, and the baselines come
+    # from the cache on disk rather than from here.
+    "air_pollution": 7,
+    # Same provider and same lane as the hydrometric readings above, and stale
+    # the moment the storm they describe has passed.
+    "water_authority_rainfall_observations": 30,
+    "ims_radar_ppi": 30,
+    # The same raw-text argument as telegram, and a megabyte in total.
+    "rss": None,
+    # Eleven rows and six kilobytes in its lifetime. A policy could only lose
+    # the record of a real earthquake and would save nothing.
+    "gsi_earthquake": None,
 }
 
 
