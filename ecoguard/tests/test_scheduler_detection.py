@@ -66,6 +66,26 @@ def _air_pollution_signal() -> CellSignal:
     )
 
 
+@pytest.fixture(autouse=True)
+def _pipeline_enabled():
+    """Run these against a live pipeline whatever the developer's .env says.
+
+    The switch reads ECOGUARD_PIPELINE at import, and a machine set up for a
+    demo has it off. Without this the whole file would silently test the paused
+    path and pass by doing nothing. Tests that care about pausing set it
+    themselves inside the test.
+    """
+    from ecoguard import pipeline_switch
+
+    previously = pipeline_switch.is_enabled()
+    pipeline_switch.set_enabled(True)
+    try:
+        yield
+    finally:
+        pipeline_switch.set_enabled(previously)
+
+
+
 def test_fire_and_air_pollution_share_one_coordinator_batch(monkeypatch):
     from ecoguard import scheduler as shared_runtime
     from ecoguard.coordinator import agent
@@ -588,17 +608,13 @@ def test_paused_pipeline_skips_the_wave_without_touching_collectors(monkeypatch)
     ran = []
     monkeypatch.setattr(shared_runtime, "_detect_and_coordinate", lambda: ran.append(1))
 
-    previously = pipeline_switch.is_enabled()
-    try:
-        pipeline_switch.set_enabled(False)
-        assert shared_runtime.detect_and_coordinate() == []
-        assert ran == []
+    pipeline_switch.set_enabled(False)
+    assert shared_runtime.detect_and_coordinate() == []
+    assert ran == []
 
-        pipeline_switch.set_enabled(True)
-        shared_runtime.detect_and_coordinate()
-        assert ran == [1]
-    finally:
-        pipeline_switch.set_enabled(previously)
+    pipeline_switch.set_enabled(True)
+    shared_runtime.detect_and_coordinate()
+    assert ran == [1]
 
     # Collection is on its own timers and is never gated by the switch.
     collectors = [j for j in shared_runtime.scheduler.get_jobs()
@@ -625,3 +641,37 @@ def test_the_pipeline_switch_reads_dotenv_rather_than_trusting_import_order():
         "ECOGUARD_PIPELINE=off silently ineffective"
     )
     assert source.index("load_dotenv()") < source.index("_enabled = _from_environment()")
+
+
+def test_a_demo_run_is_not_blocked_by_the_pipeline_switch(monkeypatch):
+    """The Run Demo button must work while the live pipeline is paused.
+
+    Pausing is for the timer, not for a person asking. The presentation state
+    is `ECOGUARD_PIPELINE=off`, so a demo that silently did nothing in that
+    state would fail in exactly the moment it exists for.
+    """
+    from ecoguard import pipeline_switch
+    from ecoguard import scheduler as shared_runtime
+
+    ran = []
+    monkeypatch.setattr(shared_runtime, "_detect_and_coordinate", lambda: ran.append(1))
+
+    pipeline_switch.set_enabled(False)
+
+    assert shared_runtime.detect_and_coordinate() == [], "the timer still skips"
+    assert ran == []
+
+    shared_runtime.detect_and_coordinate(force=True)
+    assert ran == [1], "a deliberate run goes ahead"
+
+
+def test_the_scenario_runner_asks_for_a_forced_wave():
+    """The bug this guards: sandbox called the gated entry point and did nothing."""
+    import inspect
+
+    from ecoguard.demo import sandbox
+
+    source = inspect.getsource(sandbox)
+    assert "detect_and_coordinate(force=True)" in source, (
+        "the demo wave must bypass the pause, or the button is dead while paused"
+    )
