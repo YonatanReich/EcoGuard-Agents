@@ -8,6 +8,7 @@ from contextlib import contextmanager
 
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import OperationalError
 
 from ecoguard.database.engine import DATABASE_URL, engine
 
@@ -75,7 +76,21 @@ def single_flight(name: str):
             yield acquired
         finally:
             if acquired:
-                connection.execute(
-                    text("SELECT pg_advisory_unlock(:key)"), {"key": key}
-                )
-                connection.commit()
+                try:
+                    connection.execute(
+                        text("SELECT pg_advisory_unlock(:key)"), {"key": key}
+                    )
+                    connection.commit()
+                except OperationalError:
+                    # The connection died while the caller was working, which a
+                    # serverless Postgres does to one sitting idle through a
+                    # long run. Releasing the lock is exactly what Postgres has
+                    # already done by ending the session, so there is nothing
+                    # to recover from and nothing a caller could do about it.
+                    # Raising here turned a successful collector run into a
+                    # logged failure with a full traceback.
+                    logger.info(
+                        "%s: connection closed before the lock was released; "
+                        "Postgres released it with the session",
+                        name,
+                    )
