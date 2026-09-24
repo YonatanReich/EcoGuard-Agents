@@ -17,7 +17,7 @@ cannot quote the source, the plan is rejected rather than shown.
 | `shared/` | The emergency planner used by fire, flood and earthquake, plus the input contract they all adapt to |
 | `air_pollution/` | Advisory recommendations, copied word for word from reviewed guidance |
 | `uncorroborated/` | What to do about a report nobody has confirmed: who to phone. No model call at all |
-| `fire/` | The original fire-specific planner, still used by the older single-event endpoint |
+| `fire/` | The original fire-specific planner |
 
 The protocol documents themselves live in `ecoguard/data/protocols`.
 

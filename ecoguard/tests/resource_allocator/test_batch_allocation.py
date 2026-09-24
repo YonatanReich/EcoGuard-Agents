@@ -14,6 +14,8 @@ from ecoguard.resource_allocator.allocation_agent import ResourceAllocationAgent
 from ecoguard.resource_allocator.allocation_agent import (
     EARTHQUAKE_MINIMUM_RESPONSE_POLICY,
 )
+from ecoguard.resource_allocator.geo import coordinates
+from ecoguard.resource_allocator.station_catalog import resource_key
 from ecoguard.resource_allocator.mapbox_client import RoutingError
 
 
@@ -321,9 +323,7 @@ def earthquake_allocation_request(incident_id, *, units, risk_score=60):
 @pytest.mark.parametrize("latitude", [float("nan"), float("inf"), 91, True])
 def test_invalid_coordinates_are_rejected(latitude):
     with pytest.raises(ValueError):
-        ResourceAllocationAgent._coordinates(
-            {"latitude": latitude, "longitude": 35}
-        )
+        coordinates({"latitude": latitude, "longitude": 35})
 
 
 def test_coordinator_incident_id_owns_allocation_and_release():
@@ -335,7 +335,7 @@ def test_coordinator_incident_id_owns_allocation_and_release():
         {"fire_department": fire_reader},
         allocation_repository=allocation_repository,
     )
-    catalog_station = agent._station_catalogs["fire_department"][0]
+    catalog_station = agent.station_catalog.catalogs["fire_department"][0]
 
     assert fire_reader.call_count == 1
     assert catalog_station["resource_key"] == ("fire_department", 1)
@@ -457,7 +457,7 @@ def test_flood_uses_shared_0_to_100_risk_scale(
     severity, risk_score, risk_level
 ):
     agent = allocation_agent({})
-    prepared = agent._prepare_batch_request(
+    prepared = agent.request_preparer.prepare(
         {
             "incident_id": "INC-FLOOD-1",
             "hazard": "flood",
@@ -479,14 +479,14 @@ def test_flood_uses_shared_0_to_100_risk_scale(
 
 def test_fire_and_flood_receive_the_same_level_for_the_same_score():
     agent = allocation_agent({})
-    fire = agent._prepare_batch_request(
+    fire = agent.request_preparer.prepare(
         allocation_request(
             "INC-FIRE-1",
             response_plan("fire-event", risk_score=60, risk_level="high"),
         ),
         NOW,
     )
-    flood = agent._prepare_batch_request(
+    flood = agent.request_preparer.prepare(
         {
             "incident_id": "INC-FLOOD-1",
             "hazard": "flood",
@@ -510,7 +510,7 @@ def test_flood_allocator_rejects_targeting_that_disagrees_with_risk_analyzer():
         ValueError,
         match="risk severity does not match targeting evidence",
     ):
-        agent._prepare_batch_request(
+        agent.request_preparer.prepare(
             {
                 "incident_id": "INC-FLOOD-1",
                 "hazard": "flood",
@@ -528,7 +528,7 @@ def test_flood_allocator_requires_risk_analyzer_output():
     agent = allocation_agent({})
 
     with pytest.raises(ValueError, match="flood_risk_assessment is required"):
-        agent._prepare_batch_request(
+        agent.request_preparer.prepare(
             {
                 "incident_id": "INC-FLOOD-1",
                 "hazard": "flood",
@@ -546,7 +546,7 @@ def test_flood_allocator_selects_the_highest_priority_verified_road():
     street = _flood_site(4, "street", "street-target")
     motorway = _flood_site(4, "motorway", "motorway-target")
 
-    prepared = agent._prepare_batch_request(
+    prepared = agent.request_preparer.prepare(
         {
             "incident_id": "INC-FLOOD-1",
             "hazard": "flood",
@@ -569,7 +569,7 @@ def test_flood_allocator_selects_the_highest_priority_verified_road():
 def test_flood_allocator_assigns_police_to_gauge_when_no_site_was_verified():
     agent = allocation_agent({})
 
-    prepared = agent._prepare_batch_request(
+    prepared = agent.request_preparer.prepare(
         {
             "incident_id": "INC-FLOOD-1",
             "hazard": "flood",
@@ -650,6 +650,159 @@ def test_resource_allocator_discovers_flood_roads_and_assigns_one_police_station
     }
     assert len(station_allocation["allocated_units"]["police_stations"]) == 1
     assert allocations["INC-FLOOD-1"] is station_allocation
+
+
+def test_earthquake_planning_failure_allocates_one_police_station():
+    agent = allocation_agent({
+        "police": lambda: catalog(
+            station(2, "Police station", 31.76, 35.20, kind="station")
+        ),
+    })
+    result = SimpleNamespace(
+        incident_id="INC-EQ-FAILED-PLAN",
+        hazard="earthquake",
+        route="emergency",
+        requested_at=NOW,
+        planner_status="failed",
+        planner_result=None,
+        failure_reason="planner unavailable",
+        fallback_allocation_context={
+            "location": {"latitude": 31.75, "longitude": 35.21},
+            "risk_context": {
+                "risk_semantics": "detected_event_operational_risk",
+                "risk_score": 50,
+                "risk_level": "medium",
+            },
+        },
+        analysis_result=None,
+        risk_assessment=None,
+        requires_resource_allocation=True,
+        resource_allocation_result=None,
+    )
+
+    allocations = agent.allocate_processing_results([result])
+
+    allocation = result.resource_allocation_result
+    assert allocations[result.incident_id] is allocation
+    assert allocation["allocation_policy"] == (
+        "planning_failure_police_minimum_v1"
+    )
+    assert allocation["requirements"]["police"] == {
+        "requested": 1,
+        "assigned": 1,
+        "shortfall": 0,
+    }
+    assert len(allocation["allocated_units"]["police_stations"]) == 1
+
+
+def test_planning_failure_does_not_derive_missing_location_or_risk():
+    incident_reader = Mock(return_value={
+        "latitude": 31.75,
+        "longitude": 35.21,
+    })
+    agent = allocation_agent(
+        {
+            "police": lambda: catalog(
+                station(2, "Police station", 31.76, 35.20, kind="station")
+            ),
+        },
+        incident_reader=incident_reader,
+    )
+    result = SimpleNamespace(
+        incident_id="INC-EQ-NO-CONTEXT",
+        hazard="earthquake",
+        route="emergency",
+        requested_at=NOW,
+        planner_status="failed",
+        planner_result=None,
+        failure_reason="planner unavailable",
+        fallback_allocation_context=None,
+        analysis_result=SimpleNamespace(
+            latitude=31.75,
+            longitude=35.21,
+            magnitude=4.6,
+        ),
+        risk_assessment={"risk_score": 50, "risk_level": "high"},
+        requires_resource_allocation=True,
+        resource_allocation_result=None,
+    )
+
+    allocations = agent.allocate_processing_results([result])
+
+    allocation = result.resource_allocation_result
+    assert allocations[result.incident_id] is allocation
+    assert allocation["status"] == "failed"
+    assert allocation["reason"] == "invalid_allocation_request"
+    assert "requires a location" in allocation["errors"][0]
+    incident_reader.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("hazard", "protocol_grounded", "expected_resource_key"),
+    [
+        ("fire", True, "fire_stations"),
+        ("earthquake", True, "fire_stations"),
+        ("fire", False, "police_stations"),
+        ("earthquake", False, "police_stations"),
+    ],
+)
+def test_partial_plan_uses_verified_units_or_police_fallback(
+    hazard,
+    protocol_grounded,
+    expected_resource_key,
+):
+    agent = allocation_agent({
+        "fire_department": lambda: catalog(
+            station(1, "Fire station", 31.76, 35.20)
+        ),
+        "police": lambda: catalog(
+            station(2, "Police station", 31.77, 35.19, kind="station")
+        ),
+    })
+    plan = response_plan(
+        "INC-PARTIAL-PLAN",
+        planning_status="partial",
+        units=["fire_department"],
+    )
+    plan["grounding"] = {"protocol_grounded": protocol_grounded}
+    if hazard == "earthquake":
+        plan["hazard_type"] = "earthquake"
+
+    result = SimpleNamespace(
+        incident_id="INC-PARTIAL-PLAN",
+        hazard=hazard,
+        route="emergency",
+        requested_at=NOW,
+        planner_status="partial",
+        planner_result=plan,
+        failure_reason=(
+            "partially_grounded_response"
+            if protocol_grounded
+            else "ungrounded_response"
+        ),
+        fallback_allocation_context={
+            "location": {"latitude": 31.0, "longitude": 35.0},
+            "risk_context": dict(plan["responding_to"]),
+        },
+        requires_resource_allocation=True,
+        resource_allocation_result=None,
+    )
+
+    agent.allocate_processing_results([result])
+
+    allocation = result.resource_allocation_result
+    assert list(allocation["allocated_units"]) == [expected_resource_key]
+    if protocol_grounded:
+        expected_policy = (
+            EARTHQUAKE_MINIMUM_RESPONSE_POLICY
+            if hazard == "earthquake"
+            else None
+        )
+        assert allocation.get("allocation_policy") == expected_policy
+    else:
+        assert allocation["allocation_policy"] == (
+            "planning_failure_police_minimum_v1"
+        )
 
 
 def test_flood_deescalation_preserves_existing_allocation_without_retargeting():
@@ -838,6 +991,7 @@ def test_earthquake_policy_requests_one_station_per_supported_unit_type():
         )
     ], now=NOW)[0]
 
+    assert result["hazard"] == "earthquake"
     assert result["allocation_policy"] == "earthquake_minimum_response_v1"
     assert result["allocation_basis"] == "protocol_recommended_units"
     assert result["quantity_source"] == "ecoguard_minimum_response_policy"
@@ -859,6 +1013,30 @@ def test_earthquake_policy_requests_one_station_per_supported_unit_type():
     assert fire_station["risk_level"] == "high"
     assert fire_station["route"]["geometry"]["type"] == "LineString"
     assert fire_station["route"]["estimated_arrival_at"] is not None
+
+
+def test_team_quantity_does_not_change_the_number_of_allocated_stations():
+    agent = allocation_agent({
+        "fire_department": lambda: catalog(
+            station(1, "Fire one", 31.01, 35.0),
+            station(2, "Fire two", 31.02, 35.0),
+            station(3, "Fire three", 31.03, 35.0),
+        ),
+    })
+    plan = response_plan("event-1")
+    plan["teams_required"] = 3
+
+    result = agent.allocate_batch(
+        [allocation_request("incident-1", plan)],
+        now=NOW,
+    )[0]
+
+    assert result["requirements"]["fire_department"] == {
+        "requested": 1,
+        "assigned": 1,
+        "shortfall": 0,
+    }
+    assert len(result["allocated_units"]["fire_stations"]) == 1
 
 
 def test_allocator_attaches_successful_earthquake_allocation_directly():
@@ -1265,7 +1443,7 @@ def test_repeated_allocation_for_same_incident_is_idempotent():
     ["fire_department", "police", "medical_services"],
 )
 def test_every_supported_resource_uses_its_database_id(recommended_unit):
-    assert ResourceAllocationAgent._resource_key(
+    assert resource_key(
         recommended_unit,
         {"database_id": 42},
     ) == (recommended_unit, 42)
@@ -1273,7 +1451,7 @@ def test_every_supported_resource_uses_its_database_id(recommended_unit):
 
 def test_unknown_resource_type_has_no_implicit_identity_rule():
     with pytest.raises(ValueError, match="unsupported resource type"):
-        ResourceAllocationAgent._resource_key(
+        resource_key(
             "unknown_resource",
             {"database_id": 42},
         )

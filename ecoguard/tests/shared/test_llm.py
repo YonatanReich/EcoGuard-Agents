@@ -450,7 +450,7 @@ def test_cause_chain_is_suppressed():
 
 def test_api_key_never_appears_in_a_raised_error():
     """
-    Mirrors the FIRMS redaction test in tests/test_fire_detection_agent.py.
+    Covers the same credential-redaction boundary as the provider clients.
 
     Even when the provider echoes the key back in an error message, nothing but
     the error category may escape.

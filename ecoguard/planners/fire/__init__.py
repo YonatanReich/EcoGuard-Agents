@@ -1,2 +1,1 @@
-"""The original fire-specific planner, used by the single-event endpoint."""
-
+"""Legacy Fire planning namespace; production uses planners.shared."""

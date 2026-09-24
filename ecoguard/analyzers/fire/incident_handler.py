@@ -294,8 +294,6 @@ class FireIncidentHandler:
             plan_input = build_fire_plan_input(detected_event, risk).model_copy(
                 update={"incident_id": context.incident_id}
             )
-            plan = self._planner.plan_response(plan_input)
-            planner_result = _as_dict(plan)
         except OperationalAnalysisUnavailable as error:
             return IncidentProcessingResult(
                 incident_id=context.incident_id,
@@ -316,6 +314,18 @@ class FireIncidentHandler:
                 failure_reason=str(error),
                 requires_resource_allocation=False,
             )
+
+        fallback_allocation_context = {
+            "location": (
+                plan_input.location.model_dump(mode="json")
+                if plan_input.location is not None
+                else None
+            ),
+            "risk_context": dict(plan_input.risk_context or {}),
+        }
+        try:
+            plan = self._planner.plan_response(plan_input)
+            planner_result = _as_dict(plan)
         except Exception as error:
             return IncidentProcessingResult(
                 incident_id=context.incident_id,
@@ -332,9 +342,10 @@ class FireIncidentHandler:
                 planner_status="failed",
                 analysis_result=detected_event,
                 risk_assessment=risk,
+                fallback_allocation_context=fallback_allocation_context,
                 failure_stage="planning",
                 failure_reason=type(error).__name__,
-                requires_resource_allocation=False,
+                requires_resource_allocation=True,
             )
 
         metadata = planner_result.get("metadata") or {}
@@ -356,6 +367,11 @@ class FireIncidentHandler:
             analysis_result=detected_event,
             risk_assessment=risk,
             planner_result=planner_result,
+            fallback_allocation_context=(
+                fallback_allocation_context
+                if planner_status in {"partial", "failed", "skipped"}
+                else None
+            ),
             failure_stage=None if planner_succeeded else "planning",
             failure_reason=(
                 None
@@ -363,10 +379,16 @@ class FireIncidentHandler:
                 else str(
                     planner_result.get("error")
                     or metadata.get("reason")
-                    or "fire_planning_failed"
+                    or (
+                        "partially_grounded_response"
+                        if planner_status == "partial"
+                        else "fire_planning_failed"
+                    )
                 )
             ),
-            requires_resource_allocation=planner_succeeded,
+            requires_resource_allocation=(
+                planner_status in {"success", "partial", "failed", "skipped"}
+            ),
         )
 
 
