@@ -16,7 +16,7 @@ analyzers and planners do the work.
 |---|---|
 | `sandbox.py` | Builds an isolated copy of the tables the pipeline writes, switches to it, and switches back |
 | `scenarios/demo_a.py` | Five authored events, the evidence they would have produced, and the noise the system should ignore |
-| `scenarios/demo_b.py` | Four initial complex events focused on merge/separation boundaries and emergency allocation |
+| `scenarios/demo_b.py` | Eight concurrent events covering merge/separation boundaries, advisories, text provenance and emergency allocation |
 | `grade.py` | Compares what came out against what was expected |
 | `run_once.py` | Seeds, runs one pass and grades it, from the command line |
 
@@ -40,3 +40,6 @@ python -m ecoguard.demo.run_once demo_b
 Demo B also grades the identity evidence itself (minimum signal counts),
 station allocation and route completion. One incident cannot satisfy two
 authored events, which is essential when evaluating its two nearby fires.
+Its text-only expectations require the model classifier: when Claude is
+unavailable, the keyword fallback recognizes hazard words but deliberately
+does not invent a location.

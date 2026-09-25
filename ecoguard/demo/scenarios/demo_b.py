@@ -1,15 +1,15 @@
-"""Demo B, phase 1: four emergency events that exercise incident identity.
+"""Demo B: eight concurrent events that exercise identity and routing.
 
 The scenario follows Demo A's contract: it stores only observations in the
 same shapes as the real collectors.  The ordinary detection, coordination,
 analysis, planning, allocation and projection pipeline must turn them into
 events.
 
-This first phase concentrates on four authored events: an expanding fire that
-crosses a grid boundary, a second nearby fire that must remain independent, an
-escalating flash flood, and one earthquake sequence containing two
-aftershocks.  A small amount of structured noise pins the corresponding
-suppression boundaries.
+The first four authored events concentrate on merge and separation boundaries.
+The next four add a distant concurrent earthquake, an air-pollution advisory,
+an uncorroborated text report, and a text report that should join a satellite
+fire. A small amount of structured noise pins the corresponding suppression
+boundaries.
 """
 
 from __future__ import annotations
@@ -33,6 +33,10 @@ BEIT_SHEMESH = (31.7400, 34.9900)
 ASHALIM = (31.0659, 35.3301)
 TIBERIAS = (32.7900, 35.5300)
 TIBERIAS_AFTERSHOCK = (32.8000, 35.5300)
+EILAT_QUAKE = (29.5577, 34.9519)
+NEGEV_STATION = (30.9644, 34.7008)
+ASHDOD = (31.8014, 34.6435)
+NETANYA = (32.3215, 34.8532)
 
 # The first two cells touch, so their fire signals must be folded into B1.
 # Beit Shemesh is several columns away: close enough to challenge a naive
@@ -43,6 +47,15 @@ BEIT_SHEMESH_CELL = "risk-05000m-r0051-c0014"
 ASHALIM_CELL = "risk-05000m-r0036-c0021"
 TIBERIAS_CELL = "risk-05000m-r0074-c0024"
 TIBERIAS_AFTERSHOCK_CELL = "risk-05000m-r0075-c0024"
+EILAT_QUAKE_CELL = "risk-05000m-r0003-c0014"
+NEGEV_STATION_CELL = "risk-05000m-r0034-c0009"
+NETANYA_CELL = "risk-05000m-r0064-c0012"
+
+# Real configured sources, so the text classifier's joins resolve against
+# public reference data while all mutable demo rows stay inside demo_b.
+FIRE_CHANNEL = (-1001411503185, "fireisrael7777", "כבאות והצלה ארצי")
+POLICE_CHANNEL = (-1002843129862, "Israel_Police_100", "דוברות משטרת ישראל")
+MDA_CHANNEL = (-1001177174722, "mdaisrael", "מגן דוד אדום")
 
 
 GROUND_TRUTH: list[dict[str, Any]] = [
@@ -124,6 +137,95 @@ GROUND_TRUTH: list[dict[str, Any]] = [
             "A magnitude 5.4 mainshock and two reportable aftershocks arrive "
             "within two hours in the same or an adjacent cell. They must form "
             "one incident with three signals, not three incidents."
+        ),
+    },
+    {
+        "id": "B5",
+        "event": (
+            "A second earthquake near Eilat occurs during the Sea of Galilee "
+            "aftershock sequence."
+        ),
+        "hazard": "earthquake",
+        "latitude": EILAT_QUAKE[0],
+        "longitude": EILAT_QUAKE[1],
+        "expect_detected": True,
+        "expect_route": "emergency",
+        "expect_marker_within_km": 4.0,
+        "expect_min_signals": 1,
+        "expect_allocation": True,
+        "expect_allocated_units": ["police"],
+        "expect_routing": True,
+        "expect_notes": (
+            "The magnitude 4.8 Eilat event overlaps B4 in time but is hundreds "
+            "of kilometres away. It must open a separate incident. With Claude "
+            "unavailable, deterministic earthquake risk still permits the "
+            "one-police-station fallback."
+        ),
+    },
+    {
+        "id": "B6",
+        "event": (
+            "A gradually worsening PM10 episode reaches an anomalous level at "
+            "the Negev monitoring station."
+        ),
+        "hazard": "air_pollution",
+        "latitude": NEGEV_STATION[0],
+        "longitude": NEGEV_STATION[1],
+        "expect_detected": True,
+        "expect_route": "non_emergency",
+        "expect_marker_within_km": 3.0,
+        "expect_min_signals": 1,
+        "expect_allocated_units": [],
+        "expect_notes": (
+            "Three ordinary readings lead into PM10 185 ug/m3, above this "
+            "station's September baseline. Wind context is present for the "
+            "downwind corridor. It belongs only in Advisory and must receive "
+            "no resource allocation."
+        ),
+    },
+    {
+        "id": "B7",
+        "event": (
+            "One unverified Ashdod fire claim is repeated by three channels "
+            "from the same forwarded origin."
+        ),
+        "hazard": "fire",
+        "latitude": ASHDOD[0],
+        "longitude": ASHDOD[1],
+        "expect_detected": True,
+        "expect_route": "uncorroborated",
+        "expect_marker_within_km": 6.0,
+        "expect_min_signals": 1,
+        "expect_allocated_units": [],
+        "requires_model_classification": True,
+        "expect_notes": (
+            "All three messages carry the same origin peer and message id, so "
+            "they count as one source and must not promote the claim to an "
+            "emergency. It is an Advisory with no risk or allocation. This "
+            "event requires the model classifier because the keyword fallback "
+            "deliberately does not extract a location."
+        ),
+    },
+    {
+        "id": "B8",
+        "event": (
+            "A Netanya fire report and a satellite hotspot describe the same "
+            "event in one detection wave."
+        ),
+        "hazard": "fire",
+        "latitude": NETANYA[0],
+        "longitude": NETANYA[1],
+        "expect_detected": True,
+        "expect_route": "emergency",
+        "expect_marker_within_km": 4.0,
+        "expect_min_signals": 2,
+        "requires_model_classification": True,
+        "expect_notes": (
+            "The text claim and FIRMS evidence must merge into one confirmed "
+            "fire rather than an emergency plus an uncorroborated duplicate. "
+            "With Claude unavailable, FIRMS still creates the fire but the "
+            "keyword-only text candidate has no location and cannot join it; "
+            "fire risk also remains unavailable, so no allocation is expected."
         ),
     },
 ]
@@ -221,6 +323,78 @@ def _weather(
     }
 
 
+def _pollution(
+    station: str,
+    channel: str,
+    pollutant: str,
+    value: float,
+    lat: float,
+    lon: float,
+    observed: datetime,
+) -> dict[str, Any]:
+    """One Ministry reading, including its provider-clock identity."""
+    israel = observed.astimezone(timezone(timedelta(hours=2)))
+    return {
+        "unit": "µg/m³",
+        "valid": True,
+        "value": value,
+        "location": {"latitude": lat, "longitude": lon},
+        "provider": "israel_ministry_environment_air_monitoring",
+        "pollutant": pollutant,
+        "source_id": f"station:{station}",
+        "observed_at": observed.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "unit_source": "reading",
+        "collected_at": observed.isoformat(),
+        "reading_unit": "µg/m³",
+        "metadata_unit": "µg/m³",
+        "provider_unit": "µg/m³",
+        "quality_policy": "ecoguard-provider-valid-signed-v1",
+        "provider_status": "_",
+        "quality_control": "preliminary_unvalidated",
+        "measurement_unit": "µg/m³",
+        "collection_status": "complete",
+        "provider_status_id": "1",
+        "provider_timestamp": israel.strftime("%Y-%m-%dT%H:%M:%S+02:00"),
+        "provider_channel_id": channel,
+        "provider_station_id": station,
+        "provider_pollutant_id": "1",
+    }
+
+
+def _telegram(
+    peer: int,
+    message_id: int,
+    channel: str,
+    title: str,
+    body: str,
+    observed: datetime,
+    *,
+    forwarded: dict[str, int] | None = None,
+) -> dict[str, Any]:
+    """One Telegram message, in the exact shape the collector stores."""
+    return {
+        "kind": "telegram",
+        "peer_id": peer,
+        "raw_text": body,
+        "edited_at": None,
+        "posted_at": observed.isoformat(),
+        "source_id": f"telegram:{peer}",
+        "message_id": message_id,
+        "source_url": f"https://t.me/{channel}/{message_id}",
+        "channel_title": title,
+        "channel_username": channel,
+        "configured_username": channel,
+        "source_verification": {
+            "role": "unofficial",
+            "tier": "unofficial",
+            "event_verified": False,
+            "peer_id_pinned": True,
+            "peer_id_verified": True,
+        },
+        "forwarded_provenance": forwarded,
+    }
+
+
 def _gauge(
     station_id: int,
     name_en: str,
@@ -293,6 +467,15 @@ def build_rows(now: datetime) -> list[tuple[str, str, datetime, dict[str, Any]]]
 
     def ago(minutes: int) -> datetime:
         return now - timedelta(minutes=minutes)
+
+    def ago_5(minutes: int) -> datetime:
+        """Snap Ministry readings to their real five-minute cadence."""
+        moment = ago(minutes)
+        return moment.replace(
+            minute=moment.minute // 5 * 5,
+            second=0,
+            microsecond=0,
+        )
 
     rows: list[tuple[str, str, datetime, dict[str, Any]]] = []
 
@@ -437,6 +620,24 @@ def build_rows(now: datetime) -> list[tuple[str, str, datetime, dict[str, Any]]]
             )
         )
 
+    # --- B5: a concurrent earthquake far from the B4 sequence ------------
+    observed = ago(52)
+    rows.append(
+        (
+            "gsi_earthquake",
+            EILAT_QUAKE_CELL,
+            observed,
+            _earthquake(
+                "demo-b-gsi-eilat",
+                observed,
+                *EILAT_QUAKE,
+                4.8,
+                13.0,
+                "Eilat Region",
+            ),
+        )
+    )
+
     # BN3: a genuine local earthquake below the dashboard threshold.
     observed = ago(35)
     rows.append(
@@ -452,6 +653,104 @@ def build_rows(now: datetime) -> list[tuple[str, str, datetime, dict[str, Any]]]
                 3.4,
                 14.0,
                 "Dead Sea Region",
+            ),
+        )
+    )
+
+    # --- B6: PM10 rises gradually before crossing the local baseline ------
+    pm10_cell = "ministry:417:1:PM10:%C2%B5g%2Fm%C2%B3"
+    for minutes, value in ((155, 24.0), (110, 32.0), (65, 58.0), (10, 185.0)):
+        observed = ago_5(minutes)
+        rows.append(
+            (
+                "air_pollution",
+                pm10_cell,
+                observed,
+                _pollution(
+                    "417",
+                    "1",
+                    "PM10",
+                    value,
+                    *NEGEV_STATION,
+                    observed,
+                ),
+            )
+        )
+    rows.append(
+        (
+            "weather",
+            NEGEV_STATION_CELL,
+            ago(40),
+            _weather(29.0, 35.0, 18.0, 24.0, 270.0),
+        )
+    )
+
+    # --- B7: three copies, one forwarded origin, no independent source ----
+    forwarded_origin = {
+        "origin_peer_id": -1009000000001,
+        "origin_message_id": 7001,
+    }
+    for channel_info, message_id, minutes in (
+        (FIRE_CHANNEL, 991101, 34),
+        (POLICE_CHANNEL, 591101, 29),
+        (MDA_CHANNEL, 291101, 25),
+    ):
+        peer, channel, title = channel_info
+        observed = ago(minutes)
+        rows.append(
+            (
+                "telegram",
+                f"telegram:{peer}:{message_id}",
+                observed,
+                _telegram(
+                    peer,
+                    message_id,
+                    channel,
+                    title,
+                    "דיווח על שריפה במחסן באזור התעשייה באשדוד",
+                    observed,
+                    forwarded=forwarded_origin,
+                ),
+            )
+        )
+
+    # --- B8: one text claim corroborated by satellite evidence ------------
+    rows.extend(
+        [
+            (
+                "firms",
+                NETANYA_CELL,
+                ago(47),
+                _firms(*NETANYA, 42.0, 1, satellite="SNPP"),
+            ),
+            (
+                "firms",
+                NETANYA_CELL,
+                ago(13),
+                _firms(*NETANYA, 105.0, 3, satellite="SNPP"),
+            ),
+            (
+                "weather",
+                NETANYA_CELL,
+                ago(35),
+                _weather(34.0, 24.0, 13.0, 28.0, 285.0),
+            ),
+        ]
+    )
+    peer, channel, title = POLICE_CHANNEL
+    observed = ago(18)
+    rows.append(
+        (
+            "telegram",
+            f"telegram:{peer}:591180",
+            observed,
+            _telegram(
+                peer,
+                591180,
+                channel,
+                title,
+                "שריפה פעילה סמוך לאזור התעשייה בנתניה, עשן נראה למרחוק",
+                observed,
             ),
         )
     )
