@@ -36,6 +36,7 @@ from ecoguard.shared.events import (
     EarthquakeSharedEvent,
     EarthquakeTown,
     GeoJsonPolygon,
+    EarthquakeResourceAllocationSummary,
 )
 
 NOW = datetime(2026, 9, 20, 10, 30, tzinfo=timezone.utc)
@@ -392,6 +393,78 @@ def test_earthquake_handler_invokes_and_preserves_successful_planner(monkeypatch
     assert result.analysis_result is impact
 
 
+def test_earthquake_planning_failure_requests_minimum_allocation(monkeypatch):
+    impact = SimpleNamespace(
+        provider_event_id="gsi2026abcd",
+        observed_at=NOW,
+        latitude=31.75,
+        longitude=35.21,
+        magnitude=4.6,
+        depth_km=12.4,
+        radius_km=25.0,
+        area={"type": "Polygon", "coordinates": []},
+        towns=TownIntersectionResult(
+            status=TownLookupStatus.SUCCESS_EMPTY,
+            towns=[],
+        ),
+        population_at_damaging_intensity=1235,
+        population_summary={
+            "status": "unavailable",
+            "estimated_population": None,
+            "intersected_cell_count": None,
+            "reason": "population_grid_not_loaded",
+        },
+        provider="GSI",
+        source="https://seis.gsi.gov.il/fdsnws/event/1/query",
+    )
+    monkeypatch.setattr(earthquake_handler, "estimate_impact", lambda _: impact)
+
+    class FailingPlanner:
+        def plan_response(self, planner_input):
+            raise RuntimeError("planner unavailable")
+
+    result = earthquake_handler.EarthquakeIncidentHandler(
+        planner=FailingPlanner()
+    ).process(
+        {
+            "signals": [{
+                "evidence": {
+                    "earthquake": {
+                        "provider_event_id": "gsi2026abcd",
+                        "observed_at": NOW.isoformat(),
+                    }
+                }
+            }]
+        },
+        IncidentDispatchContext(
+            incident_id="INC-EQ-1",
+            hazard="earthquake",
+            route="emergency",
+            analysis_id="analysis-1",
+            coordinator_routing_id="routing-1",
+            routed_by="test",
+            routed_at=NOW,
+            requested_at=NOW,
+        ),
+    )
+
+    assert result.status == "partial"
+    assert result.planner_status == "failed"
+    assert result.failure_stage == "planning"
+    assert result.analysis_result is impact
+    assert result.requires_resource_allocation is True
+    assert result.fallback_allocation_context == {
+        "location": {"latitude": 31.75, "longitude": 35.21},
+        "risk_context": {
+            "risk_semantics": "detected_event_operational_risk",
+            "risk_score": 50,
+            "risk_level": "high",
+            "population_at_risk": 1235,
+            "basis": "magnitude_and_population",
+        },
+    }
+
+
 def test_earthquake_projection_exposes_plan_allocation_route_and_policy(monkeypatch):
     impact = SimpleNamespace(
         provider_event_id="gsi2026abcd",
@@ -525,6 +598,22 @@ def test_earthquake_projection_exposes_plan_allocation_route_and_policy(monkeypa
     api_allocation = response.json()["events"][0]["details"]["resource_allocation"]
     assert api_allocation["stations"][0]["route"]["duration_s"] == 600
     assert api_allocation["quantity_source"] == "ecoguard_minimum_response_policy"
+
+
+def test_earthquake_event_contract_accepts_the_planning_failure_police_policy():
+    summary = EarthquakeResourceAllocationSummary.model_validate({
+        "status": "fulfilled",
+        "routing_status": "complete",
+        "requirements": {
+            "police": {"requested": 1, "assigned": 1, "shortfall": 0},
+        },
+        "stations": [],
+        "allocation_policy": "planning_failure_police_minimum_v1",
+        "allocation_basis": "planner_unavailable_emergency_minimum",
+        "quantity_source": "ecoguard_fallback_policy",
+    })
+
+    assert summary.allocation_policy == "planning_failure_police_minimum_v1"
 
 
 # The rows below are copied from a real GSI FDSN response, not composed. The

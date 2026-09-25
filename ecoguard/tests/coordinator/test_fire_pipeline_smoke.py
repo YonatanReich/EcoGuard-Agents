@@ -6,7 +6,11 @@ from datetime import datetime, timezone
 
 from ecoguard.analyzers.fire.incident_handler import FireIncidentHandler
 from ecoguard.api.events import shared_event_feed
-from ecoguard.coordinator.dispatcher import default_handler_registry, dispatch_incidents
+from ecoguard.coordinator.dispatcher import (
+    IncidentDispatchContext,
+    default_handler_registry,
+    dispatch_incidents,
+)
 from ecoguard.coordinator.event_projection import project_processing_results
 from ecoguard.resource_allocator.allocation_agent import ResourceAllocationAgent
 from ecoguard.planners.shared.schemas import EmergencyResponsePlan
@@ -156,6 +160,11 @@ class _OfflineEmergencyPlanner:
         return _plan(plan_input)
 
 
+class _FailingEmergencyPlanner:
+    def plan_response(self, plan_input):
+        raise RuntimeError("planner unavailable")
+
+
 class _NoWriteAllocationRepository:
     def active_allocations(self):
         return []
@@ -259,6 +268,27 @@ def _fire_catalog():
     }
 
 
+def _police_catalog():
+    return {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [35.01, 32.71]},
+                "properties": {
+                    "database_id": 2,
+                    "station_id": 2,
+                    "name": "Test Police Station",
+                    "district": "test-district",
+                    "kind": "station",
+                },
+            }
+        ],
+        "located": 1,
+        "total": 1,
+    }
+
+
 def test_default_dispatcher_registers_fire_without_running_the_handler():
     assert ("fire", "emergency") in default_handler_registry()
 
@@ -350,3 +380,82 @@ def test_fire_runs_from_shared_dispatch_to_frontend_contract_without_external_ca
     assert len(feed.events) == 1
     assert feed.events[0].type == "fire"
     assert feed.events[0].id == incident["id"]
+
+
+def test_fire_planning_failure_allocates_one_police_station():
+    incident = _incident()
+    result = dispatch_incidents(
+        [incident],
+        registry={
+            ("fire", "emergency"): FireIncidentHandler(
+                risk_analyzer=_OfflineRiskAnalyzer(),
+                planner=_FailingEmergencyPlanner(),
+                clock=lambda: NOW,
+            )
+        },
+        at=NOW,
+    )[0]
+
+    assert result.status == "partial"
+    assert result.planner_status == "failed"
+    assert result.requires_resource_allocation is True
+    assert result.fallback_allocation_context == {
+        "location": {"latitude": 32.73, "longitude": 35.03},
+        "risk_context": {
+            "risk_semantics": "detected_event_operational_risk",
+            "risk_score": 68,
+            "risk_level": "high",
+            "confidence": "medium",
+        },
+    }
+
+    allocator = ResourceAllocationAgent(
+        station_readers={
+            "fire_department": _empty_catalog,
+            "police": _police_catalog,
+            "medical_services": _empty_catalog,
+        },
+        routing_client=_OfflineRoutingClient(),
+        allocation_repository=_NoWriteAllocationRepository(),
+        town_reader=lambda **_: None,
+    )
+    allocator.allocate_processing_results([result])
+
+    allocation = result.resource_allocation_result
+    assert allocation["allocation_policy"] == (
+        "planning_failure_police_minimum_v1"
+    )
+    assert allocation["requirements"]["police"] == {
+        "requested": 1,
+        "assigned": 1,
+        "shortfall": 0,
+    }
+    assert len(allocation["allocated_units"]["police_stations"]) == 1
+
+
+def test_fire_risk_failure_is_reported_without_automatic_allocation():
+    class FailingRiskAnalyzer:
+        def analyze_event(self, _detected_event):
+            raise RuntimeError("missing credentials")
+
+    result = FireIncidentHandler(
+        risk_analyzer=FailingRiskAnalyzer(),
+        clock=lambda: NOW,
+    ).process(
+        _incident(),
+        IncidentDispatchContext(
+            incident_id="INC-FIRE-SMOKE",
+            hazard="fire",
+            route="emergency",
+            analysis_id="analysis-fire-smoke",
+            coordinator_routing_id="routing-fire-smoke",
+            routed_by="test",
+            routed_at=NOW,
+            requested_at=NOW,
+        ),
+    )
+
+    assert result.planner_status == "skipped"
+    assert result.risk_status == "failed"
+    assert result.requires_resource_allocation is False
+    assert result.fallback_allocation_context is None

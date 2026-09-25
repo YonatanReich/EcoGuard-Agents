@@ -61,9 +61,18 @@ def grade(scenario: str, *, schema: str | None = None) -> dict[str, Any]:
 
     by_incident = {row["incident_id"]: row for row in projections}
     findings: list[dict[str, Any]] = []
+    claimed_incidents: set[str] = set()
 
     for expected in module.GROUND_TRUTH:
-        match, distance = _closest(incidents, expected)
+        # One incident can satisfy only one authored event. This matters for
+        # Demo B's two nearby fires: a nearest-neighbour grader that reused a
+        # row could claim both fires passed even if the coordinator merged
+        # them into one.
+        match, distance = _closest(
+            incidents,
+            expected,
+            excluded=claimed_incidents,
+        )
         entry: dict[str, Any] = {
             "id": expected["id"],
             "event": expected["event"],
@@ -75,11 +84,23 @@ def grade(scenario: str, *, schema: str | None = None) -> dict[str, Any]:
             entry.update(verdict="MISS", detail="no incident within 25 km of the event")
             findings.append(entry)
             continue
+        claimed_incidents.add(match["id"])
 
         projection = by_incident.get(match["id"]) or {}
         payload = projection.get("event_payload") or {}
         if isinstance(payload, str):
             payload = json.loads(payload)
+
+        details = payload.get("details") or {}
+        allocation = details.get("resource_allocation") or {}
+        allocated_stations = allocation.get("stations") or []
+        allocation_succeeded = bool(allocated_stations)
+        routing_status = allocation.get("routing_status")
+        allocated_units = sorted(
+            str(station.get("recommended_unit"))
+            for station in allocated_stations
+            if isinstance(station, dict) and station.get("recommended_unit")
+        )
 
         problems = []
         if match["primary_hazard"] != expected["hazard"]:
@@ -96,8 +117,32 @@ def grade(scenario: str, *, schema: str | None = None) -> dict[str, Any]:
             problems.append(f"route {route!r}, expected {expected['expect_route']!r}")
         if not projection:
             problems.append("never projected to the frontend")
-        elif projection.get("planner_status") not in {"success", "skipped"}:
+        elif (
+            projection.get("planner_status") not in {"success", "skipped"}
+            and not (
+                expected.get("expect_allocation")
+                and allocation_succeeded
+            )
+        ):
             problems.append(f"planner {projection.get('planner_status')!r}")
+        minimum_signals = int(expected.get("expect_min_signals") or 1)
+        if int(match.get("signal_count") or 0) < minimum_signals:
+            problems.append(
+                f"{match.get('signal_count') or 0} signal(s), expected at least "
+                f"{minimum_signals}"
+            )
+        if expected.get("expect_allocation") and not allocation_succeeded:
+            problems.append("no resource station was allocated")
+        expected_units = expected.get("expect_allocated_units")
+        if expected_units is not None and allocated_units != sorted(expected_units):
+            problems.append(
+                f"allocated units {allocated_units!r}, expected "
+                f"{sorted(expected_units)!r}"
+            )
+        if expected.get("expect_routing") and routing_status != "complete":
+            problems.append(
+                f"allocation routing {routing_status!r}, expected 'complete'"
+            )
 
         entry.update(
             incident_id=match["id"],
@@ -106,6 +151,10 @@ def grade(scenario: str, *, schema: str | None = None) -> dict[str, Any]:
             analysis_status=projection.get("analysis_status"),
             planner_status=projection.get("planner_status"),
             attempts=projection.get("attempt_count"),
+            signal_count=match.get("signal_count"),
+            allocated_stations=len(allocated_stations),
+            allocated_units=allocated_units,
+            allocation_routing_status=routing_status,
             title=payload.get("title"),
             description=payload.get("description"),
             verdict="PASS" if not problems else "PARTIAL",
@@ -159,10 +208,13 @@ def grade(scenario: str, *, schema: str | None = None) -> dict[str, Any]:
     }
 
 
-def _closest(incidents, expected):
+def _closest(incidents, expected, *, excluded: set[str] | None = None):
     """Nearest incident of any hazard, so a wrong classification still shows."""
+    excluded = excluded or set()
     best, best_distance = None, None
     for row in incidents:
+        if row["id"] in excluded:
+            continue
         if row["latitude"] is None or row["longitude"] is None:
             continue
         distance = _distance_km(
@@ -199,6 +251,12 @@ def main() -> int:
             print(f"            marker {entry['marker_km_from_event']} km from the "
                   f"authored location, route={entry.get('route')}, "
                   f"planner={entry.get('planner_status')}")
+            print(
+                f"            signals={entry.get('signal_count')}, "
+                f"stations={entry.get('allocated_stations')}, "
+                f"units={entry.get('allocated_units')}, "
+                f"routing={entry.get('allocation_routing_status')}"
+            )
         if entry.get("title"):
             print(f"            title: {entry['title']}")
         for problem in entry.get("problems", []):

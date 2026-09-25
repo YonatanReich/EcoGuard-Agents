@@ -67,6 +67,11 @@ const FLY_ZOOM: Record<SharedEvent['type'], number> = {
   other: 12,
 }
 
+// Detection runs independently in the backend. Keep the open dashboard close
+// enough to that state that new events appear and closed ones disappear
+// without requiring an operator to refresh the page.
+const EVENT_POLL_MS = 15_000
+
 /** Flies the map to the event just opened. Rendered inside MapView so it can
  *  reach the map; `at` makes a second click on the same card fly again. */
 function FlyToEvent({ request }: { request: { event: SharedEvent; at: number } | null }) {
@@ -108,10 +113,6 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
   const [floodPreviewEvents, setFloodPreviewEvents] =
     useState<SharedEvent[]>([])
 
-  // One feed, one id scheme. The legacy /api/detected-events point query used
-  // to be merged in here, and because its ids are hotspot hashes rather than
-  // incident ids, a fire seen by both paths rendered as two cards — the legacy
-  // one with no detection verdict, spread or exposure.
   const liveEvents = projectedEvents
 
   const events = useMemo(
@@ -124,9 +125,9 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
   )
 
   /** The event shown in the panel under the map, from a card or a marker.
-   *  Kept after the panel closes so it can animate shut with content in it. */
-  const [openEvent, setOpenEvent] =
-    useState<SharedEvent | null>(null)
+   *  Store its key rather than a second copy of the event so a feed refresh
+   *  updates the panel too. The key is kept while the panel animates shut. */
+  const [openEventKey, setOpenEventKey] = useState<string | null>(null)
   const [panelOpen, setPanelOpen] = useState(false)
   const [flyRequest, setFlyRequest] =
     useState<{ event: SharedEvent; at: number } | null>(null)
@@ -150,10 +151,17 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
     [events, selectedEventKey],
   )
 
+  const openEvent = useMemo(
+    () => events.find(
+      (event) => `${event.type}:${event.id}` === openEventKey,
+    ) ?? null,
+    [events, openEventKey],
+  )
+
   const selectAndOpenEvent = (event: SharedEvent) => {
     setSelectedEventKey(`${event.type}:${event.id}`)
     setDirectionsStationKey(null)
-    setOpenEvent(event)
+    setOpenEventKey(`${event.type}:${event.id}`)
     setPanelOpen(true)
     setFlyRequest({ event, at: Date.now() })
     setRoutesShown(false)
@@ -163,7 +171,7 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
   const showStationDirections = (event: SharedEvent, stationKey: string) => {
     setSelectedEventKey(`${event.type}:${event.id}`)
     setDirectionsStationKey(stationKey)
-    setOpenEvent(event)
+    setOpenEventKey(`${event.type}:${event.id}`)
     setPanelOpen(true)
   }
 
@@ -352,10 +360,9 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
   // Detected events
   // =========================================================
 
-  // Refetched on mount and again whenever a scenario starts, stops or lands a
-  // new wave. A scenario repoints the detectors at authored observations while
-  // this page stays open, so the feed has to be re-read rather than loaded once
-  // — otherwise the map would keep showing the world the dashboard booted in.
+  // Refetched on mount, on a short interval, and immediately when scenario
+  // state changes. The backend pipeline runs independently of this page, so a
+  // dashboard left open must still discover new and closed incidents.
   const loadProjectedEvents = useCallback(() => {
     // An empty list is a valid answer — the pipeline ran and nothing is
     // burning — so this assigns unconditionally rather than only on a truthy
@@ -370,22 +377,26 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
       .finally(() => setIsLoadingEvents(false))
   }, [demo])
 
-  useEffect(() => {
-    loadProjectedEvents()
-
-    // Unverified reports are an operator decision queue. There is nothing to
-    // decide in a demo, and a confirm click would write to the live store.
-    if (!demo) void loadWeakEvents()
-  }, [demo, loadProjectedEvents])
-
-  const loadWeakEvents = () =>
+  const loadWeakEvents = useCallback(() =>
     fetch('/api/weak-events')
       .then((response) => {
         if (!response.ok) throw new Error('Weak event feed is unavailable')
         return response.json() as Promise<WeakEventFeed>
       })
       .then((data) => setWeakEvents(data.weak_events ?? []))
-      .catch((error) => console.error('Error fetching weak events:', error))
+      .catch((error) => console.error('Error fetching weak events:', error)),
+  [])
+
+  useEffect(() => {
+    loadProjectedEvents()
+    const timer = window.setInterval(loadProjectedEvents, EVENT_POLL_MS)
+
+    // Unverified reports are an operator decision queue. There is nothing to
+    // decide in a demo, and a confirm click would write to the live store.
+    if (!demo) void loadWeakEvents()
+
+    return () => window.clearInterval(timer)
+  }, [demo, loadProjectedEvents, loadWeakEvents])
 
   const rememberOperator = (name: string) => {
     setOperatorName(name)
@@ -654,7 +665,10 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
 
         {/* The event panel docks under the map and pushes it up as it opens.
             Inert while shut, so its hidden controls are not tab stops. */}
-        <div className={`event-dock${panelOpen ? ' event-dock--open' : ''}`} inert={!panelOpen}>
+        <div
+          className={`event-dock${panelOpen && openEvent ? ' event-dock--open' : ''}`}
+          inert={!panelOpen || !openEvent}
+        >
           <div className="event-dock__inner">
             {openEvent && (
               <EventModal

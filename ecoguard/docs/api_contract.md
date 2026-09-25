@@ -130,52 +130,35 @@ under 6 hours old gets `collection_status: "failed"` and an empty `current`.
 
 ---
 
-## 3. Detected Fire Event Contract
+## 3. Internal Detected Fire Event Contract
 
-The `DetectedFireEvent` represents a fire event detected by `FireDetectionAgent`.
-
-Unlike the general environmental data structure above, this object is
-event-oriented. NASA FIRMS provides the primary satellite detection signal.
-Once a thermal hotspot is detected, the event is enriched with fire-weather,
-weather, and geospatial information from additional live sources.
+`DetectedFireEvent` is an internal analysis structure, not an HTTP response.
+`FireIncidentHandler` builds it from a fire incident that the coordinator has
+already accepted. It combines the incident's detector signals with context
+that the collectors stored before analysis.
 
 ### 3.1 Detection Flow
 
-The fire detection process follows this sequence:
+The active fire path follows this sequence:
 
-1. NASA FIRMS is queried for recent satellite thermal hotspots.
-2. For point-based detection, Haversine distance is calculated from the
-   requested point to each returned hotspot. Hotspots outside the configured
-   relevance radius are excluded.
-3. If no geographically relevant hotspots remain, the agent returns
-   `detected: false`.
-4. If relevant hotspots remain, the most recent relevant hotspot is selected.
-5. The selected hotspot coordinates become the event location.
-6. GWIS/EFFIS FWI is collected for the detected location.
-7. Open-Meteo weather information is collected for the detected location.
-8. OpenStreetMap geospatial context is collected around the detected location.
-9. All available evidence is combined into one `DetectedFireEvent`.
-
-The detection agent does not calculate the final operational risk score.
-Final risk analysis belongs to the downstream `RiskAnalysisAgent`.
+1. Scheduled collectors store FIRMS and environmental observations.
+2. The satellite detector turns unusual stored hotspots into `CellSignal`s.
+3. The coordinator correlates signals and persists an incident.
+4. `FireIncidentHandler` adapts the persisted incident to the
+   `DetectedFireEvent` shape.
+5. `RiskAnalysisAgent` produces the operational risk assessment.
+6. The shared emergency planner produces the response plan.
 
 ### 3.2 Core Event Fields
 
 * **`event_type`** (String): Type of detected environmental event.
   Currently `"fire"`.
 
-* **`detected`** (Boolean or null):
-  * `true` — NASA FIRMS detected at least one geographically relevant thermal
-    hotspot within the configured point-detection radius.
-  * `false` — NASA FIRMS successfully returned no geographically relevant
-    hotspots. This includes a successful response containing only distant
-    hotspots outside the configured radius.
-  * `null` — detection could not be completed because the primary detection
-    source failed.
+* **`detected`** (Boolean): `true` for events passed to the active incident
+  handler. Non-events never enter the analysis pipeline.
 
-* **`location`** (Object): Coordinates of the selected satellite hotspot when
-  an event is detected. If no event is detected, contains the original search
-  coordinates.
+* **`location`** (Object): Dispatchable incident coordinates selected by the
+  coordinator.
 
 * **`detection_confidence`** (String or null): Human-readable NASA FIRMS
   confidence category for the selected VIIRS hotspot.
@@ -428,14 +411,15 @@ The following concepts must remain separate across the system:
 
 | Field | Meaning | Responsible Source/Component |
 |---|---|---|
-| `detected` | Whether a satellite thermal hotspot was found | NASA FIRMS / FireDetectionAgent |
+| `detected` | Whether the incident adapter received a confirmed fire incident | Coordinator / FireIncidentHandler |
 | `detection_confidence` | Confidence category of the satellite detection | NASA FIRMS |
 | `fire_weather_severity` | Severity of surrounding fire-weather conditions | GWIS/EFFIS FWI |
 | `weather_context` | Current and forecast environmental conditions | Open-Meteo |
 | `geospatial_context` | Nearby population, infrastructure and geographic context | OpenStreetMap |
 | `risk_score` / `risk_level` | Overall operational risk assessment | RiskAnalysisAgent |
 
-`FireDetectionAgent` collects and structures the evidence.
+The scheduled collectors, detectors, coordinator and `FireIncidentHandler`
+collect and structure the evidence.
 
 `RiskAnalysisAgent` is responsible for interpreting the detected event,
 combining the available evidence with protocol-grounded analysis, and
@@ -446,9 +430,10 @@ producing the final risk assessment.
 ## 5. Risk Assessment and Response Plan Contract
 
 `RiskAnalysisAgent` consumes a `DetectedFireEvent` and produces a
-`RiskAssessment`. `ResponsePlanningAgent` consumes both and produces a
-`ResponsePlan`. Both reason with a Claude model and both are grounded in a
-committed corpus of fire response protocols (`data/protocols/`).
+`RiskAssessment`. `build_fire_plan_input` adapts that assessment for the shared
+`EmergencyResponsePlanner`, which produces the response plan. The reasoning
+steps use Claude and are grounded in the committed protocol corpus
+(`data/protocols/`).
 
 ### 5.1 Grounding Guarantee
 
@@ -472,7 +457,7 @@ quotation cannot be attributed to the wrong document.
 
 ### 5.2 Status Values and the No-Fabrication Rule
 
-Both agents report a status: `success`, `failed`, or `skipped`.
+The analyzer and planner report a status: `success`, `failed`, or `skipped`.
 
 | Status | Meaning |
 |---|---|
@@ -492,35 +477,12 @@ Skip reasons (`metadata.reason`):
 | `no_event` | `detected` was `false` — the scan ran and found nothing. |
 | `detection_unavailable` | `detected` was `null` — the scan could not run. |
 | `unsupported_event` | The event was not a fire event. |
-| `analysis_not_requested` | The caller passed `include_analysis=false`. |
 | `risk_analysis_unavailable` | Planning only. Risk analysis did not succeed. |
 
 Failure categories (`error`) come from a closed vocabulary: `authentication
 error`, `rate limited`, `invalid request`, `HTTP error`, `timeout`, `network
 error`, `malformed response`, `missing credentials`, `provider error`, plus
 `no protocol match`, `protocol corpus unavailable`, and `ungrounded response`.
-
-### 5.2a Two Different Meanings of "Risk" — Read This First
-
-The system contains **two** components that emit `risk_score` and `risk_level`,
-and they are not interchangeable:
-
-| | `FireRiskPredictionAgent` | `RiskAnalysisAgent` |
-|---|---|---|
-| Question | Might a fire **start** here? | How bad is this fire that **exists**? |
-| Method | ML model over weather, terrain, land cover | LLM reasoning over detected evidence + protocols |
-| `risk_score` | Float **0.0-1.0** (calibrated probability) | Integer **0-100** (operational severity) |
-| `risk_level` | `low` \| `medium` \| `high` | `low` \| `medium` \| `high` \| `critical` |
-| `risk_semantics` | `"estimated_fire_risk"` | `"detected_event_operational_risk"` |
-| Endpoint | `POST /api/fire-risk`, `GET /api/fire-risk/national-scan` | `GET /api/detected-events` |
-
-**Every consumer must branch on `risk_semantics`, never on the score alone.**
-Reading a `0.85` probability as an `85` severity — or vice versa — is a
-two-order-of-magnitude error, and both fields are populated even when the score
-is null so the distinction survives failure paths.
-
-The two are complementary, not competing: prediction answers *where to watch*,
-analysis answers *what to do about what is already burning*.
 
 ### 5.3 RiskAssessment Fields
 
@@ -531,7 +493,7 @@ analysis answers *what to do about what is already burning*.
   and acquisition time. The join key between the assessment, the plan and the
   map marker — the same fire keeps the same id across repeated scans.
 * **`risk_semantics`** (String): Always `"detected_event_operational_risk"`.
-  Present even when the score is null. See 5.2a.
+  Present even when the score is null.
 * **`risk_score`** (Integer or null): Operational risk, 0-100.
 * **`risk_level`** (String or null): `low` | `medium` | `high` | `critical`.
   **Derived in Python from `risk_score`**, never requested from the model, so
@@ -595,44 +557,6 @@ Attached to both the assessment and the plan.
 * **`unverified_citation_count`** (Integer): How many citations were discarded.
   A non-zero value on a successful result means the model cited loosely but at
   least one citation held.
-
-### 5.6 GET /api/detected-events
-
-| Parameter | Type | Default | Range | Description |
-|---|---|---|---|---|
-| `latitude` | Float | 31.783333 | 29.45-33.35 | Within Israel's borders. |
-| `longitude` | Float | 35.216667 | 34.26-35.90 | Within Israel's borders. |
-| `radius_km` | Float | 5.0 | 1-50 | Hotspot relevance radius. |
-| `day_range` | Integer | 2 | 1-10 | Recent days of satellite data. |
-| `include_analysis` | Boolean | true | — | False skips both model calls. |
-
-Responses:
-
-* **`200 OK`** — Always returned when the pipeline ran, including when nothing
-  was detected (`events: []`) and when satellite detection failed
-  (`events: []`, `collection_status: "failed"`). This differs from
-  `/api/environmental-data`, which returns 502 on provider failure. The
-  difference is intentional: this endpoint is fetched on dashboard load with no
-  user-visible error path, so a 5xx would silently blank the map.
-* **`422 Unprocessable Entity`** — A parameter outside the ranges above.
-* **`500 Internal Server Error`** — Unexpected internal error. The detail is
-  masked and the exception logged server-side.
-
-The response carries `metadata` (with a per-service status breakdown covering
-`detection`, `risk_analysis`, `response_planning` and `protocols`), the `query`
-that produced it, and an `events` array of zero or one event. Each event
-flattens the detection, assessment and plan into one object, with
-`response_plan` as flattened action strings and `response_actions` retaining
-unit and timeframe. Event `id` is a stable hash of the hotspot, so repeated
-scans of the same fire produce the same id.
-
-**Performance.** The full pipeline typically takes 20-90 seconds: the
-OpenStreetMap Overpass lookup alone can take 30 seconds under load, and each
-model call adds several more. Pass `include_analysis=false` for a
-detection-only response. A background-job endpoint would be the proper fix and
-is not implemented.
-
----
 
 ## 6. Flood Detector and Incident Lifecycle Contract
 

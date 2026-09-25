@@ -17,6 +17,13 @@ EARTHQUAKE_POLICY_MIGRATION = (
     / "versions"
     / "0022_earthquake_allocation_policy.py"
 )
+PLANNING_FAILURE_POLICY_MIGRATION = (
+    Path(__file__).resolve().parents[2]
+    / "database"
+    / "migrations"
+    / "versions"
+    / "0030_planning_failure_police_allocation.py"
+)
 
 
 def test_resource_allocations_follow_the_current_migration_head():
@@ -55,3 +62,19 @@ def test_earthquake_policy_allocations_store_policy_without_fake_risk():
     assert "earthquake_minimum_response_v1" in source
     assert "protocol_recommended_units" in source
     assert "ecoguard_minimum_response_policy" in source
+
+
+def test_planning_failure_policy_requires_analyzed_risk():
+    source = PLANNING_FAILURE_POLICY_MIGRATION.read_text(encoding="utf-8")
+
+    assert 'down_revision = "text_candidate_triage"' in source
+    assert """
+              risk_score IS NOT NULL
+              AND risk_level IS NOT NULL
+              AND allocation_policy = 'earthquake_minimum_response_v1'
+""" in source
+    assert "planning_failure_police_minimum_v1" in source
+    assert "planner_unavailable_emergency_minimum" in source
+    assert "ecoguard_fallback_policy" in source
+    assert "risk_score IS NOT NULL" in source
+    assert "risk_level IS NOT NULL" in source

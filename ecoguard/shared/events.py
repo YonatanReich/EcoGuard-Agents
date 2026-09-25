@@ -108,9 +108,18 @@ class ResourceAllocationSummary(EventContract):
 
 class EarthquakeResourceAllocationSummary(ResourceAllocationSummary):
     unsupported_units: list[str] = Field(default_factory=list)
-    allocation_policy: Literal["earthquake_minimum_response_v1"]
-    allocation_basis: Literal["protocol_recommended_units"]
-    quantity_source: Literal["ecoguard_minimum_response_policy"]
+    allocation_policy: Literal[
+        "earthquake_minimum_response_v1",
+        "planning_failure_police_minimum_v1",
+    ]
+    allocation_basis: Literal[
+        "protocol_recommended_units",
+        "planner_unavailable_emergency_minimum",
+    ]
+    quantity_source: Literal[
+        "ecoguard_minimum_response_policy",
+        "ecoguard_fallback_policy",
+    ]
 
 
 class FireSpreadRing(EventContract):

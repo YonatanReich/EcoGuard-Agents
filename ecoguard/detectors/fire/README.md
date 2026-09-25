@@ -18,10 +18,6 @@ Ways a fire becomes a candidate:
   against each cell's own climatology. Wired to the coordinator as a
   corroborator: it cannot detect a fire, because the feed is a numerical model
   with no knowledge one exists.
-- `detection_agent.py` — the previous generation. FIRMS hotspots enriched with
-  fire danger, weather and OSM context into one detected event. Predates the
-  `CellSignal` contract, still calls the providers live rather than reading
-  what the collectors stored, and is superseded by `satellite.py`.
 - `telegram_candidate_filter.py` — rule-based scoring reused by the shared
   Telegram/RSS text classifier. It does not emit a `CellSignal` itself.
 - `hebrew_location_extractor.py` — shared Fire/Flood location extraction via an

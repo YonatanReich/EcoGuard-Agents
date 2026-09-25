@@ -498,8 +498,8 @@ class ClaudeLLMService:
         """
         Map any exception onto the closed error vocabulary.
 
-        Mirrors FireDetectionAgent.sanitize_firms_error. The ordering below is
-        load-bearing: AuthenticationError, PermissionDeniedError,
+        The ordering below is load-bearing: AuthenticationError,
+        PermissionDeniedError,
         RateLimitError, NotFoundError and BadRequestError all subclass
         APIStatusError, and APITimeoutError subclasses APIConnectionError. Check
         subclasses first or every failure collapses into "HTTP error".
