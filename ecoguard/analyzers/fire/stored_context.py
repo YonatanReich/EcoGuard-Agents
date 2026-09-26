@@ -197,6 +197,31 @@ def geospatial_context_at(
     }
 
 
+def spread_forecast_for(incident: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Where this fire is forecast to go, and which settlements that reaches.
+
+    The spread model, the exposure calculation and the settlement lookup have
+    existed and been tested throughout; nothing on the incident path ever called
+    them, so `spread` and `exposed_settlements` reached the operator empty and
+    only the static seed script ever filled them. An operator was told who was
+    *near* a fire and never who was *downwind* of it.
+
+    Never raises. A forecast that cannot be produced is absent, and the card
+    says so, rather than a ring drawn on defaults - a fire modelled on weather
+    it is not having is not a conservative estimate.
+    """
+    from ecoguard.analyzers.fire import spread_analyzer
+
+    if incident.get("latitude") is None or incident.get("longitude") is None:
+        return None
+    try:
+        report = spread_analyzer.analyze_incident(incident)
+    except Exception:
+        logger.exception("could not forecast spread for the incident")
+        return None
+    return report if report.get("status") == "ok" else None
+
+
 def stored_context_for(incident: Mapping[str, Any]) -> dict[str, Any]:
     """The three enrichments for one incident, each reporting its own failure.
 

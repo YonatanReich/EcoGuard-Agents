@@ -14,6 +14,15 @@ EARTHQUAKE_MINIMUM_RESPONSE_POLICY = "earthquake_minimum_response_v1"
 EARTHQUAKE_ALLOCATION_BASIS = "protocol_recommended_units"
 EARTHQUAKE_QUANTITY_SOURCE = "ecoguard_minimum_response_policy"
 
+# The unit an earthquake falls back to when its plan names nobody the allocator
+# can send. A quake plan names the bodies that run the response - Home Front
+# Command, the municipal team - and there is no station list for either, so both
+# Demo B earthquakes came back all shortfall and dispatched nothing: sound advice
+# with nobody attached to it. Police has stations, is responsible for the ground,
+# and can be sent. Only used when nothing else in the plan can be, so a plan that
+# already names fire or medical is left exactly as the planner wrote it.
+EARTHQUAKE_GUARANTEED_UNIT = "police"
+
 PLANNING_FAILURE_POLICE_POLICY = "planning_failure_police_minimum_v1"
 PLANNING_FAILURE_ALLOCATION_BASIS = "planner_unavailable_emergency_minimum"
 PLANNING_FAILURE_QUANTITY_SOURCE = "ecoguard_fallback_policy"
@@ -554,6 +563,20 @@ class AllocationRequestPreparer:
         # The policy fixes quantity at one station per requested unit type.
         # Queue position still uses the same 0-100 operational risk and aging
         # calculation as Fire and Flood.
+        #
+        # A minimum response has to name a unit the allocator can actually
+        # supply. Left as the planner wrote it, both Demo B earthquakes asked
+        # only for Home Front Command and a municipal team, neither of which has
+        # a station list, and were dispatched nothing at all - sound advice with
+        # nobody attached to it. Police is added rather than substituted, so the
+        # advisory units still reach the operator as recommendations.
+        from ecoguard.resource_allocator.station_catalog import STATION_TYPES
+
+        units = list(dict.fromkeys(response_plan.get("recommended_units") or []))
+        if not any(unit in STATION_TYPES for unit in units):
+            units.append(EARTHQUAKE_GUARANTEED_UNIT)
+            response_plan = {**response_plan, "recommended_units": units}
+
         return {
             "incident_id": incident_id,
             "hazard": "earthquake",

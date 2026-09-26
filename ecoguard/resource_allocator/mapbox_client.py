@@ -7,6 +7,14 @@ import os
 from typing import Any, Iterable
 
 import httpx
+from dotenv import load_dotenv
+
+# Loaded here rather than relied on from elsewhere. This module is constructed
+# by the allocator, which a scheduler thread reaches without going through
+# anything that reads `.env` - and the failure was silent in the usual
+# direction: the token looked absent, every route came back "unavailable", and
+# stations were ranked by straight-line distance with no error anyone saw.
+load_dotenv()
 
 
 class RoutingError(RuntimeError):

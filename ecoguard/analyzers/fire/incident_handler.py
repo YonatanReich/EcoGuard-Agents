@@ -8,7 +8,10 @@ from functools import lru_cache
 from typing import Any
 
 from ecoguard.analyzers.fire.risk_analysis_agent import RiskAnalysisAgent
-from ecoguard.analyzers.fire.stored_context import stored_context_for
+from ecoguard.analyzers.fire.stored_context import (
+    spread_forecast_for,
+    stored_context_for,
+)
 from ecoguard.coordinator.dispatcher import (
     IncidentDispatchContext,
     IncidentProcessingResult,
@@ -143,6 +146,7 @@ def detected_event_from_incident(incident: Mapping[str, Any]) -> dict[str, Any]:
 
     timestamp = _iso(incident.get("last_signal_at") or incident.get("first_seen_at"))
     stored = stored_context_for(incident)
+    spread = spread_forecast_for(incident)
     return {
         "metadata": {
             "timestamp": timestamp or datetime.now(timezone.utc).isoformat(),
@@ -174,6 +178,9 @@ def detected_event_from_incident(incident: Mapping[str, Any]) -> dict[str, Any]:
         # absent made the assessment report a coordinate's fire danger as
         # unknown while its band sat in the database.
         **stored,
+        # Where it goes next, and who that reaches. Absent when the forecast
+        # could not be produced, which the card reports rather than hides.
+        "spread_forecast": spread,
         "source_status": {
             "coordinator": "success",
             "nasa_firms": "success" if satellite is not None else "not_available",
