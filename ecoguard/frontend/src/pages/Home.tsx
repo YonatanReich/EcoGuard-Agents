@@ -114,6 +114,13 @@ function Home() {
           <button className="demo-button" onClick={() => leaveTo('/demo')}>
             View demo
           </button>
+          <button
+            className="demo-button"
+            onClick={() => leaveTo('/demos')}
+            title="How the controlled runs were built, and how to start one"
+          >
+            Demo scenarios
+          </button>
         </div>
       </div>
 
@@ -140,5 +147,3 @@ function Home() {
 }
 
 export default Home
-
-// Vercel frontend merge test
