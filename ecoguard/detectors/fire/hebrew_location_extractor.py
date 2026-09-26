@@ -63,18 +63,22 @@ _STRONG_LOCATION_PREFIXES = frozenset("בל")
 _PROXIMITY_MARKERS = frozenset(("בסמוך", "סמוך", "ליד", "בקרבת"))
 _STREET_MARKERS = frozenset(("רחוב", "ברחוב"))
 
-# Words that name a kind of street AND are a town in their own right. Only
-# שדרות so far: it means "boulevard", and it is also the town of Sderot.
+# Everyday words for a *kind of place* that are also the name of a town. Read
+# word by word they win, because candidates are tried in text order and the
+# generic word comes before the real town name:
 #
-# "שדרות התמרים באילת" is Tamarim Boulevard in Eilat. Read word by word, the
-# bare שדרות matches Sderot - 250 km from Eilat - and matched it first, because
-# candidates are tried in text order and שדרות comes before אילת. A fire on a
-# street in Eilat was handed Sderot's police station and telephone number,
-# which is worse than no answer.
+#   שדרות  "boulevard", and the town of Sderot.
+#          "שדרות התמרים באילת" is Tamarim Boulevard in Eilat; the bare word
+#          matched Sderot, 250 km away, and handed the operator Sderot's police
+#          telephone number for a fire in Eilat.
+#   אזור   "area, zone", and the town of Azor near Tel Aviv.
+#          "באזור התעשייה באשדוד" is the industrial zone in Ashdod; the bare
+#          word matched Azor, so an Ashdod report opened an incident outside
+#          Tel Aviv and the Ashdod one was never found.
 #
 # So the bare word is not offered as a town when a name follows it. The longer
 # phrases still are, and simply match nothing, which is correct.
-_STREET_TYPE_ALSO_TOWN = frozenset(("שדרות",))
+_STREET_TYPE_ALSO_TOWN = frozenset(("שדרות", "אזור"))
 
 # ...unless what follows is joined by "and": "בשדרות ובנתיבות" is two towns,
 # not a street, and suppressing שדרות there would lose a real one.

@@ -34,3 +34,24 @@ def test_two_towns_joined_by_and_are_both_kept():
     street name and the bare town stands.
     """
     assert "שדרות" in locality_name_candidates("פיצוץ בשדרות ובנתיבות")
+
+
+def test_a_generic_zone_word_does_not_resolve_to_the_town_of_that_name():
+    """אזור means "zone" and is also a town near Tel Aviv.
+
+    "באזור התעשייה באשדוד" is the industrial zone in Ashdod. The bare word
+    matched Azor, so an Ashdod report opened an incident outside Tel Aviv, the
+    Ashdod one was never found, and the run carried two phantom incidents at
+    Azor's coordinates.
+    """
+    candidates = locality_name_candidates(
+        "דיווח על שריפה במחסן באזור התעשייה באשדוד"
+    )
+
+    assert "אזור" not in candidates
+    assert "אשדוד" in candidates
+
+
+def test_the_zone_town_still_resolves_when_it_stands_alone():
+    """Suppressing the generic sense must not lose the real Azor."""
+    assert "אזור" in locality_name_candidates("רעידת אדמה באזור")
