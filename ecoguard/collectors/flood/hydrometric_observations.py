@@ -231,9 +231,12 @@ def persist_hydrometric_observations(
                            flow_threshold_20y_m3s,
                            flow_threshold_50y_m3s,
                            flow_threshold_100y_m3s,
-                           flow_threshold_status
+                           flow_threshold_status,
+                           operational_flow_regime
                     FROM hydrometric_stations
                     WHERE flow_threshold_status = 'complete_thresholds'
+                      AND operational_flow_regime IS NOT NULL
+                      AND is_active IS TRUE
                     """
                 )
             ).mappings()

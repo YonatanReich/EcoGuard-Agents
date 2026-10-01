@@ -14,6 +14,14 @@ fixed map of where that water goes.
 
 ## Thresholds matter here
 
-A gauge without official flood thresholds cannot say whether a reading is high,
-so its readings are not stored or evaluated at all. Being in the catalogue is
-not the same as being usable.
+A gauge without official flood thresholds or a reviewed operational flow
+regime cannot say which detector rule applies, so its readings are not stored
+or evaluated at all. Only active gauges with both are eligible. Being in the
+catalogue is not the same as being usable.
+
+The reviewed classification is maintained in
+`data/reference/Floods/hydrometric_station_flow_regimes.csv`. The static
+hydrology loader validates that every listed gauge is active and has complete
+thresholds, then replaces the database classifications atomically. Active
+complete gauges omitted from the file remain unclassified and produce a
+warning.

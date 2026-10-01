@@ -6,11 +6,14 @@ it does not schedule itself. A caller decides when a refresh is appropriate.
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -35,11 +38,33 @@ MISSING_THRESHOLD = 999.0
 FLOW_THRESHOLD_STATUS_COMPLETE = "complete_thresholds"
 FLOW_THRESHOLD_STATUS_MISSING = "missing_thresholds"
 FLOW_THRESHOLD_STATUS_PARTIAL = "partial_thresholds"
+OPERATIONAL_FLOW_REGIME_EPHEMERAL = "ephemeral"
+OPERATIONAL_FLOW_REGIME_FLOWING = "flowing_baseline"
+OPERATIONAL_FLOW_REGIMES = frozenset({
+    OPERATIONAL_FLOW_REGIME_EPHEMERAL,
+    OPERATIONAL_FLOW_REGIME_FLOWING,
+})
+FLOW_REGIME_REFERENCE_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "data"
+    / "reference"
+    / "Floods"
+    / "hydrometric_station_flow_regimes.csv"
+)
+FLOW_REGIME_REQUIRED_COLUMNS = frozenset({
+    "source_station_id",
+    "station_name_he",
+    "operational_flow_regime",
+})
+logger = logging.getLogger(__name__)
 
 
 class HydrometricStationCatalogError(ValueError):
     """The station endpoint returned an unsafe or unexpected catalog."""
 
+
+class HydrometricStationFlowRegimeError(ValueError):
+    """The reviewed station-flow classification is missing or inconsistent."""
 
 @dataclass(frozen=True)
 class HydrometricStationCatalog:
@@ -351,6 +376,25 @@ STATION_UPSERT = text(
     """
 )
 
+FLOW_REGIME_CLEAR = text(
+    "UPDATE hydrometric_stations SET operational_flow_regime = NULL"
+)
+
+FLOW_REGIME_UPDATE = text(
+    """
+    UPDATE hydrometric_stations
+    SET operational_flow_regime = :operational_flow_regime
+    WHERE source_station_id = :source_station_id
+    """
+)
+
+FLOW_REGIME_STATION_STATUS = text(
+    """
+    SELECT source_station_id, is_active, flow_threshold_status
+    FROM hydrometric_stations
+    """
+)
+
 LINK_INSERT = text(
     """
     INSERT INTO hydrometric_station_rain_links
@@ -359,6 +403,156 @@ LINK_INSERT = text(
       (:hydrometric_station_id, :rain_station_source_id, :link_order, :synced_at)
     """
 )
+
+
+def read_hydrometric_station_flow_regimes(
+    path: str | Path = FLOW_REGIME_REFERENCE_PATH,
+) -> list[dict[str, Any]]:
+    """Read and validate the reviewed operational classification CSV."""
+    reference_path = Path(path)
+    try:
+        handle = reference_path.open(encoding="utf-8-sig", newline="")
+    except OSError as error:
+        raise HydrometricStationFlowRegimeError(
+            f"cannot read flow-regime reference: {reference_path}"
+        ) from error
+
+    with handle:
+        reader = csv.DictReader(handle)
+        columns = set(reader.fieldnames or [])
+        missing_columns = sorted(FLOW_REGIME_REQUIRED_COLUMNS - columns)
+        if missing_columns:
+            raise HydrometricStationFlowRegimeError(
+                "flow-regime reference is missing columns: "
+                + ", ".join(missing_columns)
+            )
+
+        records: list[dict[str, Any]] = []
+        seen_station_ids: set[int] = set()
+        for line_number, row in enumerate(reader, start=2):
+            try:
+                source_station_id = int(str(row["source_station_id"]).strip())
+            except (TypeError, ValueError) as error:
+                raise HydrometricStationFlowRegimeError(
+                    f"line {line_number}: source_station_id must be an integer"
+                ) from error
+            if source_station_id <= 0:
+                raise HydrometricStationFlowRegimeError(
+                    f"line {line_number}: source_station_id must be positive"
+                )
+            if source_station_id in seen_station_ids:
+                raise HydrometricStationFlowRegimeError(
+                    f"line {line_number}: duplicate station {source_station_id}"
+                )
+
+            station_name = str(row["station_name_he"] or "").strip()
+            if not station_name:
+                raise HydrometricStationFlowRegimeError(
+                    f"line {line_number}: station_name_he is required"
+                )
+            flow_regime = str(row["operational_flow_regime"] or "").strip()
+            if flow_regime not in OPERATIONAL_FLOW_REGIMES:
+                raise HydrometricStationFlowRegimeError(
+                    f"line {line_number}: invalid operational_flow_regime "
+                    f"{flow_regime!r}"
+                )
+
+            seen_station_ids.add(source_station_id)
+            records.append({
+                "source_station_id": source_station_id,
+                "station_name_he": station_name,
+                "operational_flow_regime": flow_regime,
+            })
+
+    if not records:
+        raise HydrometricStationFlowRegimeError(
+            "flow-regime reference contains no stations"
+        )
+    return records
+
+
+def _validate_flow_regime_targets(
+    records: list[dict[str, Any]],
+    station_statuses: list[dict[str, Any]],
+) -> list[int]:
+    """Validate targets and return active complete stations left unclassified."""
+    status_by_id = {
+        int(station["source_station_id"]): station
+        for station in station_statuses
+    }
+    invalid_targets: list[int] = []
+    for record in records:
+        source_station_id = int(record["source_station_id"])
+        station = status_by_id.get(source_station_id)
+        if (
+            station is None
+            or station.get("is_active") is not True
+            or station.get("flow_threshold_status")
+            != FLOW_THRESHOLD_STATUS_COMPLETE
+        ):
+            invalid_targets.append(source_station_id)
+    if invalid_targets:
+        raise HydrometricStationFlowRegimeError(
+            "classification targets must be active stations with complete "
+            "thresholds: " + ", ".join(map(str, sorted(invalid_targets)))
+        )
+
+    classified_ids = {
+        int(record["source_station_id"])
+        for record in records
+    }
+    return sorted(
+        source_station_id
+        for source_station_id, station in status_by_id.items()
+        if station.get("is_active") is True
+        and station.get("flow_threshold_status") == FLOW_THRESHOLD_STATUS_COMPLETE
+        and source_station_id not in classified_ids
+    )
+
+
+def persist_hydrometric_station_flow_regimes(
+    records: list[dict[str, Any]],
+) -> dict[str, int]:
+    """Replace DB classifications atomically from the reviewed reference."""
+    from ecoguard.database.engine import Session
+
+    with Session() as session:
+        statuses = [
+            dict(row)
+            for row in session.execute(FLOW_REGIME_STATION_STATUS).mappings()
+        ]
+        unclassified = _validate_flow_regime_targets(records, statuses)
+        session.execute(FLOW_REGIME_CLEAR)
+        update_rows = [
+            {
+                "source_station_id": record["source_station_id"],
+                "operational_flow_regime": record["operational_flow_regime"],
+            }
+            for record in records
+        ]
+        session.execute(FLOW_REGIME_UPDATE, update_rows)
+        session.commit()
+
+    if unclassified:
+        logger.warning(
+            "active hydrometric stations with complete thresholds remain "
+            "unclassified: %s",
+            ", ".join(map(str, unclassified)),
+        )
+    return {
+        "classified": len(records),
+        "unclassified_active_complete": len(unclassified),
+    }
+
+
+def load_hydrometric_station_flow_regimes(
+    path: str | Path = FLOW_REGIME_REFERENCE_PATH,
+) -> dict[str, int]:
+    """Load the reviewed CSV into the hydrometric station catalog."""
+    return persist_hydrometric_station_flow_regimes(
+        read_hydrometric_station_flow_regimes(path)
+    )
+
 
 
 def persist_hydrometric_station_catalog(

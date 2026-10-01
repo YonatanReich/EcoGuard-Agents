@@ -57,12 +57,14 @@ def test_hydrometric_signals_exclude_stations_without_thresholds():
             "latitude": 32.0,
             "longitude": 34.8,
             "flow_threshold_status": "complete_thresholds",
+            "operational_flow_regime": "ephemeral",
         },
         2: {
             "cell_id": "cell-a",
             "latitude": 32.01,
             "longitude": 34.81,
             "flow_threshold_status": "missing_thresholds",
+            "operational_flow_regime": "ephemeral",
         },
     }
 
@@ -87,7 +89,29 @@ def test_hydrometric_signals_are_empty_when_only_station_has_no_thresholds():
             "latitude": 32.01,
             "longitude": 34.81,
             "flow_threshold_status": "missing_thresholds",
+            "operational_flow_regime": "ephemeral",
         },
+    }
+
+    assert hydrometric_signal_records(rows, stations) == []
+
+
+def test_hydrometric_signals_exclude_unclassified_stations():
+    at = datetime(2026, 9, 16, 8, tzinfo=timezone.utc)
+    rows = [{
+        "source_station_id": 1,
+        "observed_at": at,
+        "discharge_m3s": 12.0,
+        "water_height_m": 1.2,
+    }]
+    stations = {
+        1: {
+            "cell_id": "cell-a",
+            "latitude": 32.0,
+            "longitude": 34.8,
+            "flow_threshold_status": "complete_thresholds",
+            "operational_flow_regime": None,
+        }
     }
 
     assert hydrometric_signal_records(rows, stations) == []

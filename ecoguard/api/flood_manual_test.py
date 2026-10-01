@@ -40,10 +40,10 @@ _run_lock = threading.Lock()
 _latest_report: dict[str, Any] | None = None
 
 SCENARIOS = {
-    "below_threshold": "Three readings below Q10; detector must ignore them.",
+    "below_threshold": "Three readings below the station detection threshold.",
     "single_q10": "One Q10 reading is not enough to confirm an event.",
-    "gap_over_30m": "Two Q10 readings 31 minutes apart are not consecutive.",
-    "below_breaks_sequence": "A below-Q10 reading breaks the high sequence.",
+    "gap_over_30m": "Two high readings 31 minutes apart are not consecutive.",
+    "below_breaks_sequence": "A below-threshold reading breaks the high sequence.",
     "confirmed_q10": "Noise followed by two consecutive Q10 readings.",
     "escalated_q20": "A confirmed Q10 event then escalates to Q20.",
     "ended": "A confirmed event closes after more than three quiet hours.",
@@ -62,6 +62,7 @@ STATION_QUERY = text(
            station.flow_threshold_20y_m3s,
            station.flow_threshold_50y_m3s,
            station.flow_threshold_100y_m3s,
+           station.operational_flow_regime,
            (topology.stream_context -> 'stream' ->> 'stream_id')::bigint AS stream_id
     FROM hydrometric_stations AS station
     JOIN flood_station_topology AS topology
@@ -73,6 +74,7 @@ STATION_QUERY = text(
       )
       AND station.cell_id IS NOT NULL
       AND station.flow_threshold_status = 'complete_thresholds'
+      AND station.operational_flow_regime IN ('ephemeral', 'flowing_baseline')
       AND topology.stream_context @> '{"matched": true}'::jsonb
       AND topology.stream_context -> 'stream' ->> 'stream_id' IS NOT NULL
       AND station.flow_threshold_2y_m3s > 0
@@ -143,26 +145,31 @@ def _quarter(low: float, high: float) -> float:
     return round(low + (high - low) * 0.25, 6)
 
 
-def _sample_values(scenario: str, thresholds: list[float]) -> list[tuple[int, float]]:
+def _sample_values(
+    scenario: str,
+    thresholds: list[float],
+    flow_regime: str,
+) -> list[tuple[int, float]]:
     """The readings that make up one named walkthrough."""
-    q2, q5, q10, q20, q50, _ = thresholds
-    noise = round(q2 * 0.5, 6)
-    low = _quarter(q2, q5)
-    monitoring = _quarter(q5, q10)
+    q2, _q5, q10, q20, q50, _q100 = thresholds
+    detection_threshold = 1.0 if flow_regime == "ephemeral" else q2
+    noise = round(detection_threshold * 0.5, 6)
+    low = round(detection_threshold * 0.75, 6)
+    near_threshold = round(detection_threshold * 0.9, 6)
     q10_first = _quarter(q10, q20)
     q10_second = round(q10 + (q20 - q10) * 0.5, 6)
     q20_value = _quarter(q20, q50)
     return {
-        "below_threshold": [(0, noise), (10, low), (20, monitoring)],
-        "single_q10": [(0, noise), (10, monitoring), (20, q10_first)],
+        "below_threshold": [(0, noise), (10, low), (20, near_threshold)],
+        "single_q10": [(0, noise), (10, low), (20, q10_first)],
         "gap_over_30m": [(0, q10_first), (31, q10_second)],
-        "below_breaks_sequence": [(0, q10_first), (10, monitoring), (20, q10_second)],
-        "confirmed_q10": [(0, noise), (10, monitoring), (20, q10_first), (30, q10_second)],
+        "below_breaks_sequence": [(0, q10_first), (10, low), (20, q10_second)],
+        "confirmed_q10": [(0, noise), (10, low), (20, q10_first), (30, q10_second)],
         "escalated_q20": [
-            (0, noise), (10, monitoring), (20, q10_first),
+            (0, noise), (10, low), (20, q10_first),
             (30, q10_second), (40, q20_value),
         ],
-        "ended": [(0, noise), (10, monitoring), (20, q10_first), (30, q10_second)],
+        "ended": [(0, noise), (10, low), (20, q10_first), (30, q10_second)],
     }[scenario]
 
 
@@ -181,7 +188,9 @@ def _observations(
         else [
             (start + timedelta(minutes=minutes), discharge)
             for minutes, discharge in _sample_values(
-                scenario, station["thresholds_m3s"]
+                scenario,
+                station["thresholds_m3s"],
+                station["operational_flow_regime"],
             )
         ]
     )
@@ -193,6 +202,7 @@ def _observations(
             "longitude": float(station["longitude"]),
             "discharge_m3s": discharge,
             "flow_threshold_status": "complete_thresholds",
+            "operational_flow_regime": station["operational_flow_regime"],
         }
         station_payload.update({
             f"flow_threshold_{years}y_m3s": threshold

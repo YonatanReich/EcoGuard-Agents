@@ -298,6 +298,59 @@ def test_flood_deescalation_projects_current_band_and_preserves_response():
     assert projected["details"]["existing_response_preserved"] is True
 
 
+def test_v2_ephemeral_event_below_q2_projects_the_actual_band():
+    incident = {
+        "id": "INC-FLOOD-EPHEMERAL",
+        "signals": [{
+            "cell_id": "31.75:35.20",
+            "observed_at": REQUESTED_AT.isoformat(),
+            "hazard": "flood",
+            "value": 1.4,
+            "confidence": 0.9,
+            "location": {
+                "latitude": 31.75,
+                "longitude": 35.2,
+                "precision_m": 75.0,
+            },
+            "evidence": {
+                "source_station_id": 417,
+                "stream_id": 82,
+                "current_discharge": 1.4,
+                "detection_rule_version": 2,
+                "operational_flow_regime": "ephemeral",
+                "alert_threshold_m3s": 1.0,
+                "severity_level": 3,
+                "return_period_years": None,
+                "threshold_vector_m3s": [20.0, 35.0, 50.0, 80.0, 120.0, 170.0],
+                "recent_discharges_m3s": [1.0, 1.4],
+            },
+        }],
+    }
+    analysis = FloodEventAnalyzer(clock=lambda: REQUESTED_AT).analyze(incident)
+    risk = FloodRiskAnalyzer(clock=lambda: REQUESTED_AT).analyze(analysis)
+    result = IncidentProcessingResult(
+        incident_id=incident["id"],
+        hazard="flood",
+        route="emergency",
+        status="success",
+        requested_at=REQUESTED_AT,
+        completed_at=REQUESTED_AT,
+        analysis_status=analysis.status,
+        risk_status=risk.metadata.analysis_status,
+        planner_status="skipped",
+        analysis_result=analysis,
+        risk_assessment=risk,
+        response_refresh_required=False,
+        requires_resource_allocation=False,
+    )
+
+    event = flood_shared_event(result, incident)
+
+    assert event.details.severity_level == 3
+    assert event.details.return_period_label == "below Q2"
+    assert event.details.risk_score == 40
+
+
 def test_planner_failure_has_no_fabricated_recommendations():
     incident, result = _successful_result()
     result.status = "partial"

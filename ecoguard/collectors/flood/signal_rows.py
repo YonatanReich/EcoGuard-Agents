@@ -8,6 +8,7 @@ from typing import Any, Iterable, Mapping
 
 
 FLOW_THRESHOLD_STATUS_COMPLETE = "complete_thresholds"
+OPERATIONAL_FLOW_REGIMES = frozenset({"ephemeral", "flowing_baseline"})
 
 
 def _grouped_records(
@@ -49,6 +50,7 @@ def _grouped_records(
             "flow_threshold_50y_m3s",
             "flow_threshold_100y_m3s",
             "flow_threshold_status",
+            "operational_flow_regime",
         ):
             if field in station:
                 item[field] = station.get(field)
@@ -80,6 +82,7 @@ def hydrometric_signal_records(
         station_id: station
         for station_id, station in stations.items()
         if station.get("flow_threshold_status") == FLOW_THRESHOLD_STATUS_COMPLETE
+        and station.get("operational_flow_regime") in OPERATIONAL_FLOW_REGIMES
     }
     return _grouped_records(
         rows,

@@ -22,8 +22,10 @@ def signal(
     stream_id=82,
     latitude=31.75,
     longitude=35.2,
+    detection_v2=False,
+    flow_regime="ephemeral",
 ):
-    return {
+    result = {
         "cell_id": cell_id,
         "observed_at": observed_at.isoformat(),
         "hazard": "flood",
@@ -49,6 +51,20 @@ def signal(
             "recent_discharges_m3s": [previous_discharge, current_discharge],
         },
     }
+    if detection_v2:
+        official_level = sum(current_discharge >= value for value in THRESHOLDS)
+        expected_severity = 3 if official_level <= 1 else min(6, official_level + 2)
+        result["evidence"].update({
+            "detection_rule_version": 2,
+            "operational_flow_regime": flow_regime,
+            "severity_level": expected_severity,
+            "alert_threshold_m3s": 1.0 if flow_regime == "ephemeral" else THRESHOLDS[0],
+            "return_period_years": (
+                (2, 5, 10, 20, 50, 100)[official_level - 1]
+                if official_level else None
+            ),
+        })
+    return result
 
 
 def incident(*signals):
@@ -76,6 +92,44 @@ def test_initial_signal_establishes_q10_state_without_external_calls():
     assert result.progression_assessment.discharge_change_m3s == 8.0
     assert result.change_assessment.change_type == "initial"
     assert result.change_assessment.material_change is True
+
+
+def test_v2_ephemeral_detection_below_q2_keeps_actual_return_period_empty():
+    result = analyzer().analyze(incident(signal(
+        severity=3,
+        previous_discharge=1.0,
+        current_discharge=1.4,
+        detection_v2=True,
+    )))
+
+    assert result.status == "success"
+    assert result.current_state.severity_level == 3
+    assert result.current_state.return_period_years is None
+    assert result.current_state.alert_level == "active"
+
+
+def test_v2_q5_crossing_escalates_operational_severity_and_actual_band():
+    first = signal(
+        observed_at=AT,
+        severity=3,
+        previous_discharge=1.0,
+        current_discharge=1.4,
+        detection_v2=True,
+    )
+    second = signal(
+        observed_at=AT + timedelta(minutes=10),
+        severity=4,
+        previous_discharge=1.4,
+        current_discharge=40.0,
+        detection_v2=True,
+    )
+
+    result = analyzer().analyze(incident(first, second))
+
+    assert result.current_state.severity_level == 4
+    assert result.current_state.return_period_years == 5
+    assert result.change_assessment.change_type == "escalated"
+    assert result.change_assessment.threshold_transition == "below_Q2_to_Q5"
 
 
 def test_q10_to_q20_is_an_explicit_material_escalation():

@@ -417,6 +417,7 @@ def _gauge(
                 "water_height_m": height,
                 "drainage_basin_id": basin,
                 "source_station_id": station_id,
+                "operational_flow_regime": "ephemeral",
                 "flow_threshold_2y_m3s": 5.0,
                 "flow_threshold_5y_m3s": 20.0,
                 "flow_threshold_status": "complete_thresholds",

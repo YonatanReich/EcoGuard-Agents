@@ -73,6 +73,24 @@ def test_detected_flood_uses_shared_operational_scale(
     assert result.primary_drivers
 
 
+def test_v2_ephemeral_detection_below_q2_uses_lowest_active_risk_band():
+    raw = _signal(severity=3, discharge=1.4, previous=1.0)
+    raw["evidence"].update({
+        "detection_rule_version": 2,
+        "operational_flow_regime": "ephemeral",
+        "alert_threshold_m3s": 1.0,
+        "return_period_years": None,
+    })
+
+    result = FloodRiskAnalyzer(clock=lambda: AT).analyze(_analysis(raw))
+
+    assert result.metadata.analysis_status == "success"
+    assert result.risk_score == 40
+    assert result.risk_level == "medium"
+    assert result.return_period_years is None
+    assert "station-specific detection threshold" in result.explanation
+
+
 def test_risk_analyzer_assesses_latest_detected_state_not_peak_history():
     result = FloodRiskAnalyzer(clock=lambda: AT).analyze(
         _analysis(

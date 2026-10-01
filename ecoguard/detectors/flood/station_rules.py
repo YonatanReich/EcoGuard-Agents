@@ -18,15 +18,21 @@ from ecoguard.shared.signals import (
 HYDROMETRIC_SOURCE = "water_authority_hydrometric_observations"
 FLOW_RETURN_PERIODS = (2, 5, 10, 20, 50, 100)
 FLOW_THRESHOLD_STATUS_COMPLETE = "complete_thresholds"
+OPERATIONAL_FLOW_REGIME_EPHEMERAL = "ephemeral"
+OPERATIONAL_FLOW_REGIME_FLOWING = "flowing_baseline"
+OPERATIONAL_FLOW_REGIMES = frozenset({
+    OPERATIONAL_FLOW_REGIME_EPHEMERAL,
+    OPERATIONAL_FLOW_REGIME_FLOWING,
+})
+DETECTION_RULE_VERSION = 2
 
 
 @dataclass(frozen=True)
 class FloodPolicy:
-    lookback: timedelta = timedelta(hours=6)
+    lookback: timedelta = timedelta(hours=1)
     maximum_ingestion_lag: timedelta = timedelta(hours=2)
     maximum_future_skew: timedelta = timedelta(minutes=15)
-    minimum_alert_level: int = 3
-    consecutive_samples: int = 2
+    ephemeral_alert_threshold_m3s: float = 1.0
     maximum_sample_gap: timedelta = timedelta(minutes=30)
 
 
@@ -49,8 +55,17 @@ def _threshold_vector(station: Mapping[str, Any]) -> tuple[float, ...] | None:
 
 
 def severity_level(discharge: float, thresholds: Sequence[float]) -> int:
-    """Map current discharge to level 0-6 using the official threshold vector."""
+    """Count the official Q2-Q100 thresholds crossed by this reading."""
     return sum(discharge >= threshold for threshold in thresholds)
+
+
+def operational_severity_level(official_threshold_level: int) -> int:
+    """Map a confirmed event onto the existing four operational risk bands."""
+    if not 0 <= official_threshold_level <= len(FLOW_RETURN_PERIODS):
+        raise ValueError("official threshold level must be between 0 and 6")
+    if official_threshold_level <= 1:
+        return 3
+    return min(6, official_threshold_level + 2)
 
 
 def _severity_hint(level: int) -> str:
@@ -77,7 +92,7 @@ def alert_level(level: int) -> str:
     return "none"
 
 
-StationSample = tuple[datetime, Mapping[str, Any], float, tuple[float, ...]]
+StationSample = tuple[datetime, Mapping[str, Any], float, tuple[float, ...], str,]
 
 
 def _station_samples(
@@ -103,11 +118,16 @@ def _station_samples(
 def _valid_sample(
     sample: tuple[datetime, Mapping[str, Any]],
 ) -> StationSample | None:
-    """One usable reading, or None when its thresholds or flow are missing."""
+    """One usable classified reading, or None when required data is missing."""
     observed_at, station = sample
     thresholds = _threshold_vector(station)
+    flow_regime = station.get("operational_flow_regime")
     discharge = station.get("discharge_m3s")
-    if thresholds is None or discharge is None:
+    if (
+        thresholds is None
+        or flow_regime not in OPERATIONAL_FLOW_REGIMES
+        or discharge is None
+    ):
         return None
     try:
         numeric_discharge = float(discharge)
@@ -115,7 +135,14 @@ def _valid_sample(
         return None
     if numeric_discharge < 0:
         return None
-    return observed_at, station, numeric_discharge, thresholds
+    return observed_at, station, numeric_discharge, thresholds, str(flow_regime)
+
+
+def _detection_threshold(sample: StationSample, policy: FloodPolicy) -> float:
+    """The event threshold for this gauge's operational baseline."""
+    if sample[4] == OPERATIONAL_FLOW_REGIME_EPHEMERAL:
+        return policy.ephemeral_alert_threshold_m3s
+    return sample[3][0]
 
 
 def _evidence(
@@ -127,19 +154,20 @@ def _evidence(
     policy: FloodPolicy,
 ) -> dict[str, Any]:
     """What the pair of readings showed, recorded on the signal."""
-    observed_at, _, discharge, thresholds = current
-    previous_level = severity_level(previous[2], previous[3])
-    current_level = severity_level(discharge, thresholds)
-    threshold_index = current_level - 1
+    observed_at, _, discharge, thresholds, flow_regime = current
+    current_official_level = severity_level(discharge, thresholds)
+    current_level = operational_severity_level(current_official_level)
+    threshold_index = current_official_level - 1
     return {
         "station_id": station_id,
         "source_station_id": station_id,
         "stream_id": stream_id,
         "timestamp": observed_at.isoformat(),
         "current_discharge": discharge,
+        "detection_rule_version": DETECTION_RULE_VERSION,
+        "operational_flow_regime": flow_regime,
         "severity_level": current_level,
         "alert_level": alert_level(current_level),
-        "previous_severity_level": previous_level,
         "current_threshold_m3s": (
             thresholds[threshold_index] if threshold_index >= 0 else None
         ),
@@ -147,7 +175,7 @@ def _evidence(
             FLOW_RETURN_PERIODS[threshold_index] if threshold_index >= 0 else None
         ),
         "severity_hint": _severity_hint(current_level),
-        "alert_threshold_m3s": thresholds[policy.minimum_alert_level - 1],
+        "alert_threshold_m3s": _detection_threshold(current, policy),
         "threshold_vector_m3s": list(thresholds),
         "recent_discharges_m3s": [previous[2], discharge],
     }
@@ -163,7 +191,7 @@ def _signal(
     policy: FloodPolicy,
 ) -> CellSignal:
     """The signal for one confirmed threshold crossing."""
-    observed_at, station, discharge, _ = current
+    observed_at, station, discharge, _, _ = current
     return CellSignal(
         cell_id=cell_id,
         observed_at=observed_at,
@@ -200,7 +228,7 @@ def evaluate_cell(
     stream_ids: Mapping[int, int] | None = None,
     target_observed_at: set[datetime] | None = None,
 ) -> list[CellSignal]:
-    """Return signals for two consecutive readings at or above Q10."""
+    """Return signals for two consecutive readings above the station rule."""
     selected_policy = policy or FloodPolicy()
     signals: list[CellSignal] = []
 
@@ -215,15 +243,14 @@ def evaluate_cell(
             is_target = target_observed_at is None or current[0] in target_observed_at
             pair_is_consecutive = (
                 previous is not None
+                and previous[4] == current[4]
                 and current[0] - previous[0]
                 <= selected_policy.maximum_sample_gap
             )
             if is_target and pair_is_consecutive and previous is not None:
-                previous_level = severity_level(previous[2], previous[3])
-                current_level = severity_level(current[2], current[3])
                 alert_confirmed = (
-                    min(previous_level, current_level)
-                    >= selected_policy.minimum_alert_level
+                    previous[2] >= _detection_threshold(previous, selected_policy)
+                    and current[2] >= _detection_threshold(current, selected_policy)
                 )
                 stream_id = (stream_ids or {}).get(station_id)
 

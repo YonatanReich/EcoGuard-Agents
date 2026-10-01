@@ -239,6 +239,7 @@ def _gauge(station_id: int, name_en: str, name_he: str, lat: float, lon: float,
             "water_height_m": height,
             "drainage_basin_id": basin,
             "source_station_id": station_id,
+            "operational_flow_regime": "ephemeral",
             "flow_threshold_2y_m3s": 5.0,
             "flow_threshold_5y_m3s": 20.0,
             "flow_threshold_status": "complete_thresholds",
@@ -340,9 +341,8 @@ def build_rows(now: datetime) -> list[tuple[str, str, datetime, dict[str, Any]]]
 
     # --- A3: Nahal Ashalim flood, and two flat gauges (N5) ----------------
     ashalim_cell = "risk-05000m-r0036-c0021"
-    # minimum_alert_level is 3: BOTH readings of a consecutive pair must sit at
-    # or above the 10-year threshold (48 m3/s here), not the 2- or 5-year. A
-    # rise that merely crosses Q5 is real water and deliberately not an alert.
+    # Ashalim is classified as ephemeral: two readings at or above 1 m3/s,
+    # no more than 30 minutes apart, confirm the event.
     for minutes, discharge, height in ((58, 0.4, 0.08), (31, 62.0, 2.6), (6, 95.0, 3.4)):
         rows.append(("water_authority_hydrometric_observations", ashalim_cell,
                      ago(minutes),

@@ -20,6 +20,7 @@ STATION = {
     "latitude": 31.75,
     "longitude": 35.2,
     "stream_id": 82,
+    "operational_flow_regime": "flowing_baseline",
     "thresholds_m3s": [20.0, 35.0, 50.0, 80.0, 120.0, 170.0],
 }
 
@@ -34,6 +35,25 @@ def _signals(scenario):
     )
 
 
+def test_manual_fixtures_follow_ephemeral_detection_threshold():
+    station = {**STATION, "operational_flow_regime": "ephemeral"}
+    below = _observations("below_threshold", station, START)
+    confirmed = _observations("confirmed_q10", station, START)
+    agent = FloodDetectionAgent()
+
+    assert agent.evaluate(
+        cell_id=station["cell_id"],
+        observations=below,
+        stream_ids={417: 82},
+    ) == []
+    signals = agent.evaluate(
+        cell_id=station["cell_id"],
+        observations=confirmed,
+        stream_ids={417: 82},
+    )
+    assert len(signals) == 1
+
+
 def test_below_threshold_noise_never_reaches_downstream_pipeline():
     assert _signals("below_threshold") == []
 
@@ -41,7 +61,7 @@ def test_below_threshold_noise_never_reaches_downstream_pipeline():
 def test_confirmed_scenario_uses_real_detector_and_memory_coordinator():
     signals = _signals("confirmed_q10")
     assert len(signals) == 1
-    assert signals[0].evidence["severity_level"] == 3
+    assert signals[0].evidence["severity_level"] == 5
 
     store = MemoryIncidentStore()
     result = coordinate(

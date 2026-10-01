@@ -589,7 +589,7 @@ The runtime flow is:
 4. New rows with an ingestion lag over two hours, or an observed timestamp
    more than 15 minutes in the future, are not allowed to open or close a
    real-time event.
-5. For every affected 5 km cell, the detector reloads a six-hour hydrometric
+5. For every affected 5 km cell, the detector reloads a one-hour hydrometric
    window and any confirmed station-to-stream id. It does not load event state,
    rainfall, radar, baselines or basin context. The stream id is output
    enrichment only and does not participate in the decision.
@@ -603,12 +603,13 @@ The consumed sources are:
 
 | Source key | Meaning |
 |---|---|
-| `water_authority_hydrometric_observations` | Discharge measurements from stations with a complete Q2-Q100 vector. |
+| `water_authority_hydrometric_observations` | Discharge measurements from active, classified stations with a complete Q2-Q100 vector. |
 
 ### 6.2 Detector Response
 
 `detect_new()` returns `list[CellSignal]`, identical to the other scheduled
-detectors. Every item represents two consecutive readings at or above Q10.
+detectors. Every item represents two consecutive readings above the detection
+threshold for that station's operational flow regime.
 
 A true no-op is:
 
@@ -635,31 +636,35 @@ Flood detections use the existing shared `CellSignal` shape.
 
 ### 6.4 Active Hydrometric Rules
 
-Current discharge maps to levels 0-6 by the complete Q2, Q5, Q10, Q20, Q50
-and Q100 vector. Q2 is ordinary flow with no alert; Q5 is a preliminary
-`monitoring` state that does not open a flood event. A flood alert opens only
-when the two latest valid readings, no more than 30 minutes apart, are both at
-or above Q10. Q10 is `active`, Q20 is `severe`, and Q50/Q100 are `emergency`.
-Severity is calculated from the current reading; the previous reading supplies
-persistence confirmation.
-
-Readings below Q10 emit no signal. Rain, radar, water height and statistical
-baselines do not participate in the active decision.
+An `ephemeral` station opens an alert when two latest valid readings are at
+least 1 m3/s. A `flowing_baseline` station uses its own Q2. In both cases the
+readings must be no more than 30 minutes apart. The current discharge is also
+compared with Q2, Q5, Q10, Q20, Q50 and Q100. Confirmed readings below Q5 map
+to operational severity 3, Q5 to 4, Q10 to 5 and Q20 or above to 6. The actual
+return period remains separate from operational severity.
 
 ### 6.5 Station Eligibility
 
-Hydrometric stations are eligible only when the source catalog supplies the
-complete Q2, Q5, Q10, Q20, Q50 and Q100 curve. The catalog records this as
-`flow_threshold_status: "complete_thresholds"`. A curve containing six `999`
-sentinels is recorded as `missing_thresholds`. Measurements from that station
-are not stored, and the station cannot participate in event detection.
+Hydrometric stations are eligible only when they are active, have a reviewed
+`operational_flow_regime` (`ephemeral` or `flowing_baseline`), and the source
+catalog supplies the complete Q2, Q5, Q10, Q20, Q50 and Q100 curve. The
+catalog records the latter as `flow_threshold_status: "complete_thresholds"`.
+A curve containing six `999` sentinels is recorded as `missing_thresholds`.
+Measurements from ineligible stations are not stored and cannot participate
+in event detection.
+
+The operational classification is maintained in
+`data/reference/Floods/hydrometric_station_flow_regimes.csv` and loaded by the
+static hydrology-data command after the Water Authority station catalog. The
+runtime collector does not contain station-id classification lists.
 
 ### 6.6 Evidence
 
 Signal evidence contains the complete threshold vector and the two confirming
-discharges, current and previous severity levels, the current threshold, its
-return period, the Q10 alert threshold and the optional matched stream id. No
-inferred trend, rainfall or baseline evidence participates in this version.
+discharges, current and previous severity levels, flow regime, detection rule
+version, the current official threshold, its return period, the station's
+detection threshold and the optional matched stream id. No inferred trend,
+rainfall or baseline evidence participates in this version.
 
 ### 6.7 Location and Limitations
 
@@ -672,8 +677,8 @@ does not prove bank overtopping, inundation extent, water depth or travel time.
 Flood uses the same quiet-period lifecycle as Fire and Air Pollution. Every
 qualifying signal updates the matched incident's `last_signal_at`. After three
 hours without a new qualifying Flood signal, the Coordinator closes the
-incident on its next shared thirty-minute cycle. A later confirmed Q10 pair
-opens a new incident.
+incident on its next shared ten-minute cycle. A later confirmed pair opens a
+new incident.
 
 This intentionally treats a prolonged collection outage like signal silence,
 which is the same operational limitation as the existing Fire and Air

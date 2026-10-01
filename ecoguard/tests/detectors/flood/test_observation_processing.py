@@ -24,6 +24,7 @@ def _row(identifier: int, at: datetime, discharge: float) -> dict:
                 "latitude": 32.0,
                 "longitude": 34.8,
                 "flow_threshold_status": "complete_thresholds",
+                "operational_flow_regime": "ephemeral",
                 "flow_threshold_2y_m3s": 10.0,
                 "flow_threshold_5y_m3s": 20.0,
                 "flow_threshold_10y_m3s": 30.0,

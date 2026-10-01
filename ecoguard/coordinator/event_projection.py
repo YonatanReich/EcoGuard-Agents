@@ -657,7 +657,19 @@ def flood_shared_event(
         if analysis is not None and analysis.current_state is not None
         else primary.station.severity_level
     )
-    return_period = {3: "10-year", 4: "20-year", 5: "50-year", 6: "100-year"}[severity]
+    if analysis is not None and analysis.current_state is not None:
+        return_period_years = analysis.current_state.return_period_years
+    elif risk is not None:
+        return_period_years = risk.return_period_years
+    else:
+        # Results created before the flow-regime detector carried the actual
+        # return period used the operational severity as the Q10-Q100 band.
+        return_period_years = {3: 10, 4: 20, 5: 50, 6: 100}[severity]
+    return_period = (
+        f"{return_period_years}-year"
+        if return_period_years is not None
+        else "below Q2"
+    )
     drawable_streams = sum(source.stream is not None for source in projected_sources)
     targeting_status = targeting.get("status")
     change = analysis.change_assessment if analysis is not None else None

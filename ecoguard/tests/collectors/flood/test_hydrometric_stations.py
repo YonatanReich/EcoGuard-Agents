@@ -7,9 +7,15 @@ from datetime import datetime, timezone
 import pytest
 
 from ecoguard.collectors.flood.hydrometric_stations import (
+    FLOW_REGIME_REFERENCE_PATH,
     HydrometricStationCatalogError,
+    HydrometricStationFlowRegimeError,
+    STATION_UPSERT,
+    _validate_flow_regime_targets,
     fetch_hydrometric_station_catalog,
     parse_hydrometric_station_catalog,
+    persist_hydrometric_station_flow_regimes,
+    read_hydrometric_station_flow_regimes,
 )
 
 
@@ -48,10 +54,137 @@ def test_parses_owners_stations_thresholds_and_rain_links():
     assert station["flow_threshold_50y_m3s"] == 72
     assert station["flow_threshold_100y_m3s"] == 85
     assert station["flow_threshold_status"] == "complete_thresholds"
+    assert "operational_flow_regime" not in station
     assert [(link["rain_station_source_id"], link["link_order"]) for link in catalog.rain_links] == [
         (205, 1),
         (311, 3),
     ]
+
+
+def test_reviewed_flow_regime_reference_contains_69_unique_stations():
+    records = read_hydrometric_station_flow_regimes()
+
+    assert FLOW_REGIME_REFERENCE_PATH.is_file()
+    assert len(records) == 69
+    assert len({record["source_station_id"] for record in records}) == 69
+    assert sum(
+        record["operational_flow_regime"] == "ephemeral"
+        for record in records
+    ) == 48
+    assert sum(
+        record["operational_flow_regime"] == "flowing_baseline"
+        for record in records
+    ) == 21
+
+
+def test_flow_regime_reference_rejects_duplicate_station(tmp_path):
+    reference = tmp_path / "regimes.csv"
+    reference.write_text(
+        "source_station_id,station_name_he,operational_flow_regime\n"
+        "49,חילזון,ephemeral\n"
+        "49,חילזון,flowing_baseline\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(HydrometricStationFlowRegimeError, match="duplicate station 49"):
+        read_hydrometric_station_flow_regimes(reference)
+
+
+def test_catalog_upsert_leaves_flow_regime_owned_by_reference_loader():
+    sql = " ".join(str(STATION_UPSERT).split())
+
+    assert "operational_flow_regime" not in sql
+
+
+def test_flow_regime_targets_must_be_active_with_complete_thresholds():
+    records = [{
+        "source_station_id": 49,
+        "station_name_he": "חילזון-יסעור",
+        "operational_flow_regime": "ephemeral",
+    }]
+    statuses = [{
+        "source_station_id": 49,
+        "is_active": False,
+        "flow_threshold_status": "complete_thresholds",
+    }]
+
+    with pytest.raises(
+        HydrometricStationFlowRegimeError,
+        match="active stations with complete thresholds: 49",
+    ):
+        _validate_flow_regime_targets(records, statuses)
+
+
+def test_flow_regime_validation_reports_unclassified_eligible_stations():
+    records = [{
+        "source_station_id": 49,
+        "station_name_he": "חילזון-יסעור",
+        "operational_flow_regime": "ephemeral",
+    }]
+    statuses = [
+        {
+            "source_station_id": 49,
+            "is_active": True,
+            "flow_threshold_status": "complete_thresholds",
+        },
+        {
+            "source_station_id": 50,
+            "is_active": True,
+            "flow_threshold_status": "complete_thresholds",
+        },
+    ]
+
+    assert _validate_flow_regime_targets(records, statuses) == [50]
+
+
+def test_flow_regime_persistence_replaces_database_values(monkeypatch):
+    calls = []
+
+    class Result:
+        def mappings(self):
+            return iter([
+                {
+                    "source_station_id": 49,
+                    "is_active": True,
+                    "flow_threshold_status": "complete_thresholds",
+                }
+            ])
+
+    class FakeSession:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def execute(self, statement, parameters=None):
+            calls.append((str(statement), parameters))
+            if "SELECT source_station_id" in str(statement):
+                return Result()
+            return None
+
+        def commit(self):
+            calls.append(("commit", None))
+
+    from ecoguard.database import engine
+
+    monkeypatch.setattr(engine, "Session", FakeSession)
+    records = [{
+        "source_station_id": 49,
+        "station_name_he": "חילזון-יסעור",
+        "operational_flow_regime": "ephemeral",
+    }]
+
+    result = persist_hydrometric_station_flow_regimes(records)
+
+    assert result == {"classified": 1, "unclassified_active_complete": 0}
+    assert "SET operational_flow_regime = NULL" in calls[1][0]
+    assert "SET operational_flow_regime = :operational_flow_regime" in calls[2][0]
+    assert calls[2][1] == [{
+        "source_station_id": 49,
+        "operational_flow_regime": "ephemeral",
+    }]
+    assert calls[-1] == ("commit", None)
 
 
 def test_marks_a_station_with_six_provider_sentinels_as_missing_thresholds():
