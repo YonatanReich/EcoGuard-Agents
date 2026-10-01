@@ -81,9 +81,6 @@ def test_confirmed_event_maps_to_existing_operational_scale(
 @pytest.mark.parametrize(
     ("severity", "expected"),
     [
-        (0, "none"),
-        (1, "none"),
-        (2, "monitoring"),
         (3, "active"),
         (4, "severe"),
         (5, "emergency"),
@@ -107,7 +104,6 @@ def test_two_ephemeral_readings_at_one_m3s_emit_one_shared_signal():
     assert len(signals) == 1
     signal = signals[0]
     assert signal.value == 1.4
-    assert signal.evidence["detection_rule_version"] == 2
     assert signal.evidence["operational_flow_regime"] == "ephemeral"
     assert signal.evidence["alert_threshold_m3s"] == 1.0
     assert signal.evidence["severity_level"] == 3

@@ -198,6 +198,13 @@ def test_flood_deescalation_projects_current_band_and_preserves_response():
                 "stream_id": 82,
                 "current_discharge": discharge,
                 "severity_level": severity,
+                "operational_flow_regime": "flowing_baseline",
+                "alert_threshold_m3s": thresholds[0],
+                "return_period_years": (
+                    (2, 5, 10, 20, 50, 100)[
+                        sum(discharge >= threshold for threshold in thresholds) - 1
+                    ]
+                ),
                 "threshold_vector_m3s": thresholds,
                 "recent_discharges_m3s": [previous, discharge],
             },
@@ -207,8 +214,8 @@ def test_flood_deescalation_projects_current_band_and_preserves_response():
     incident = {
         "id": "INC-FLOOD-DEESCALATED",
         "signals": [
-            signal(REQUESTED_AT, 125.0, 5, 122.0),
-            signal(later, 85.0, 4, 125.0),
+            signal(REQUESTED_AT, 60.0, 5, 58.0),
+            signal(later, 40.0, 4, 60.0),
         ],
     }
     analysis = FloodEventAnalyzer(clock=lambda: later).analyze(incident)
@@ -233,7 +240,7 @@ def test_flood_deescalation_projects_current_band_and_preserves_response():
     event = flood_shared_event(result, incident)
 
     assert event.details.severity_level == 4
-    assert event.details.return_period_label == "20-year"
+    assert event.details.return_period_label == "5-year"
     assert event.details.risk_status == "success"
     assert event.details.risk_score == 60
     assert event.details.risk_level == "high"
@@ -241,7 +248,7 @@ def test_flood_deescalation_projects_current_band_and_preserves_response():
     assert event.details.sources[0].station.severity_level == 4
     assert event.details.sources[0].station.precision_m == 75.0
     assert event.details.change_type == "deescalated"
-    assert event.details.threshold_transition == "Q50_to_Q20"
+    assert event.details.threshold_transition == "Q10_to_Q5"
     assert event.details.response_refresh_required is False
     assert event.details.existing_response_preserved is True
     assert event.details.targeting_status == "preserved_existing_response"
@@ -298,7 +305,7 @@ def test_flood_deescalation_projects_current_band_and_preserves_response():
     assert projected["details"]["existing_response_preserved"] is True
 
 
-def test_v2_ephemeral_event_below_q2_projects_the_actual_band():
+def test_ephemeral_event_below_q2_projects_the_actual_band():
     incident = {
         "id": "INC-FLOOD-EPHEMERAL",
         "signals": [{
@@ -316,7 +323,6 @@ def test_v2_ephemeral_event_below_q2_projects_the_actual_band():
                 "source_station_id": 417,
                 "stream_id": 82,
                 "current_discharge": 1.4,
-                "detection_rule_version": 2,
                 "operational_flow_regime": "ephemeral",
                 "alert_threshold_m3s": 1.0,
                 "severity_level": 3,

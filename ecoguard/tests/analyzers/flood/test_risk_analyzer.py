@@ -27,6 +27,15 @@ def _signal(*, severity, discharge, previous, confidence=0.9, at=AT):
             "stream_id": 82,
             "current_discharge": discharge,
             "severity_level": severity,
+            "operational_flow_regime": "flowing_baseline",
+            "alert_threshold_m3s": THRESHOLDS[0],
+            "return_period_years": (
+                (2, 5, 10, 20, 50, 100)[
+                    sum(discharge >= threshold for threshold in THRESHOLDS) - 1
+                ]
+                if discharge >= THRESHOLDS[0]
+                else None
+            ),
             "threshold_vector_m3s": THRESHOLDS,
             "recent_discharges_m3s": [previous, discharge],
         },
@@ -45,10 +54,10 @@ def _analysis(*signals):
 @pytest.mark.parametrize(
     ("severity", "discharge", "score", "level"),
     [
-        (3, 60.0, 40, "medium"),
-        (4, 85.0, 60, "high"),
-        (5, 125.0, 80, "critical"),
-        (6, 175.0, 100, "critical"),
+        (3, 22.0, 40, "medium"),
+        (4, 40.0, 60, "high"),
+        (5, 60.0, 80, "critical"),
+        (6, 85.0, 100, "critical"),
     ],
 )
 def test_detected_flood_uses_shared_operational_scale(
@@ -59,7 +68,7 @@ def test_detected_flood_uses_shared_operational_scale(
             _signal(
                 severity=severity,
                 discharge=discharge,
-                previous=discharge - 2,
+                previous=max(THRESHOLDS[0], discharge - 2),
             )
         )
     )
@@ -73,10 +82,9 @@ def test_detected_flood_uses_shared_operational_scale(
     assert result.primary_drivers
 
 
-def test_v2_ephemeral_detection_below_q2_uses_lowest_active_risk_band():
+def test_ephemeral_detection_below_q2_uses_lowest_active_risk_band():
     raw = _signal(severity=3, discharge=1.4, previous=1.0)
     raw["evidence"].update({
-        "detection_rule_version": 2,
         "operational_flow_regime": "ephemeral",
         "alert_threshold_m3s": 1.0,
         "return_period_years": None,
@@ -94,11 +102,11 @@ def test_v2_ephemeral_detection_below_q2_uses_lowest_active_risk_band():
 def test_risk_analyzer_assesses_latest_detected_state_not_peak_history():
     result = FloodRiskAnalyzer(clock=lambda: AT).analyze(
         _analysis(
-            _signal(severity=5, discharge=125.0, previous=122.0),
+            _signal(severity=5, discharge=60.0, previous=58.0),
             _signal(
                 severity=4,
-                discharge=85.0,
-                previous=125.0,
+                discharge=40.0,
+                previous=60.0,
                 at=AT + timedelta(minutes=10),
             ),
         )
@@ -117,7 +125,7 @@ def test_below_active_flood_threshold_has_no_operational_risk_score():
     assert result.metadata.analysis_status == "unavailable"
     assert result.risk_score is None
     assert result.risk_level is None
-    assert result.error == "active_flood_severity_unavailable"
+    assert result.error == "flood_event_analysis_unavailable"
 
 
 def test_missing_signal_confidence_produces_partial_low_confidence_assessment():
@@ -125,8 +133,8 @@ def test_missing_signal_confidence_produces_partial_low_confidence_assessment():
         _analysis(
             _signal(
                 severity=4,
-                discharge=85.0,
-                previous=82.0,
+                discharge=40.0,
+                previous=38.0,
                 confidence=None,
             )
         )

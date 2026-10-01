@@ -24,7 +24,12 @@ OPERATIONAL_FLOW_REGIMES = frozenset({
     OPERATIONAL_FLOW_REGIME_EPHEMERAL,
     OPERATIONAL_FLOW_REGIME_FLOWING,
 })
-DETECTION_RULE_VERSION = 2
+OPERATIONAL_ALERT_BY_SEVERITY = {
+    3: "active",
+    4: "severe",
+    5: "emergency",
+    6: "emergency",
+}
 
 
 @dataclass(frozen=True)
@@ -80,16 +85,11 @@ def _severity_hint(level: int) -> str:
 
 
 def alert_level(level: int) -> str:
-    """Translate Q-threshold severity into the operational alert state."""
-    if level >= 5:
-        return "emergency"
-    if level == 4:
-        return "severe"
-    if level == 3:
-        return "active"
-    if level == 2:
-        return "monitoring"
-    return "none"
+    """Translate a confirmed event's operational severity into its alert state."""
+    try:
+        return OPERATIONAL_ALERT_BY_SEVERITY[level]
+    except KeyError as exc:
+        raise ValueError("operational severity level must be between 3 and 6") from exc
 
 
 StationSample = tuple[datetime, Mapping[str, Any], float, tuple[float, ...], str,]
@@ -164,7 +164,6 @@ def _evidence(
         "stream_id": stream_id,
         "timestamp": observed_at.isoformat(),
         "current_discharge": discharge,
-        "detection_rule_version": DETECTION_RULE_VERSION,
         "operational_flow_regime": flow_regime,
         "severity_level": current_level,
         "alert_level": alert_level(current_level),

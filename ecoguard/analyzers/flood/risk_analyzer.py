@@ -40,10 +40,10 @@ class FloodRiskAnalyzer:
     def analyze(
         self, analysis: FloodEventAnalysis | Mapping[str, Any]
     ) -> FloodRiskAssessment:
-        """Rate how dangerous this flood is, from the official thresholds.
+        """Rate the operational magnitude of this detected hydrometric event.
 
-        No model call: the severity comes from the gauge's own published flood
-        thresholds, so the same readings always produce the same rating.
+        No model call: the detector's confirmed band maps deterministically to
+        the same shared emergency scale on every run.
         """
         event = FloodEventAnalysis.model_validate(analysis)
         state = event.current_state
@@ -77,7 +77,7 @@ class FloodRiskAnalyzer:
                 change_type=change.change_type,
                 evidence_gaps=[
                     *event.evidence_gaps,
-                    "No active Q10-or-higher Flood severity was available.",
+                    "No active detected Flood severity was available.",
                 ],
                 limitations=list(event.limitations),
                 error="active_flood_severity_unavailable",
@@ -100,7 +100,7 @@ class FloodRiskAnalyzer:
         q_label = (
             f"Q{state.return_period_years}"
             if state.return_period_years is not None
-            else f"severity {state.severity_level}"
+            else "the station-specific detection threshold"
         )
         return FloodRiskAssessment(
             metadata={
@@ -156,7 +156,7 @@ class FloodRiskAnalyzer:
         q_label = (
             f"Q{state.return_period_years} threshold"
             if state.return_period_years is not None
-            else f"hydrologic severity {state.severity_level}"
+            else "station-specific detection threshold"
         )
         drivers = [
             f"{q_label} observed at station {state.primary_station_id}",
