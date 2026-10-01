@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 import pytest
 
 from ecoguard.collectors.flood.hydrometric_stations import (
     FLOW_REGIME_REFERENCE_PATH,
-    HydrometricStationCatalogError,
-    HydrometricStationFlowRegimeError,
+    HydrometricStationError,
+    LINK_INSERT,
+    OWNER_UPSERT,
     STATION_UPSERT,
     _validate_flow_regime_targets,
     fetch_hydrometric_station_catalog,
@@ -17,9 +16,6 @@ from ecoguard.collectors.flood.hydrometric_stations import (
     persist_hydrometric_station_flow_regimes,
     read_hydrometric_station_flow_regimes,
 )
-
-
-NOW = datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc)
 
 
 def _response():
@@ -44,7 +40,7 @@ def _response():
 
 
 def test_parses_owners_stations_thresholds_and_rain_links():
-    catalog = parse_hydrometric_station_catalog(_response(), synced_at=NOW)
+    catalog = parse_hydrometric_station_catalog(_response())
 
     assert catalog.owners[0]["source_owner_id"] == 2
     station = catalog.stations[0]
@@ -54,6 +50,10 @@ def test_parses_owners_stations_thresholds_and_rain_links():
     assert station["flow_threshold_50y_m3s"] == 72
     assert station["flow_threshold_100y_m3s"] == 85
     assert station["flow_threshold_status"] == "complete_thresholds"
+    assert "map_zoom_level" not in station
+    assert "synced_at" not in station
+    assert "synced_at" not in catalog.owners[0]
+    assert all("synced_at" not in link for link in catalog.rain_links)
     assert "operational_flow_regime" not in station
     assert [(link["rain_station_source_id"], link["link_order"]) for link in catalog.rain_links] == [
         (205, 1),
@@ -66,15 +66,19 @@ def test_reviewed_flow_regime_reference_contains_69_unique_stations():
 
     assert FLOW_REGIME_REFERENCE_PATH.is_file()
     assert len(records) == 69
-    assert len({record["source_station_id"] for record in records}) == 69
-    assert sum(
-        record["operational_flow_regime"] == "ephemeral"
-        for record in records
-    ) == 48
-    assert sum(
-        record["operational_flow_regime"] == "flowing_baseline"
-        for record in records
-    ) == 21
+    assert sum(regime == "ephemeral" for regime in records.values()) == 48
+    assert sum(regime == "flowing_baseline" for regime in records.values()) == 21
+
+
+def test_flow_regime_reference_does_not_require_station_name(tmp_path):
+    reference = tmp_path / "regimes.csv"
+    reference.write_text(
+        "source_station_id,operational_flow_regime\n"
+        "49,ephemeral\n",
+        encoding="utf-8",
+    )
+
+    assert read_hydrometric_station_flow_regimes(reference) == {49: "ephemeral"}
 
 
 def test_flow_regime_reference_rejects_duplicate_station(tmp_path):
@@ -86,7 +90,7 @@ def test_flow_regime_reference_rejects_duplicate_station(tmp_path):
         encoding="utf-8",
     )
 
-    with pytest.raises(HydrometricStationFlowRegimeError, match="duplicate station 49"):
+    with pytest.raises(HydrometricStationError, match="duplicate station 49"):
         read_hydrometric_station_flow_regimes(reference)
 
 
@@ -94,14 +98,26 @@ def test_catalog_upsert_leaves_flow_regime_owned_by_reference_loader():
     sql = " ".join(str(STATION_UPSERT).split())
 
     assert "operational_flow_regime" not in sql
+    assert "map_zoom_level" not in sql
+
+
+def test_catalog_timestamps_are_assigned_by_the_database():
+    for statement in (OWNER_UPSERT, STATION_UPSERT, LINK_INSERT):
+        sql = " ".join(str(statement).split())
+        assert ":synced_at" not in sql
+        assert "now()" in sql
+
+
+def test_numeric_conversion_still_rejects_json_booleans():
+    response = _response()
+    response[0]["49"]["lat"] = True
+
+    with pytest.raises(HydrometricStationError, match="latitude must be numeric"):
+        parse_hydrometric_station_catalog(response)
 
 
 def test_flow_regime_targets_must_be_active_with_complete_thresholds():
-    records = [{
-        "source_station_id": 49,
-        "station_name_he": "חילזון-יסעור",
-        "operational_flow_regime": "ephemeral",
-    }]
+    records = {49: "ephemeral"}
     statuses = [{
         "source_station_id": 49,
         "is_active": False,
@@ -109,18 +125,14 @@ def test_flow_regime_targets_must_be_active_with_complete_thresholds():
     }]
 
     with pytest.raises(
-        HydrometricStationFlowRegimeError,
+        HydrometricStationError,
         match="active stations with complete thresholds: 49",
     ):
         _validate_flow_regime_targets(records, statuses)
 
 
 def test_flow_regime_validation_reports_unclassified_eligible_stations():
-    records = [{
-        "source_station_id": 49,
-        "station_name_he": "חילזון-יסעור",
-        "operational_flow_regime": "ephemeral",
-    }]
+    records = {49: "ephemeral"}
     statuses = [
         {
             "source_station_id": 49,
@@ -169,11 +181,7 @@ def test_flow_regime_persistence_replaces_database_values(monkeypatch):
     from ecoguard.database import engine
 
     monkeypatch.setattr(engine, "Session", FakeSession)
-    records = [{
-        "source_station_id": 49,
-        "station_name_he": "חילזון-יסעור",
-        "operational_flow_regime": "ephemeral",
-    }]
+    records = {49: "ephemeral"}
 
     result = persist_hydrometric_station_flow_regimes(records)
 
@@ -191,7 +199,7 @@ def test_marks_a_station_with_six_provider_sentinels_as_missing_thresholds():
     response = _response()
     response[0]["49"]["threshold"] = [999, 999, 999, 999, 999, 999]
 
-    station = parse_hydrometric_station_catalog(response, synced_at=NOW).stations[0]
+    station = parse_hydrometric_station_catalog(response).stations[0]
 
     assert station["flow_threshold_status"] == "missing_thresholds"
     assert all(
@@ -204,24 +212,24 @@ def test_rejects_an_unknown_owner():
     response = _response()
     response[0]["49"]["owner_id"] = 999
 
-    with pytest.raises(HydrometricStationCatalogError, match="unknown owner 999"):
-        parse_hydrometric_station_catalog(response, synced_at=NOW)
+    with pytest.raises(HydrometricStationError, match="unknown owner 999"):
+        parse_hydrometric_station_catalog(response)
 
 
 def test_rejects_a_threshold_array_with_the_wrong_length():
     response = _response()
     response[0]["49"]["threshold"] = [17, 37]
 
-    with pytest.raises(HydrometricStationCatalogError, match="six discharge thresholds"):
-        parse_hydrometric_station_catalog(response, synced_at=NOW)
+    with pytest.raises(HydrometricStationError, match="six discharge thresholds"):
+        parse_hydrometric_station_catalog(response)
 
 
 def test_rejects_duplicate_envista_ids_for_one_station():
     response = _response()
     response[0]["49"]["envista_id"] = [205, 205, None, None]
 
-    with pytest.raises(HydrometricStationCatalogError, match="repeats rain station 205"):
-        parse_hydrometric_station_catalog(response, synced_at=NOW)
+    with pytest.raises(HydrometricStationError, match="repeats rain station 205"):
+        parse_hydrometric_station_catalog(response)
 
 
 class _Response:
@@ -269,5 +277,5 @@ def test_fetch_rejects_a_page_without_a_session_token():
     http = _HttpSession(_response())
     http.get = lambda *args, **kwargs: _Response(text="<html></html>")
 
-    with pytest.raises(HydrometricStationCatalogError, match="session token"):
+    with pytest.raises(HydrometricStationError, match="session token"):
         fetch_hydrometric_station_catalog(http)
