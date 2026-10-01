@@ -20,7 +20,7 @@ from ecoguard.coordinator.dispatcher import (
 )
 
 
-class FloodRoadIncidentHandler:
+class FloodIncidentHandler:
     """Analyze Flood evidence and refresh response only for actionable change."""
 
     name = "flood_emergency_analysis_planning"
@@ -242,13 +242,13 @@ class FloodRoadIncidentHandler:
 
 
 @lru_cache(maxsize=1)
-def configured_flood_road_incident_handler() -> FloodRoadIncidentHandler:
+def configured_flood_incident_handler() -> FloodIncidentHandler:
     """Build the Flood analysis/planning stack once per dispatcher process."""
 
-    return FloodRoadIncidentHandler()
+    return FloodIncidentHandler()
 
 
 __all__ = [
-    "FloodRoadIncidentHandler",
-    "configured_flood_road_incident_handler",
+    "FloodIncidentHandler",
+    "configured_flood_incident_handler",
 ]

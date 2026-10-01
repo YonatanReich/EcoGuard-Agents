@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import AwareDatetime, BaseModel, Field, TypeAdapter
 from sqlalchemy import text
 
-from ecoguard.analyzers.flood.incident_handler import FloodRoadIncidentHandler
+from ecoguard.analyzers.flood.incident_handler import FloodIncidentHandler
 from ecoguard.api.events import manual_flood_test_enabled, set_manual_test_feed
 from ecoguard.coordinator.agent import coordinate
 from ecoguard.coordinator.dispatcher import dispatch_touched
@@ -552,7 +552,7 @@ def run_scenario(
                 return _latest_report
 
             planner = SyntheticPlanner()
-            handler = FloodRoadIncidentHandler(
+            handler = FloodIncidentHandler(
                 planner=planner, clock=lambda: coordinate_at
             )
             processing = dispatch_touched(

@@ -280,7 +280,7 @@ def default_handler_registry() -> dict[tuple[str, str], IncidentHandler]:
         EarthquakeIncidentHandler,
     )
     from ecoguard.analyzers.flood.incident_handler import (
-        configured_flood_road_incident_handler,
+        configured_flood_incident_handler,
     )
     from ecoguard.analyzers.fire.incident_handler import (
         configured_fire_incident_handler,
@@ -294,7 +294,7 @@ def default_handler_registry() -> dict[tuple[str, str], IncidentHandler]:
             configured_air_pollution_incident_handler(),
         ("earthquake", "emergency"): EarthquakeIncidentHandler(),
         ("fire", "emergency"): configured_fire_incident_handler(),
-        ("flood", "emergency"): configured_flood_road_incident_handler(),
+        ("flood", "emergency"): configured_flood_incident_handler(),
         UNCORROBORATED_ROUTE: UncorroboratedReportHandler(),
     }
 

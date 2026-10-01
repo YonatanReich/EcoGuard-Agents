@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta, timezone
 
 from ecoguard.analyzers.flood.event_analyzer import FloodEventAnalyzer
-from ecoguard.analyzers.flood.incident_handler import FloodRoadIncidentHandler
+from ecoguard.analyzers.flood.incident_handler import FloodIncidentHandler
 from ecoguard.coordinator.dispatcher import dispatch_incidents
 from ecoguard.planners.shared.schemas import EmergencyResponsePlan
 
@@ -99,7 +99,7 @@ class FakePlanner:
 
 
 def _dispatch(incident, planner):
-    handler = FloodRoadIncidentHandler(
+    handler = FloodIncidentHandler(
         analyzer=FloodEventAnalyzer(clock=lambda: AT + timedelta(hours=1)),
         planner=planner,
         clock=lambda: AT + timedelta(hours=1),
