@@ -25,6 +25,7 @@ router = APIRouter(prefix="/api/scenario")
 SCENARIOS = {
     "demo_a": "ecoguard.demo.scenarios.demo_a",
     "demo_b": "ecoguard.demo.scenarios.demo_b",
+    "flood_demo": "ecoguard.demo.scenarios.flood_demo",
 }
 
 
@@ -41,6 +42,12 @@ SCENARIO_BLURBS = {
         "Events that overlap and interfere: two fires at once, an earthquake "
         "with aftershocks, a claim repeated by three channels from one origin. "
         "The question is whether the system can tell one event from two."
+    ),
+    "flood_demo": (
+        "Two historical floods replayed from measured station data: a "
+        "perennial stream in Hadera and an ephemeral stream at Zeelim. The "
+        "question is whether the detector applies the correct regime-specific "
+        "rule early enough to support action."
     ),
 }
 

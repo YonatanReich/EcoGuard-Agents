@@ -41,18 +41,19 @@ def test_the_catalog_carries_no_answers_the_run_should_produce():
 
 
 def test_flood_explanations_distinguish_detection_from_severity():
-    """Both demos explain the regime-specific rule, not the severity band."""
+    """Every flood explanation states the regime rule, not just severity."""
     catalog = scenario_catalog()["scenarios"]
 
     for scenario in catalog:
-        flood = next(
+        floods = [
             event for event in scenario["events"] if event["hazard"] == "flood"
-        )
-        notes = flood["notes"]
+        ]
+        for flood in floods:
+            notes = flood["notes"]
 
-        assert "ephemeral" in notes
-        assert "1 m3/s" in notes
-        assert "perennial" in notes
-        assert "flowing-baseline" in notes
-        assert "Q2" in notes
-        assert "severity" in notes
+            assert "ephemeral" in notes
+            assert "1 m3/s" in notes
+            assert "perennial" in notes
+            assert "flowing-baseline" in notes
+            assert "Q2" in notes
+            assert "severity" in notes

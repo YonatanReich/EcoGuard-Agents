@@ -12,6 +12,12 @@ air-pollution advisory, a same-origin forwarded fire claim and a text report
 that should join a satellite fire. Its initial noise targets stale fire
 observations, a one-reading flood spike and a sub-threshold earthquake.
 
+`flood_demo.py` contains only flood evidence from two historical events:
+Nahal Hadera on 8 January 2013 and Nahal Zeelim on 1 November 2023. It uses
+measured station rows to demonstrate the different rules for a perennial
+(flowing-baseline) stream and an ephemeral stream. `flood_demo.md` documents
+the real events, their consequences and the counterfactual early-warning case.
+
 The two text scenarios intentionally remain honest about service availability.
 They enter as raw Telegram observations and are never pre-classified by the
 scenario. With Claude unavailable, the keyword fallback has no location and
