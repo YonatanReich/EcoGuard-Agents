@@ -1,18 +1,20 @@
 /**
- * Run a controlled scenario against the live pipeline, from the dashboard.
+ * The banner and End control for a scenario already running.
  *
- * Not a separate screen and not a replay. Pressing the button repoints the
- * detectors at a schema of authored observations and wakes them immediately;
- * everything after that — detection, coordination, analysis, planning,
- * allocation, projection — is the same code running against the same map. The
- * events that appear are produced now, not recorded earlier.
+ * Starting one lives on the Demo scenarios page, not here. A run begins with
+ * an explanation of how its evidence was built and a list of what it contains,
+ * because a score means nothing to someone who was not told what was asked —
+ * and a start button on the operator's own map invited pressing it without any
+ * of that.
  *
- * The banner is deliberately loud. While a scenario is running the dashboard
- * is not showing the country, and an operator who forgot that would draw the
- * wrong conclusion from an empty map.
+ * What stays here is what an operator needs while a run is live: a loud banner
+ * saying the map is not the country, and the control that gives it back. Ending
+ * a run fetches the grader's score and shows it.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import ScenarioScore from './ScenarioScore'
+import type { ScenarioReport } from './ScenarioScore'
 
 export type ScenarioStatus = {
   running: boolean
@@ -23,11 +25,6 @@ export type ScenarioStatus = {
   stopping?: boolean
   counts?: Record<string, number>
 }
-
-const SCENARIOS = [
-  { id: 'demo_a', label: 'Demo A' },
-  { id: 'demo_b', label: 'Demo B' },
-] as const
 
 /** While a scenario runs the map changes as each wave lands, so it is polled
  *  faster than a dashboard normally would be. Cheap: it reads process memory
@@ -44,6 +41,7 @@ function ScenarioControl({
   const [status, setStatus] = useState<ScenarioStatus | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [report, setReport] = useState<ScenarioReport | null>(null)
   // Compared rather than assumed: refetching the map on every poll would fight
   // the user's panning for no reason.
   const signature = useRef<string>('')
@@ -76,11 +74,19 @@ function ScenarioControl({
     return () => window.clearInterval(timer)
   }, [poll])
 
-  const send = async (path: string) => {
+  /**
+   * End the run, then show what it found.
+   *
+   * The score is read after the stop returns, because a stop queued behind a
+   * wave only completes when that wave does, and grading a half-finished run
+   * would report a miss the system had not made.
+   */
+  const end = async () => {
+    const scenario = status?.scenario
     setBusy(true)
     setError(null)
     try {
-      const response = await fetch(path, { method: 'POST' })
+      const response = await fetch('/api/scenario/stop', { method: 'POST' })
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as
           | { detail?: string }
@@ -88,6 +94,10 @@ function ScenarioControl({
         throw new Error(body?.detail ?? 'The scenario controller refused')
       }
       await poll()
+      if (scenario) {
+        const graded = await fetch(`/api/scenario/report/${scenario}`)
+        if (graded.ok) setReport((await graded.json()) as ScenarioReport)
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
@@ -101,54 +111,46 @@ function ScenarioControl({
   const stopping = status?.stopping ?? false
   const incidents = status?.counts?.incidents ?? 0
   const projected = status?.counts?.event_projections ?? 0
-  const runningLabel =
-    SCENARIOS.find((scenario) => scenario.id === status?.scenario)?.label ??
-    status?.scenario ??
-    'Demo'
+  const runningLabel = status?.scenario
+    ? status.scenario.replace('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+    : 'Demo'
+
+  if (!running && !report && !error) return null
 
   return (
     <div className="scenario">
-      {running ? (
-        <button
-          type="button"
-          className="scenario__button scenario__button--stop"
-          disabled={busy || stopping}
-          onClick={() => void send('/api/scenario/stop')}
-          title="Return the detectors to the live observations table"
-        >
-          {busy ? '…' : stopping ? 'Ending…' : `End ${runningLabel}`}
-        </button>
-      ) : (
-        SCENARIOS.map((scenario) => (
-          <button
-            key={scenario.id}
-            type="button"
-            className="scenario__button"
-            disabled={busy}
-            onClick={() => void send(`/api/scenario/start/${scenario.id}`)}
-            title={`Run the authored ${scenario.label} scenario`}
-          >
-            {busy ? '…' : `Run ${scenario.label}`}
-          </button>
-        ))
-      )}
-
       {running && (
-        <span className="scenario__banner" role="status">
-          <span className="scenario__dot" aria-hidden="true" />
-          {runningLabel} — showing authored evidence, not live data
-          <span className="scenario__counts">
-            {incidents} incident{incidents === 1 ? '' : 's'} · {projected} projected
-            {stopping
-              ? ' · ending after this wave'
-              : status?.wave_running
-                ? ' · detecting…'
-                : ''}
+        <>
+          <button
+            type="button"
+            className="scenario__button scenario__button--stop"
+            disabled={busy || stopping}
+            onClick={() => void end()}
+            title="Return the detectors to the live observations table and score the run"
+          >
+            {busy ? '…' : stopping ? 'Ending…' : `End ${runningLabel}`}
+          </button>
+
+          <span className="scenario__banner" role="status">
+            <span className="scenario__dot" aria-hidden="true" />
+            {runningLabel} — scenario data, not live
+            <span className="scenario__counts">
+              {incidents} incident{incidents === 1 ? '' : 's'} · {projected} projected
+              {stopping
+                ? ' · ending after this wave'
+                : status?.wave_running
+                  ? ' · detecting…'
+                  : ''}
+            </span>
           </span>
-        </span>
+        </>
       )}
 
       {error && <span className="scenario__error">{error}</span>}
+
+      {report && (
+        <ScenarioScore report={report} onClose={() => setReport(null)} />
+      )}
     </div>
   )
 }

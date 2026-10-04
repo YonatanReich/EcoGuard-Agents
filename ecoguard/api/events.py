@@ -7,8 +7,10 @@ import os
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import TypeAdapter, ValidationError
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
 from ecoguard.analyzers.air_pollution.event_qualification import (
     MatchingOfficialPollutantIndex,
@@ -198,3 +200,71 @@ def get_shared_events(
     except Exception as error:
         logger.exception("Unable to read durable event projections")
         raise HTTPException(status_code=503, detail="Event feed is unavailable") from error
+
+
+class ConfirmEventRequest(BaseModel):
+    """Who is confirming. Optional, because most deployments have one operator."""
+
+    by: str = Field(default="operator", min_length=1, max_length=120)
+
+
+@router.post("/api/events/{incident_id}/confirm", response_model=SharedEventFeed)
+def confirm_event(
+    incident_id: str,
+    body: ConfirmEventRequest | None = None,
+) -> SharedEventFeed:
+    """Mark an unconfirmed incident as real, on an operator's word.
+
+    Confirmation is the second way an incident becomes confirmed; the first is an
+    instrument measuring it, which needs no endpoint. Recording it re-plans the
+    incident immediately rather than waiting for the next wave, because the
+    operator clicked in order to change the response - a confirmation that takes
+    ten minutes to show up reads as a broken button.
+
+    The re-dispatch deliberately bypasses the plan-freshness gate: the incident's
+    existing plan is fresh by the clock and wrong by the evidence, which is the
+    one case the gate must not win.
+    """
+    from ecoguard.coordinator import incidents as incident_store
+    from ecoguard.coordinator.dispatcher import dispatch_touched
+    from ecoguard.coordinator.event_projection import project_processing_results
+
+    confirmed_by = (body.by if body is not None else "operator").strip()
+    try:
+        incident = incident_store.confirm_incident(
+            incident_id, at=datetime.now(timezone.utc), by=confirmed_by
+        )
+    except Exception as error:
+        logger.exception("Unable to confirm incident %s", incident_id)
+        raise HTTPException(
+            status_code=503, detail="Confirmation is unavailable"
+        ) from error
+
+    if incident is None:
+        raise HTTPException(
+            status_code=404, detail="No open incident with that id"
+        )
+
+    try:
+        results = dispatch_touched(
+            [incident_id],
+            # Never fresh: see the docstring. The plan that exists was built for
+            # an unconfirmed incident and is exactly what this call invalidates.
+            projection_reader=lambda _incident_id: None,
+        )
+        project_processing_results(results)
+    except Exception:
+        # The confirmation is already persisted and is what the operator asked
+        # for. A failed re-plan leaves the old plan in place and the next wave
+        # rebuilds it, so this must not read as a failed confirmation.
+        logger.exception(
+            "incident %s confirmed, but re-planning it failed", incident_id
+        )
+
+    try:
+        return shared_event_feed(read_projected_events(limit=200))
+    except Exception as error:
+        logger.exception("Unable to read durable event projections")
+        raise HTTPException(
+            status_code=503, detail="Event feed is unavailable"
+        ) from error

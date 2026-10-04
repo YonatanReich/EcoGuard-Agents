@@ -11,6 +11,9 @@ from __future__ import annotations
 
 import logging
 import os
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Iterator
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, event
@@ -34,7 +37,79 @@ if not DATABASE_URL:
 # which a worker sleeping thirty minutes between ticks will meet constantly.
 engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=1800)
 
-Session = sessionmaker(bind=engine, expire_on_commit=False)
+# The collectors get their own engine on the same database, and it never leaves
+# `public`. Sharing one engine with the pipeline is what let a demo contaminate
+# the live store in both directions:
+#
+#   * A collector already running when a scenario started kept going, and its
+#     next connection came from the freshly disposed pool carrying
+#     `demo_b, public`. It wrote five real earthquakes into `demo_b`.
+#     `job.pause()` does not stop a job that is already executing, so pausing
+#     the scheduler narrows the window without closing it.
+#   * That collector's run record was opened in `demo_b` and closed after the
+#     scenario ended, against `public` — leaving a row stuck at `running` in a
+#     schema, and a matching orphan in the other.
+#
+# Two pools make the timing irrelevant: a collector's connection cannot carry a
+# sandbox search path, whatever is happening in the pipeline when it runs.
+collector_engine = create_engine(
+    DATABASE_URL, pool_pre_ping=True, pool_recycle=1800
+)
+
+_PipelineSession = sessionmaker(bind=engine, expire_on_commit=False)
+_CollectorSession = sessionmaker(bind=collector_engine, expire_on_commit=False)
+
+# A ContextVar rather than a module flag: a collector and a scenario wave run in
+# different scheduler threads at the same time, and a global would have one
+# deciding the other's destination.
+_collector_context: ContextVar[bool] = ContextVar(
+    "ecoguard_collector_database", default=False
+)
+
+
+@contextmanager
+def collector_database() -> Iterator[None]:
+    """Route every session opened in this context at the live tables.
+
+    Wraps a collector's whole run - lock, run records, reads and writes - not
+    just its final insert, because a collector reads before it writes and a
+    read against the wrong schema is how a demo's authored rows get treated as
+    live ones.
+    """
+    token = _collector_context.set(True)
+    try:
+        yield
+    finally:
+        _collector_context.reset(token)
+
+
+def is_collector_context() -> bool:
+    """Whether the caller is inside `collector_database`."""
+    return _collector_context.get()
+
+
+class _SessionRouter:
+    """Hands out a session bound to whichever engine the caller belongs to.
+
+    Exists so the hundred-odd `with Session() as session:` call sites did not
+    each need to learn about the split.
+    """
+
+    @staticmethod
+    def _maker():
+        """The session factory for the current context."""
+        return _CollectorSession if _collector_context.get() else _PipelineSession
+
+    def __call__(self, **kwargs):
+        """Open a session on the right engine."""
+        return self._maker()(**kwargs)
+
+    def begin(self, **kwargs):
+        """Open a session already in a transaction, on the right engine."""
+        return self._maker().begin(**kwargs)
+
+
+Session = _SessionRouter()
 
 
 # --------------------------------------------------------------------------
@@ -86,6 +161,10 @@ def use_sandbox(schema: str | None) -> None:
     # Existing pooled connections still carry the old search_path, and the
     # listener below only fires on checkout. Disposing the pool is the blunt
     # way to guarantee nothing keeps writing to the world we just left.
+    #
+    # Only the pipeline pool. `collector_engine` is deliberately untouched:
+    # collectors stay on `public` through a scenario, which is the whole point
+    # of it being a separate pool.
     engine.dispose()
 
 
@@ -126,6 +205,29 @@ def _apply_search_path(dbapi_connection, connection_record):
         cursor = dbapi_connection.cursor()
         try:
             cursor.execute(f"SET search_path TO {wanted}")
+        finally:
+            cursor.close()
+    finally:
+        dbapi_connection.autocommit = previous
+
+
+@event.listens_for(collector_engine, "connect")
+def _pin_collector_to_public(dbapi_connection, connection_record):
+    """Hold every collector connection on `public`, whatever the pipeline is doing.
+
+    Same autocommit dance as the pipeline listener above, and for the same
+    reason: `SET` is transactional, so a statement issued inside the implicit
+    transaction is undone when SQLAlchemy rolls the connection back into the
+    pool. Stated explicitly rather than relying on the server default, because
+    the default is what a future `ALTER ROLE ... SET search_path` would change
+    without anyone connecting this file to the consequence.
+    """
+    previous = dbapi_connection.autocommit
+    dbapi_connection.autocommit = True
+    try:
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("SET search_path TO public")
         finally:
             cursor.close()
     finally:

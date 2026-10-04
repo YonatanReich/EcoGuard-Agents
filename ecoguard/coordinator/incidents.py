@@ -30,7 +30,8 @@ _COLUMNS = """
     id, status, primary_hazard, hazards, queues, cells,
     latitude, longitude, precision_m, location_method,
     first_seen_at, last_signal_at, closed_at,
-    signal_count, peak_rarity, links, signals
+    signal_count, peak_rarity, links, signals,
+    confirmed_at, confirmed_by
 """
 
 
@@ -296,6 +297,35 @@ def close_incident(incident_id: str, at: datetime) -> None:
                     released_at=at,
                     reason="incident_closed",
                 )
+
+
+def confirm_incident(
+    incident_id: str, at: datetime, by: str = "operator"
+) -> dict[str, Any] | None:
+    """Record that a person checked this incident and it is real.
+
+    Returns the updated incident, or None when there is no open incident with
+    that id — a closed one is not confirmed after the fact, because the decision
+    it records is about a response that is no longer running.
+
+    The first confirmation wins: `confirmed_at IS NULL` in the predicate means a
+    second click does not move the timestamp, so "when was this confirmed" keeps
+    answering the question it was asked.
+    """
+    with Session() as session:
+        with session.begin():
+            session.execute(
+                text(
+                    "UPDATE incidents SET confirmed_at = :at, confirmed_by = :by "
+                    "WHERE id = :id AND status = :open AND confirmed_at IS NULL"
+                ),
+                {"id": incident_id, "at": at, "by": by, "open": OPEN},
+            )
+            row = session.execute(
+                text(f"SELECT {_COLUMNS} FROM incidents WHERE id = :id AND status = :open"),
+                {"id": incident_id, "open": OPEN},
+            ).mappings().one_or_none()
+    return _row(row) if row is not None else None
 
 
 def close_quiet(at: datetime, quiet_period_for) -> list[str]:

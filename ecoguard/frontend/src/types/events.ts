@@ -540,6 +540,22 @@ export type WaterLevelResponse =
   | { status: 'available'; advisory: KinneretAdvisory }
   | { status: 'unavailable'; reason: string }
 
+/**
+ * Whether anything measured this event, or anyone confirmed it.
+ *
+ * `basis` is how: 'instrument' when a satellite, gauge or seismometer saw it,
+ * 'operator' when a person marked it confirmed, null when neither has. An
+ * unconfirmed event is still fully analysed — this governs how its response
+ * plan should be read, not whether it has one.
+ */
+export type EventConfirmation = {
+  status: 'confirmed' | 'unconfirmed'
+  basis: 'instrument' | 'operator' | null
+  detail: string | null
+  confirmed_at: string | null
+  confirmed_by: string | null
+}
+
 type CommonEvent = {
   id: string
   title: string
@@ -550,6 +566,7 @@ type CommonEvent = {
   classification: EventClassification
   analysis_status: StepStatus
   planning_status: StepStatus
+  confirmation?: EventConfirmation | null
   processing?: {
     route: string
     status: string

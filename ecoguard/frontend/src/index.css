@@ -6,6 +6,12 @@
   --card-border: rgb(0, 98, 255);
   --text-primary: #ffffff;
   --text-muted: #9fb3d1;
+  /* These three were scoped to .home, so every page outside the landing
+     screen resolved var(--signal) to nothing and drew its primary buttons
+     with no background at all. */
+  --signal: #005eff;
+  --eco: #8cc63f;
+  --ease-out: cubic-bezier(.22, 1, .36, 1);
 
   font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
   line-height: 1.5;
@@ -23,6 +29,10 @@ body,
 
 body {
   margin: 0;
+  /* #root paints only its own box, which is one viewport tall. A page longer
+     than that scrolls past the painted area, and the default white showed
+     below the fold. */
+  background-color: var(--bg-dark-blue);
 }
 
 #root {
@@ -59,9 +69,6 @@ body {
 }
 
 .home {
-  --signal: #005eff;
-  --eco: #8cc63f;
-  --ease-out: cubic-bezier(.22, 1, .36, 1);
   display: grid;
   grid-template-columns: minmax(0, 30rem) minmax(0, 36rem);
   align-items: center;
@@ -319,4 +326,892 @@ body {
     animation: none !important;
     transition: none !important;
   }
+}
+
+/* ---------------------------------------------------------------------------
+   Demo scenarios page (/demos)
+
+   Reading matter, not a console: a measured column on the same deep navy as
+   the rest of the app, so the method can be read before anything is pressed.
+   Surfaces are the app's card blue lit from above, and the only accent colours
+   are the signal blue and the hazard tints the map already uses.
+
+   Motion is small on purpose - a 4px lift and a light that follows the cursor.
+   Anything larger reads as a website rather than an instrument.
+--------------------------------------------------------------------------- */
+
+.demos {
+  align-self: stretch;
+  width: 100%;
+  min-height: 100vh;
+  /* A wash behind the title so the page has a top, rather than beginning
+     abruptly on flat navy. */
+  background:
+    radial-gradient(130% 55% at 50% -12%, rgba(0, 62, 168, .42), transparent 62%),
+    var(--bg-dark-blue);
+  color: var(--text-primary);
+  padding: 3rem 1.5rem 6rem;
+  animation: fadeIn .45s var(--ease-out) both;
+}
+
+.demos__head,
+.demos__method,
+.demos__pick {
+  max-width: 54rem;
+  margin: 0 auto;
+}
+
+.demos__back {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  min-height: 44px;
+  padding: 0 .9rem 0 .65rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid rgba(159, 179, 209, .28);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .02);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: .9rem;
+  cursor: pointer;
+  transition: color .2s ease, border-color .2s ease, background-color .2s ease, transform .2s var(--ease-out);
+}
+
+.demos__back:hover {
+  color: var(--text-primary);
+  border-color: rgba(159, 179, 209, .6);
+  background: rgba(255, 255, 255, .07);
+}
+
+.demos__back:hover svg { transform: translateX(-2px); }
+.demos__back svg { transition: transform .2s var(--ease-out); }
+
+.demos__back:focus-visible {
+  outline: 2px solid #9fc3ff;
+  outline-offset: 3px;
+}
+
+.demos__title {
+  margin: 0 0 .85rem;
+  font-size: clamp(2rem, 5vw, 2.875rem);
+  font-weight: 600;
+  letter-spacing: -.025em;
+  line-height: 1.12;
+  /* A barely-there gradient on the heading: white at the top, a hint of the
+     page blue at the baseline, so it sits in the wash instead of on it. */
+  background: linear-gradient(175deg, #ffffff 30%, #bcd4f5 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.demos__lede {
+  margin: 0;
+  max-width: 42rem;
+  font-size: 1.0625rem;
+  line-height: 1.68;
+  color: var(--text-muted);
+}
+
+.demos__section-title {
+  display: flex;
+  align-items: center;
+  gap: .9rem;
+  margin: 3.5rem 0 1.5rem;
+  font-size: .75rem;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: #7c9bc4;
+}
+
+/* A rule running off to the right, so the label reads as a section marker
+   rather than a small heading. */
+.demos__section-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(0, 98, 255, .45), transparent);
+}
+
+.demos__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+
+.demos__step {
+  position: relative;
+  display: flex;
+  gap: 1.125rem;
+  align-items: flex-start;
+}
+
+/* The connector between numbers, which turns four paragraphs into one
+   sequence. Fades downward so it does not box the last step in. */
+.demos__step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 1rem;
+  top: 2.4rem;
+  bottom: -1.75rem;
+  width: 1px;
+  background: linear-gradient(rgba(0, 98, 255, .55), rgba(0, 98, 255, .06));
+}
+
+.demos__step-number {
+  position: relative;
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 98, 255, .65);
+  background: linear-gradient(160deg, #00347f, #001b4e);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 0 0 4px rgba(0, 62, 168, .14);
+  color: #a9caff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .8125rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.demos__step h3 {
+  margin: .3rem 0 .45rem;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -.01em;
+}
+
+.demos__step p {
+  margin: 0;
+  font-size: .9375rem;
+  line-height: 1.68;
+  color: var(--text-muted);
+}
+
+.demos__step strong {
+  color: #d8e6fa;
+  font-weight: 600;
+}
+
+.demos__aside {
+  margin: 2rem 0 0;
+  padding: 1.05rem 1.35rem;
+  border-left: 2px solid var(--eco);
+  border-radius: 0 .5rem .5rem 0;
+  background: linear-gradient(90deg, rgba(140, 198, 63, .11), rgba(140, 198, 63, .02));
+  font-size: .9375rem;
+  line-height: 1.62;
+  color: #d3e7b6;
+}
+
+.demos__warning {
+  margin: 0 0 1.25rem;
+  padding: .8rem 1.05rem;
+  border: 1px solid rgba(224, 161, 58, .45);
+  border-radius: .625rem;
+  background: rgba(224, 161, 58, .09);
+  color: #e8c98a;
+  font-size: .9375rem;
+  line-height: 1.55;
+}
+
+.demos__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: 1.25rem;
+}
+
+.demos__card {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid rgba(0, 98, 255, .34);
+  border-radius: 1rem;
+  /* Lit from the top-left, like the dashboard's panels, rather than a flat
+     fill - the flat version was what made these read as unfinished. */
+  background: linear-gradient(162deg, rgba(0, 54, 138, .92), rgba(0, 25, 73, .95) 58%, rgba(0, 17, 52, .97));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .07),
+    0 20px 44px -30px rgba(0, 0, 0, .95);
+  padding: 1.6rem 1.5rem 1.45rem;
+  display: flex;
+  flex-direction: column;
+  gap: .9rem;
+  transition:
+    transform .3s var(--ease-out),
+    border-color .3s ease,
+    box-shadow .3s ease;
+}
+
+/* A highlight along the top edge, brightest in the middle. */
+.demos__card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(143, 186, 255, .6), transparent);
+}
+
+/* The glow that comes up on hover. Behind the text, inside the rounded
+   corners, and doing nothing at rest. */
+.demos__card::after {
+  content: '';
+  position: absolute;
+  top: -55%;
+  right: -35%;
+  width: 24rem;
+  height: 24rem;
+  z-index: -1;
+  background: radial-gradient(circle, rgba(0, 110, 255, .3), transparent 62%);
+  opacity: 0;
+  transition: opacity .35s ease;
+  pointer-events: none;
+}
+
+.demos__card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(77, 141, 255, .78);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .12),
+    0 28px 56px -28px rgba(0, 0, 0, .95),
+    0 0 0 1px rgba(77, 141, 255, .14);
+}
+
+.demos__card:hover::after { opacity: 1; }
+
+.demos__card-title {
+  margin: 0;
+  font-size: 1.3125rem;
+  font-weight: 600;
+  letter-spacing: -.015em;
+}
+
+.demos__card-blurb {
+  margin: 0;
+  flex-grow: 1;
+  font-size: .9375rem;
+  line-height: 1.62;
+  color: #b4c9e6;
+}
+
+/* The hazards a scenario covers, as chips tinted the way the map tints them.
+   Each takes its colour from an inline --tint, so the page and the map cannot
+   drift apart. */
+.demos__card-hazards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+}
+
+.demos__chip {
+  padding: .22rem .55rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--tint, #9fb3d1) 42%, transparent);
+  background: color-mix(in srgb, var(--tint, #9fb3d1) 13%, transparent);
+  color: color-mix(in srgb, var(--tint, #9fb3d1) 80%, #ffffff);
+  font-size: .6875rem;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.demos__card-meta {
+  font-size: .75rem;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: #7a9ac4;
+}
+
+.demos__card-button {
+  min-height: 44px;
+  margin-top: .15rem;
+  border: 1px solid #4d8dff;
+  border-radius: 999px;
+  background: var(--signal);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: .9375rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .22),
+    0 10px 24px -14px rgba(0, 94, 255, .95);
+  transition: background-color .2s ease, box-shadow .2s ease, transform .2s var(--ease-out);
+}
+
+.demos__card-button:hover {
+  background: #1f73ff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .3),
+    0 14px 30px -12px rgba(0, 94, 255, 1);
+  transform: translateY(-2px);
+}
+
+.demos__card-button:active {
+  transform: translateY(0);
+  transition-duration: .05s;
+}
+
+.demos__card-button:focus-visible {
+  outline: 2px solid #9fc3ff;
+  outline-offset: 3px;
+}
+
+/* --- the modal listing what a scenario contains --------------------------- */
+
+.demo-modal,
+.score {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.demo-modal__backdrop,
+.score__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 5, 18, .8);
+  backdrop-filter: blur(6px);
+  animation: fadeIn .2s ease both;
+}
+
+/* Rises as it arrives, so the panel reads as coming forward out of the page
+   rather than being switched on. */
+@keyframes modal-rise {
+  from { opacity: 0; transform: translateY(16px) scale(.985); }
+}
+
+.demo-modal__panel,
+.score__panel {
+  position: relative;
+  width: min(45rem, 100%);
+  max-height: 86vh;
+  overflow-y: auto;
+  border: 1px solid rgba(0, 98, 255, .5);
+  border-radius: 1.125rem;
+  background: linear-gradient(168deg, #002a6e, #001440 62%, #000f30);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .1),
+    0 40px 90px -24px rgba(0, 0, 0, .85);
+  padding: 1.85rem;
+  animation: modal-rise .28s var(--ease-out) both;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(77, 141, 255, .5) transparent;
+}
+
+.demo-modal__panel::-webkit-scrollbar { width: 9px; }
+.demo-modal__panel::-webkit-scrollbar-thumb {
+  background: rgba(77, 141, 255, .42);
+  border-radius: 999px;
+}
+
+.demo-modal__head,
+.score__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.1rem;
+}
+
+.demo-modal__title {
+  margin: 0 0 .4rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -.02em;
+}
+
+.demo-modal__blurb {
+  margin: 0;
+  font-size: .9375rem;
+  line-height: 1.6;
+  color: #b4c9e6;
+}
+
+.demo-modal__close,
+.score__close {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(159, 179, 209, .3);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .02);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color .2s ease, border-color .2s ease, background-color .2s ease, transform .2s var(--ease-out);
+}
+
+.demo-modal__close:hover,
+.score__close:hover {
+  color: var(--text-primary);
+  border-color: rgba(159, 179, 209, .65);
+  background: rgba(255, 255, 255, .08);
+  transform: rotate(90deg);
+}
+
+.demo-modal__close:focus-visible,
+.score__close:focus-visible {
+  outline: 2px solid #9fc3ff;
+  outline-offset: 2px;
+}
+
+.demo-modal__intro {
+  margin: 0 0 1.35rem;
+  padding-bottom: 1.35rem;
+  border-bottom: 1px solid rgba(0, 98, 255, .3);
+  font-size: .9375rem;
+  line-height: 1.62;
+  color: #b4c9e6;
+}
+
+.demo-modal__events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .65rem;
+  counter-reset: none;
+}
+
+.demo-modal__event {
+  position: relative;
+  overflow: hidden;
+  padding: .9rem 1.05rem .9rem 1.2rem;
+  border: 1px solid rgba(0, 98, 255, .2);
+  border-radius: .75rem;
+  background: rgba(0, 42, 112, .34);
+  transition: background-color .22s ease, border-color .22s ease, transform .22s var(--ease-out);
+}
+
+/* The hazard's own colour as a bar down the left edge, so the list can be
+   read by hazard without reading the labels. */
+.demo-modal__event::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: var(--tint, rgba(0, 98, 255, .5));
+  opacity: .75;
+}
+
+.demo-modal__event:hover {
+  background: rgba(0, 52, 136, .48);
+  border-color: rgba(77, 141, 255, .42);
+  transform: translateX(3px);
+}
+
+.demo-modal__event:hover::before { opacity: 1; }
+
+.demo-modal__event-head {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+  margin-bottom: .45rem;
+}
+
+.demo-modal__event-id {
+  font-size: .6875rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  padding: .15rem .45rem;
+  border-radius: .3rem;
+  background: rgba(0, 98, 255, .2);
+  color: #9cc3ff;
+  font-variant-numeric: tabular-nums;
+}
+
+.demo-modal__hazard {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  font-size: .6875rem;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  padding: .18rem .55rem;
+  border: 1px solid color-mix(in srgb, var(--tint, #9fb3d1) 42%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tint, #9fb3d1) 12%, transparent);
+  color: color-mix(in srgb, var(--tint, #9fb3d1) 72%, #ffffff);
+}
+
+/* The dot carries the hazard colour at full strength; the label beside it is
+   lightened, which keeps a row of chips from shouting. */
+.demo-modal__hazard::before {
+  content: '';
+  width: .4rem;
+  height: .4rem;
+  border-radius: 50%;
+  background: var(--tint, #9fb3d1);
+}
+
+.demo-modal__tag {
+  font-size: .6875rem;
+  font-weight: 500;
+  letter-spacing: .03em;
+  padding: .18rem .55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(224, 161, 58, .32);
+  background: rgba(224, 161, 58, .13);
+  color: #e8c98a;
+}
+
+.demo-modal__tag--quiet {
+  border-color: rgba(159, 179, 209, .26);
+  background: rgba(159, 179, 209, .1);
+  color: var(--text-muted);
+}
+
+.demo-modal__event-text {
+  margin: 0;
+  font-size: .9375rem;
+  line-height: 1.55;
+}
+
+.demo-modal__event-notes {
+  margin: .4rem 0 0;
+  font-size: .8125rem;
+  line-height: 1.58;
+  color: #8ba5c6;
+}
+
+.demo-modal__foot {
+  margin-top: 1.6rem;
+  padding-top: 1.35rem;
+  border-top: 1px solid rgba(0, 98, 255, .3);
+}
+
+.demo-modal__foot-note {
+  margin: 0 0 1.1rem;
+  font-size: .875rem;
+  line-height: 1.58;
+  color: #8ba5c6;
+}
+
+.demo-modal__actions {
+  display: flex;
+  gap: .75rem;
+  justify-content: flex-end;
+}
+
+.demo-modal__cancel,
+.score__done {
+  min-height: 44px;
+  padding: 0 1.35rem;
+  border: 1px solid rgba(159, 179, 209, .35);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .02);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: .9375rem;
+  cursor: pointer;
+  transition: border-color .2s ease, background-color .2s ease;
+}
+
+.demo-modal__cancel:hover,
+.score__done:hover {
+  border-color: rgba(159, 179, 209, .7);
+  background: rgba(255, 255, 255, .08);
+}
+
+.demo-modal__start {
+  min-height: 44px;
+  padding: 0 1.6rem;
+  border: 1px solid #4d8dff;
+  border-radius: 999px;
+  background: var(--signal);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: .9375rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .22),
+    0 10px 24px -14px rgba(0, 94, 255, .95);
+  transition: background-color .2s ease, box-shadow .2s ease, transform .2s var(--ease-out);
+}
+
+.demo-modal__start:hover:not(:disabled) {
+  background: #1f73ff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .3),
+    0 14px 30px -12px rgba(0, 94, 255, 1);
+  transform: translateY(-2px);
+}
+
+.demo-modal__start:active:not(:disabled) {
+  transform: translateY(0);
+  transition-duration: .05s;
+}
+
+.demo-modal__start:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.demo-modal__cancel:focus-visible,
+.demo-modal__start:focus-visible,
+.score__done:focus-visible {
+  outline: 2px solid #9fc3ff;
+  outline-offset: 3px;
+}
+
+/* Someone who has asked for less movement still gets the colour changes; only
+   the travel and the entrances go. */
+@media (prefers-reduced-motion: reduce) {
+  .demos,
+  .demo-modal__panel,
+  .demo-modal__backdrop,
+  .score__backdrop { animation: none; }
+
+  .demos__card:hover,
+  .demos__card-button:hover,
+  .demo-modal__event:hover,
+  .demo-modal__start:hover:not(:disabled) { transform: none; }
+
+  .demo-modal__close:hover,
+  .score__close:hover { transform: none; }
+}
+
+/* --- the score shown when a run ends -------------------------------------- */
+
+.score__eyebrow {
+  font-size: .75rem;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+  color: #6f8db4;
+  margin-bottom: .25rem;
+}
+
+.score__title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.score__headline {
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
+  flex-wrap: wrap;
+  padding: 1.25rem 0;
+  border-bottom: 1px solid rgba(0, 98, 255, .35);
+}
+
+.score__big {
+  font-size: 3.5rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--eco);
+}
+
+.score__of {
+  font-size: 1.25rem;
+  color: var(--text-muted);
+}
+
+.score__caption {
+  flex-basis: 100%;
+  font-size: .875rem;
+  color: #8fa8c7;
+}
+
+.score__tallies {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .75rem;
+  padding: 1.25rem 0;
+}
+
+.score__tally {
+  text-align: center;
+  padding: .75rem .5rem;
+  border: 1px solid rgba(0, 98, 255, .3);
+  border-radius: .5rem;
+  background: rgba(0, 37, 100, .5);
+}
+
+.score__tally-value {
+  display: block;
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.score__tally-value--pass { color: var(--eco); }
+.score__tally-value--partial { color: #e8b44a; }
+.score__tally-value--miss { color: #f08a6a; }
+
+.score__tally-label {
+  display: block;
+  margin-top: .2rem;
+  font-size: .75rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: #7e9ec6;
+}
+
+.score__events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .875rem;
+}
+
+.score__event {
+  display: flex;
+  gap: .75rem;
+  align-items: flex-start;
+}
+
+.score__verdict {
+  flex-shrink: 0;
+  min-width: 4.25rem;
+  text-align: center;
+  padding: .2rem .5rem;
+  border-radius: .25rem;
+  font-size: .75rem;
+  font-weight: 600;
+  background: rgba(159, 179, 209, .16);
+  color: var(--text-muted);
+}
+
+.score__verdict--pass { background: rgba(140, 198, 63, .18); color: #b3dd7a; }
+.score__verdict--partial { background: rgba(224, 161, 58, .18); color: #e8c98a; }
+.score__verdict--miss { background: rgba(240, 138, 106, .18); color: #f3a68c; }
+
+.score__event-body { min-width: 0; }
+
+.score__event-text {
+  margin: 0;
+  font-size: .9375rem;
+  line-height: 1.5;
+}
+
+.score__event-id {
+  font-weight: 700;
+  color: #8fbaff;
+  margin-right: .5rem;
+}
+
+.score__event-title,
+.score__event-problem {
+  margin: .25rem 0 0;
+  font-size: .8125rem;
+  line-height: 1.5;
+  color: #8fa8c7;
+}
+
+.score__event-problem { color: #e8c98a; }
+
+.score__foot {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid rgba(0, 98, 255, .35);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.score__foot-note {
+  font-size: .8125rem;
+  color: #8fa8c7;
+}
+
+@media (max-width: 40rem) {
+  .demos { padding: 2rem 1rem 3rem; }
+  .score__tallies { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .demo-modal__panel, .score__panel { padding: 1.25rem; }
+}
+
+/* ---------------------------------------------------------------------------
+   Unconfirmed events
+
+   An event nothing measured still gets the full analysis and a place on the
+   map. What changes is that it must never be mistaken for a measurement, so
+   the ring is dashed and the card carries a word rather than a colour: colour
+   alone already means hazard type here, and reusing it would collide.
+   --------------------------------------------------------------------------- */
+
+.map-marker--unconfirmed {
+  border-style: dashed;
+  opacity: 0.85;
+}
+
+.event-card--unconfirmed {
+  border-left-style: dashed;
+}
+
+.event-card__unconfirmed {
+  margin-inline-start: auto;
+  padding: 0.1rem 0.4rem;
+  border: 1px dashed currentColor;
+  border-radius: 3px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.event-card__confirm-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem 0.65rem;
+  border-top: 1px dashed rgba(255, 255, 255, 0.18);
+}
+
+.event-card__confirm-note {
+  flex: 1 1 12rem;
+  margin: 0;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  opacity: 0.7;
+}
+
+.event-card__confirm {
+  flex: 0 0 auto;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.event-card__confirm:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.event-card__confirm:disabled {
+  opacity: 0.5;
+  cursor: progress;
 }

@@ -40,26 +40,30 @@ SANDBOXED_TABLES = (
 
 
 def ensure_schema(schema: str) -> list[str]:
-    """Create the sandbox schema and its tables if they are not already there.
+    """Build the sandbox schema and its tables fresh from the live definitions.
 
-    Idempotent, so the button works on a fresh database and on the twentieth
-    run. `LIKE ... INCLUDING ALL` copies columns, types, defaults, indexes and
-    check constraints but *not* foreign keys, which is what we want: a sandbox
+    `LIKE ... INCLUDING ALL` copies columns, types, defaults, indexes and check
+    constraints but *not* foreign keys, which is what we want: a sandbox
     observation must not have to satisfy a reference to a public row.
+
+    Rebuilt every time rather than created once. A sandbox table used to be
+    made on first use and then only ever truncated, so it froze at whatever
+    `public` looked like that day and drifted silently as migrations moved on.
+    The drift was invisible until it wasn't: `demo_b.resource_allocations` kept
+    a constraint requiring an earthquake allocation to have *no* risk score,
+    while `public` had been changed to require one. Every earthquake station
+    the allocator chose was rejected on insert, so both Demo B earthquakes
+    dispatched nobody and the failure read as an allocator bug for a week.
+
+    Nothing is lost by rebuilding: `start` truncates these tables on the next
+    line anyway, and the reference data a scenario reasons about lives in
+    `public` and is never touched.
     """
     created = []
     with Session() as session:
         session.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
         for table in SANDBOXED_TABLES:
-            exists = session.execute(
-                text(
-                    "SELECT 1 FROM information_schema.tables "
-                    "WHERE table_schema = :schema AND table_name = :table"
-                ),
-                {"schema": schema, "table": table},
-            ).first()
-            if exists:
-                continue
+            session.execute(text(f'DROP TABLE IF EXISTS "{schema}"."{table}" CASCADE'))
             session.execute(
                 text(
                     f'CREATE TABLE "{schema}"."{table}" '

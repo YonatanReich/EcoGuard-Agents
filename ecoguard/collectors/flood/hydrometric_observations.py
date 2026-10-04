@@ -284,10 +284,15 @@ class HydrometricObservationCollector:
 
     def run(self) -> None:
         """Collect once without letting provider or database failure kill a timer."""
+        from ecoguard.database.engine import collector_database
         from ecoguard.database.locks import single_flight
 
         try:
-            with single_flight(f"collect_{self.source}") as acquired:
+            # Wrapped separately from the others because this collector does not
+            # inherit BaseCollector. Same reason: its lock, its station metadata
+            # reads and its writes all belong on the live tables, whatever the
+            # pipeline is pointed at.
+            with collector_database(), single_flight(f"collect_{self.source}") as acquired:
                 if not acquired:
                     logger.info(
                         "%s collector: previous run still going, skipping tick",
