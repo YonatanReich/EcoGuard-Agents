@@ -62,7 +62,7 @@ GROUND_TRUTH: list[dict[str, Any]] = [
     },
     {
         "id": "A3",
-        "event": "Flash flood in Nahal Ashalim; discharge crosses the 10-year threshold.",
+        "event": "Flash flood in Nahal Ashalim; discharge reaches the Q10 severity band.",
         "hazard": "flood",
         "latitude": ASHALIM[0],
         "longitude": ASHALIM[1],
@@ -70,10 +70,13 @@ GROUND_TRUTH: list[dict[str, Any]] = [
         "expect_route": "emergency",
         "expect_marker_within_km": 6.0,
         "expect_notes": (
-            "Discharge 0.4 -> 62 -> 95 m3/s against this station's own official "
-            "thresholds, crossing the 10-year mark (48) on two consecutive "
-            "readings, which is what the detector requires. Two other gauges "
-            "stay flat and must produce nothing."
+            "Nahal Ashalim is classified as ephemeral, so the detector confirms "
+            "a flood after two consecutive readings at or above 1 m3/s. Here "
+            "the confirming readings are 62 and 95 m3/s. Crossing Q10 (48 m3/s) "
+            "describes the event's severity; it is not the detection threshold. "
+            "For a perennial (flowing-baseline) stream, confirmation would "
+            "instead require two consecutive readings at or above that "
+            "station's Q2. Two other gauges stay flat and must produce nothing."
         ),
     },
     {

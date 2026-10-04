@@ -178,8 +178,12 @@ function DemoScenarios() {
                 Every source has its own shape — NASA&nbsp;FIRMS publishes a
                 satellite hotspot with a confidence band and a radiative power
                 in megawatts; the Water Authority publishes a discharge reading
-                against six official return-period thresholds; the Ministry
-                publishes a pollutant reading every five minutes on Israel
+                against six official return-period thresholds. For an ephemeral
+                stream, two consecutive readings at or above 1&nbsp;m³/s confirm a
+                flood; for a perennial (flowing-baseline) stream, two consecutive
+                readings at or above that station&rsquo;s Q2 confirm it. The higher
+                return-period thresholds describe severity, not detection. The
+                Ministry publishes a pollutant reading every five minutes on Israel
                 standard time. We studied the schema of each one.
               </p>
             </div>

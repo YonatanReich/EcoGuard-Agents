@@ -114,8 +114,13 @@ GROUND_TRUTH: list[dict[str, Any]] = [
         "expect_allocated_units": ["police"],
         "expect_routing": True,
         "expect_notes": (
-            "After a normal reading, two consecutive readings exceed Q20. "
-            "That is one reportable flood update and must open one incident."
+            "Nahal Ashalim is classified as ephemeral, so the detector confirms "
+            "a flood after two consecutive readings at or above 1 m3/s. Here "
+            "the confirming readings are 98 and 132 m3/s. Their Q20 severity "
+            "does not set the detection threshold. For a perennial "
+            "(flowing-baseline) stream, confirmation would instead require two "
+            "consecutive readings at or above that station's Q2. The pair "
+            "creates one reportable flood update and must open one incident."
         ),
     },
     {
@@ -544,7 +549,7 @@ def build_rows(now: datetime) -> list[tuple[str, str, datetime, dict[str, Any]]]
         )
     )
 
-    # --- B3: Ashalim rises from normal flow to two Q20 readings ------------
+    # --- B3: two readings confirm an ephemeral flood, reaching Q20 severity -
     for minutes, discharge, height in (
         (86, 0.5, 0.09),
         (30, 98.0, 3.2),

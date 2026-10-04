@@ -38,3 +38,21 @@ def test_the_catalog_carries_no_answers_the_run_should_produce():
         for event in scenario["events"]:
             assert "verdict" not in event
             assert "incident_id" not in event
+
+
+def test_flood_explanations_distinguish_detection_from_severity():
+    """Both demos explain the regime-specific rule, not the severity band."""
+    catalog = scenario_catalog()["scenarios"]
+
+    for scenario in catalog:
+        flood = next(
+            event for event in scenario["events"] if event["hazard"] == "flood"
+        )
+        notes = flood["notes"]
+
+        assert "ephemeral" in notes
+        assert "1 m3/s" in notes
+        assert "perennial" in notes
+        assert "flowing-baseline" in notes
+        assert "Q2" in notes
+        assert "severity" in notes
