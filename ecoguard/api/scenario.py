@@ -26,6 +26,7 @@ SCENARIOS = {
     "demo_a": "ecoguard.demo.scenarios.demo_a",
     "demo_b": "ecoguard.demo.scenarios.demo_b",
     "flood_demo": "ecoguard.demo.scenarios.flood_demo",
+    "earthquake_demo": "ecoguard.demo.scenarios.earthquake_demo",
 }
 
 
@@ -33,6 +34,11 @@ SCENARIOS = {
 # presses anything. Kept here rather than in the frontend so the description and
 # the thing described cannot drift apart.
 SCENARIO_BLURBS = {
+    "earthquake_demo": (
+        "The 24 August 1984 Jezreel Valley earthquake, replayed from its "
+        "official GSI catalogue record. Follow detection, modelled shaking "
+        "over land, response planning and station allocation."
+    ),
     "demo_a": (
         "One event per hazard, each on its own, with noise around it. The "
         "question it answers is whether the system finds what is there and "
