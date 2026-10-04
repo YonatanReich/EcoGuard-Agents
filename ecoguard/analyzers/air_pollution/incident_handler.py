@@ -351,9 +351,11 @@ def _candidate_reference(
     )
 
 
-@lru_cache(maxsize=1)
-def configured_air_pollution_incident_handler() -> AirPollutionIncidentHandler:
-    """Build the production stack once; individual components fail gracefully."""
+@lru_cache(maxsize=4)
+def _configured_air_pollution_incident_handler(
+    sandbox: str | None,
+) -> AirPollutionIncidentHandler:
+    """Build one production/scenario stack per integration boundary."""
 
     try:
         transport_service = configured_air_pollution_transport_prediction_service()
@@ -361,6 +363,20 @@ def configured_air_pollution_incident_handler() -> AirPollutionIncidentHandler:
         logger.exception("Air Pollution transport composition unavailable")
         transport_service = None
     ministry_client = MinistryAirQualityClient()
+    planner_model = None
+    if sandbox == "air_pollution_2024_05_11":
+        # Freeze only external provider/model output. The Ministry parser and
+        # matcher, qualification, classifier, protocol retrieval and planner
+        # grounding validators below remain the production implementations.
+        from ecoguard.demo.scenarios.air_pollution_2024_05_11 import (
+            ministry_index_client,
+            planner_model_service,
+            transport_prediction_service,
+        )
+
+        ministry_client = ministry_index_client()
+        planner_model = planner_model_service()
+        transport_service = transport_prediction_service()
     analyzer = AirPollutionNonEmergencyAnalyzer(
         transport_service=transport_service,
         ministry_index_client=ministry_client,
@@ -370,6 +386,14 @@ def configured_air_pollution_incident_handler() -> AirPollutionIncidentHandler:
     )
     return AirPollutionIncidentHandler(
         analyzer=analyzer,
-        planner=AirPollutionResponsePlanner(),
+        planner=AirPollutionResponsePlanner(llm_service=planner_model),
         verification_service=AirPollutionAdditionalVerificationService(),
     )
+
+
+def configured_air_pollution_incident_handler() -> AirPollutionIncidentHandler:
+    """Select the live stack unless the dedicated historical sandbox is active."""
+
+    from ecoguard.database.engine import sandbox_schema
+
+    return _configured_air_pollution_incident_handler(sandbox_schema())

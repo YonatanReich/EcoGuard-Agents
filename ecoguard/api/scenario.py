@@ -25,6 +25,13 @@ router = APIRouter(prefix="/api/scenario")
 SCENARIOS = {
     "demo_a": "ecoguard.demo.scenarios.demo_a",
     "demo_b": "ecoguard.demo.scenarios.demo_b",
+    "air_pollution_2024_05_11": (
+        "ecoguard.demo.scenarios.air_pollution_2024_05_11"
+    ),
+}
+
+SCENARIO_LABELS = {
+    "air_pollution_2024_05_11": "Israel PM10 Dust Episode — 11 May 2024",
 }
 
 
@@ -41,6 +48,12 @@ SCENARIO_BLURBS = {
         "Events that overlap and interfere: two fires at once, an earthquake "
         "with aftershocks, a claim repeated by three channels from one origin. "
         "The question is whether the system can tell one event from two."
+    ),
+    "air_pollution_2024_05_11": (
+        "A deterministic replay of authentic Ministry PM10 observations from "
+        "the 11 May 2024 Israeli dust episode. The real detector, Path A, "
+        "analyzer and grounded planner run unchanged; unavailable historical "
+        "indexFastSrv evidence is explicitly reconstructed and labelled."
     ),
 }
 
@@ -71,7 +84,9 @@ def scenario_catalog():
         catalog.append(
             {
                 "id": scenario,
-                "label": scenario.replace("_", " ").title(),
+                "label": SCENARIO_LABELS.get(
+                    scenario, scenario.replace("_", " ").title()
+                ),
                 "blurb": SCENARIO_BLURBS.get(scenario, ""),
                 "event_count": len(events),
                 "events": [
