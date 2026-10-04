@@ -343,6 +343,18 @@ def test_meteosat_confidence_is_read_as_a_fraction(world, cells, database):
     assert satellite.detect(at=WHEN)[0].confidence == pytest.approx(0.94)
 
 
+def test_older_meteosat_percentages_are_not_read_as_certainty():
+    """Met9 and Met10 still report 0-100 under GOES_NRT; Met12 reports 0-1.
+
+    Both appear in the 30 April 2025 archive. Clamping the percentage read an
+    83% SEVIRI pixel as 1.0.
+    """
+    older = {**_geo_pixel(31.8, 35.0, 50.0, confidence="83"), "satellite": "Met10"}
+    newer = _geo_pixel(31.8, 35.0, 50.0, confidence="0.83")
+    assert satellite._pixel_confidence(older) == pytest.approx(0.83)
+    assert satellite._pixel_confidence(newer) == pytest.approx(0.83)
+
+
 def test_modis_confidence_is_still_read_as_a_percentage(world, cells, database):
     """The companion to the test above: the scales must not be confused.
 

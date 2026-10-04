@@ -164,6 +164,7 @@ class FireEvacuationDirective(EventContract):
     """Which settlement moves, when, and who holds the decision."""
 
     name: str
+    name_he: str | None = None
     priority: Literal["immediate", "prepare", "standby"]
     population: int | None = None
     reason: str
@@ -171,6 +172,7 @@ class FireEvacuationDirective(EventContract):
     authority: str | None = None
     authority_phone: str | None = None
     police_station: str | None = None
+    fire_district: str | None = None
 
 
 class FireSiteAtRisk(EventContract):
@@ -655,11 +657,13 @@ class CommonSharedEvent(EventContract):
     longitude: float
     observed_at: AwareDatetime | None = None
     classification: Literal["emergency", "advisory"]
+    # "pending": published mid-wave, the step has not finished yet. Only the
+    # interim projection writes it; a final projection never does.
     analysis_status: Literal[
-        "success", "partial", "unavailable", "failed", "skipped"
+        "success", "partial", "unavailable", "failed", "skipped", "pending"
     ]
     planning_status: Literal[
-        "success", "partial", "unavailable", "failed", "skipped"
+        "success", "partial", "unavailable", "failed", "skipped", "pending"
     ]
     processing: EventProcessingMetadata | None = None
     # Attached by the projection for every hazard, so the map and the card can

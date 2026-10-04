@@ -123,6 +123,42 @@ def _signal(cell_id, *, at=WHEN, hazard=FIRE, variable="frp", value=9.11,
     )
 
 
+def test_a_region_level_report_meets_the_fire_it_names():
+    # "a fire on the Carmel" is placed at the ridge's centroid, ~7 km across;
+    # the satellite fire sits 3 km away in a cell that does not touch it.
+    from ecoguard.coordinator.matching import matches
+    from ecoguard.shared.signals import CellLocation
+
+    report = _signal(
+        "risk-05000m-r0000-c0000", variable="report",
+        location=CellLocation(32.715, 35.040, 7000.0, "text_report_gazetteer"),
+    )
+    fire = {
+        "status": "open", "hazards": [FIRE], "cells": ["risk-05000m-r0073-c0015"],
+        "last_signal_at": WHEN, "latitude": 32.722, "longitude": 35.010,
+        "precision_m": 1000.0,
+    }
+    assert matches(report, fire)
+    # Two precise fixes stay governed by adjacency alone.
+    precise = _signal("risk-05000m-r0000-c0000",
+                      location=CellLocation(32.715, 35.040, 375.0, "viirs_pixel"))
+    assert not matches(precise, fire)
+
+
+def test_a_town_geocode_never_replaces_a_satellite_fix():
+    from ecoguard.coordinator.incidents import TEXT_LOCATION_METHOD, is_better_fix
+    from ecoguard.shared.signals import CellLocation
+
+    town = CellLocation(32.7159, 35.0731, 520.0, TEXT_LOCATION_METHOD)
+    pixel = CellLocation(32.722, 35.041, 1000.0, "frp_weighted_centroid")
+    satellite_incident = {"precision_m": 1000.0, "location_method": "frp_weighted_centroid"}
+    text_incident = {"precision_m": 520.0, "location_method": TEXT_LOCATION_METHOD}
+    assert not is_better_fix(town, satellite_incident)
+    assert is_better_fix(pixel, text_incident)
+    finer = CellLocation(32.722, 35.041, 375.0, "viirs_pixel")
+    assert is_better_fix(finer, satellite_incident)
+
+
 @pytest.fixture
 def clean(database):
     """A table with nothing in it, before and after."""

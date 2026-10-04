@@ -26,6 +26,8 @@ SCENARIOS = {
     "demo_a": "ecoguard.demo.scenarios.demo_a",
     "demo_b": "ecoguard.demo.scenarios.demo_b",
     "flood_demo": "ecoguard.demo.scenarios.flood_demo",
+    "historical_fires": "ecoguard.demo.scenarios.historical_fires",
+    "air_pollution_2026_02_16": "ecoguard.demo.scenarios.air_pollution_2026_02_16",
 }
 
 
@@ -48,6 +50,20 @@ SCENARIO_BLURBS = {
         "perennial stream in Hadera and an ephemeral stream at Zeelim. The "
         "question is whether the detector applies the correct regime-specific "
         "rule early enough to support action."
+    ),
+    "historical_fires": (
+        "The Carmel fire of December 2010 and the Jerusalem hills fire of April "
+        "2025, replayed from archived satellite pixels, weather and news at the "
+        "moment the first satellite detection would have reached us. The "
+        "question is whether the plan names the settlements the fire actually "
+        "reached and the ones that were actually evacuated."
+    ),
+    "air_pollution_2026_02_16": (
+        "The nationwide dust episode of 16 February 2026, replayed from every "
+        "Ministry station's real readings up to 11:30 - two minutes before the "
+        "Ministries warned of high to very high pollution in all parts of the "
+        "country. The question is whether the system raises the same alarm, "
+        "everywhere, with the same advice."
     ),
 }
 

@@ -18,7 +18,7 @@ from ecoguard.analyzers.flood.risk_analysis_schemas import (
 )
 from ecoguard.coordinator import incidents as incident_store
 from ecoguard.coordinator.confirmation import confirmation_of
-from ecoguard.coordinator.dispatcher import IncidentProcessingResult
+from ecoguard.coordinator.dispatcher import INTERIM_STATUS, IncidentProcessingResult
 from ecoguard.database.repositories.event_projections import (
     EventProjectionWrite,
     event_projection_by_incident,
@@ -922,6 +922,9 @@ def _fire_spread_projection(detected_event: Mapping[str, Any]) -> dict[str, Any]
         return {}
 
     raw = report.get("spread") or {}
+    # Direction and rate are computed in the analyser's behaviour block, not
+    # in the rings; reading them off `spread` left both null on every card.
+    behaviour = report.get("behaviour") or {}
 
     def ring(key: str) -> dict[str, Any] | None:
         """One forecast extent as a GeoJSON polygon, or None when absent."""
@@ -934,8 +937,8 @@ def _fire_spread_projection(detected_event: Mapping[str, Any]) -> dict[str, Any]
         "likely": ring("likely"),
         "possible": ring("possible"),
         "heading_deg": raw.get("heading_deg"),
-        "heading_compass": raw.get("heading_compass"),
-        "head_rate_m_per_min": raw.get("head_rate_m_per_min"),
+        "heading_compass": behaviour.get("heading_compass"),
+        "head_rate_m_per_min": behaviour.get("head_ros_m_per_min"),
         "head_distance_m": raw.get("head_distance_m"),
         "horizon_minutes": raw.get("horizon_minutes"),
     }
@@ -971,11 +974,32 @@ def _fire_spread_projection(detected_event: Mapping[str, Any]) -> dict[str, Any]
         and item.get("category")
     ]
 
+    # Who moves, in what order, and who to ring. The analyser has always
+    # computed this; it was never mapped, so every card's evacuation list was
+    # empty while the frontend waited to render it.
+    evacuation = [
+        {
+            "name": item.get("name"),
+            "name_he": item.get("name_he"),
+            "priority": item.get("priority"),
+            "population": item.get("population"),
+            "reason": item.get("reason"),
+            "arrival_minutes": item.get("arrival_minutes"),
+            "authority": item.get("authority"),
+            "authority_phone": item.get("authority_phone"),
+            "police_station": item.get("police_station"),
+            "fire_district": item.get("fire_district"),
+        }
+        for item in report.get("evacuation") or ()
+        if isinstance(item, Mapping) and item.get("name") and item.get("priority")
+    ]
+
     people = (report.get("population_in_spread") or {}).get("people")
 
     return {
         "spread": spread if any(value is not None for value in spread.values()) else None,
         "exposed_settlements": settlements,
+        "evacuation": evacuation,
         "sites_at_risk": sites,
         "people_in_spread": int(people) if isinstance(people, (int, float)) else None,
         "spread_headline": report.get("headline"),
@@ -1016,6 +1040,23 @@ def fire_shared_event(
         FireResponseAction.model_validate(item)
         for item in plan.get("response_actions") or ()
     ]
+    # An unconfirmed fire is planned by the verification advisory, whose steps
+    # are `actions` ("call this station on this number"), not `response_actions`.
+    # Read only the emergency shape and the card says "no actions were
+    # produced" for every report nobody has confirmed. The steps run in order,
+    # starting now, so all of them are immediate.
+    if not response_actions:
+        response_actions = [
+            FireResponseAction(
+                action=str(item["action"]),
+                responsible_unit="operator",
+                timeframe="immediate",
+            )
+            for item in sorted(
+                (item for item in plan.get("actions") or () if isinstance(item, Mapping) and item.get("action")),
+                key=lambda item: item.get("order") or 0,
+            )
+        ]
     citations = [
         ProtocolCitation.model_validate(item)
         for item in [
@@ -1029,7 +1070,7 @@ def fire_shared_event(
     planning_status = str(
         (plan.get("metadata") or {}).get("planning_status") or "skipped"
     )
-    valid_statuses = {"success", "partial", "unavailable", "failed", "skipped"}
+    valid_statuses = {"success", "partial", "unavailable", "failed", "skipped", "pending"}
     if risk_status not in valid_statuses:
         risk_status = "failed"
     if planning_status not in valid_statuses:
@@ -1039,6 +1080,7 @@ def fire_shared_event(
     details = FireDetails(
         spread=forecast.get("spread"),
         exposed_settlements=forecast.get("exposed_settlements") or [],
+        evacuation=forecast.get("evacuation") or [],
         sites_at_risk=forecast.get("sites_at_risk") or [],
         people_in_spread=forecast.get("people_in_spread"),
         detection_confidence=detected_event.get("detection_confidence"),
@@ -1068,6 +1110,7 @@ def fire_shared_event(
         title=title,
         description=(
             plan.get("plan_summary")
+            or plan.get("summary")
             or risk.get("explanation")
             or "A fire incident was detected; operational analysis is unavailable."
         ),
@@ -1246,6 +1289,53 @@ def _retryable(result: IncidentProcessingResult) -> bool:
         or result.analysis_status == "failed"
         or result.planner_status == "failed"
     )
+
+
+def project_interim(
+    result: IncidentProcessingResult,
+    *,
+    incident: Mapping[str, Any],
+    writer=None,
+) -> bool:
+    """Put a still-running result on screen. Never raises; returns whether shown.
+
+    Called by a handler between its steps (see IncidentDispatchContext.report).
+    The card it writes is honest about being unfinished - its pending steps
+    say "pending" - and the wave's final projection replaces it.
+    """
+    from ecoguard.database.repositories.event_projections import upsert_interim_projection
+
+    mapper = default_mapper_registry().get((result.hazard, result.route))
+    if mapper is None:
+        return False
+    try:
+        event = mapper(result, incident)
+        event = event.model_copy(update={"confirmation": EventConfirmation.model_validate(
+            confirmation_of(incident).as_dict()
+        )})
+        return (writer or upsert_interim_projection)(EventProjectionWrite(
+            incident_id=result.incident_id,
+            hazard=result.hazard,
+            route=result.route,
+            processing_status=INTERIM_STATUS,
+            analysis_status=event.analysis_status,
+            planner_status=event.planning_status,
+            analysis_id=result.analysis_id,
+            coordinator_routing_id=result.coordinator_routing_id,
+            handler=result.handler,
+            event_payload=event.model_dump(mode="json"),
+            failure_stage=None,
+            failure_reason=None,
+            retryable=False,
+            successful=False,
+            attempted_at=result.requested_at,
+            processed_at=result.completed_at,
+        ))
+    except Exception:
+        # A card that fails to appear early still appears at the end of the
+        # wave; this must never cost the handler its result.
+        logger.exception("interim projection failed for %s", result.incident_id)
+        return False
 
 
 def project_processing_results(

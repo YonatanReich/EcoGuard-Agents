@@ -15,7 +15,13 @@ from typing import Any
 
 from sqlalchemy import text
 
-from ecoguard.database.engine import Session, engine, sandbox_schema, use_sandbox
+from ecoguard.database.engine import (
+    Session,
+    engine,
+    sandbox_schema,
+    set_replay_clock,
+    use_sandbox,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -350,6 +356,9 @@ def start(scenario: str, *, seeder, schema: str | None = None) -> dict[str, Any]
 
     paused = pause_collectors()
     use_sandbox(target)
+    # A replay that keeps its real timestamps says when its "now" is.
+    replay_at = seeded.get("replay_at")
+    set_replay_clock(datetime.fromisoformat(replay_at) if replay_at else None)
 
     _started_at = datetime.now(timezone.utc)
     _scenario_name = scenario
@@ -411,6 +420,7 @@ def stop(*, keep_data: bool = True) -> dict[str, Any]:
 
     final = counts(schema)
     use_sandbox(None)
+    set_replay_clock(None)
     resumed = resume_collectors()
 
     if not keep_data:

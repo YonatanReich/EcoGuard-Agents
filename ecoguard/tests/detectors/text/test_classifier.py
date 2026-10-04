@@ -105,6 +105,33 @@ def test_labels_are_matched_back_to_messages_by_index():
     assert by_id[10]["hazards"] == []
 
 
+def test_a_message_the_reply_skipped_is_asked_about_again():
+    # Carmel replay: the reply labelled one of three messages and skipped the
+    # two ynet flashes, which then fell to the keyword net with no location.
+    class SkipsFirst(StubLLM):
+        def parse_structured(self, *, system_blocks, user_text, output_format, **kwargs):
+            self.calls.append(user_text)
+            if len(self.calls) == 1:
+                return BatchLabels(messages=[
+                    MessageLabels(index=1, relevant=False, literal=False, in_israel=True),
+                ])
+            return BatchLabels(messages=[
+                MessageLabels(index=0, relevant=True, literal=True, in_israel=True,
+                              hazards=["fire"], location_text="עוספיה"),
+            ])
+
+    llm = SkipsFirst()
+    results = TextClassifier(llm=llm).classify([
+        message(20, "שריפת יער גדולה פרצה ליד עוספיה"),
+        message(21, "משחק הכדורגל נדחה"),
+    ])
+
+    by_id = {result["observation_id"]: result for result in results}
+    assert len(llm.calls) == 2 and "[0]" in llm.calls[1] and "כדורגל" not in llm.calls[1]
+    assert by_id[20]["location_text"] == "עוספיה"
+    assert by_id[20]["classified_by"] == "model"
+
+
 def test_a_message_can_carry_two_hazards():
     llm = StubLLM(labels=[
         MessageLabels(index=0, relevant=True, literal=True, in_israel=True,
@@ -119,7 +146,11 @@ def test_a_message_can_carry_two_hazards():
 
 
 def test_batches_are_split_at_the_configured_size():
-    llm = StubLLM(labels=[])
+    # Labels for both slots, so no batch is re-asked for a skipped message.
+    llm = StubLLM(labels=[
+        MessageLabels(index=0, relevant=False, literal=False, in_israel=True),
+        MessageLabels(index=1, relevant=False, literal=False, in_israel=True),
+    ])
     TextClassifier(llm=llm, batch_size=2).classify(
         [message(index, "שריפה") for index in range(5)]
     )

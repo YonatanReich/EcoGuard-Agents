@@ -112,6 +112,73 @@ def upsert_event_projection(record: EventProjectionWrite) -> dict[str, Any] | No
     return event_projection_by_incident(record.incident_id)
 
 
+def upsert_interim_projection(record: EventProjectionWrite) -> bool:
+    """Show a card that is still being worked on. Never counts as an attempt.
+
+    A fire's spread, settlements and evacuation list are computed in seconds;
+    its risk narrative and plan take two model calls and minutes. Publishing
+    only at the end left the screen empty for that long. This writes the
+    partial card as the wave goes, under three rules:
+
+    - It never overwrites a card that has succeeded before: a routine refresh
+      keeps its full card until the new final one replaces it.
+    - It leaves attempt_count and retryable alone, which is what the retry
+      backoff reads, and marks the row `in_progress`, which the freshness gate
+      treats as "no plan yet". If the wave dies after this write, the next one
+      re-plans as if it had never happened. (last_attempt_at is NOT NULL, so a
+      fresh row carries this wave's request time.)
+    - The final `upsert_event_projection` of the same wave overwrites it.
+
+    Returns whether anything was written.
+    """
+    with Session() as session:
+        written = session.execute(
+            text(
+                """
+                INSERT INTO event_projections (
+                  incident_id, hazard, route, processing_status,
+                  analysis_status, planner_status, analysis_id,
+                  coordinator_routing_id, handler, event_payload,
+                  retryable, attempt_count, last_attempt_at, processed_at
+                ) VALUES (
+                  :incident_id, :hazard, :route, :processing_status,
+                  :analysis_status, :planner_status, :analysis_id,
+                  :coordinator_routing_id, :handler, CAST(:event_payload AS jsonb),
+                  false, 0, :attempted_at, :processed_at
+                )
+                ON CONFLICT (incident_id) DO UPDATE SET
+                  processing_status = EXCLUDED.processing_status,
+                  analysis_status = EXCLUDED.analysis_status,
+                  planner_status = EXCLUDED.planner_status,
+                  analysis_id = EXCLUDED.analysis_id,
+                  coordinator_routing_id = EXCLUDED.coordinator_routing_id,
+                  handler = EXCLUDED.handler,
+                  event_payload = EXCLUDED.event_payload,
+                  processed_at = EXCLUDED.processed_at,
+                  updated_at = now()
+                WHERE event_projections.last_successful_event_payload IS NULL
+                RETURNING incident_id
+                """
+            ),
+            {
+                "incident_id": record.incident_id,
+                "hazard": record.hazard,
+                "route": record.route,
+                "processing_status": record.processing_status,
+                "analysis_status": record.analysis_status,
+                "planner_status": record.planner_status,
+                "analysis_id": record.analysis_id,
+                "coordinator_routing_id": record.coordinator_routing_id,
+                "handler": record.handler,
+                "event_payload": json.dumps(record.event_payload),
+                "attempted_at": record.attempted_at,
+                "processed_at": record.processed_at,
+            },
+        ).first()
+        session.commit()
+    return written is not None
+
+
 def event_projection_by_incident(incident_id: str) -> dict[str, Any] | None:
     """The event built for one incident, or None when there is none."""
     with Session() as session:

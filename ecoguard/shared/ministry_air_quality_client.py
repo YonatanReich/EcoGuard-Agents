@@ -40,6 +40,43 @@ GUEST_TOKEN_URL = f"{PUBLIC_SITE}/Account/GetApiToken"
 ACCESS_TOKEN_URL = f"{API_ROOT}/GenerateToken"
 
 DEFAULT_TIMEOUT_SECONDS = 30.0
+
+# Where a reconstructed index is stored; see stored_index_response.
+STORED_INDEX_SOURCE = "ministry_air_quality_index"
+RECONSTRUCTED_INDEX_LIMITATION = (
+    "RECONSTRUCTED: the Ministry no longer serves its index for this date. This "
+    "value was computed from the Ministry's own five-minute readings with the "
+    "Ministry's published index method (rolling 24-hour mean, table 3 breakpoints)."
+)
+
+
+def stored_index_response(station_id: str, provider_day: str) -> object | None:
+    """A stored indexFastSrv-shaped response for one station and day, or None.
+
+    Never raises: a store that cannot be read means "ask the provider".
+    """
+    try:
+        from sqlalchemy import text
+
+        from ecoguard.database.engine import Session
+
+        with Session() as session:
+            row = session.execute(
+                text(
+                    "SELECT payload FROM observations "
+                    "WHERE source = :source AND cell_id = :cell "
+                    "AND payload->>'provider_day' = :day "
+                    "ORDER BY ingested_at DESC LIMIT 1"
+                ),
+                {
+                    "source": STORED_INDEX_SOURCE,
+                    "cell": f"ministry_index:{station_id}",
+                    "day": provider_day,
+                },
+            ).first()
+    except Exception:
+        return None
+    return (row[0] or {}).get("response") if row else None
 DEFAULT_REFERENCE_TTL_SECONDS = 6 * 60 * 60
 INVALID_READING_SENTINEL = -9999.0
 MINISTRY_INDEX_CLOCK = timezone(timedelta(hours=2), "Ministry fixed UTC+02:00")
@@ -392,18 +429,25 @@ class MinistryAirQualityClient:
             )
         event_time = observed_at.astimezone(timezone.utc)
         provider_day = event_time.astimezone(MINISTRY_INDEX_CLOCK).date().isoformat()
-        try:
-            payload = self._get_json(
-                f"stations/{station_id}/indexFastSrv",
-                params={
-                    "from": f"{provider_day}T00:00:00",
-                    "to": f"{provider_day}T23:59:59",
-                },
-            )
-        except MinistryAirQualityError as error:
-            return MinistryAirQualityIndexLookupResult(
-                status="unavailable", reason=f"ministry_index_{error.category}"
-            )
+        # Stored first, provider second - the pattern wind evidence uses. The
+        # provider purges indexFastSrv after some months while keeping the raw
+        # readings, so a replay of an older episode stores the index it
+        # reconstructed from those readings (ministry_index_formula), labelled
+        # as such. Live, nothing is stored and this falls through unchanged.
+        payload = stored_index_response(station_id, provider_day)
+        if payload is None:
+            try:
+                payload = self._get_json(
+                    f"stations/{station_id}/indexFastSrv",
+                    params={
+                        "from": f"{provider_day}T00:00:00",
+                        "to": f"{provider_day}T23:59:59",
+                    },
+                )
+            except MinistryAirQualityError as error:
+                return MinistryAirQualityIndexLookupResult(
+                    status="unavailable", reason=f"ministry_index_{error.category}"
+                )
         result = self._match_station_index_payload(
             payload,
             station_id=station_id,
@@ -584,6 +628,11 @@ class MinistryAirQualityClient:
                             "Source-native Ministry category; no EcoGuard LOW/MEDIUM/HIGH mapping.",
                             "Preliminary provider data may change after validation.",
                             "The index concentration uses its provider averaging window and is not the triggering five-minute measurement.",
+                            *(
+                                [RECONSTRUCTED_INDEX_LIMITATION]
+                                if _mapping_value(detail, "reconstructed") is True
+                                else []
+                            ),
                         ],
                     )
                 )

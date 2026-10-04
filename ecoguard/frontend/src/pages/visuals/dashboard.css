@@ -367,6 +367,30 @@
     opacity: 0.75;
 }
 
+/* A step still running mid-wave: present, unfinished, and saying so. */
+.event-card__score--pending,
+.event-card__pending {
+    font-style: italic;
+    animation: event-pending 1.6s ease-in-out infinite;
+}
+
+.event-modal__pending {
+    margin: 0 0 12px;
+    padding: 8px 10px;
+    border-left: 3px solid var(--ops-muted);
+    color: var(--ops-muted);
+    font-style: italic;
+}
+
+@keyframes event-pending {
+    50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .event-card__score--pending,
+    .event-card__pending { animation: none; }
+}
+
 .event-card__measurement {
     font-size: 0.84rem;
     font-weight: 700;

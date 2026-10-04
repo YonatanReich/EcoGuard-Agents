@@ -51,6 +51,29 @@ WIND_ADJUSTMENT_EXPOSED = 0.40
 WIND_ADJUSTMENT_SHELTERED = 0.15
 SHELTERED_TREE_COVER = 0.5
 
+# Rothermel is a surface-fire model, and an Aleppo-pine forest on a sharav day
+# does not burn as a surface fire: it crowns and spots, and the canopy that
+# shelters the surface flame from the wind is itself the fuel. Replayed against
+# the Carmel (2010) and Jerusalem hills (2025) fires, the surface model put the
+# head 0.5 and 1.3 km out after three hours; the fires actually covered 4-5 km
+# and ~8 km. Nothing downstream can recover from that - no settlement falls in
+# a 500 m ring, so nobody is warned.
+#
+# The floor is the empirical "10% wind speed rule" (Cruz & Alexander 2019,
+# Annals of Forest Science 76:44): in dry forest and shrubland a wildfire's
+# forward rate is about a tenth of the 10 m open wind. On the replays it gives
+# ~1 km/h for Carmel (Isfiya to Beit Oren took about four hours) and ~3 km/h
+# for Jerusalem (Mesilat Zion to Neve Shalom took 70 minutes).
+#
+# ponytail: a floor, not a crown-fire model (Van Wagner initiation, Cruz
+# crown ROS). The rule's authors present it as a first approximation; replace
+# with a crown model once the cover grid carries canopy base height. The two
+# thresholds are calibration knobs: the rule is fitted to dry fuel, and to
+# woody cover, not grass, which Rothermel already handles.
+WIND_RULE_FRACTION = 0.10
+WIND_RULE_MAX_DEAD_MOISTURE = 0.08
+WIND_RULE_MIN_WOODY_COVER = 0.5
+
 # Live fuel moisture, as a fraction of oven-dry weight. Nothing in the
 # collection layer measures it — it is a property of the plant, not of the air,
 # and it moves over weeks rather than hours. These are the conventional
@@ -396,16 +419,82 @@ def rate_of_spread(
     back = head * (length_to_width - eccentric) / (length_to_width + eccentric)
 
     return {
+        "spread_basis": "rothermel_surface",
         "head_ros_m_per_min": head * FT_MIN_TO_M_MIN,
         "back_ros_m_per_min": back * FT_MIN_TO_M_MIN,
         "length_to_width": length_to_width,
         "effective_wind_kmh": effective_kmh,
         "wind_factor": wind_factor,
         "slope_factor": slope_factor,
+        "packing_ratio": packing_ratio,
+        "sigma": sigma,
         "reaction_intensity_btu_ft2_min": reaction_intensity,
         "fuel": fuel,
         "reason": None,
     }
+
+
+def with_wind_rule_floor(
+    behaviour: Mapping[str, Any],
+    cover_fractions: Mapping[str, float],
+    *,
+    dead_fuel_moisture: float,
+    wind_speed_kmh: float,
+) -> dict[str, Any]:
+    """A `rate_of_spread` result, raised to the 10% wind rule where it applies.
+
+    Kept out of `rate_of_spread` so that function stays exactly Rothermel and
+    remains checkable against the published BehavePlus tables. See
+    WIND_RULE_FRACTION for why the floor exists.
+
+    When it binds, the shape comes from the open wind too - Alexander's (1985)
+    length-to-width for wind-driven forest fires - because the canopy-sheltered
+    effective wind would draw a near-circle that runs upwind as fast as down.
+    And the heading weighs the wind as if exposed: under the canopy the wind
+    factor is tiny, and a hillside would otherwise steer a crowning fire uphill
+    into a 30 km/h wind.
+    """
+    result = dict(behaviour)
+    head_ft_min = float(result.get("head_ros_m_per_min") or 0.0) / FT_MIN_TO_M_MIN
+    if head_ft_min <= 0:
+        return result  # stalled stays stalled: wet or unburnable fuel is a fact
+    open_wind_kmh = max(0.0, float(wind_speed_kmh))
+    woody = float(cover_fractions.get("tree_cover", 0.0) or 0.0) + float(
+        cover_fractions.get("shrubland", 0.0) or 0.0
+    )
+    rule_ft_min = open_wind_kmh * WIND_RULE_FRACTION * 1000.0 / 60.0 / FT_MIN_TO_M_MIN
+    if (
+        woody < WIND_RULE_MIN_WOODY_COVER
+        or float(dead_fuel_moisture) > WIND_RULE_MAX_DEAD_MOISTURE
+        or rule_ft_min <= head_ft_min
+    ):
+        return result
+
+    length_to_width = min(8.0, max(
+        float(result.get("length_to_width") or 1.0),
+        1.0 + 0.0012 * open_wind_kmh ** 2.154,
+    ))
+    eccentric = math.sqrt(max(0.0, length_to_width ** 2 - 1.0))
+    back_ft_min = rule_ft_min * (length_to_width - eccentric) / (length_to_width + eccentric)
+
+    sigma = float(result.get("sigma") or 0.0)
+    packing_ratio = float(result.get("packing_ratio") or 0.0)
+    if sigma > 0 and packing_ratio > 0:
+        wind_c = 7.47 * math.exp(-0.133 * sigma ** 0.55)
+        wind_b = 0.02526 * sigma ** 0.54
+        wind_e = 0.715 * math.exp(-3.59e-4 * sigma)
+        exposed_ft_min = open_wind_kmh * KMH_TO_FT_MIN * WIND_ADJUSTMENT_EXPOSED
+        result["heading_wind_factor"] = (
+            wind_c * exposed_ft_min ** wind_b * packing_ratio ** -wind_e
+        )
+
+    result.update(
+        spread_basis="wind_rule_10_percent",
+        head_ros_m_per_min=rule_ft_min * FT_MIN_TO_M_MIN,
+        back_ros_m_per_min=back_ft_min * FT_MIN_TO_M_MIN,
+        length_to_width=length_to_width,
+    )
+    return result
 
 
 def spread_heading(
@@ -528,7 +617,9 @@ def spread_rings(
 
     back_ros = float(behaviour.get("back_ros_m_per_min") or 0.0)
     length_to_width = float(behaviour.get("length_to_width") or 1.0)
-    wind_factor = float(behaviour.get("wind_factor") or 0.0)
+    wind_factor = float(
+        behaviour.get("heading_wind_factor") or behaviour.get("wind_factor") or 0.0
+    )
     slope_factor = float(behaviour.get("slope_factor") or 0.0)
     minutes = max(0.0, float(horizon_minutes))
 

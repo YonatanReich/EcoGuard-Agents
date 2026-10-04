@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from contextlib import contextmanager
 from contextvars import ContextVar
+from datetime import datetime, timedelta, timezone
 from typing import Iterator
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, exc
 from sqlalchemy.orm import sessionmaker
 
 load_dotenv()
@@ -33,9 +35,13 @@ if not DATABASE_URL:
     )
 
 # create_engine does not connect, so an unreachable host is discovered on first
-# use. pool_pre_ping discards connections a hosted Postgres has already closed,
-# which a worker sleeping thirty minutes between ticks will meet constantly.
-engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=1800)
+# use. A hosted Postgres closes connections that sit idle - a worker sleeping
+# between ticks meets that constantly - so a connection is pinged before reuse,
+# but only after it has been idle (see _ping_if_idle below). pool_pre_ping did
+# the same on every checkout, and a wave opens hundreds of back-to-back
+# sessions on connections returned a moment earlier: at ~150 ms to this
+# database that was a quarter of all database time.
+engine = create_engine(DATABASE_URL, pool_recycle=1800)
 
 # The collectors get their own engine on the same database, and it never leaves
 # `public`. Sharing one engine with the pipeline is what let a demo contaminate
@@ -52,9 +58,45 @@ engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=1800)
 #
 # Two pools make the timing irrelevant: a collector's connection cannot carry a
 # sandbox search path, whatever is happening in the pipeline when it runs.
-collector_engine = create_engine(
-    DATABASE_URL, pool_pre_ping=True, pool_recycle=1800
-)
+collector_engine = create_engine(DATABASE_URL, pool_recycle=1800)
+
+# How long a pooled connection may sit unused before it is pinged on checkout.
+# ponytail: a calibration knob. Well under Neon's idle suspend (minutes), so a
+# connection reused within a wave is trusted and one reused after a gap is
+# checked; a server that drops connections faster than this needs it lowered.
+IDLE_PING_SECONDS = 30.0
+
+
+def _ping_if_idle(dbapi_connection, connection_record, connection_proxy) -> None:
+    """Ping a connection on checkout only if it has been idle; drop it if dead.
+
+    SQLAlchemy's documented pessimistic-disconnect recipe, made conditional.
+    Raising DisconnectionError makes the pool discard this connection and
+    retry with a fresh one, exactly as pool_pre_ping would.
+    """
+    returned = connection_record.info.get("returned_at")
+    if returned is None or time.monotonic() - returned < IDLE_PING_SECONDS:
+        return
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("SELECT 1")
+    except Exception as error:
+        raise exc.DisconnectionError() from error
+    finally:
+        try:
+            cursor.close()
+        except Exception:
+            pass
+
+
+def _note_return(dbapi_connection, connection_record) -> None:
+    """Remember when a connection went back to the pool."""
+    connection_record.info["returned_at"] = time.monotonic()
+
+
+for _pool_engine in (engine, collector_engine):
+    event.listen(_pool_engine, "checkout", _ping_if_idle)
+    event.listen(_pool_engine, "checkin", _note_return)
 
 _PipelineSession = sessionmaker(bind=engine, expire_on_commit=False)
 _CollectorSession = sessionmaker(bind=collector_engine, expire_on_commit=False)
@@ -136,6 +178,26 @@ Session = _SessionRouter()
 # the detection wave all have to agree on which world they are in, and they
 # share a process by design (see the Dockerfile's one-worker rule).
 _sandbox_schema: str | None = None
+
+# A replayed episode keeps its real timestamps - its readings are judged
+# against the baselines of their own month and hour, and the provider's index
+# for their own day - so "now" for the incident lifecycle has to be the
+# episode's now. Otherwise the coordinator's quiet-period sweep compares a
+# February reading with today and closes the incident on the next wave.
+# Only the coordinator reads this; None outside a replay.
+_replay_offset: timedelta | None = None
+
+
+def set_replay_clock(at: datetime | None) -> None:
+    """Start the pipeline's clock at a historical moment, or clear it."""
+    global _replay_offset
+    _replay_offset = None if at is None else at - datetime.now(timezone.utc)
+
+
+def pipeline_now() -> datetime:
+    """Now, or the replayed episode's now while one is running."""
+    now = datetime.now(timezone.utc)
+    return now if _replay_offset is None else now + _replay_offset
 
 
 def sandbox_schema() -> str | None:

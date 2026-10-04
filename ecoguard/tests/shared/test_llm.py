@@ -726,3 +726,36 @@ def test_every_mapped_category_is_in_the_closed_vocabulary():
 
     for error in errors:
         assert service.sanitize_error(error) in CLAUDE_ERROR_KINDS
+
+
+def _schema_error():
+    try:
+        Answer(value=500)
+    except ValidationError as error:
+        return error
+
+
+def _call(service):
+    return service.parse_structured(
+        system_blocks=[{"type": "text", "text": "x"}], user_text="y", output_format=Answer,
+    )
+
+
+def test_a_reply_that_fails_the_schema_is_retried_once():
+    # Carmel replay: one explanation under its minimum length cost a fire its plan.
+    service = build_service([_schema_error(), FakeResponse(Answer(value=7))])
+    assert _call(service).value == 7
+    assert len(service.client.messages.calls) == 2
+
+
+def test_a_second_schema_failure_still_raises_and_nothing_else_is_retried():
+    twice = build_service([_schema_error(), _schema_error()])
+    with pytest.raises(ClaudeProviderError):
+        _call(twice)
+    assert len(twice.client.messages.calls) == 2
+
+    timeout = build_service(anthropic.APITimeoutError(
+        request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages")))
+    with pytest.raises(ClaudeProviderError):
+        _call(timeout)
+    assert len(timeout.client.messages.calls) == 1

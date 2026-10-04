@@ -174,7 +174,9 @@ def shared_event_feed(rows: Sequence[Mapping[str, Any]]) -> SharedEventFeed:
                 failure_reason=row.get("failure_reason"),
                 retryable=bool(row.get("retryable")),
                 attempt_count=int(row.get("attempt_count") or 1),
-                last_attempt_at=row["last_attempt_at"],
+                # An interim card has no attempt yet; it was written at
+                # processed_at.
+                last_attempt_at=row["last_attempt_at"] or row["processed_at"],
                 processed_at=row["processed_at"],
                 using_last_successful_payload=fallback,
             )

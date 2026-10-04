@@ -86,6 +86,42 @@ def test_locate_returns_nothing_for_an_empty_location():
     assert locate("   ") is None
 
 
+# A resolver standing in for the towns table, holding exactly the names that
+# went wrong on the Carmel 2010 and Jerusalem hills 2025 replays.
+TOWNS = {
+    "כרמל": (31.4295, 35.1845, 600.0),     # the Hebron-hills settlement
+    "עין הוד": (32.6990, 34.9832, 300.0),
+    "ירושלים": (31.7963, 35.2123, 6200.0),
+}
+
+
+def towns_table(name, _limit=1):
+    place = TOWNS.get(name)
+    if place is None:
+        return []
+    return [{"label": {"latitude": place[0], "longitude": place[1]},
+             "area_km2": 3.14159 * (place[2] / 1000.0) ** 2}]
+
+
+def test_a_fire_on_the_carmel_is_the_ridge_not_the_hebron_hills_settlement():
+    # ynet, 2 Dec 2010: "שריפת ענק בכרמל". The settlement named כרמל is 140 km south.
+    latitude, longitude, precision = locate("בכרמל", town_resolver=towns_table)
+    assert latitude > 32.6 and precision >= 5000
+
+
+def test_a_fragment_of_a_region_name_is_not_a_town():
+    # "ירושלים" inside "הרי ירושלים" is not the city, 15 km east of the fire.
+    latitude, longitude, _ = locate("שריפה בהרי ירושלים", town_resolver=towns_table)
+    assert longitude < 35.1
+
+
+def test_the_most_precise_place_named_wins():
+    latitude, longitude, precision = locate(
+        "שריפה ליד עין הוד בכרמל", town_resolver=towns_table
+    )
+    assert round(latitude, 3) == 32.699 and round(precision) == 300
+
+
 # --- signalling ------------------------------------------------------------
 
 def test_a_text_signal_carries_no_rarity():

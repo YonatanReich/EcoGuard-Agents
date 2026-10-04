@@ -34,6 +34,7 @@ from ecoguard.analyzers.fire.spread import (
     rate_of_spread,
     spread_rings,
     wind_adjustment_factor,
+    with_wind_rule_floor,
 )
 from ecoguard.analyzers.fire.spread_analyzer import analyze, compass_point
 from ecoguard.paths import EVALUATION
@@ -247,3 +248,68 @@ def test_every_case_declares_its_limits():
         result = analyze(case["incident"], case["environment"])
         assert result["limits"], case["case_id"]
         assert any("no crew" in limit for limit in result["limits"]), case["case_id"]
+
+
+# --- the wind-rule floor ------------------------------------------------------
+#
+# Replayed against the Carmel (2010) and Jerusalem hills (2025) fires, the
+# Rothermel surface rate put the head 0.5 and 1.3 km out after three hours;
+# the fires covered 4-5 km and ~8 km. The floor is Cruz & Alexander's 10% rule.
+
+def _floored(cover, *, moisture, wind, slope=0.0):
+    behaviour = rate_of_spread(
+        cover, dead_fuel_moisture=moisture, wind_speed_kmh=wind, slope_deg=slope
+    )
+    return with_wind_rule_floor(
+        behaviour, cover, dead_fuel_moisture=moisture, wind_speed_kmh=wind
+    )
+
+
+def test_dry_pine_in_a_sharav_runs_at_a_tenth_of_the_wind():
+    # Jerusalem hills, 30 April 2025: 30 km/h, 11% humidity at 36 C.
+    behaviour = _floored({"tree_cover": 0.8, "shrubland": 0.2}, moisture=0.03, wind=30.0)
+    assert behaviour["spread_basis"] == "wind_rule_10_percent"
+    assert behaviour["head_ros_m_per_min"] == pytest.approx(50.0)
+    # Wind-driven, so elongated: Alexander 1985 at 30 km/h is ~2.8.
+    assert behaviour["length_to_width"] == pytest.approx(2.8, abs=0.1)
+    assert behaviour["back_ros_m_per_min"] < behaviour["head_ros_m_per_min"] / 5
+
+
+def test_floor_leaves_grass_and_damp_fuel_to_rothermel():
+    grass = _floored({"grassland": 1.0}, moisture=0.03, wind=30.0)
+    damp = _floored({"tree_cover": 1.0}, moisture=0.12, wind=30.0)
+    assert grass["spread_basis"] == damp["spread_basis"] == "rothermel_surface"
+
+
+def test_a_crowning_fire_follows_the_wind_not_the_hill():
+    # An east wind on a slope that faces west (so uphill is east): the fire
+    # must still run west, as Carmel did down the ridge toward Beit Oren.
+    behaviour = _floored({"tree_cover": 1.0}, moisture=0.04, wind=20.0, slope=20.0)
+    rings = spread_rings(
+        32.72, 35.04, behaviour, wind_direction_deg=90.0, aspect_deg=270.0,
+        horizon_minutes=180.0,
+    )
+    assert compass_point(rings["heading_deg"]) in {"west", "west-northwest", "west-southwest"}
+
+
+def test_the_fire_front_is_every_pixel_but_never_a_text_report():
+    from ecoguard.analyzers.fire.spread_analyzer import fire_front
+
+    incident = {"signals": [
+        {"variable": "frp", "evidence": {"pixels": [
+            {"latitude": 32.7196, "longitude": 35.0228, "frp": 195.2},
+            {"latitude": 32.7205, "longitude": 35.0671, "frp": 37.8},  # beside Isfiya
+        ]}},
+        {"variable": "report", "evidence": {"pixels": [
+            {"latitude": 32.7159, "longitude": 35.0731, "frp": 0.0},
+        ]}},
+    ]}
+    assert fire_front(incident, (32.7196, 35.0228)) == [(32.7205, 35.0671)]
+
+
+def test_a_settlement_keeps_the_worst_exposure_any_pixel_gives_it():
+    from ecoguard.analyzers.fire.spread_analyzer import _worst_exposure
+
+    centroid = [{"name": "Isfiya", "exposure": "possible", "arrival_minutes": None, "distance_m": 3500}]
+    front = [{"name": "Isfiya", "exposure": "burning", "arrival_minutes": None, "distance_m": 0}]
+    assert [item["exposure"] for item in _worst_exposure(centroid, front)] == ["burning"]

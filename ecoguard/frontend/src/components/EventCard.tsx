@@ -131,7 +131,7 @@ function EventCard({ event, onOpen, isSelected, onConfirm, isConfirming }: {
               {fire!.evacuation.filter((item) => item.priority === 'immediate').length > 0
                 ? `Evacuate now: ${fire!.evacuation
                     .filter((item) => item.priority === 'immediate')
-                    .map((item) => item.name)
+                    .map((item) => item.name_he ?? item.name)
                     .slice(0, 2)
                     .join(', ')}`
                 : `${fire!.evacuation.length} settlement(s) to prepare`}
@@ -143,10 +143,17 @@ function EventCard({ event, onOpen, isSelected, onConfirm, isConfirming }: {
               <span className="event-card__score">
                 {fire.risk_level} · {fire.risk_score}
               </span>
+            ) : event.analysis_status === 'pending' ? (
+              <span className="event-card__score event-card__score--pending">
+                assessing risk…
+              </span>
             ) : (
               <span className="event-card__score event-card__score--none">
                 not assessed
               </span>
+            )}
+            {event.planning_status === 'pending' && (
+              <span className="event-card__pending">plan being prepared…</span>
             )}
             {fire?.detection && fire.detection.verdict !== 'confirmed' && (
               <span className="event-card__detection">

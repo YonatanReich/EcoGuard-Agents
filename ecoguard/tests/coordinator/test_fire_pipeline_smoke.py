@@ -473,3 +473,64 @@ def test_fire_risk_failure_is_reported_without_automatic_allocation():
     assert result.risk_status == "failed"
     assert result.requires_resource_allocation is False
     assert result.fallback_allocation_context is None
+
+
+def _context(progress=None):
+    return IncidentDispatchContext(
+        incident_id="INC-FIRE-SMOKE", hazard="fire", route="emergency",
+        analysis_id="analysis-fire-smoke", coordinator_routing_id="routing-fire-smoke",
+        routed_by="test", routed_at=NOW, requested_at=NOW, progress=progress,
+    )
+
+
+def test_the_card_is_published_before_the_model_calls_finish():
+    risk_analyzer = _OfflineRiskAnalyzer()
+    reported = []
+
+    def progress(result):
+        reported.append((result.risk_status, result.planner_status, len(risk_analyzer.calls)))
+
+    FireIncidentHandler(
+        risk_analyzer=risk_analyzer, planner=_OfflineEmergencyPlanner(), clock=lambda: NOW,
+    ).process(_incident(), _context(progress))
+
+    # First card before the risk call starts; second once it has returned.
+    assert reported == [("pending", "pending", 0), ("success", "pending", 1)]
+
+
+def test_an_interim_card_says_pending_and_the_feed_serves_it():
+    from ecoguard.coordinator.event_projection import project_interim
+
+    captured = []
+    handler = FireIncidentHandler(
+        risk_analyzer=_OfflineRiskAnalyzer(), planner=_OfflineEmergencyPlanner(), clock=lambda: NOW,
+    )
+    handler.process(_incident(), _context(
+        lambda result: project_interim(result, incident=_incident(), writer=captured.append)
+    ))
+
+    first = captured[0]
+    assert first.processing_status == "in_progress"
+    assert (first.analysis_status, first.planner_status) == ("pending", "pending")
+    feed = shared_event_feed([{
+        "incident_id": first.incident_id, "route": "emergency",
+        "processing_status": first.processing_status, "event_payload": first.event_payload,
+        "attempt_count": 0, "last_attempt_at": None, "processed_at": NOW,
+    }])
+    assert [event.planning_status for event in feed.events] == ["pending"]
+
+
+def test_an_injected_registry_never_publishes_interim_cards():
+    # Interim cards are store writes; a test's own registry must not make any.
+    seen = []
+
+    class Recorder:
+        name = "recorder"
+
+        def process(self, incident, context):
+            seen.append(context.progress)
+            return "done"
+
+    dispatch_incidents([_incident()], registry={("fire", "emergency"): Recorder()}, at=NOW,
+                       projection_reader=lambda _id: None)
+    assert seen == [None]

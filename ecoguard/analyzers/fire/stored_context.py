@@ -16,6 +16,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Mapping
 
+from ecoguard.shared.concurrency import concurrently
+
 logger = logging.getLogger(__name__)
 
 # The published bounds of each fire-danger band. The provider serves a band
@@ -197,7 +199,12 @@ def geospatial_context_at(
     }
 
 
-def spread_forecast_for(incident: Mapping[str, Any]) -> dict[str, Any] | None:
+def spread_forecast_for(
+    incident: Mapping[str, Any],
+    *,
+    environment: Mapping[str, Any] | None = None,
+    localities: Any = None,
+) -> dict[str, Any] | None:
     """Where this fire is forecast to go, and which settlements that reaches.
 
     The spread model, the exposure calculation and the settlement lookup have
@@ -215,21 +222,60 @@ def spread_forecast_for(incident: Mapping[str, Any]) -> dict[str, Any] | None:
     if incident.get("latitude") is None or incident.get("longitude") is None:
         return None
     try:
-        report = spread_analyzer.analyze_incident(incident)
+        report = spread_analyzer.analyze_incident(
+            incident, environment=environment, localities=localities,
+        )
     except Exception:
         logger.exception("could not forecast spread for the incident")
         return None
     return report if report.get("status") == "ok" else None
 
 
-def stored_context_for(incident: Mapping[str, Any]) -> dict[str, Any]:
+def shared_reads(incident: Mapping[str, Any]) -> tuple[Any, Any]:
+    """The environment and nearby settlements, read once and concurrently.
+
+    Both the stored context and the spread forecast need the same two reads
+    (same point, same 25 km radius), and each read alone is a run of queries to
+    a database ~165 ms away. Read separately and twice, they were the larger
+    part of the time before an operator saw the card.
+
+    Never raises; a read that fails comes back None, and each consumer already
+    reports that as its own gap.
+    """
+    from ecoguard.analyzers.fire.environment import environment_for, localities_for
+
+    def environment():
+        try:
+            return environment_for(incident)
+        except Exception:
+            logger.exception("could not read the environment around the incident")
+            return None
+
+    def localities():
+        try:
+            return localities_for(incident, radius_m=SETTLEMENT_RADIUS_M)
+        except Exception:
+            logger.exception("could not read settlements near the incident")
+            return None
+
+    return concurrently(environment, localities)
+
+
+_UNREAD = object()
+
+
+def stored_context_for(
+    incident: Mapping[str, Any],
+    *,
+    environment: Any = _UNREAD,
+    localities: Any = _UNREAD,
+) -> dict[str, Any]:
     """The three enrichments for one incident, each reporting its own failure.
 
     Never raises: a store that cannot be read produces sections that say so,
     because an incident with no surroundings is still worth assessing.
+    `environment` and `localities` may be passed in when already read.
     """
-    from ecoguard.analyzers.fire.environment import environment_for, localities_for
-
     latitude, longitude = incident.get("latitude"), incident.get("longitude")
     if latitude is None or longitude is None:
         return {
@@ -238,17 +284,9 @@ def stored_context_for(incident: Mapping[str, Any]) -> dict[str, Any]:
             "geospatial_context": None,
         }
 
-    try:
-        environment = environment_for(incident)
-    except Exception:
-        logger.exception("could not read the environment around the incident")
-        environment = None
-
-    try:
-        localities = localities_for(incident, radius_m=SETTLEMENT_RADIUS_M)
-    except Exception:
-        logger.exception("could not read settlements near the incident")
-        localities = ()
+    if environment is _UNREAD or localities is _UNREAD:
+        environment, localities = shared_reads(incident)
+    localities = localities or ()
 
     return {
         "fire_danger": fire_danger_from(environment),
