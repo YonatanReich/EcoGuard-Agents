@@ -133,7 +133,7 @@ function ScenarioControl({
 
           <span className="scenario__banner" role="status">
             <span className="scenario__dot" aria-hidden="true" />
-            {runningLabel} — showing authored evidence, not live data
+            {runningLabel} — scenario data, not live
             <span className="scenario__counts">
               {incidents} incident{incidents === 1 ? '' : 's'} · {projected} projected
               {stopping

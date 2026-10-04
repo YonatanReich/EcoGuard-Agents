@@ -95,7 +95,7 @@ function ScenarioScore({
         <div className="score__headline">
           <span className="score__big">{report.events_passed}</span>
           <span className="score__of">of {report.events_expected}</span>
-          <span className="score__caption">authored events found in full</span>
+          <span className="score__caption">events detected in full</span>
         </div>
 
         <div className="score__tallies">
@@ -140,7 +140,7 @@ function ScenarioScore({
                   <p className="score__event-title">
                     Reported as &ldquo;{finding.title}&rdquo;
                     {finding.marker_km_from_event !== null &&
-                      `, ${finding.marker_km_from_event.toFixed(2)} km from where it was authored`}
+                      `, ${finding.marker_km_from_event.toFixed(2)} km from where it was placed`}
                   </p>
                 )}
                 {finding.problems.map((problem) => (

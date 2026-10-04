@@ -17,6 +17,7 @@ from ecoguard.analyzers.flood.risk_analysis_schemas import (
     FloodRiskAssessment,
 )
 from ecoguard.coordinator import incidents as incident_store
+from ecoguard.coordinator.confirmation import confirmation_of
 from ecoguard.coordinator.dispatcher import IncidentProcessingResult
 from ecoguard.database.repositories.event_projections import (
     EventProjectionWrite,
@@ -47,6 +48,7 @@ from ecoguard.shared.events import (
     AllocatedStation,
     AllocationRoute,
     AllocationSettlement,
+    EventConfirmation,
     FloodAdvisory,
     FloodDetails,
     FloodHydrometricStation,
@@ -1264,6 +1266,15 @@ def project_processing_results(
         mapping_failure = None
         try:
             event = mapper(result, incident)
+            # One place, every hazard. The mappers know their own hazard and
+            # nothing about confirmation, and confirmation is the same question
+            # for all of them, so it is attached here rather than threaded
+            # through five mappers that would each have to remember to do it.
+            event = event.model_copy(
+                update={"confirmation": EventConfirmation.model_validate(
+                    confirmation_of(incident).as_dict()
+                )}
+            )
             if (
                 isinstance(event, FloodSharedEvent)
                 and result.preserve_existing_response

@@ -21,6 +21,10 @@ from ecoguard.planners.shared.adapters import (
     build_fire_plan_input,
 )
 from ecoguard.planners.shared.planner import EmergencyResponsePlanner
+from ecoguard.planners.uncorroborated.planner import (
+    UncorroboratedReportPlanner,
+    newest_claim,
+)
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -201,11 +205,20 @@ class FireIncidentHandler:
         *,
         risk_analyzer: object | None = None,
         planner: object | None = None,
+        verification_planner: object | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
-        """Build the handler with its risk analyzer and planner."""
+        """Build the handler with its risk analyzer and both planners.
+
+        Two planners, because a fire has two kinds of answer. A confirmed one
+        gets a protocol-grounded mobilisation plan from the model. An unconfirmed
+        one gets the verification advisory: who to telephone, by lookup.
+        """
         self._risk_analyzer = risk_analyzer or RiskAnalysisAgent()
         self._planner = planner or EmergencyResponsePlanner()
+        self._verification_planner = (
+            verification_planner or UncorroboratedReportPlanner()
+        )
         self._clock = clock
 
     def _now(self) -> datetime:
@@ -294,6 +307,49 @@ class FireIncidentHandler:
                     or risk_metadata.get("reason")
                     or "fire_risk_analysis_unavailable"
                 ),
+                requires_resource_allocation=False,
+            )
+
+        # The analysis above ran regardless of confirmation, and that is the
+        # point: a claim has a place, and a place has weather, fuel, terrain and
+        # neighbours. What an unconfirmed incident must not do is ask for
+        # mobilisation, so its plan is the verification advisory instead - who to
+        # telephone to find out, computed by lookup rather than by a model.
+        #
+        # No protocol grounding is needed because nothing is being recommended
+        # beyond "check": the actions are contact details for the bodies
+        # responsible for that point.
+        if not context.confirmed:
+            claim, location_text = newest_claim(incident)
+            advisory = self._verification_planner.plan(
+                hazard=context.hazard,
+                latitude=incident.get("latitude"),
+                longitude=incident.get("longitude"),
+                claim=claim,
+                location_text=location_text,
+                analysis_performed=True,
+            )
+            succeeded = advisory.status == "success"
+            return IncidentProcessingResult(
+                incident_id=context.incident_id,
+                hazard=context.hazard,
+                route=context.route,
+                status="success" if succeeded else "partial",
+                requested_at=context.requested_at,
+                completed_at=self._now(),
+                analysis_id=context.analysis_id,
+                coordinator_routing_id=context.coordinator_routing_id,
+                handler=self.name,
+                analysis_status="success",
+                risk_status="success",
+                planner_status="success" if succeeded else "skipped",
+                analysis_result=detected_event,
+                risk_assessment=risk,
+                planner_result=advisory.as_dict(),
+                failure_stage=None if succeeded else "planning",
+                failure_reason=None if succeeded else advisory.reason,
+                # Nothing is reserved against an unconfirmed report. A crew held
+                # for a rumour is a crew unavailable for a fire.
                 requires_resource_allocation=False,
             )
 

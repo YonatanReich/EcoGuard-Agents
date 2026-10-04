@@ -12,6 +12,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 type AuthoredEvent = {
@@ -50,6 +51,16 @@ const HAZARD_TINT: Record<string, string> = {
   fire_weather: '#e0a13a',
 }
 
+/** The hazard colour as a CSS variable, so one palette drives chip, dot and bar. */
+function tint(hazard: string): CSSProperties {
+  return { '--tint': HAZARD_TINT[hazard] ?? '#9fb3d1' } as CSSProperties
+}
+
+/** Which hazards a scenario covers, in first-appearance order, without repeats. */
+function hazardsOf(scenario: Scenario): string[] {
+  return [...new Set(scenario.events.map((item) => item.hazard))]
+}
+
 function DemoScenarios() {
   const navigate = useNavigate()
   const [scenarios, setScenarios] = useState<Scenario[] | null>(null)
@@ -61,12 +72,33 @@ function DemoScenarios() {
   useEffect(() => {
     let live = true
     fetch('/api/scenario/catalog')
-      .then((response) => response.json())
-      .then((body: { scenarios: Scenario[] }) => {
-        if (live) setScenarios(body.scenarios)
+      .then(async (response) => {
+        // A 404 here means the backend is running code from before this
+        // endpoint existed. Checked explicitly because fetch does not reject
+        // on an error status: the JSON parsed fine, the scenario list came
+        // back undefined, and the section rendered empty with nothing to
+        // explain itself — a broken page rather than a stale server.
+        if (response.status === 404) {
+          throw new Error(
+            'This backend does not serve /api/scenario/catalog yet. Restart it to pick up the demo scenarios page.',
+          )
+        }
+        if (!response.ok) {
+          throw new Error(`The scenario catalogue returned ${response.status}.`)
+        }
+        const body = (await response.json()) as { scenarios?: Scenario[] }
+        if (!Array.isArray(body.scenarios)) {
+          throw new Error('The scenario catalogue came back in an unexpected shape.')
+        }
+        return body.scenarios
       })
-      .catch(() => {
-        if (live) setError('The scenario catalogue could not be read.')
+      .then((list) => {
+        if (live) setScenarios(list)
+      })
+      .catch((caught: unknown) => {
+        if (!live) return
+        setScenarios([])
+        setError(caught instanceof Error ? caught.message : String(caught))
       })
     // A scenario left running from an earlier visit must not be startable
     // again: the second start would be refused and read as a broken button.
@@ -174,8 +206,8 @@ function DemoScenarios() {
                 their radiative power, the timestamps in the provider&rsquo;s own
                 clock — into an observations table, alongside the Telegram
                 messages and news items people would have posted about it.
-                <strong> Nothing in the demo is an event. Every row is a
-                reading.</strong>
+                <strong> The system is handed readings, never
+                conclusions.</strong>
               </p>
             </div>
           </li>
@@ -221,9 +253,15 @@ function DemoScenarios() {
             <article key={scenario.id} className="demos__card">
               <h3 className="demos__card-title">{scenario.label}</h3>
               <p className="demos__card-blurb">{scenario.blurb}</p>
+              <div className="demos__card-hazards">
+                {hazardsOf(scenario).map((hazard) => (
+                  <span key={hazard} className="demos__chip" style={tint(hazard)}>
+                    {HAZARD_LABEL[hazard] ?? hazard}
+                  </span>
+                ))}
+              </div>
               <div className="demos__card-meta">
-                {scenario.event_count} authored event
-                {scenario.event_count === 1 ? '' : 's'}
+                {scenario.event_count} event{scenario.event_count === 1 ? '' : 's'}
               </div>
               <button
                 type="button"
@@ -303,22 +341,16 @@ function ScenarioModal({
         </header>
 
         <p className="demo-modal__intro">
-          These are the events written into the readings. The system is not told
-          about any of them — it has to find them in the data.
+          What this run should surface. None of it is handed to the system
+          directly — each one has to be found in the readings.
         </p>
 
         <ol className="demo-modal__events">
           {scenario.events.map((item) => (
-            <li key={item.id} className="demo-modal__event">
+            <li key={item.id} className="demo-modal__event" style={tint(item.hazard)}>
               <div className="demo-modal__event-head">
                 <span className="demo-modal__event-id">{item.id}</span>
-                <span
-                  className="demo-modal__hazard"
-                  style={{
-                    color: HAZARD_TINT[item.hazard] ?? 'var(--text-muted)',
-                    borderColor: HAZARD_TINT[item.hazard] ?? 'var(--text-muted)',
-                  }}
-                >
+                <span className="demo-modal__hazard">
                   {HAZARD_LABEL[item.hazard] ?? item.hazard}
                 </span>
                 {item.expect_route === 'uncorroborated' && (

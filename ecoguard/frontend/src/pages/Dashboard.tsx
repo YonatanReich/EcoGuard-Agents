@@ -377,6 +377,29 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
       .finally(() => setIsLoadingEvents(false))
   }, [demo])
 
+  // Operator confirmation. The one write this page makes.
+  //
+  // Confirming re-plans the incident server-side, so the response returns the
+  // whole refreshed feed and this assigns it directly rather than firing a
+  // second request that would race the re-plan it just triggered.
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
+
+  const confirmEvent = useCallback((event: SharedEvent) => {
+    setConfirmingId(event.id)
+    void fetch(`/api/events/${encodeURIComponent(event.id)}/confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ by: 'operator' }),
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error('Confirmation failed')
+        return response.json() as Promise<SharedEventFeed>
+      })
+      .then((data) => setProjectedEvents(data.events ?? []))
+      .catch((error) => console.error('Error confirming event:', error))
+      .finally(() => setConfirmingId(null))
+  }, [])
+
   const loadWeakEvents = useCallback(() =>
     fetch('/api/weak-events')
       .then((response) => {
@@ -515,6 +538,8 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
                   event={event}
                   onOpen={selectAndOpenEvent}
                   isSelected={selectedEvent?.type === event.type && selectedEvent.id === event.id}
+                  onConfirm={demo ? undefined : confirmEvent}
+                  isConfirming={confirmingId === event.id}
                 />
               ))
             )}
@@ -712,6 +737,8 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
                   event={event}
                   onOpen={selectAndOpenEvent}
                   isSelected={selectedEvent?.type === event.type && selectedEvent.id === event.id}
+                  onConfirm={demo ? undefined : confirmEvent}
+                  isConfirming={confirmingId === event.id}
                 />
               ))
             )}

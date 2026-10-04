@@ -11,6 +11,7 @@ from typing import Any, Literal, Protocol
 from uuid import uuid4
 
 from ecoguard.coordinator import incidents as incident_store
+from ecoguard.coordinator.confirmation import confirmation_of
 from ecoguard.coordinator.queues import UnroutableHazard, queue_for
 from ecoguard.database.repositories.event_projections import (
     event_projection_by_incident,
@@ -166,6 +167,11 @@ class IncidentDispatchContext:
     routed_by: str
     routed_at: datetime
     requested_at: datetime
+    # Whether anything measured this incident, or anyone confirmed it. Defaults
+    # to confirmed so a handler constructed by hand in a test or a manual run
+    # behaves as it always did; the dispatcher always sets it explicitly.
+    confirmed: bool = True
+    confirmation_basis: str | None = None
 
 
 @dataclass
@@ -367,15 +373,25 @@ def dispatch_incidents(
                 )
                 continue
 
-            # An uncorroborated report is handled the same way whatever it
-            # claims to be, so it is matched before the hazard registry. There
-            # is nothing to analyse in an unconfirmed claim, and a risk score
-            # computed from one would be presented to an operator with exactly
-            # the same weight as a score computed from a satellite.
-            if is_uncorroborated_report(incident):
+            # An unconfirmed incident takes the ordinary hazard handler, not a
+            # separate lane. It used to be diverted here on the grounds that
+            # there is nothing to analyse in a claim - but a claim still has a
+            # place, and a place has weather, fuel, terrain and neighbours.
+            # Refusing to compute spread for it did not make the system more
+            # honest, it left an operator with a pin and no idea which way the
+            # fire would run if the report turned out to be true.
+            #
+            # What confirmation changes is the *plan*: an unconfirmed incident
+            # may ask for verification and notification, never for mobilisation.
+            # That decision belongs to the hazard handler, which is why the
+            # state travels on the context instead of picking the handler.
+            confirmation = confirmation_of(incident)
+            handler = handlers.get((hazard, route))
+            if handler is None and not confirmation.confirmed:
+                # No analyser for this hazard at all. The verification advisory
+                # is still better than nothing, and is what this incident would
+                # have received before.
                 handler = handlers.get(UNCORROBORATED_ROUTE)
-            else:
-                handler = handlers.get((hazard, route))
             if handler is None:
                 results.append(IncidentProcessingResult(
                     incident_id=incident_id,
@@ -398,6 +414,8 @@ def dispatch_incidents(
                 routed_by="shared_coordinator",
                 routed_at=requested_at,
                 requested_at=requested_at,
+                confirmed=confirmation.confirmed,
+                confirmation_basis=confirmation.basis,
             )
             try:
                 results.append(handler.process(incident, context))
