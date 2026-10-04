@@ -15,6 +15,10 @@ MAP_ZOOM_PATH = Path(
     "ecoguard/database/migrations/versions/"
     "0032_remove_hydrometric_map_zoom_level.py"
 )
+MERGE_PATH = Path(
+    "ecoguard/database/migrations/versions/"
+    "0033_merge_incident_confirmation_flood_heads.py"
+)
 
 
 def test_upgrade_removes_obsolete_history_and_baseline_tables():
@@ -53,3 +57,13 @@ def test_map_zoom_migration_removes_only_the_unused_column():
     assert 'down_revision = "flood_operational_flow_regime"' in source
     assert "DROP COLUMN IF EXISTS map_zoom_level" in source
     assert "ADD COLUMN map_zoom_level integer" in source
+
+
+def test_incident_confirmation_and_flood_migrations_have_one_merge_head():
+    source = MERGE_PATH.read_text(encoding="utf-8")
+
+    assert 'revision = "incident_flood_merge"' in source
+    assert (
+        'down_revision = ("incident_confirmation", "remove_hydrometric_map_zoom")'
+        in source
+    )
