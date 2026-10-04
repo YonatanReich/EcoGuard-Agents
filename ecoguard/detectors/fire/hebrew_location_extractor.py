@@ -62,6 +62,27 @@ _HEBREW_PREFIXES = frozenset("בלמהוכ")
 _STRONG_LOCATION_PREFIXES = frozenset("בל")
 _PROXIMITY_MARKERS = frozenset(("בסמוך", "סמוך", "ליד", "בקרבת"))
 _STREET_MARKERS = frozenset(("רחוב", "ברחוב"))
+
+# Everyday words for a *kind of place* that are also the name of a town. Read
+# word by word they win, because candidates are tried in text order and the
+# generic word comes before the real town name:
+#
+#   שדרות  "boulevard", and the town of Sderot.
+#          "שדרות התמרים באילת" is Tamarim Boulevard in Eilat; the bare word
+#          matched Sderot, 250 km away, and handed the operator Sderot's police
+#          telephone number for a fire in Eilat.
+#   אזור   "area, zone", and the town of Azor near Tel Aviv.
+#          "באזור התעשייה באשדוד" is the industrial zone in Ashdod; the bare
+#          word matched Azor, so an Ashdod report opened an incident outside
+#          Tel Aviv and the Ashdod one was never found.
+#
+# So the bare word is not offered as a town when a name follows it. The longer
+# phrases still are, and simply match nothing, which is correct.
+_STREET_TYPE_ALSO_TOWN = frozenset(("שדרות", "אזור"))
+
+# ...unless what follows is joined by "and": "בשדרות ובנתיבות" is two towns,
+# not a street, and suppressing שדרות there would lose a real one.
+_CONJUNCTION_PREFIX = "ו"
 _NEIGHBORHOOD_MARKERS = frozenset(("שכונת", "בשכונת"))
 _GENERIC_NEIGHBORHOOD_TERMS = frozenset(("מגורים",))
 _EVENT_MARKERS = {
@@ -149,8 +170,19 @@ def locality_name_candidates(text: str | None, *, max_words: int = 4) -> list[st
         first = first[1:] if prefixed else first
         if not first:
             continue
+
+        # A street type followed by a name is an address, not a locality.
+        following = tokens[start + 1].normalized if start + 1 < len(tokens) else None
+        names_a_street = (
+            first in _STREET_TYPE_ALSO_TOWN
+            and following is not None
+            and not following.startswith(_CONJUNCTION_PREFIX)
+        )
+
         for width in range(min(max_words, len(tokens) - start), 0, -1):
             words = [first, *(item.normalized for item in tokens[start + 1 : start + width])]
+            if names_a_street and len(words) == 1:
+                continue
             candidate = " ".join(words)
             if candidate not in candidates:
                 candidates.append(candidate)

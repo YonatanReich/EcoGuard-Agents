@@ -13,12 +13,19 @@ function formatObservationTime(timestamp: string) {
       }).format(value)
 }
 
-function EventCard({ event, onOpen, isSelected }: {
+function EventCard({ event, onOpen, isSelected, onConfirm, isConfirming }: {
   event: SharedEvent
   onOpen: (event: SharedEvent) => void
   isSelected: boolean
+  /** Omitted where confirming makes no sense, such as the demo feed. */
+  onConfirm?: (event: SharedEvent) => void
+  isConfirming?: boolean
 }) {
   const hazard = hazardOf(event)
+  // Absent on projections written before confirmation existed. Those were all
+  // built from instrument data, so treating a missing value as confirmed keeps
+  // old rows reading the way they always did rather than flagging them all.
+  const unconfirmed = event.confirmation?.status === 'unconfirmed'
   const fire = event.type === 'fire' ? event.details : null
   const assessed = event.analysis_status === 'success' && fire?.risk_level != null
   const officialClassification = event.type === 'air_pollution'
@@ -29,7 +36,7 @@ function EventCard({ event, onOpen, isSelected }: {
 
   return (
     <article
-      className={`event-card${isSelected ? ' event-card--selected' : ''}${strongOfficialEmphasis ? ' event-card--official-strong' : ''}`}
+      className={`event-card${isSelected ? ' event-card--selected' : ''}${strongOfficialEmphasis ? ' event-card--official-strong' : ''}${unconfirmed ? ' event-card--unconfirmed' : ''}`}
       style={{ '--hazard': hazard.color } as React.CSSProperties}
     >
     <button
@@ -41,6 +48,11 @@ function EventCard({ event, onOpen, isSelected }: {
       <span className="event-card__type">
         <HazardIcon kind={event.type} />
         {hazard.label}
+        {unconfirmed && (
+          <span className="event-card__unconfirmed" title={event.confirmation?.detail ?? undefined}>
+            Unconfirmed
+          </span>
+        )}
       </span>
       <span className="event-card__title">{event.title}</span>
 
@@ -148,6 +160,25 @@ function EventCard({ event, onOpen, isSelected }: {
         </>
       )}
     </button>
+
+    {/* Outside the card's own button, because a button inside a button is
+        invalid and the browser will not deliver this click. */}
+    {unconfirmed && onConfirm && (
+      <div className="event-card__confirm-row">
+        <p className="event-card__confirm-note">
+          Verify with the local authority and the responsible fire and police
+          stations before treating this as an event.
+        </p>
+        <button
+          type="button"
+          className="event-card__confirm"
+          disabled={isConfirming}
+          onClick={() => onConfirm(event)}
+        >
+          {isConfirming ? 'Confirming…' : 'Mark as confirmed'}
+        </button>
+      </div>
+    )}
     </article>
   )
 }

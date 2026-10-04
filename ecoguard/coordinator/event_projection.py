@@ -17,6 +17,7 @@ from ecoguard.analyzers.flood.risk_analysis_schemas import (
     FloodRiskAssessment,
 )
 from ecoguard.coordinator import incidents as incident_store
+from ecoguard.coordinator.confirmation import confirmation_of
 from ecoguard.coordinator.dispatcher import IncidentProcessingResult
 from ecoguard.database.repositories.event_projections import (
     EventProjectionWrite,
@@ -47,6 +48,7 @@ from ecoguard.shared.events import (
     AllocatedStation,
     AllocationRoute,
     AllocationSettlement,
+    EventConfirmation,
     FloodAdvisory,
     FloodDetails,
     FloodHydrometricStation,
@@ -907,6 +909,79 @@ def uncorroborated_shared_event(
     )
 
 
+def _fire_spread_projection(detected_event: Mapping[str, Any]) -> dict[str, Any]:
+    """Turn the spread forecast into the fields the map and the card read.
+
+    `exposure` is the field the map colours by: "burning" is a settlement the
+    fire is already in, "likely" and "possible" are ones the forecast reaches.
+    A map that draws both the same way answers a different question from the one
+    an operator is asking.
+    """
+    report = detected_event.get("spread_forecast")
+    if not isinstance(report, Mapping) or report.get("status") != "ok":
+        return {}
+
+    raw = report.get("spread") or {}
+
+    def ring(key: str) -> dict[str, Any] | None:
+        """One forecast extent as a GeoJSON polygon, or None when absent."""
+        points = raw.get(key)
+        if not points:
+            return None
+        return {"type": "Polygon", "coordinates": [[list(point) for point in points]]}
+
+    spread = {
+        "likely": ring("likely"),
+        "possible": ring("possible"),
+        "heading_deg": raw.get("heading_deg"),
+        "heading_compass": raw.get("heading_compass"),
+        "head_rate_m_per_min": raw.get("head_rate_m_per_min"),
+        "head_distance_m": raw.get("head_distance_m"),
+        "horizon_minutes": raw.get("horizon_minutes"),
+    }
+
+    settlements = [
+        {
+            "name": item.get("name"),
+            "name_he": item.get("name_he"),
+            "population": item.get("population"),
+            "exposure": item.get("exposure"),
+            "arrival_minutes": item.get("arrival_minutes"),
+            "distance_m": item.get("distance_m"),
+            "authority_phone": item.get("authority_phone"),
+            "fire_district": item.get("fire_district"),
+            "police_station": item.get("police_station"),
+        }
+        for item in report.get("exposure") or ()
+        if isinstance(item, Mapping) and item.get("name") and item.get("exposure")
+    ]
+
+    sites = [
+        {
+            "name": item.get("name"),
+            "kind": item.get("kind"),
+            "category": item.get("category"),
+            "exposure": item.get("exposure"),
+            "distance_m": item.get("distance_m"),
+        }
+        for item in report.get("infrastructure_at_risk") or ()
+        if isinstance(item, Mapping)
+        and item.get("name")
+        and item.get("exposure")
+        and item.get("category")
+    ]
+
+    people = (report.get("population_in_spread") or {}).get("people")
+
+    return {
+        "spread": spread if any(value is not None for value in spread.values()) else None,
+        "exposed_settlements": settlements,
+        "sites_at_risk": sites,
+        "people_in_spread": int(people) if isinstance(people, (int, float)) else None,
+        "spread_headline": report.get("headline"),
+    }
+
+
 def fire_shared_event(
     detected_event: Mapping[str, Any],
     risk_assessment: Mapping[str, Any] | None = None,
@@ -960,7 +1035,12 @@ def fire_shared_event(
     if planning_status not in valid_statuses:
         planning_status = "failed"
 
+    forecast = _fire_spread_projection(detected_event)
     details = FireDetails(
+        spread=forecast.get("spread"),
+        exposed_settlements=forecast.get("exposed_settlements") or [],
+        sites_at_risk=forecast.get("sites_at_risk") or [],
+        people_in_spread=forecast.get("people_in_spread"),
         detection_confidence=detected_event.get("detection_confidence"),
         fire_weather_severity=detected_event.get("fire_weather_severity"),
         risk_score=risk.get("risk_score"),
@@ -1198,6 +1278,15 @@ def project_processing_results(
         mapping_failure = None
         try:
             event = mapper(result, incident)
+            # One place, every hazard. The mappers know their own hazard and
+            # nothing about confirmation, and confirmation is the same question
+            # for all of them, so it is attached here rather than threaded
+            # through five mappers that would each have to remember to do it.
+            event = event.model_copy(
+                update={"confirmation": EventConfirmation.model_validate(
+                    confirmation_of(incident).as_dict()
+                )}
+            )
             if (
                 isinstance(event, FloodSharedEvent)
                 and result.preserve_existing_response

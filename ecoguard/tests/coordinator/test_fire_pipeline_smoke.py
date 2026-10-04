@@ -317,7 +317,10 @@ def test_fire_runs_from_shared_dispatch_to_frontend_contract_without_external_ca
     assert detected["event_type"] == "fire"
     assert detected["detected"] is True
     assert detected["satellite_evidence"]["selected_hotspot"]["frp"] == 64.0
-    assert "spread" not in detected
+    # The forecast travels on the detected event now. It used to be absent
+    # here and empty on the card, so an operator learned who was near a fire
+    # and never who was downwind of it.
+    assert "spread_forecast" in detected
     assert len(planner.calls) == 1
     assert planner.calls[0].incident_id == incident["id"]
     assert planner.calls[0].risk_context["risk_semantics"] == (
@@ -354,7 +357,18 @@ def test_fire_runs_from_shared_dispatch_to_frontend_contract_without_external_ca
     record = writes[0]
     assert record.event_payload["type"] == "fire"
     assert record.event_payload["details"]["risk_score"] == 68
-    assert record.event_payload["details"]["spread"] is None
+    # Where it goes next reaches the map: a ring to draw, a bearing, and a
+    # head distance. This asserted None while only the static seed script ever
+    # filled it.
+    spread = record.event_payload["details"]["spread"]
+    assert spread is not None, "the forecast must reach the frontend contract"
+    assert spread["heading_deg"] is not None
+    assert spread["head_distance_m"] > 0
+    assert spread["likely"]["type"] == "Polygon"
+    # And the settlements it reaches, each labelled so the map can colour it:
+    # red for one already burning, yellow for one in the path.
+    for settlement in record.event_payload["details"]["exposed_settlements"]:
+        assert settlement["exposure"] in {"burning", "likely", "possible"}
     assert record.event_payload["details"]["recommended_units"] == [
         "fire_department"
     ]

@@ -5,7 +5,8 @@ database for screenshots. This runs the *real* pipeline — the same detectors,
 coordinator, analysers and planners — over authored evidence, so the output can
 be graded against what the evidence was built to mean.
 
-Consumed by: the dashboard's Demo A and Demo B controls.
+Consumed by: the Demo scenarios page, which explains how the evidence was
+built before it offers to run it, and the dashboard's End-demo control.
 """
 
 from __future__ import annotations
@@ -25,6 +26,70 @@ SCENARIOS = {
     "demo_a": "ecoguard.demo.scenarios.demo_a",
     "demo_b": "ecoguard.demo.scenarios.demo_b",
 }
+
+
+# What each scenario is for, in the words the demo page shows before anyone
+# presses anything. Kept here rather than in the frontend so the description and
+# the thing described cannot drift apart.
+SCENARIO_BLURBS = {
+    "demo_a": (
+        "One event per hazard, each on its own, with noise around it. The "
+        "question it answers is whether the system finds what is there and "
+        "leaves alone what is not."
+    ),
+    "demo_b": (
+        "Events that overlap and interfere: two fires at once, an earthquake "
+        "with aftershocks, a claim repeated by three channels from one origin. "
+        "The question is whether the system can tell one event from two."
+    ),
+}
+
+
+def _ground_truth(scenario: str) -> list[dict]:
+    """The events a scenario was built to contain, as authored."""
+    from importlib import import_module
+
+    module = import_module(SCENARIOS[scenario])
+    return [dict(item) for item in getattr(module, "GROUND_TRUTH", ())]
+
+
+@router.get("/catalog")
+def scenario_catalog():
+    """Every scenario and the events it was built to contain.
+
+    Read before a run rather than after, so the page can say what the system is
+    about to be asked to find. Grading a run the operator has not been told the
+    shape of proves nothing to them.
+    """
+    catalog = []
+    for scenario in SCENARIOS:
+        try:
+            events = _ground_truth(scenario)
+        except Exception:
+            logger.exception("could not read the authored events for %s", scenario)
+            events = []
+        catalog.append(
+            {
+                "id": scenario,
+                "label": scenario.replace("_", " ").title(),
+                "blurb": SCENARIO_BLURBS.get(scenario, ""),
+                "event_count": len(events),
+                "events": [
+                    {
+                        "id": item.get("id"),
+                        "event": item.get("event"),
+                        "hazard": item.get("hazard"),
+                        "latitude": item.get("latitude"),
+                        "longitude": item.get("longitude"),
+                        "expect_route": item.get("expect_route"),
+                        "expect_detected": item.get("expect_detected"),
+                        "notes": item.get("expect_notes"),
+                    }
+                    for item in events
+                ],
+            }
+        )
+    return {"scenarios": catalog}
 
 
 def _seeder(scenario: str):

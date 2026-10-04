@@ -631,6 +631,22 @@ class AirPollutionDetails(EventContract):
         return self
 
 
+class EventConfirmation(EventContract):
+    """Whether this event is confirmed, and on whose word.
+
+    `basis` is what confirmed it: `instrument` when something measured it,
+    `operator` when a person marked it confirmed, and None when neither has.
+    An unconfirmed event is still fully analysed — the field governs how its
+    response plan should be read, not whether one exists.
+    """
+
+    status: Literal["confirmed", "unconfirmed"]
+    basis: Literal["instrument", "operator"] | None = None
+    detail: str | None = None
+    confirmed_at: AwareDatetime | None = None
+    confirmed_by: str | None = None
+
+
 class CommonSharedEvent(EventContract):
     id: str
     title: str
@@ -646,6 +662,10 @@ class CommonSharedEvent(EventContract):
         "success", "partial", "unavailable", "failed", "skipped"
     ]
     processing: EventProcessingMetadata | None = None
+    # Attached by the projection for every hazard, so the map and the card can
+    # mark an unconfirmed event without knowing which hazard it is. Optional so
+    # a projection written before this existed still validates.
+    confirmation: EventConfirmation | None = None
 
 
 class AirPollutionSharedEvent(CommonSharedEvent):
