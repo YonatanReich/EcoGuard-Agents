@@ -1,0 +1,58 @@
+{
+  "fixture_kind": "reconstructed_indexFastSrv_compatible_demo_evidence",
+  "reconstructed_demo_evidence": true,
+  "raw_historical_indexFastSrv_archived": false,
+  "provenance": {
+    "source_measurements": "288 original Ministry five-minute PM10 observations",
+    "raw_historical_indexFastSrv_unavailable": "Provider retention returns an empty response for 11 May 2024",
+    "formula_method": "Official Israeli PM10 index methodology",
+    "rolling_window_minutes": 1440,
+    "rolling_average_ug_m3": 119.10
+  },
+  "data": [
+    {
+      "stationId": 86,
+      "index": 10.69,
+      "description": "Reconstructed historical index (demo evidence; raw indexFastSrv unavailable)",
+      "color": "#f5d442",
+      "pollutant": "PM10",
+      "datetime": "2024-05-11T11:00:00+02:00",
+      "reconstructed_demo_evidence": true,
+      "indexes": [
+        {
+          "MonitorId": 15,
+          "pollutant": "PM10",
+          "pollutantId": 22,
+          "index": 10.69,
+          "value": 119.10,
+          "PollutantTimeBase": 1440,
+          "datetime": "2024-05-11T11:00:00+02:00",
+          "reconstructed_demo_evidence": true
+        }
+      ]
+    }
+  ],
+  "station_metadata_response": [
+    {
+      "regionId": 5,
+      "stations": [
+        {
+          "stationId": 86,
+          "name": "\u05e0\u05d5\u05d5\u05d4 \u05e9\u05d0\u05e0\u05df",
+          "active": true,
+          "location": {"latitude": 32.78739964, "longitude": 35.02128889},
+          "monitors": [
+            {
+              "channelId": 15,
+              "name": "PM10",
+              "pollutantId": 22,
+              "units": "\u00b5g/m\u00b3",
+              "active": true,
+              "state": "1"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

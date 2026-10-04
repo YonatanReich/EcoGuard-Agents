@@ -17,6 +17,7 @@ from typing import Iterator
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, event
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 
 load_dotenv()
@@ -31,6 +32,8 @@ if not DATABASE_URL:
         "postgresql+psycopg://user:password@host/dbname?sslmode=require "
         "(see .env.example)."
     )
+
+_TRANSACTION_POOLER = "-pooler" in (make_url(DATABASE_URL).host or "")
 
 # create_engine does not connect, so an unreachable host is discovered on first
 # use. pool_pre_ping discards connections a hosted Postgres has already closed,
@@ -198,6 +201,12 @@ def _apply_search_path(dbapi_connection, connection_record):
     pool handed connections round. Run outside a transaction, the statement
     changes the session default and survives every later rollback.
     """
+    # A transaction pooler can hand the next transaction to a different
+    # PostgreSQL backend, so session state set here is not a routing guarantee.
+    # The begin listeners below use SET LOCAL for that deployment shape.
+    if _TRANSACTION_POOLER:
+        return
+
     wanted = f'"{_sandbox_schema}", public' if _sandbox_schema else "public"
     previous = dbapi_connection.autocommit
     dbapi_connection.autocommit = True
@@ -222,6 +231,9 @@ def _pin_collector_to_public(dbapi_connection, connection_record):
     the default is what a future `ALTER ROLE ... SET search_path` would change
     without anyone connecting this file to the consequence.
     """
+    if _TRANSACTION_POOLER:
+        return
+
     previous = dbapi_connection.autocommit
     dbapi_connection.autocommit = True
     try:
@@ -232,3 +244,18 @@ def _pin_collector_to_public(dbapi_connection, connection_record):
             cursor.close()
     finally:
         dbapi_connection.autocommit = previous
+
+
+if _TRANSACTION_POOLER:
+    # PgBouncer-style transaction pooling does not preserve session settings
+    # between transactions. SET LOCAL is tied to the transaction itself, so
+    # every statement in that unit of work sees one deterministic world even
+    # when the proxy assigns a different backend on the next checkout.
+    @event.listens_for(engine, "begin")
+    def _apply_transaction_search_path(connection):
+        wanted = f'"{_sandbox_schema}", public' if _sandbox_schema else "public"
+        connection.exec_driver_sql(f"SET LOCAL search_path TO {wanted}")
+
+    @event.listens_for(collector_engine, "begin")
+    def _pin_collector_transaction_to_public(connection):
+        connection.exec_driver_sql("SET LOCAL search_path TO public")

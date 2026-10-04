@@ -205,6 +205,7 @@ def air_pollution_shared_event(
         severity = analysis.severity_assessment.result
         if severity is not None:
             index = severity.ministry_index
+            limitations.extend(index.limitations)
             ministry = MinistryAirQualityIndex(
                 station_id=index.station_id,
                 pollutant=index.pollutant,

@@ -18,7 +18,7 @@ from ecoguard.analyzers.air_pollution.transport_schemas import (
 )
 from ecoguard.detectors.air_pollution.schemas import GeographicCoordinate
 
-PERSISTED_WIND_SOURCES = ("weather", "ims_wind")
+PERSISTED_WIND_SOURCES = ("weather", "ims_wind", "metar_wind")
 
 
 class PersistedFirstWindEvidenceService:
@@ -161,14 +161,16 @@ class PersistedFirstWindEvidenceService:
                     "look_ahead_used": False,
                 },
             }
-            if source == "ims_wind":
+            if source in {"ims_wind", "metar_wind"}:
                 station_id = str(payload.get("provider_location_id") or row["cell_id"])
+                default_provider = "IMS" if source == "ims_wind" else "METAR"
+                evidence_prefix = "ims-wind" if source == "ims_wind" else "metar-wind"
                 return WindEvidence(
                     evidence_id=str(
                         payload.get("evidence_id")
-                        or f"ims-wind:{station_id}:{observed_at.isoformat()}"
+                        or f"{evidence_prefix}:{station_id}:{observed_at.isoformat()}"
                     ),
-                    provider=str(payload.get("provider") or "IMS"),
+                    provider=str(payload.get("provider") or default_provider),
                     source_type="station_observation",
                     provider_location_kind="station",
                     provider_location_id=station_id,

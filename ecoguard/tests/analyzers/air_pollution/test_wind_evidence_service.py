@@ -63,7 +63,7 @@ def test_fresh_db_wind_wins_without_live_or_write():
         POINT["longitude"],
         at=OBSERVED_AT,
         maximum_age_seconds=1800.0,
-        sources=("weather", "ims_wind"),
+        sources=("weather", "ims_wind", "metar_wind"),
     )
     live.select_wind_evidence.assert_not_called()
     writer.assert_not_called()

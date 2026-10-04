@@ -1,0 +1,17 @@
+{
+  "source": "metar_wind",
+  "provider": "METAR",
+  "station_id": "LLHA",
+  "station_name": "Haifa Airport",
+  "observed_at": "2024-05-11T07:50:00Z",
+  "latitude": 32.8094,
+  "longitude": 35.0431,
+  "wind_from_direction_deg": 310.0,
+  "wind_speed_knots": 8.0,
+  "wind_speed_kmh": 14.816,
+  "gust_speed": null,
+  "variable_direction_from_deg": 280.0,
+  "variable_direction_to_deg": 340.0,
+  "raw_metar": "LLHA 110750Z 31008KT 280V340 4500 HZ NSC 26/15 Q1010",
+  "reference": "Historical measured METAR observation supplied for deterministic scenario replay"
+}

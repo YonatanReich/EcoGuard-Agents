@@ -1,0 +1,60 @@
+{
+  "summary": "Grounded particulate-pollution public-health and monitoring recommendations.",
+  "recommended_authority_types": [
+    "public_health_authority",
+    "environmental_protection_authority"
+  ],
+  "recommended_resource_types": [
+    "public_health_advisory",
+    "air_quality_monitoring"
+  ],
+  "actions": [
+    {
+      "recommendation": "If authorities confirm an applicable severe particulate-pollution advisory, communicate its advice: vulnerable groups avoid strenuous outdoor activity; others reduce it.",
+      "rationale": "The recorded external-model proposal selects the reviewed particulate advisory action; production grounding still verifies it.",
+      "responsible_authority_type": "public_health_authority",
+      "resource_type": "public_health_advisory",
+      "timeframe": "not_specified",
+      "priority": "not_specified",
+      "supporting_chunk_ids": [
+        "israel-particulate-advisory#pm2-5-and-pm10-conditional-protective#0"
+      ],
+      "supporting_analysis_evidence_ids": [],
+      "spatial_relevance": "The recommendation remains conditional; corridor screening does not prove exposure."
+    },
+    {
+      "recommendation": "Use official air-quality monitoring information and follow Ministry of Environmental Protection public updates.",
+      "rationale": "The recorded external-model proposal selects the reviewed monitoring action; production grounding still verifies it.",
+      "responsible_authority_type": "environmental_protection_authority",
+      "resource_type": "air_quality_monitoring",
+      "timeframe": "not_specified",
+      "priority": "not_specified",
+      "supporting_chunk_ids": [
+        "israel-air-monitoring#pm2-5-and-pm10-monitoring-and#0"
+      ],
+      "supporting_analysis_evidence_ids": [],
+      "spatial_relevance": "Use the historical measurement and official-evidence replay as monitoring context only."
+    }
+  ],
+  "assumptions": [],
+  "evidence_gaps": [
+    "The original historical indexFastSrv response is unavailable; publication evidence is reconstructed from original five-minute measurements."
+  ],
+  "limitations": [
+    "PM10 trend inference is unavailable because the current production manifest has no accepted model."
+  ],
+  "protocol_citations": [
+    {
+      "chunk_id": "israel-particulate-advisory#pm2-5-and-pm10-conditional-protective#0",
+      "document_title": "Israel: particulate-pollution public-health advisory",
+      "quoted_text": "If authorities confirm an applicable severe particulate-pollution advisory, communicate its advice: vulnerable groups avoid strenuous outdoor activity; others reduce it.",
+      "supports": "Conditional protective advice for a severe particulate-pollution advisory."
+    },
+    {
+      "chunk_id": "israel-air-monitoring#pm2-5-and-pm10-monitoring-and#0",
+      "document_title": "Israel: air monitoring and public information responsibilities",
+      "quoted_text": "Use official air-quality monitoring information and follow Ministry of Environmental Protection public updates.",
+      "supports": "Continued use of official monitoring and public updates."
+    }
+  ]
+}

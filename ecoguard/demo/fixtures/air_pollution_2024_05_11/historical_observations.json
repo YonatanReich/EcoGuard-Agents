@@ -1,0 +1,73 @@
+{
+  "schema_version": "ecoguard-historical-air-pollution-scenario-v1",
+  "source": "Israel Ministry of Environmental Protection / Envista",
+  "source_cache": "air-pollution-five-minute-cache-v1",
+  "event_date": "2024-05-11",
+  "retrospective_baseline_note": "Evaluated against EcoGuard's current active 2021-2025 five-minute baselines, not a baseline frozen on the event date.",
+  "stations": [
+    {
+      "station_id": "86",
+      "station_name": "\u05e0\u05d5\u05d5\u05d4 \u05e9\u05d0\u05e0\u05df",
+      "channel_id": "15",
+      "pollutant": "PM10",
+      "latitude": 32.78739964,
+      "longitude": 35.02128889,
+      "cache_file": "station_86/channel_15_pm10/2024-05.json.gz",
+      "cache_point_count": 8902,
+      "request_semantics": {
+        "resolution": "provider five-minute averages",
+        "timeBeginning": false,
+        "quality_filter_applied": false,
+        "unit_filter_applied": false,
+        "off_grid_filter_applied": false
+      },
+      "point": {
+        "datetime": "2024-05-11T10:45:00+02:00",
+        "channels": [
+          {
+            "PollutantId": 22,
+            "id": 15,
+            "name": "PM10",
+            "status": 1,
+            "units": "\u00b5g/m\u00b3",
+            "valid": true,
+            "value": 816.2,
+            "value_date": null
+          }
+        ]
+      }
+    },
+    {
+      "station_id": "87",
+      "station_name": "\u05e0\u05e9\u05e8",
+      "channel_id": "15",
+      "pollutant": "PM10",
+      "latitude": 32.77020644,
+      "longitude": 35.04248829,
+      "cache_file": "station_87/channel_15_pm10/2024-05.json.gz",
+      "cache_point_count": 8890,
+      "request_semantics": {
+        "resolution": "provider five-minute averages",
+        "timeBeginning": false,
+        "quality_filter_applied": false,
+        "unit_filter_applied": false,
+        "off_grid_filter_applied": false
+      },
+      "point": {
+        "datetime": "2024-05-11T10:45:00+02:00",
+        "channels": [
+          {
+            "PollutantId": 22,
+            "id": 15,
+            "name": "PM10",
+            "status": 1,
+            "units": "\u00b5g/m\u00b3",
+            "valid": true,
+            "value": 773.4,
+            "value_date": null
+          }
+        ]
+      }
+    }
+  ]
+}

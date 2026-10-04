@@ -552,6 +552,20 @@ class MinistryAirQualityClient:
                     rejected.add("driving_pollutant_unavailable")
                     continue
                 retrieved_at = self.clock().astimezone(timezone.utc)
+                reconstructed_demo = (
+                    _mapping_value(row, "reconstructed_demo_evidence") is True
+                    or _mapping_value(detail, "reconstructed_demo_evidence") is True
+                )
+                limitations = [
+                    "Source-native Ministry category; no EcoGuard LOW/MEDIUM/HIGH mapping.",
+                    "Preliminary provider data may change after validation.",
+                    "The index concentration uses its provider averaging window and is not the triggering five-minute measurement.",
+                ]
+                if reconstructed_demo:
+                    limitations.extend([
+                        "RECONSTRUCTED DEMO EVIDENCE: this is not an archived raw Ministry indexFastSrv response.",
+                        "The historical provider response was unavailable due to retention; the value was reconstructed from original Ministry five-minute observations using the official Israeli PM10 index methodology.",
+                    ])
                 matches.append(
                     MinistryAirQualityIndexEvidence(
                         station_id=station_id,
@@ -580,11 +594,7 @@ class MinistryAirQualityClient:
                             f"{provider_time.isoformat()}"
                         ),
                         retrieved_at=retrieved_at,
-                        limitations=[
-                            "Source-native Ministry category; no EcoGuard LOW/MEDIUM/HIGH mapping.",
-                            "Preliminary provider data may change after validation.",
-                            "The index concentration uses its provider averaging window and is not the triggering five-minute measurement.",
-                        ],
+                        limitations=limitations,
                     )
                 )
         if matches:
