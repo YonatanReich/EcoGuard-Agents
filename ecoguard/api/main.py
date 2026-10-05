@@ -6,6 +6,7 @@ detectors, analyzers and planners.
 
 Run locally with `uvicorn ecoguard.api.main:app --reload`."""
 
+import hashlib
 import logging
 import os
 import time
@@ -14,6 +15,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from ecoguard.shared.geospatial_context import GeospatialContextAgent
 from ecoguard.shared.weather_reader import WeatherDataAgent
@@ -24,11 +26,15 @@ from ecoguard.api.scenario import router as scenario_router
 from ecoguard.api.weak_events import router as weak_events_router
 from ecoguard.api.demo import router as demo_router
 from ecoguard.api.pipeline import router as pipeline_router
+from ecoguard.api.improvement import router as improvement_router
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
+# One INFO line per outbound request, each carrying the Mapbox access token in
+# its URL. Our own clients log what matters (Claude usage, routing outcomes).
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -69,6 +75,7 @@ app.include_router(weak_events_router)
 app.include_router(scenario_router)
 app.include_router(demo_router)
 app.include_router(pipeline_router)
+app.include_router(improvement_router)
 
 # Allow the Vite dev server to call the API directly during development.
 # Both localhost and 127.0.0.1 are listed because browsers treat them as
@@ -95,6 +102,38 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# The dashboard polls. Through a tunnel every byte counts - a free Pinggy
+# session closed after 7.4 MB in 30 minutes - and the feed is the bulk of it:
+# ~150 KB with two fires (route geometry is most of that), re-sent every 15 s
+# even when nothing changed. Two fixes, both invisible to the frontend:
+#
+#   ETag   an unchanged GET answers 304 with no body. `no-cache` makes the
+#          browser revalidate every time, so it never shows a stale feed.
+#   gzip   what does go out is ~6x smaller.
+@app.middleware("http")
+async def etag_api_reads(request, call_next):
+    """304 for an API read the browser already holds."""
+    response = await call_next(request)
+    if (
+        request.method != "GET"
+        or not request.url.path.startswith("/api/")
+        or response.status_code != 200
+    ):
+        return response
+    body = b"".join([chunk async for chunk in response.body_iterator])
+    tag = f'"{hashlib.blake2b(body, digest_size=16).hexdigest()}"'
+    if request.headers.get("if-none-match") == tag:
+        return Response(status_code=304, headers={"etag": tag, "cache-control": "no-cache"})
+    headers = {k: v for k, v in response.headers.items() if k.lower() != "content-length"}
+    headers.update({"etag": tag, "cache-control": "no-cache"})
+    return Response(content=body, status_code=200, headers=headers)
+
+
+# Added last so it wraps everything above: the ETag is of the uncompressed
+# body, and a 304 has nothing to compress.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Agents are stateless and hold only configuration, so one shared instance
 # each is enough for the whole process — no need to build them per request.

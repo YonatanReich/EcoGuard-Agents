@@ -44,7 +44,7 @@ def grade(scenario: str, *, schema: str | None = None) -> dict[str, Any]:
 
     incidents = _rows(target, """
         SELECT id, primary_hazard, hazards::text AS hazards, queues::text AS queues,
-               status, latitude, longitude, signal_count, last_signal_at
+               status, latitude, longitude, signal_count, last_signal_at, signals, cells
         FROM {s}.incidents ORDER BY id
     """)
     projections = _rows(target, """
@@ -68,10 +68,10 @@ def grade(scenario: str, *, schema: str | None = None) -> dict[str, Any]:
         # Demo B's two nearby fires: a nearest-neighbour grader that reused a
         # row could claim both fires passed even if the coordinator merged
         # them into one.
-        match, distance = _closest(
-            incidents,
-            expected,
-            excluded=claimed_incidents,
+        match, distance = (
+            _by_cell(incidents, expected, excluded=claimed_incidents)
+            if expected.get("expect_cell")
+            else _closest(incidents, expected, excluded=claimed_incidents)
         )
         entry: dict[str, Any] = {
             "id": expected["id"],
@@ -81,7 +81,10 @@ def grade(scenario: str, *, schema: str | None = None) -> dict[str, Any]:
             "notes": expected["expect_notes"],
         }
         if match is None:
-            entry.update(verdict="MISS", detail="no incident within 25 km of the event")
+            entry.update(verdict="MISS", detail=(
+                f"no incident in cell {expected['expect_cell']}" if expected.get("expect_cell")
+                else "no incident within 25 km of the event"
+            ))
             findings.append(entry)
             continue
         claimed_incidents.add(match["id"])
@@ -123,6 +126,7 @@ def grade(scenario: str, *, schema: str | None = None) -> dict[str, Any]:
                 expected.get("expect_allocation")
                 and allocation_succeeded
             )
+            and not _grounded_partial(projection, details)
         ):
             problems.append(f"planner {projection.get('planner_status')!r}")
         minimum_signals = int(expected.get("expect_min_signals") or 1)
@@ -139,10 +143,33 @@ def grade(scenario: str, *, schema: str | None = None) -> dict[str, Any]:
                 f"allocated units {allocated_units!r}, expected "
                 f"{sorted(expected_units)!r}"
             )
+        expected_confirmation = expected.get("expect_confirmation")
+        confirmation = (payload.get("confirmation") or {}).get("status")
+        if expected_confirmation and confirmation != expected_confirmation:
+            problems.append(f"confirmation {confirmation!r}, expected {expected_confirmation!r}")
+        # The incident report a fire must carry: where it goes and how bad
+        # that is. Without both, an operator has a marker and no picture.
+        if expected.get("expect_spread"):
+            if not (details.get("spread") or {}).get("likely"):
+                problems.append("no spread forecast drawn")
+            if details.get("risk_level") is None:
+                problems.append("no spread risk level")
         if expected.get("expect_routing") and routing_status != "complete":
             problems.append(
                 f"allocation routing {routing_status!r}, expected 'complete'"
             )
+        # "skipped" passes above because advisory events skip planning; an
+        # event that is meant to have a plan must not pass on a skipped one.
+        if expected.get("expect_plan") and not (
+            projection.get("planner_status") == "success"
+            or _grounded_partial(projection, details)
+        ):
+            problems.append(
+                f"no response plan: planner {projection.get('planner_status')!r}"
+                + (f" after {projection.get('failure_reason')}" if projection.get("failure_reason") else "")
+            )
+        plan = _plan_findings(expected, match, details)
+        problems.extend(plan.pop("problems"))
 
         entry.update(
             incident_id=match["id"],
@@ -157,6 +184,7 @@ def grade(scenario: str, *, schema: str | None = None) -> dict[str, Any]:
             allocation_routing_status=routing_status,
             title=payload.get("title"),
             description=payload.get("description"),
+            **plan,
             verdict="PASS" if not problems else "PARTIAL",
             problems=problems,
         )
@@ -191,11 +219,17 @@ def grade(scenario: str, *, schema: str | None = None) -> dict[str, Any]:
     ]
 
     passed = sum(1 for entry in findings if entry["verdict"] == "PASS")
+    # Most scenarios need every event. One may accept fewer when its events
+    # are many samples of one story (13 regions of one national episode), so a
+    # single planner wording slip does not fail a picture that is plainly right.
+    required = getattr(module, "REQUIRED_PASSES", len(module.GROUND_TRUTH))
     return {
         "scenario": scenario,
         "schema": target,
         "events_expected": len(module.GROUND_TRUTH),
         "events_passed": passed,
+        "required_passes": required,
+        "scenario_passed": passed >= required,
         "events_partial": sum(1 for e in findings if e["verdict"] == "PARTIAL"),
         "events_missed": sum(1 for e in findings if e["verdict"] == "MISS"),
         "spurious_incidents": spurious,
@@ -206,6 +240,148 @@ def grade(scenario: str, *, schema: str | None = None) -> dict[str, Any]:
         "classifier_total": len(candidates),
         "incident_count": len(incidents),
     }
+
+
+def _grounded_partial(projection: dict[str, Any], details: dict[str, Any]) -> bool:
+    """A partial plan that is still a verified plan.
+
+    The planner marks a plan partial in two cases (planners/shared/schemas.py):
+    unverifiable actions were dropped and the verified rest kept, or nothing
+    could be verified at all. Only the first is a usable plan, and it is the
+    grounding guard working, not failing. The second keeps no citations.
+    """
+    return (
+        projection.get("planner_status") == "partial"
+        and bool(details.get("response_actions"))
+        and any(c.get("verified") for c in details.get("protocol_citations") or ())
+    )
+
+
+def _name(value: Any) -> str:
+    """A settlement name reduced to what two spellings of it share."""
+    return "".join(ch for ch in str(value or "") if ch.isalnum())
+
+
+def _plan_findings(
+    expected: dict[str, Any], incident: dict[str, Any], details: dict[str, Any]
+) -> dict[str, Any]:
+    """Grade the response plan against what actually happened. Opt-in per event.
+
+    Only the historical fire demo sets these keys. The ground truth is what the
+    fire really did inside the forecast horizon, so a settlement the fire
+    reached that the plan never mentions is a miss, not a matter of taste.
+    """
+    problems: list[str] = []
+    signals = incident.get("signals") or []
+    if isinstance(signals, str):
+        signals = json.loads(signals)
+    text_reports = sum(1 for s in signals if s.get("variable") == "report")
+    instrument = sum(1 for s in signals if s.get("variable") != "report")
+
+    minimum_reports = expected.get("expect_min_text_reports")
+    if minimum_reports is not None and text_reports < minimum_reports:
+        problems.append(
+            f"{text_reports} news/text report(s) joined, expected at least {minimum_reports}"
+        )
+    minimum_instrument = expected.get("expect_min_instrument_signals")
+    if minimum_instrument is not None and instrument < minimum_instrument:
+        problems.append(
+            f"{instrument} instrument signal(s), expected at least {minimum_instrument}"
+        )
+
+    exposed = details.get("exposed_settlements") or []
+    evacuation = details.get("evacuation") or []
+    warned = {_name(item.get("name_he")) for item in [*exposed, *evacuation]}
+    told_to_move = {
+        _name(item.get("name_he")): item for item in evacuation
+        if item.get("priority") in {"immediate", "prepare"}
+    }
+
+    missed_warnings = [
+        name for name in expected.get("expect_warned", []) if _name(name) not in warned
+    ]
+    if missed_warnings:
+        problems.append(f"fire reached but never warned: {', '.join(missed_warnings)}")
+
+    missed_evacuations = [
+        name for name in expected.get("expect_evacuate", [])
+        if _name(name) not in told_to_move
+    ]
+    if missed_evacuations:
+        problems.append(
+            f"evacuated in reality, not told to evacuate/prepare: {', '.join(missed_evacuations)}"
+        )
+
+    # Who to call: every settlement the plan tells to move must say who is
+    # responsible for it and how to reach them.
+    # "ללא שיפוט" (no jurisdiction) is the towns table saying it has no
+    # authority for the place, which is not a contact anyone can ring.
+    uncontactable = [
+        item.get("name_he") for item in told_to_move.values()
+        if not (item.get("authority") and "ללא שיפוט" not in str(item.get("authority"))
+                and item.get("authority_phone")
+                and item.get("police_station") and item.get("fire_district"))
+    ]
+    if expected.get("expect_evacuate") and uncontactable:
+        problems.append(f"no full contact line (authority, phone, police, fire district) for: "
+                        f"{', '.join(map(str, uncontactable))}")
+
+    # Advisories: classified as the authority classified it, and carrying the
+    # authority's advice. Text is matched case-insensitively as a substring.
+    allowed = expected.get("expect_classification")
+    if allowed:
+        official = (details.get("official_pollutant_classification") or {}).get("classification")
+        if official not in allowed:
+            problems.append(f"classification {official!r}, expected one of {allowed}")
+    advice = " ".join(
+        str(item.get("recommendation") or "") for item in details.get("recommendations") or ()
+    ).lower()
+    missing_advice = [phrase for phrase in expected.get("expect_advice", []) if phrase.lower() not in advice]
+    if missing_advice:
+        problems.append(f"advice missing: {'; '.join(missing_advice)}")
+
+    district = expected.get("expect_fire_district")
+    if district:
+        districts = {item.get("fire_district") for item in exposed[:3]}
+        if district not in districts:
+            problems.append(f"fire district {sorted(map(str, districts))}, expected {district!r}")
+
+    if not expected.get("expect_warned") and minimum_reports is None:
+        return {"problems": problems}
+    return {
+        "problems": problems,
+        "text_reports": text_reports,
+        "instrument_signals": instrument,
+        "warned": sorted(item.get("name_he") or "" for item in exposed),
+        "evacuate": [
+            f"{item.get('name_he')} ({item.get('priority')})" for item in evacuation
+        ],
+    }
+
+
+def _by_cell(incidents, expected, *, excluded: set[str] | None = None):
+    """The incident that holds the expected cell; distance to the nearest expected point.
+
+    For events whose identity is a place on the grid - an air-pollution region
+    reports under its anchor cell - matching by nearest distance picks a
+    neighbouring region's card. The marker must still sit on one of the
+    places listed in `expect_points` (the region's stations).
+    """
+    excluded = excluded or set()
+    for row in incidents:
+        cells = row.get("cells") or []
+        if isinstance(cells, str):
+            cells = cells.strip("{}").split(",")
+        if row["id"] in excluded or expected["expect_cell"] not in cells:
+            continue
+        if row["latitude"] is None or row["longitude"] is None:
+            return row, float("inf")
+        points = expected.get("expect_points") or [(expected["latitude"], expected["longitude"])]
+        return row, min(
+            _distance_km(lat, lon, float(row["latitude"]), float(row["longitude"]))
+            for lat, lon in points
+        )
+    return None, None
 
 
 def _closest(incidents, expected, *, excluded: set[str] | None = None):
@@ -239,8 +415,9 @@ def main() -> int:
     scenario = sys.argv[1] if len(sys.argv) > 1 else "demo_a"
     report = grade(scenario)
 
-    print(f"\n{report['scenario']}  —  {report['events_passed']}/"
-          f"{report['events_expected']} events passed, "
+    print(f"\n{report['scenario']}  —  {'PASS' if report['scenario_passed'] else 'FAIL'}: "
+          f"{report['events_passed']}/{report['events_expected']} events passed "
+          f"(needs {report['required_passes']}), "
           f"{report['events_partial']} partial, {report['events_missed']} missed")
     print(f"{report['incident_count']} incidents, "
           f"{len(report['spurious_incidents'])} unaccounted for\n")
@@ -259,6 +436,11 @@ def main() -> int:
             )
         if entry.get("title"):
             print(f"            title: {entry['title']}")
+        if "warned" in entry:
+            print(f"            evidence: {entry['instrument_signals']} instrument, "
+                  f"{entry['text_reports']} news/text")
+            print(f"            warned:   {', '.join(entry['warned']) or '-'}")
+            print(f"            evacuate: {', '.join(entry['evacuate']) or '-'}")
         for problem in entry.get("problems", []):
             print(f"            ! {problem}")
         print()

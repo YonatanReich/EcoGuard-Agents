@@ -6,12 +6,12 @@
  * "live" means for each box. Keep the two in step when an actor moves.
  */
 
-export type StageId = 'detectors' | 'coordinator' | 'analyzers' | 'planners' | 'allocator'
+export type StageId = 'detectors' | 'coordinator' | 'analyzers' | 'planners' | 'allocator' | 'improvement'
 
 export type ActorIcon =
   | 'fire' | 'flood' | 'earthquake' | 'air_pollution'
   | 'satellite' | 'thermometer' | 'message' | 'funnel' | 'send'
-  | 'merge' | 'droplet' | 'clipboard' | 'truck'
+  | 'merge' | 'droplet' | 'clipboard' | 'truck' | 'lightbulb'
 
 export type Actor = {
   id: string
@@ -34,6 +34,7 @@ export const STAGES: Array<{ id: StageId; name: string; summary: string }> = [
   { id: 'analyzers', name: 'Analysers', summary: 'Work out what each incident means on the ground.' },
   { id: 'planners', name: 'Response planners', summary: 'Write the protocol-grounded plan of action.' },
   { id: 'allocator', name: 'Resource allocator', summary: 'Commits and routes the units for emergencies.' },
+  { id: 'improvement', name: 'Improvement', summary: 'Once a day, learns from what operators said about handled events.' },
 ]
 
 const WAVE = 'Every pipeline wave, every 10 minutes.'
@@ -321,5 +322,25 @@ export const ACTORS: Actor[] = [
     basedOn: ['Fire, police and MDA station catalogue', 'Mapbox Directions'],
     runs: 'Per wave, for the emergencies it produced.',
     wiredTo: 'resource_allocator/allocation_agent.py · allocate_processing_results',
+  },
+
+  // ----- Improvement -----
+  {
+    id: 'improvement_agent',
+    stage: 'improvement',
+    name: 'Improvement agent',
+    accent: '#8cc63f',
+    icon: 'lightbulb',
+    summary: 'Investigates operator feedback and reports to the developers.',
+    role: 'Closes the loop. When operators mark an event handled they say whether it was real and how accurate the plan and details were. This agent reads that feedback, works out why things went wrong or right, and writes a report for the developers. It only reads; it never changes the system.',
+    how: [
+      'Collects every handled event nobody has reported on yet, each with a snapshot of the evidence, details and plan the operator saw.',
+      'Decides for itself what to investigate: which snapshots to open, which code to trace a complaint into, which commits might explain a change.',
+      'Reads its own earlier reports and checks whether their suggestions were acted on and moved the numbers.',
+      'Writes the report: problems, strengths, trends, ranked suggestions and follow-ups, with the counts computed rather than estimated.',
+    ],
+    basedOn: ['Operator feedback on handled events', 'The EcoGuard source code and git history', 'Its earlier reports', 'Claude'],
+    runs: 'Once a day, and only when there is new feedback.',
+    wiredTo: 'improvement/agent.py · investigate',
   },
 ]

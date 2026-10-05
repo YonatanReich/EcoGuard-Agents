@@ -355,3 +355,17 @@
         transition: none;
     }
 }
+
+/* The improvement agent's latest report: the full row under the four facts. */
+.actor-panel__report {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.actor-panel__report-meta {
+    color: var(--ops-muted);
+    font-size: 0.78rem !important;
+}

@@ -16,6 +16,11 @@ from __future__ import annotations
 import logging
 from typing import Any, Mapping
 
+from sqlalchemy import text
+
+from ecoguard.database.engine import Session
+from ecoguard.shared.concurrency import concurrently
+
 logger = logging.getLogger(__name__)
 
 # The published bounds of each fire-danger band. The provider serves a band
@@ -155,15 +160,26 @@ def geospatial_context_at(
         for item in nearest[:MAX_SETTLEMENTS]
     ]
 
-    try:
-        from ecoguard.database.repositories.responsible_services import (
-            responsible_parties_at,
-        )
+    def read_parties():
+        try:
+            from ecoguard.database.repositories.responsible_services import (
+                responsible_parties_at,
+            )
 
-        parties = responsible_parties_at(latitude=latitude, longitude=longitude)
-    except Exception:
-        logger.exception("could not read who is responsible for the incident location")
-        parties = {}
+            return responsible_parties_at(latitude=latitude, longitude=longitude)
+        except Exception:
+            logger.exception("could not read who is responsible for the incident location")
+            return {}
+
+    def read_roads():
+        try:
+            return main_roads_near(latitude, longitude)
+        except Exception:
+            logger.exception("could not read roads near the incident")
+            return None
+
+    # Two round trips to a database ~165 ms away; side by side, not in turn.
+    parties, roads = concurrently(read_parties, read_roads)
 
     def station(key: str) -> list[dict[str, Any]]:
         """One responsible station as a one-item list, or empty when there is none."""
@@ -190,14 +206,58 @@ def geospatial_context_at(
         "nearby_fire_stations": station("nearest_fire_station"),
         "nearby_police_stations": station("police_station"),
         "nearby_hospitals": station("nearest_mda_station"),
-        # Roads are not held as a national layer, so this stays empty rather
-        # than claiming a search found none.
-        "nearby_roads": [],
+        "nearby_roads": roads or [],
         "responsible_authority": (parties or {}).get("authority"),
     }
 
 
-def spread_forecast_for(incident: Mapping[str, Any]) -> dict[str, Any] | None:
+ROAD_RADIUS_M = 3_000.0
+MAX_ROADS = 8
+
+# The national OSM road layer the flood collector imports. Numbered highways
+# first - they are the access and evacuation routes - then nearer streets.
+_MAIN_ROADS = text(
+    """
+    SELECT name, ref, type, latitude, longitude, distance_m FROM (
+      SELECT DISTINCT ON (COALESCE('ref:' || road_ref, 'name:' || name))
+             name, road_ref AS ref, road_class AS type,
+             ST_Y(ST_ClosestPoint(geometry, p)) AS latitude,
+             ST_X(ST_ClosestPoint(geometry, p)) AS longitude,
+             ST_Distance(geometry::geography, p::geography) AS distance_m
+      FROM public.road_segments, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326) AS p
+      WHERE road_class IN ('motorway', 'trunk', 'primary', 'secondary')
+        AND COALESCE(road_ref, name) IS NOT NULL
+        AND geometry && ST_Expand(p, 0.04)
+        AND ST_DWithin(geometry::geography, p::geography, :radius)
+      ORDER BY COALESCE('ref:' || road_ref, 'name:' || name), distance_m
+    ) roads
+    ORDER BY CASE type WHEN 'motorway' THEN 0 WHEN 'trunk' THEN 1
+                       WHEN 'primary' THEN 2 ELSE 3 END,
+             distance_m
+    LIMIT :limit
+    """
+)
+
+
+def main_roads_near(latitude: float, longitude: float) -> list[dict[str, Any]]:
+    """The main roads within a few km, one row per road, in the shape the
+    assessment already reads (name, ref, type, closest point)."""
+    with Session() as session:
+        rows = session.execute(
+            _MAIN_ROADS,
+            {"lat": latitude, "lon": longitude, "radius": ROAD_RADIUS_M, "limit": MAX_ROADS},
+        ).mappings().all()
+    return [
+        {**row, "distance_m": round(float(row["distance_m"]))} for row in rows
+    ]
+
+
+def spread_forecast_for(
+    incident: Mapping[str, Any],
+    *,
+    environment: Mapping[str, Any] | None = None,
+    localities: Any = None,
+) -> dict[str, Any] | None:
     """Where this fire is forecast to go, and which settlements that reaches.
 
     The spread model, the exposure calculation and the settlement lookup have
@@ -215,21 +275,60 @@ def spread_forecast_for(incident: Mapping[str, Any]) -> dict[str, Any] | None:
     if incident.get("latitude") is None or incident.get("longitude") is None:
         return None
     try:
-        report = spread_analyzer.analyze_incident(incident)
+        report = spread_analyzer.analyze_incident(
+            incident, environment=environment, localities=localities,
+        )
     except Exception:
         logger.exception("could not forecast spread for the incident")
         return None
     return report if report.get("status") == "ok" else None
 
 
-def stored_context_for(incident: Mapping[str, Any]) -> dict[str, Any]:
+def shared_reads(incident: Mapping[str, Any]) -> tuple[Any, Any]:
+    """The environment and nearby settlements, read once and concurrently.
+
+    Both the stored context and the spread forecast need the same two reads
+    (same point, same 25 km radius), and each read alone is a run of queries to
+    a database ~165 ms away. Read separately and twice, they were the larger
+    part of the time before an operator saw the card.
+
+    Never raises; a read that fails comes back None, and each consumer already
+    reports that as its own gap.
+    """
+    from ecoguard.analyzers.fire.environment import environment_for, localities_for
+
+    def environment():
+        try:
+            return environment_for(incident)
+        except Exception:
+            logger.exception("could not read the environment around the incident")
+            return None
+
+    def localities():
+        try:
+            return localities_for(incident, radius_m=SETTLEMENT_RADIUS_M)
+        except Exception:
+            logger.exception("could not read settlements near the incident")
+            return None
+
+    return concurrently(environment, localities)
+
+
+_UNREAD = object()
+
+
+def stored_context_for(
+    incident: Mapping[str, Any],
+    *,
+    environment: Any = _UNREAD,
+    localities: Any = _UNREAD,
+) -> dict[str, Any]:
     """The three enrichments for one incident, each reporting its own failure.
 
     Never raises: a store that cannot be read produces sections that say so,
     because an incident with no surroundings is still worth assessing.
+    `environment` and `localities` may be passed in when already read.
     """
-    from ecoguard.analyzers.fire.environment import environment_for, localities_for
-
     latitude, longitude = incident.get("latitude"), incident.get("longitude")
     if latitude is None or longitude is None:
         return {
@@ -238,17 +337,9 @@ def stored_context_for(incident: Mapping[str, Any]) -> dict[str, Any]:
             "geospatial_context": None,
         }
 
-    try:
-        environment = environment_for(incident)
-    except Exception:
-        logger.exception("could not read the environment around the incident")
-        environment = None
-
-    try:
-        localities = localities_for(incident, radius_m=SETTLEMENT_RADIUS_M)
-    except Exception:
-        logger.exception("could not read settlements near the incident")
-        localities = ()
+    if environment is _UNREAD or localities is _UNREAD:
+        environment, localities = shared_reads(incident)
+    localities = localities or ()
 
     return {
         "fire_danger": fire_danger_from(environment),

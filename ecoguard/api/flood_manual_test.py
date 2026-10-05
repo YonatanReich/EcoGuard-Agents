@@ -274,7 +274,9 @@ class MemoryIncidentStore:
         self.rows[incident_id] = row
         return deepcopy(row)
 
-    def attach_signal(self, incident_id: str, signal: CellSignal) -> dict[str, Any]:
+    def attach_signal(
+        self, incident_id: str, signal: CellSignal, *, current=None
+    ) -> dict[str, Any]:
         """Add another detection to an incident already open."""
         row = self.rows[incident_id]
         if signal.cell_id not in row["cells"]:

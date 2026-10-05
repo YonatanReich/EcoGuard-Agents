@@ -1,0 +1,909 @@
+{
+ "_about": "Real news items about each fire, collected from the outlets' archives with their URLs. Summaries are paraphrased. Times are as printed on the article (Israel local time). Only outlets on the live RSS allowlist are seeded; the rest are kept for the record. `content_as_of`, where present, is when an article's archived (updated) text became true; that time is used instead of first publication so later facts cannot leak backwards.",
+ "carmel_2010": [
+  {
+   "outlet": "ynet",
+   "language": "he",
+   "published_local": "2010-12-02 12:02",
+   "title": "שריפת יער גדולה פרצה ליד עוספיה",
+   "summary": "מבזק ראשון: שריפת יער גדולה פרצה סמוך לעוספיה, אין נפגעים אך האש מאיימת על בתים וצוותי כיבוי רבים הוזעקו. (Flash text known only via ynet's later timeline; original flash URL not found.)",
+   "places_mentioned": [
+    "עוספיה"
+   ],
+   "url": "https://www.ynet.co.il/articles/0,7340,L-3994795,00.html",
+   "note": "Flash text as reproduced in ynet's own later timeline; the original flash URL was not found."
+  },
+  {
+   "outlet": "ynet",
+   "language": "he",
+   "published_local": "2010-12-02 12:37",
+   "title": "שריפת ענק בכרמל: תושבים ואסירים מפונים",
+   "summary": "שריפה גדולה פרצה בכרמל ומתפשטת במהירות ברוח מזרחית חזקה. תושבי קיבוץ בית אורן מפונים, נערכים לפינוי כ-500 אסירים מכלא דמון ומלון יערות הכרמל; 15 צוותי כיבוי ומטוסים פועלים, שני פצועים קל.",
+   "places_mentioned": [
+    "קיבוץ בית אורן",
+    "כלא דמון",
+    "עוספיה",
+    "מלון יערות הכרמל",
+    "אוניברסיטת חיפה",
+    "חיפה",
+    "מועצה אזורית חוף הכרמל",
+    "הכביש בין צומת דמון לעתלית",
+    "נחל חיק"
+   ],
+   "url": "https://www.ynet.co.il/articles/0,7340,L-3993156,00.html",
+   "content_as_of": "2010-12-02 13:06",
+   "note": "First published 12:37; the archived text reports the Beit Oren evacuation, which ynet first reported at 13:06."
+  },
+  {
+   "outlet": "haipo",
+   "language": "he",
+   "published_local": "2010-12-02 14:00",
+   "title": "השרפה בכרמל - דף המבזקים של חי פה שקפא בזמן מיום האסון (flash: אוניברסיטת חיפה סגורה)",
+   "summary": "דף המבזקים המקומי של חי פה מיום האסון, שנשמר כפי שהיה. מבזקים בין 14:00 ב-2.12 ל-08:40 ב-3.12: סגירת אוניברסיטת חיפה, אזהרת המשרד להגנת הסביבה לתושבי עוספיה-אוניברסיטה-מרכז חורב-בית אורן, אסון האוטובוס, פינוי בית אורן, ניר עציון ועין הוד, שינוי כיוון הרוח וצו פינוי בדניה.",
+   "places_mentioned": [
+    "אוניברסיטת חיפה",
+    "עוספיה",
+    "מרכז חורב",
+    "בית אורן",
+    "ניר עציון",
+    "עין הוד",
+    "כלא דמון",
+    "דניה",
+    "טירת כרמל",
+    "כביש 4",
+    "כביש 705",
+    "כביש 672"
+   ],
+   "url": "https://haipo.co.il/item/4386"
+  },
+  {
+   "outlet": "ynet",
+   "language": "he",
+   "published_local": "2010-12-02 16:06",
+   "title": "השריפה הקטלנית בישראל: 40 סוהרים נהרגו",
+   "summary": "40 צוערי שב\"ס נהרגו כשהאוטובוס שלהם נלכד באש בדרך לפינוי כלא דמון. פינוי בית אורן ואוניברסיטת חיפה; בתי החולים בחיפה בכוננות.",
+   "places_mentioned": [
+    "הכרמל",
+    "כלא דמון",
+    "קיבוץ בית אורן",
+    "עוספיה",
+    "נחל חיק",
+    "חיפה",
+    "בני ציון",
+    "כרמל",
+    "רמב\"ם",
+    "אוניברסיטת חיפה"
+   ],
+   "url": "https://www.ynet.co.il/articles/0,7340,L-3993269,00.html"
+  },
+  {
+   "outlet": "ynet",
+   "language": "he",
+   "published_local": "2010-12-02 17:05",
+   "title": "\"אנשים נשרפו חיים, הם פשוט שכבו שם\"",
+   "summary": "עדויות ראייה ומחלצים מזירת אסון האוטובוס בכרמל: האש התפשטה במהירות ולנוסעים לא היה מנוס; המחלצים השוו את הזירה לפיגוע.",
+   "places_mentioned": [
+    "הכרמל",
+    "כלא דמון",
+    "עוספיה"
+   ],
+   "url": "https://www.ynet.co.il/articles/0,7340,L-3993318,00.html"
+  },
+  {
+   "outlet": "ynetnews",
+   "language": "en",
+   "published_local": "2010-12-02 17:12",
+   "title": "Israel's deadliest fire leaves 40 dead",
+   "summary": "A massive forest fire in the Carmel near Haifa killed 40 Prison Service cadets whose bus caught fire en route to Damon Prison. Easterly winds drove rapid spread; Fire Commissioner Romach said flames were 'going wild'; police probing an illegal dump near the forest.",
+   "places_mentioned": [
+    "Carmel Forest",
+    "Haifa",
+    "Damon Prison",
+    "Beit Oren",
+    "Usfiya",
+    "Haifa University",
+    "Rambam",
+    "Bnei Zion"
+   ],
+   "url": "https://www.ynetnews.com/articles/0,7340,L-3993206,00.html"
+  },
+  {
+   "outlet": "ynet",
+   "language": "he",
+   "published_local": "2010-12-02 17:33",
+   "title": "רה\"מ ביקש סיוע מחו\"ל: \"אסון בהיקף שלא הכרנו\"",
+   "summary": "נתניהו הגדיר את השריפה 'אסון בהיקף שלא הכרנו' וביקש מטוסי כיבוי מרוסיה, איטליה, יוון וקפריסין; לפחות 40 סוהרים נספו.",
+   "places_mentioned": [
+    "הכרמל",
+    "חיפה",
+    "עוספיה"
+   ],
+   "url": "https://www.ynet.co.il/articles/0,7340,L-3993334,00.html"
+  },
+  {
+   "outlet": "nbcnews",
+   "language": "en",
+   "published_local": "2010-12-02 17:33",
+   "title": "Dozens of rescuers killed in Israeli fire",
+   "summary": "AP: prison guards sent to rescue inmates died when their bus was trapped near Haifa, a fallen tree blocking their escape; Netanyahu called it 'a disaster of unprecedented proportions'. Fire fanned by unusually hot, dry conditions.",
+   "places_mentioned": [
+    "Haifa",
+    "Carmel forest",
+    "Kibbutz Bet Oren",
+    "Haifa University"
+   ],
+   "url": "https://www.nbcnews.com/id/wbna40472390"
+  },
+  {
+   "outlet": "walla",
+   "language": "he",
+   "published_local": "2010-12-02 18:52",
+   "title": "כ-40 בני אדם נהרגו לאחר שנלכדו באוטובוס באזור השריפה בכרמל",
+   "summary": "אוטובוס עם כ-50 צוערי שב\"ס נלכד באש ועלה בלהבות סמוך לקיבוץ בית אורן בכביש המחבר את צומת דמון לצומת עתלית; כ-40 הרוגים. האש פרצה בשלושה מוקדים ליד עוספיה ובית אורן, מה שהעלה חשד להצתה.",
+   "places_mentioned": [
+    "קיבוץ בית אורן",
+    "צומת דמון",
+    "צומת עתלית",
+    "עוספיה",
+    "חיפה",
+    "כלא דמון",
+    "פארק הכרמל",
+    "כפר גלים"
+   ],
+   "url": "https://www.walla.co.il/news/israel/1762819"
+  },
+  {
+   "outlet": "ynet",
+   "language": "he",
+   "published_local": "2010-12-02 19:21",
+   "title": "אחרי הטרגדיה: מתחילים לפנות את טירת כרמל",
+   "summary": "פינוי טירת כרמל החל משכונת אלון; המרכז לבריאות הנפש (170 מאושפזים), כלא 6 וכלא כרמל מפונים. גם בית אורן, החותרים, מגדים, ניר עציון, עין הוד, עין חוד, ימין אורד וגבעת וולפסון מפונים.",
+   "places_mentioned": [
+    "טירת כרמל",
+    "שכונת אלון",
+    "קיבוץ בית אורן",
+    "החותרים",
+    "מגדים",
+    "ניר עציון",
+    "עין הוד",
+    "עין חוד",
+    "ימין אורד",
+    "גבעת וולפסון",
+    "כלא 6",
+    "בית הסוהר כרמל",
+    "אוניברסיטת חיפה"
+   ],
+   "url": "https://www.ynet.co.il/articles/0,7340,L-3993372,00.html"
+  },
+  {
+   "outlet": "haaretz",
+   "language": "he",
+   "published_local": null,
+   "title": "השריפה בכרמל | תושבי קיבוץ בית אורן פונו וצפו בבתיהם נשרפים",
+   "summary": "תושבי בית אורן פונו בצהריים וצפו מרחוק בבתיהם עולים באש; 40 סוהרים נהרגו באוטובוס והאש לא נשלטה. (Paywalled; date 2 Dec 2010 from URL.)",
+   "places_mentioned": [
+    "הכרמל",
+    "קיבוץ בית אורן"
+   ],
+   "url": "https://www.haaretz.co.il/misc/2010-12-02/ty-article/0000017f-db81-df62-a9ff-dfd7ad310000"
+  },
+  {
+   "outlet": "haaretz",
+   "language": "en",
+   "published_local": null,
+   "title": "Disaster in the North: 40 Dead as Fire Rages in Carmel Mountains",
+   "summary": "Massive brushfire in the Carmel kills 40, forces evacuation of 13,000; prison guards died when a fallen tree trapped their bus. Netanyahu seeks international help as the fire threatens Haifa.",
+   "places_mentioned": [
+    "Carmel Mountains",
+    "Haifa"
+   ],
+   "url": "https://www.haaretz.com/2010-12-02/ty-article/disaster-in-the-north-40-dead-as-fire-rages-in-carmel-mountains/0000017f-dc36-db22-a17f-fcb741b50000"
+  },
+  {
+   "outlet": "calcalist",
+   "language": "he",
+   "published_local": "2010-12-02 23:35",
+   "title": "האש בצפון מתפשטת: 40 סוהרים נשרפו למוות באוטובוס; 12 אלף איש פונו מבתיהם; נתניהו: אכריז על יום אבל לאומי",
+   "summary": "12,000 תושבים מטירת כרמל והסביבה פונו; שכונת אלון פונתה ראשונה ודניה נערכת לפינוי. פונו כלא 6, כלא כרמל, בית החולים הפסיכיאטרי, ימין אורד, ניר עציון, עין הוד ועין חוד; 'האש התקדמה במהירות מטורפת'.",
+   "places_mentioned": [
+    "טירת כרמל",
+    "שכונת אלון",
+    "שכונת דניה",
+    "בית אורן",
+    "כלא דמון",
+    "כלא 6",
+    "בית הסוהר כרמל",
+    "ניר עציון",
+    "עין הוד",
+    "עין חוד",
+    "ימין אורד",
+    "גבעת וולפסון"
+   ],
+   "url": "https://www.calcalist.co.il/local/articles/0,7340,L-3439089,00.html"
+  },
+  {
+   "outlet": "ynet",
+   "language": "he",
+   "published_local": "2010-12-03 00:32",
+   "title": "האש בדרך לחיפה: תושבים פונו משכונת דניה",
+   "summary": "האש מתקדמת לכיוון חיפה ותושבי רחובות בשכונת דניה מפונים; כ-15 אלף פונו בסך הכול. גורמי כיבוי מבקרים את ההחלטה להשאיר כבישים פתוחים: 'לאוטובוס שנכנס למקום כזה לא היה סיכוי'.",
+   "places_mentioned": [
+    "חיפה",
+    "שכונת דניה",
+    "טירת כרמל",
+    "מגדים",
+    "החותרים",
+    "עין הוד",
+    "עין חוד",
+    "ניר עציון",
+    "נווה שאנן"
+   ],
+   "url": "https://www.ynet.co.il/articles/0,7340,L-3993455,00.html"
+  },
+  {
+   "outlet": "ynetnews",
+   "language": "en",
+   "published_local": "2010-12-03 05:01",
+   "title": "Northern fire: More than 15,000 residents evacuated, flames near Haifa",
+   "summary": "Over 15,000 evacuated by late Thursday as the fire approached Haifa's Denia neighbourhood before winds shifted south; Romach warned the wind would strengthen by morning.",
+   "places_mentioned": [
+    "Haifa",
+    "Denia",
+    "Isfiya",
+    "Tirat Carmel",
+    "Damon Prison",
+    "Mount Carmel"
+   ],
+   "url": "https://www.ynetnews.com/articles/0,7340,L-3993412,00.html"
+  },
+  {
+   "outlet": "ynet",
+   "language": "he",
+   "published_local": "2010-12-03 06:41",
+   "title": "האש מתפשטת לכיוון דניה: 30 אלף דונם נשרפו",
+   "summary": "השריפה מתפשטת לכיוון דניה בחיפה; כ-30 אלף דונם נשרפו, 41 הרוגים ו-15 אלף מפונים. כביש 4 ממחלף פרדיס צפונה והדרך מאליקים לדאלית אל-כרמל נסגרו; מטוסים מיוון ובולגריה מגיעים.",
+   "places_mentioned": [
+    "שכונת דניה",
+    "טירת כרמל",
+    "כביש 4",
+    "אליקים",
+    "דאלית אל-כרמל",
+    "בית אורן",
+    "עוספיה",
+    "רמת דוד"
+   ],
+   "url": "https://www.ynet.co.il/articles/0,7340,L-3993569,00.html"
+  },
+  {
+   "outlet": "haaretz",
+   "language": "en",
+   "published_local": null,
+   "title": "17,000 Evacuated as Huge Blaze Threatens Haifa",
+   "summary": "17,000 residents of the Carmel area evacuated as dry easterly winds push the fire toward Haifa; death toll 42.",
+   "places_mentioned": [
+    "Haifa",
+    "Carmel"
+   ],
+   "url": "https://www.haaretz.com/1.5148519"
+  },
+  {
+   "outlet": "haaretz",
+   "language": "en",
+   "published_local": null,
+   "title": "First Carmel Fire Victims Identified, as Israel Grapples With National Tragedy",
+   "summary": "Police release names of the first eight victims; most died on a Prison Service bus that caught fire en route to evacuate a prison.",
+   "places_mentioned": [
+    "Carmel",
+    "Haifa"
+   ],
+   "url": "https://haaretz.com/1.5148554"
+  },
+  {
+   "outlet": "ynetnews",
+   "language": "en",
+   "published_local": "2010-12-03 22:04",
+   "title": "Firefighters: Blaze spreading towards Haifa University",
+   "summary": "Fire advancing toward the University of Haifa (dorms already evacuated); concern for the Carmel Forest Spa Resort, where 40 firefighters had to retreat from a 'trap of fire'. ~35,000 dunam burned, ~17,000 evacuated from 14 communities.",
+   "places_mentioned": [
+    "University of Haifa",
+    "Nir Etzion",
+    "Ein Hod",
+    "Yemin Orde",
+    "Carmel Forest Spa Resort",
+    "Denia",
+    "Hai Bar reserve"
+   ],
+   "url": "https://www.ynetnews.com/articles/0,7340,L-3993872,00.html"
+  }
+ ],
+ "jerusalem_2025": [
+  {
+   "outlet": "kipa",
+   "language": "he",
+   "published_local": "2025-04-30 10:21",
+   "title": "כבישים נחסמו, יישובים פונו: שריפת הענק באזור ירושלים ממשיכה להשתולל",
+   "summary": "שריפה פרצה ביום רביעי בבוקר ביער אשתאול והתפשטה במהירות בין מסילת ציון לנווה שלום. שורת יישובים פונו, כבישים 1, 3, 38 ו-424 נחסמו ותנועת הרכבות הופסקה.",
+   "places_mentioned": [
+    "יער אשתאול",
+    "מסילת ציון",
+    "נווה שלום",
+    "מבוא חורון",
+    "בקוע",
+    "תעוז",
+    "נחשון",
+    "משמר איילון",
+    "אשתאול",
+    "בית מאיר",
+    "נווה אילן",
+    "יד השמונה",
+    "שורש",
+    "כביש 1",
+    "כביש 3",
+    "כביש 38",
+    "כביש 424"
+   ],
+   "url": "https://www.kipa.co.il/%D7%97%D7%93%D7%A9%D7%95%D7%AA/1203264-0/"
+  },
+  {
+   "outlet": "jdn",
+   "language": "he",
+   "published_local": "2025-04-30 10:36",
+   "title": "9 מוקדי שריפה פעילים: 163 צוותי כיבוי נאבקים באש, מדינות רבות ישלחו מטוסים לסייע",
+   "summary": "עמוד עדכונים חי: פקודת 'לפיד אדום' ב-11:12, חמישה מוקדים, 63 צוותים ו-11 מטוסים ב-12:15, ובערב 9 מוקדים ו-163 צוותים. מוקדים בכביש 1, בכביש 3 וביער אשתאול ליד מסילת ציון.",
+   "places_mentioned": [
+    "כביש 1",
+    "כביש 3",
+    "יער אשתאול",
+    "מסילת ציון",
+    "נווה שלום",
+    "בקוע",
+    "תרום"
+   ],
+   "url": "https://www.jdn.co.il/video/2398678/"
+  },
+  {
+   "outlet": "inn",
+   "language": "he",
+   "published_local": "2025-04-30 10:39",
+   "title": "מפקד מחוז ירושלים בכבאות: ייתכן שזו השריפה הגדולה ביותר שהייתה בארץ",
+   "summary": "שריפת יער גדולה בשפלת יהודה עם מוקדים בכביש 3, פארק קנדה, נווה שלום, מסילת ציון ומצפה הראל. כביש 1 נסגר בין שער הגיא למחלף ענבה. שמוליק פרידמן: 'מהגדולות בישראל בשנים האחרונות, אולי אי פעם'.",
+   "places_mentioned": [
+    "כביש 3",
+    "פארק קנדה",
+    "נווה שלום",
+    "מסילת ציון",
+    "מצפה הראל",
+    "שורש",
+    "נווה אילן",
+    "בית מאיר",
+    "שער הגיא",
+    "מחלף ענבה"
+   ],
+   "url": "https://www.inn.co.il/news/667690"
+  },
+  {
+   "outlet": "timesofisrael",
+   "language": "en",
+   "published_local": "2025-04-30 10:42",
+   "title": "Neveh Shalom evacuated as forest fire erupts in hills near Jerusalem",
+   "summary": "Fire and Rescue is evacuating Neve Shalom as a precaution because of a fire in the Eshtaol Forest. Heat and strong winds are making it hard to fight; Jerusalem teams and aircraft are on the way.",
+   "places_mentioned": [
+    "Neve Shalom",
+    "Eshtaol Forest",
+    "Latrun",
+    "Route 1"
+   ],
+   "url": "https://www.timesofisrael.com/liveblog_entry/neveh-shalom-evacuated-as-forrest-fire-erupts-in-hills-near-jerusalem/"
+  },
+  {
+   "outlet": "ynet",
+   "language": "he",
+   "published_local": "2025-04-30 10:45",
+   "title": "אש משתוללת באזור הרי ירושלים, כביש 1 נחסם - וישראל פנתה לסיוע בינלאומי",
+   "summary": "הוכרזה פקודת 'לפיד אדום'. פונו נווה שלום, בקוע, תעוז, נחשון ומתחם לטרון. כבישים 1, 3, 38 ו-424 נחסמו, ופועלים כ-120 צוותים ו-10 מטוסי כיבוי.",
+   "places_mentioned": [
+    "נווה שלום",
+    "בקוע",
+    "תעוז",
+    "נחשון",
+    "לטרון",
+    "פארק קנדה",
+    "מנזר השתקנים",
+    "מסילת ציון",
+    "מצפה הראל",
+    "כביש 1",
+    "כביש 3",
+    "כביש 38",
+    "כביש 424",
+    "רמת בית שמש"
+   ],
+   "url": "https://www.ynet.co.il/news/article/ryw8nnkxeg",
+   "content_as_of": "2025-04-30 15:30",
+   "note": "First published 10:45, but the archived text is the later update: it lists the ~14:12 evacuations and the 15:25 request for international aid. Seeded at the time its content was true, not at first publication."
+  },
+  {
+   "outlet": "kore",
+   "language": "he",
+   "published_local": "2025-04-30 10:52",
+   "title": "שריפה ביער אשתאול מתפשטת לכיוון יישובים באזור - תושבים מפונים",
+   "summary": "שריפה ביער אשתאול סמוך למסילת ציון, שבוע אחרי השריפה הקודמת באותו אזור. נווה שלום מפונה, הוכרז 'לפיד אדום', וצוותים מבית שמש ומחוז ירושלים ומטוסי כיבוי פועלים במקום.",
+   "places_mentioned": [
+    "יער אשתאול",
+    "מסילת ציון",
+    "נווה שלום",
+    "לטרון",
+    "בית שמש"
+   ],
+   "url": "https://www.kore.co.il/viewArticle/183726"
+  },
+  {
+   "outlet": "ornews",
+   "language": "he",
+   "published_local": null,
+   "title": "הישוב נווה שלום נדרש להתפנות",
+   "summary": "שריפת יער מתפתחת ביער אשתאול סמוך למסילת ציון, והמשטרה הונחתה לפנות את נווה שלום. צוותים מבית שמש ומחוז ירושלים ומטוסי כיבוי פועלים במקום.",
+   "places_mentioned": [
+    "יער אשתאול",
+    "מסילת ציון",
+    "נווה שלום",
+    "בית שמש"
+   ],
+   "url": "https://www.ornews.co.il/%D7%97%D7%93%D7%A9%D7%95%D7%AA/%D7%94%D7%99%D7%A9%D7%95%D7%91-%D7%A0%D7%95%D7%95%D7%94-%D7%A9%D7%9C%D7%95%D7%9D-%D7%A0%D7%93%D7%A8%D7%A9-%D7%9C%D7%94%D7%AA%D7%A4%D7%A0%D7%95%D7%AA"
+  },
+  {
+   "outlet": "mynet",
+   "language": "he",
+   "published_local": "2025-04-30 11:20",
+   "title": "שריפה בהרי ירושלים: לטרון, פארק קנדה ונווה שלום פונו, שיבושי תנועה באזור",
+   "summary": "השריפה פרצה ביער אשתאול סמוך למסילת ציון (לפי הכתבה בסביבות 10:00). כביש 1 נסגר בין ענבה לשורש ותנועת הרכבות לנתב\"ג הופסקה.",
+   "places_mentioned": [
+    "יער אשתאול",
+    "מסילת ציון",
+    "לטרון",
+    "פארק קנדה",
+    "נווה שלום",
+    "נווה אילן",
+    "שורש",
+    "נטף",
+    "בקוע",
+    "מצפה הראל",
+    "נחשון"
+   ],
+   "url": "https://jerusalem.mynet.co.il/local_news/article/rjc5aji1gxe"
+  },
+  {
+   "outlet": "timesofisrael",
+   "language": "en",
+   "published_local": "2025-04-30 11:58",
+   "title": "Police evacuating Latrun as fire burns in area, Jerusalem-Tel Aviv highway closed",
+   "summary": "Police are evacuating Latrun. Route 1 is closed in the area and Route 3 is also closed; the public is told to stay away.",
+   "places_mentioned": [
+    "Latrun",
+    "Route 1",
+    "Route 3"
+   ],
+   "url": "https://www.timesofisrael.com/liveblog_entry/police-evacuating-latrun-as-fire-burns-in-area-jerusalem-tel-aviv-highway-closed/"
+  },
+  {
+   "outlet": "hidabroot",
+   "language": "he",
+   "published_local": "2025-04-30 13:59",
+   "title": "שריפות בהרי ירושלים - 5 יישובים פונו מתושביהם",
+   "summary": "חמישה יישובים פונו (נווה שלום, לטרון, בקוע, תעוז ונחשון) וכביש 3 נסגר. מוקדים בכביש 3, פארק קנדה, נווה שלום, מסילת ציון ומצפה הראל; 63 צוותים ו-11 מטוסים. כבאות: 'הלהבות ללא שליטה ומתפשטות במהירות'.",
+   "places_mentioned": [
+    "נווה שלום",
+    "לטרון",
+    "בקוע",
+    "תעוז",
+    "נחשון",
+    "כביש 3",
+    "פארק קנדה",
+    "מסילת ציון",
+    "מצפה הראל"
+   ],
+   "url": "https://www.hidabroot.org/article/1209231"
+  },
+  {
+   "outlet": "timesofisrael",
+   "language": "en",
+   "published_local": "2025-04-30 14:10",
+   "title": "Motorists forced to abandon vehicles and flee as fire engulfs major highway",
+   "summary": "Video shows dozens of people leaving Route 1 on foot with flames on both sides of the road.",
+   "places_mentioned": [
+    "Route 1"
+   ],
+   "url": "https://www.timesofisrael.com/liveblog_entry/motorists-forced-to-abandon-vehicles-and-flee-as-fire-engulfs-major-highway/"
+  },
+  {
+   "outlet": "timesofisrael",
+   "language": "en",
+   "published_local": "2025-04-30 14:12",
+   "title": "Communities evacuated as massive brushfires rage near Jerusalem, Route 1 closed",
+   "summary": "Fires in at least five places in the Jerusalem hills. Neve Shalom, Beko'a, Ta'oz, Nahshon and the Latrun memorial are evacuated, police prepare to evacuate Mesilat Zion, and Routes 1 and 3 and the Jerusalem-Tel Aviv train are shut. 63 teams and 11 aircraft are working.",
+   "places_mentioned": [
+    "Eshtaol Forest",
+    "Neve Shalom",
+    "Beko'a",
+    "Ta'oz",
+    "Nahshon",
+    "Latrun",
+    "Mesilat Zion",
+    "Route 1",
+    "Route 3",
+    "IKEA Eshtaol"
+   ],
+   "url": "https://www.timesofisrael.com/five-communities-evacuated-as-fires-rage-in-jerusalem-hills-route-1-highway-closed/"
+  },
+  {
+   "outlet": "timesofisrael",
+   "language": "en",
+   "published_local": "2025-04-30 14:27",
+   "title": "Fire service evacuating motorists trapped on Route 1; 4 cars on fire; no serious injuries",
+   "summary": "Nine people rescued from smoke-filled cars and four vehicles on fire. 119 teams and 10 aircraft working, 22 more teams on the way; the fire is 'not under control'.",
+   "places_mentioned": [
+    "Route 1"
+   ],
+   "url": "https://www.timesofisrael.com/liveblog_entry/fire-service-says-efforts-underway-on-route-1-to-evacuate-trapped-motorists-4-cars-on-fire/"
+  },
+  {
+   "outlet": "timesofisrael",
+   "language": "en",
+   "published_local": "2025-04-30 15:04",
+   "title": "Defense minister asks IDF to help with Jerusalem hills fires: 'A national emergency'",
+   "summary": "Katz asks the IDF chief of staff to deploy forces, saying 'We are in a national emergency'. The photo shows firefighting near Mesilat Zion.",
+   "places_mentioned": [
+    "Mesilat Zion",
+    "Jerusalem hills"
+   ],
+   "url": "https://www.timesofisrael.com/liveblog_entry/defense-minister-asks-idf-to-help-with-jerusalem-hills-fires-a-national-emergency/"
+  },
+  {
+   "outlet": "timesofisrael",
+   "language": "en",
+   "published_local": "2025-04-30 15:16",
+   "title": "Orders given to evacuate Mevo Horon",
+   "summary": "Fire and Rescue orders the evacuation of Mevo Horon near Modi'in as the fire spreads.",
+   "places_mentioned": [
+    "Mevo Horon",
+    "Modi'in",
+    "Beit Shemesh"
+   ],
+   "url": "https://www.timesofisrael.com/liveblog_entry/orders-given-to-evacuate-mevo-horon/"
+  },
+  {
+   "outlet": "jpost",
+   "language": "en",
+   "published_local": "2025-04-30 15:25",
+   "title": "Drivers trapped, forced to abandon vehicles on Highway 1 due to massive wildfire",
+   "summary": "Highway 1 closed both ways between Anava and Shoresh and Highway 3 closed. Neve Shalom and Latrun being evacuated, with more communities expected. Caspi raised the national alert to its highest level and Israel requested international aid.",
+   "places_mentioned": [
+    "Highway 1",
+    "Highway 3",
+    "Anava",
+    "Shoresh",
+    "Canada Park",
+    "Neve Shalom",
+    "Mesilat Zion",
+    "Mitzpe Harel",
+    "Ramat Beit Shemesh",
+    "Latrun",
+    "Nahshon",
+    "Beko'a",
+    "Tarum",
+    "Ta'oz"
+   ],
+   "url": "https://www.jpost.com/israel-news/article-852139"
+  },
+  {
+   "outlet": "timesofisrael",
+   "language": "en",
+   "published_local": "2025-04-30 16:39",
+   "title": "Fire rages near decommissioned tanks at IDF's Latrun memorial site outside Jerusalem",
+   "summary": "Fire burns near the tanks at Yad LaShiryon, which has been evacuated. Chairs set out for the Memorial Day ceremony are visible in the video.",
+   "places_mentioned": [
+    "Latrun",
+    "Yad LaShiryon"
+   ],
+   "url": "https://www.timesofisrael.com/liveblog_entry/fire-rages-near-decommissioned-tanks-at-idfs-latrun-memorial-site-outside-jerusalem/"
+  },
+  {
+   "outlet": "timesofisrael",
+   "language": "en",
+   "published_local": "2025-04-30 19:28",
+   "title": "Fires force Israel's leading TV station to evacuate Neve Ilan studio in mid-news broadcast",
+   "summary": "Channel 12 evacuates its Neve Ilan studio during a live broadcast on Fire and Rescue orders and moves the broadcast to Herzliya.",
+   "places_mentioned": [
+    "Neve Ilan",
+    "Herzliya"
+   ],
+   "url": "https://www.timesofisrael.com/liveblog_entry/fires-force-israels-leading-tv-station-to-evacuate-neve-ilan-studio-in-mid-news-broadcast/"
+  },
+  {
+   "outlet": "timesofisrael",
+   "language": "en",
+   "published_local": "2025-04-30 19:45",
+   "title": "Authorities evacuate communities Neve Ilan, Shoresh, Nataf and Yad Hashmona",
+   "summary": "As the fire moves east, four more communities are evacuated, making 10 in total. Hotspots include Latrun, Neve Shalom, Eshtaol Forest, Mevo Horon, and Burma Road toward Beit Meir and Sha'ar HaGai.",
+   "places_mentioned": [
+    "Neve Ilan",
+    "Shoresh",
+    "Nataf",
+    "Yad HaShmona",
+    "Mesilat Zion",
+    "Neve Shalom",
+    "Eshtaol Forest",
+    "Latrun",
+    "Mevo Horon",
+    "Burma Road",
+    "Beit Meir",
+    "Sha'ar HaGai"
+   ],
+   "url": "https://www.timesofisrael.com/liveblog_entry/authorities-evacuate-communities-neve-ilan-shoresh-nataf-and-yad-hashmona/"
+  },
+  {
+   "outlet": "walla",
+   "language": "he",
+   "published_local": "2025-04-30 20:46",
+   "title": "ישראל ביקשה עזרה בינלאומית בשריפה בהרי ירושלים",
+   "summary": "11 יישובים פונו, 23 נפגעים וגיוס כללי של הכבאים. כביש 1 סגור בין מחלף ענבה לשער הגיא, כביש 3 בין צומת לטרון לצומת נחשון, וכביש 38 צפונה בשער הגיא. ישראל ביקשה סיוע מקפריסין, יוון, איטליה, בולגריה וקרואטיה.",
+   "places_mentioned": [
+    "נחשון",
+    "לטרון",
+    "נווה שלום",
+    "מסילת ציון",
+    "מבוא חורון",
+    "משמר איילון",
+    "בית מאיר",
+    "בקוע",
+    "תרום",
+    "תעוז",
+    "מצפה הראל",
+    "שורש",
+    "כביש 1",
+    "כביש 3",
+    "כביש 38",
+    "שער הגיא",
+    "מחלף ענבה"
+   ],
+   "url": "https://www.walla.co.il/news/israel/3746055"
+  },
+  {
+   "outlet": "timesofisrael",
+   "language": "en",
+   "published_local": "2025-04-30 20:57",
+   "title": "Israel scrambles for international aid as wildfires rage near Jerusalem",
+   "summary": "Sa'ar contacts more than a dozen countries. Three Canadair planes from Italy and Croatia are en route, and Romania, Spain and France commit aircraft. Foreign planes will operate from Thursday.",
+   "places_mentioned": [
+    "Jerusalem hills",
+    "Route 1"
+   ],
+   "url": "https://www.timesofisrael.com/israel-scrambles-for-international-aid-as-wildfires-rage-near-jerusalem/"
+  },
+  {
+   "outlet": "timesofisrael",
+   "language": "en",
+   "published_local": "2025-04-30 22:45",
+   "title": "Hundreds battle blazes ripping through Jerusalem area; fire may be Israel's largest ever",
+   "summary": "Fires began around 9:30 a.m. near Mesilat Zion and were pushed west, then east. 163 teams and 12 planes are working, Route 1 and Route 3 are still closed and about 11,700 dunams have burned. Friedman: 'far from having control'.",
+   "places_mentioned": [
+    "Mesilat Zion",
+    "Beit Shemesh",
+    "Latrun",
+    "Neve Shalom",
+    "Eshtaol Forest",
+    "Mevo Horon",
+    "Burma Road",
+    "Beit Meir",
+    "Sha'ar HaGai",
+    "Neve Ilan",
+    "Shoresh",
+    "Nataf",
+    "Yad HaShmona",
+    "Eshtaol",
+    "Mishmar Ayalon",
+    "Canada Park"
+   ],
+   "url": "https://www.timesofisrael.com/163-crews-battle-flames-as-jerusalem-fire-chief-says-blaze-may-be-israels-largest-ever/"
+  },
+  {
+   "outlet": "timesofisrael",
+   "language": "en",
+   "published_local": "2025-04-30 23:17",
+   "title": "KKL-JNF says some 2,900 acres burned in today's blazes",
+   "summary": "About 11,700 dunams burned; Canada Park near Latrun almost completely destroyed.",
+   "places_mentioned": [
+    "Canada Park",
+    "Latrun"
+   ],
+   "url": "https://www.timesofisrael.com/liveblog_entry/kkl-jnf-says-some-2900-acres-burned-in-todays-blazes/"
+  },
+  {
+   "outlet": "kore",
+   "language": "he",
+   "published_local": "2025-04-30 23:47",
+   "title": "דיווח חי: האש ממשיכה להתפשט: 10 יישובים פונו, היערכות לפינוי 4 נוספים",
+   "summary": "עדכונים חיים: חמישה מוקדים פעילים, הנחיה לפנות את נחשון לטל שחר, כביש 3 סגור מנחשון ללטרון, ו'כביש 1 לכיוון כביש 3 נסגר כעת לתנועה'. בערב פעלו 163 צוותים ו-12 מטוסים.",
+   "places_mentioned": [
+    "יער אשתאול",
+    "נחשון",
+    "טל שחר",
+    "לטרון",
+    "שער הגיא",
+    "כביש 1",
+    "כביש 3",
+    "פארק קנדה",
+    "נווה שלום",
+    "מסילת ציון",
+    "מצפה הראל"
+   ],
+   "url": "https://www.kore.co.il/viewArticle/183727"
+  },
+  {
+   "outlet": "mako",
+   "language": "he",
+   "published_local": "2025-05-01 00:17",
+   "title": "תיעודים דרמטיים מכביש 1: האש הגיעה לכביש 1, הנוסעים נמלטים ברגל",
+   "summary": "האש הגיעה לכביש 1, שנותר סגור בין מחלף בן שמן לשורש. 9 מוקדים פעילים, כ-11,700 דונם נשרפו ו-17 כבאים נפגעו. כספי: 'זו שרפה מהגדולות שהיו, בטח בעשור האחרון'.",
+   "places_mentioned": [
+    "כביש 1",
+    "בן שמן",
+    "שורש",
+    "מסילת ציון",
+    "שער הגיא",
+    "בית מאיר",
+    "נווה אילן",
+    "יד השמונה"
+   ],
+   "url": "https://mobile.mako.co.il/news-israel/2025_q2/Article-c4fe7b78a958691027.htm"
+  },
+  {
+   "outlet": "timesofisrael",
+   "language": "en",
+   "published_local": "2025-05-01 11:55",
+   "title": "Fires near Jerusalem burn for second day but roads, towns reopen with foreign aid on way",
+   "summary": "Roads reopened Thursday morning. About 20,000 dunams burned, 13,000 of them woodland, with no significant damage in any town. 17 firefighters were injured and 126 teams are still working.",
+   "places_mentioned": [
+    "Canada Park",
+    "Modi'in",
+    "Sha'ar HaGai",
+    "Mesilat Zion",
+    "Beit Meir",
+    "Shoresh",
+    "Neve Ilan",
+    "Yad HaShmona",
+    "Nataf",
+    "Mevo Horon",
+    "Eshtaol",
+    "Mishmar Ayalon"
+   ],
+   "url": "https://www.timesofisrael.com/blazes-near-jerusalem-rage-for-second-day-as-roads-reopen-with-foreign-aid-on-way/"
+  },
+  {
+   "outlet": "timesofisrael",
+   "language": "en",
+   "published_local": "2025-05-01 12:15",
+   "title": "All evacuated residents allowed home following fires, though officials warn of possible resurgence",
+   "summary": "All evacuees cleared to return. Officials warn the fires could flare again in the afternoon as wind and heat rise.",
+   "places_mentioned": [
+    "Sha'ar HaGai",
+    "Mesilat Zion",
+    "Beit Meir",
+    "Shoresh",
+    "Neve Ilan",
+    "Yad HaShmona",
+    "Nataf",
+    "Mevo Horon",
+    "Eshtaol",
+    "Mishmar Ayalon"
+   ],
+   "url": "https://www.timesofisrael.com/liveblog_entry/all-evacuated-residents-allowed-home-following-fires-though-officials-warn-of-possible-resurgence/"
+  },
+  {
+   "outlet": "jpost",
+   "language": "en",
+   "published_local": "2025-05-01 12:48",
+   "title": "French, Cypriot, Croatian planes en route to aid Israel battling flames",
+   "summary": "A Cypriot helicopter has landed, a Croatian CL-415 is about to land, and Italian and French aircraft are expected later.",
+   "places_mentioned": [],
+   "url": "https://www.jpost.com/israel-news/article-852246"
+  },
+  {
+   "outlet": "maariv",
+   "language": "he",
+   "published_local": "2025-05-01 18:43",
+   "title": "אחרי כמעט 30 שעות: כבאות והצלה הכריזו על שליטה בשריפות",
+   "summary": "126 צוותי כיבוי פעלו במוקדים בשפלה ובהרי ירושלים. כל הכבישים נפתחו לתנועה ונציב כבאות והצלה הכריז על שליטה בערב יום חמישי.",
+   "places_mentioned": [
+    "לטרון",
+    "דרך בורמה",
+    "מסילת ציון",
+    "שער הגיא",
+    "פארק קנדה",
+    "כביש 1",
+    "כביש 3",
+    "כביש 38",
+    "נחשון"
+   ],
+   "url": "https://www.maariv.co.il/news/israel/article-1192599"
+  },
+  {
+   "outlet": "timesofisrael",
+   "language": "en",
+   "published_local": "2025-05-01 18:53",
+   "title": "Jerusalem hills wildfire brought under control after more than 24 hours",
+   "summary": "Firefighters gain control; lower-intensity work continues to stop the fire rekindling. About 20,000 dunams burned, 13,000 of them forest.",
+   "places_mentioned": [
+    "Jerusalem hills"
+   ],
+   "url": "https://www.timesofisrael.com/liveblog_entry/jerusalem-hills-wildfire-brought-under-control-after-more-than-24-hours/"
+  },
+  {
+   "outlet": "mako",
+   "language": "he",
+   "published_local": "2025-05-01 20:55",
+   "title": "הערכה: השרפה החלה כתוצאה מרשלנות של מטיילים",
+   "summary": "לפי הערכת כבאות, השרפה החלה בתעוז, מושב ליד בית שמש, ומשם התפשטה לשאר המוקדים, ככל הנראה מרשלנות מטיילים. קצב ההתפשטות היה 'עשרות מטרים בשנייה'.",
+   "places_mentioned": [
+    "תעוז",
+    "בית שמש"
+   ],
+   "url": "https://www.mako.co.il/news-israel/2025_q2/Article-cb8076dfedc8691026.htm"
+  },
+  {
+   "outlet": "timesofisrael",
+   "language": "en",
+   "published_local": "2025-05-01 21:06",
+   "title": "Fire service said to suspect negligence, not arson, caused Jerusalem hills wildfire",
+   "summary": "A preliminary assessment points to negligent hikers in the Mesilat Zion area. Later fires may have been set deliberately.",
+   "places_mentioned": [
+    "Mesilat Zion"
+   ],
+   "url": "https://www.timesofisrael.com/liveblog_entry/fire-service-said-to-suspect-negligence-not-arson-caused-jerusalem-hills-wildfire/"
+  },
+  {
+   "outlet": "haaretz",
+   "language": "he",
+   "published_local": null,
+   "title": "שריפת ענק משתוללת בשפלת יהודה: שורת יישובים פונו, כביש 1 נחסם",
+   "summary": "השריפה ביער אשתאול בין מסילת ציון לנווה שלום כילתה מעל 10,000 דונם. עשרה יישובים פונו, מעל 6,000 תושבי מטה יהודה. כביש 1 נסגר בין ענבה לשער הגיא וכביש 3 מנחשון ללטרון.",
+   "places_mentioned": [
+    "יער אשתאול",
+    "מסילת ציון",
+    "נווה שלום",
+    "שורש",
+    "בית מאיר",
+    "נחשון",
+    "כפר אוריה",
+    "הראל",
+    "תרום",
+    "גיזו",
+    "כביש 1",
+    "כביש 3"
+   ],
+   "url": "https://www.haaretz.co.il/nature/2025-04-30/ty-article/.premium/00000196-861d-d9ad-a19e-c69d6d470000"
+  },
+  {
+   "outlet": "13tv",
+   "language": "he",
+   "published_local": null,
+   "title": "שריפת ענק בהרי י-ם: \"אירוע משמעותי, שיימשך לפחות יממה\"",
+   "summary": "מוקדים רבים בהרי ירושלים ובאזור בית שמש וכביש 1 סגור. ב-18:15 החלו מטוסי הרקולס לפזר חומר מעכב בעירה ונחזו רוחות של עד 100 קמ\"ש.",
+   "places_mentioned": [
+    "הרי ירושלים",
+    "בית שמש",
+    "כביש 1",
+    "מודיעין",
+    "נווה אילן",
+    "שורש",
+    "יד השמונה",
+    "נווה שלום",
+    "נחשון",
+    "בקוע",
+    "לטרון",
+    "משמר איילון",
+    "מבוא חורון"
+   ],
+   "url": "https://13tv.co.il/item/news/domestic/internal/frmtz-904563180/"
+  }
+ ]
+}

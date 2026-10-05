@@ -111,9 +111,6 @@ function Home() {
           <button className="login-button" onClick={() => leaveTo('/dashboard')}>
             Monitor
           </button>
-          <button className="demo-button" onClick={() => leaveTo('/demo')}>
-            View demo
-          </button>
           <button
             className="demo-button"
             onClick={() => leaveTo('/demos')}

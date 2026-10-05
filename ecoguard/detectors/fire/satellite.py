@@ -139,7 +139,14 @@ def _pixel_confidence(pixel: dict[str, Any]) -> float:
     # Already a fraction. Dividing it again would turn Meteosat's 0.94 - about
     # as sure as that product ever gets - into 0.0094, and the signal would look
     # like noise.
+    #
+    # Except that the feed mixes generations: MTG (Met12) reports 0-1, but the
+    # older SEVIRI satellites (Met9, Met10) still report 0-100 under the same
+    # GOES_NRT id - the 30 April 2025 archive has both in one hour. Above 1 can
+    # only be a percentage, so clamping it read an 83% pixel as certainty.
     if str(pixel.get("firms_source", "")) in GEOSTATIONARY_SOURCES:
+        if number > 1.0:
+            number /= 100.0
         return max(0.0, min(1.0, number))
     return max(0.0, min(1.0, number / 100.0))
 

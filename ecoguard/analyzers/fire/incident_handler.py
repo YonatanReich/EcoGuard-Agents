@@ -9,9 +9,11 @@ from typing import Any
 
 from ecoguard.analyzers.fire.risk_analysis_agent import RiskAnalysisAgent
 from ecoguard.analyzers.fire.stored_context import (
+    shared_reads,
     spread_forecast_for,
     stored_context_for,
 )
+from ecoguard.shared.concurrency import concurrently
 from ecoguard.coordinator.dispatcher import (
     IncidentDispatchContext,
     IncidentProcessingResult,
@@ -62,6 +64,41 @@ def _confidence_label(raw: object, numeric: object) -> str | None:
             return "nominal"
         return "low"
     return None
+
+
+def without_unconfirmed_claims(detected_event: Mapping[str, Any]) -> dict[str, Any]:
+    """The analysis of an unconfirmed fire, minus what it cannot stand behind.
+
+    An unconfirmed fire rests on a report, placed at the gazetteer point for
+    the place it names. The spread around that point is still drawn, as the
+    shape of what to check, but evacuation orders and people counts are not
+    kept: they would tell an operator to move a town on the strength of one
+    post. A Telegram report in Givat Shmuel produced "Evacuate now: Givat
+    Shmuel" and "18 people in the forecast spread".
+
+    Stripped here, before the risk model runs, rather than only from the card:
+    the model reads this structure and would otherwise repeat the orders in its
+    own words. The written `report` and `headline` go too, because both restate
+    the populations and the evacuation list.
+    """
+    spread = detected_event.get("spread_forecast")
+    if not isinstance(spread, Mapping):
+        return dict(detected_event)
+    return {
+        **detected_event,
+        "spread_forecast": {
+            **spread,
+            "evacuation": [],
+            "population_in_spread": None,
+            "population_at_risk": {},
+            "exposure": [
+                {**item, "population": None} if isinstance(item, Mapping) else item
+                for item in spread.get("exposure") or ()
+            ],
+            "report": None,
+            "headline": None,
+        },
+    }
 
 
 def detected_event_from_incident(incident: Mapping[str, Any]) -> dict[str, Any]:
@@ -149,8 +186,13 @@ def detected_event_from_incident(incident: Mapping[str, Any]) -> dict[str, Any]:
         }
 
     timestamp = _iso(incident.get("last_signal_at") or incident.get("first_seen_at"))
-    stored = stored_context_for(incident)
-    spread = spread_forecast_for(incident)
+    # One read of the surroundings, shared, then the context and the forecast
+    # side by side: all of it is waiting on the database, none on the CPU.
+    environment, localities = shared_reads(incident)
+    stored, spread = concurrently(
+        lambda: stored_context_for(incident, environment=environment, localities=localities),
+        lambda: spread_forecast_for(incident, environment=environment, localities=localities),
+    )
     return {
         "metadata": {
             "timestamp": timestamp or datetime.now(timezone.utc).isoformat(),
@@ -228,6 +270,31 @@ class FireIncidentHandler:
             raise ValueError("Fire handler clock must carry a UTC offset")
         return value.astimezone(timezone.utc)
 
+    def _interim(
+        self,
+        context: IncidentDispatchContext,
+        detected_event: Mapping[str, Any],
+        risk: Mapping[str, Any] | None = None,
+    ) -> IncidentProcessingResult:
+        """This fire as far as it has got: the steps still running say pending."""
+        return IncidentProcessingResult(
+            incident_id=context.incident_id,
+            hazard=context.hazard,
+            route=context.route,
+            status="partial",
+            requested_at=context.requested_at,
+            completed_at=self._now(),
+            analysis_id=context.analysis_id,
+            coordinator_routing_id=context.coordinator_routing_id,
+            handler=self.name,
+            analysis_status="success",
+            risk_status="success" if risk is not None else "pending",
+            planner_status="pending",
+            analysis_result=detected_event,
+            risk_assessment=risk,
+            requires_resource_allocation=False,
+        )
+
     def process(
         self,
         incident: Mapping[str, Any],
@@ -260,6 +327,15 @@ class FireIncidentHandler:
                 failure_reason=type(error).__name__,
                 requires_resource_allocation=False,
             )
+
+        if not context.confirmed:
+            detected_event = without_unconfirmed_claims(detected_event)
+
+        # On screen now: location, evidence, spread, settlements and the
+        # evacuation list are all computed, none by a model. The two model
+        # calls below take minutes; the operator should not wait for them to
+        # see who is in the path.
+        context.report(self._interim(context, detected_event))
 
         try:
             risk = _as_dict(self._risk_analyzer.analyze_event(detected_event))
@@ -309,6 +385,8 @@ class FireIncidentHandler:
                 ),
                 requires_resource_allocation=False,
             )
+
+        context.report(self._interim(context, detected_event, risk))
 
         # The analysis above ran regardless of confirmation, and that is the
         # point: a claim has a place, and a place has weather, fuel, terrain and

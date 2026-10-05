@@ -29,6 +29,11 @@ import EventCard from '../components/EventCard'
 import WeakEventCard from '../components/WeakEventCard'
 import EventLegend from '../components/EventLegend'
 import EventModal from '../components/EventModal'
+import HandledSurvey, { type OperatorFeedback } from '../components/HandledSurvey'
+import FeedbackDialog from '../components/FeedbackDialog'
+
+/** How long a handled card animates out; matches eventCardOut in dashboard.css. */
+const CARD_EXIT_MS = 340
 import { classify } from '../components/hazards'
 
 import FloodLegend from '../components/FloodLegend'
@@ -377,28 +382,59 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
       .finally(() => setIsLoadingEvents(false))
   }, [demo])
 
-  // Operator confirmation. The one write this page makes.
-  //
-  // Confirming re-plans the incident server-side, so the response returns the
-  // whole refreshed feed and this assigns it directly rather than firing a
-  // second request that would race the re-plan it just triggered.
-  const [confirmingId, setConfirmingId] = useState<string | null>(null)
+  // Handling: the operator is finished with an event. The survey decides
+  // whether feedback goes with it; either way the incident closes server-side
+  // and the refreshed feed comes back without it.
+  const [handlingEvent, setHandlingEvent] = useState<SharedEvent | null>(null)
+  const [leavingIds, setLeavingIds] = useState<ReadonlySet<string>>(() => new Set())
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
+  const [handlingSubmitting, setHandlingSubmitting] = useState(false)
+  const [handlingError, setHandlingError] = useState<string | null>(null)
 
-  const confirmEvent = useCallback((event: SharedEvent) => {
-    setConfirmingId(event.id)
-    void fetch(`/api/events/${encodeURIComponent(event.id)}/confirm`, {
+  const startHandling = useCallback((event: SharedEvent) => {
+    setHandlingError(null)
+    setHandlingEvent(event)
+  }, [])
+
+  const submitHandled = (feedback: OperatorFeedback | null) => {
+    if (!handlingEvent) return
+    const handled = handlingEvent
+    setHandlingSubmitting(true)
+    setHandlingError(null)
+    void fetch(`/api/events/${encodeURIComponent(handled.id)}/handled`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ by: 'operator' }),
+      body: JSON.stringify({ handled_by: operatorName.trim() || 'operator', feedback }),
     })
       .then((response) => {
-        if (!response.ok) throw new Error('Confirmation failed')
+        // 404: it closed on its own (quiet period) while the survey was open.
+        // There is nothing left to handle, so treat it as done.
+        if (response.status === 404) return null
+        if (!response.ok) throw new Error('Handling failed')
         return response.json() as Promise<SharedEventFeed>
       })
-      .then((data) => setProjectedEvents(data.events ?? []))
-      .catch((error) => console.error('Error confirming event:', error))
-      .finally(() => setConfirmingId(null))
-  }, [])
+      .then((data) => {
+        if (openEventKey === `${handled.type}:${handled.id}`) closePanel()
+        setHandlingEvent(null)
+        // The card plays its exit before the new feed, which no longer has
+        // it, replaces the list; swapping at once would make it blink out.
+        setLeavingIds((current) => new Set(current).add(handled.id))
+        window.setTimeout(() => {
+          if (data) setProjectedEvents(data.events ?? [])
+          else setProjectedEvents((current) => current.filter((event) => event.id !== handled.id))
+          setLeavingIds((current) => {
+            const next = new Set(current)
+            next.delete(handled.id)
+            return next
+          })
+        }, CARD_EXIT_MS)
+      })
+      .catch((error) => {
+        console.error('Error handling event:', error)
+        setHandlingError('This was not recorded and the event is still open. Try again.')
+      })
+      .finally(() => setHandlingSubmitting(false))
+  }
 
   const loadWeakEvents = useCallback(() =>
     fetch('/api/weak-events')
@@ -497,6 +533,14 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
         <button
           type="button"
           className="logout-button"
+          onClick={() => setFeedbackOpen(true)}
+        >
+          Feedback
+        </button>
+
+        <button
+          type="button"
+          className="logout-button"
           onClick={() => navigate('/system', { state: { from: demo ? '/demo' : '/dashboard' } })}
         >
           System
@@ -538,8 +582,8 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
                   event={event}
                   onOpen={selectAndOpenEvent}
                   isSelected={selectedEvent?.type === event.type && selectedEvent.id === event.id}
-                  onConfirm={demo ? undefined : confirmEvent}
-                  isConfirming={confirmingId === event.id}
+                  onHandled={demo ? undefined : startHandling}
+                  isLeaving={leavingIds.has(event.id)}
                 />
               ))
             )}
@@ -701,6 +745,7 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
                 event={openEvent}
                 directionsStationKey={directionsStationKey}
                 onClose={closePanel}
+                onHandled={demo ? undefined : () => startHandling(openEvent)}
                 routes={openAllocationEvent ? {
                   shown: routesShown,
                   onToggle: () => {
@@ -716,6 +761,21 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
         </div>
 
         </div>
+
+        {feedbackOpen && (
+          <FeedbackDialog submittedBy={operatorName} onClose={() => setFeedbackOpen(false)} />
+        )}
+
+        {handlingEvent && (
+          <HandledSurvey
+            key={handlingEvent.id}
+            event={handlingEvent}
+            isSubmitting={handlingSubmitting}
+            error={handlingError}
+            onSubmit={submitHandled}
+            onCancel={() => setHandlingEvent(null)}
+          />
+        )}
 
 
         <aside className="dashboard__panel dashboard__panel--emergency">
@@ -737,8 +797,8 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
                   event={event}
                   onOpen={selectAndOpenEvent}
                   isSelected={selectedEvent?.type === event.type && selectedEvent.id === event.id}
-                  onConfirm={demo ? undefined : confirmEvent}
-                  isConfirming={confirmingId === event.id}
+                  onHandled={demo ? undefined : startHandling}
+                  isLeaving={leavingIds.has(event.id)}
                 />
               ))
             )}

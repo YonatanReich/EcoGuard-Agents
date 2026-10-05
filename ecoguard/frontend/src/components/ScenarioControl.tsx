@@ -8,11 +8,12 @@
  * of that.
  *
  * What stays here is what an operator needs while a run is live: a loud banner
- * saying the map is not the country, and the control that gives it back. Ending
- * a run fetches the grader's score and shows it.
+ * saying the map is not the country, the grade once detection has finished,
+ * and the control that gives the live map back.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import ScenarioScore from './ScenarioScore'
 import type { ScenarioReport } from './ScenarioScore'
 
@@ -42,6 +43,8 @@ function ScenarioControl({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [report, setReport] = useState<ScenarioReport | null>(null)
+  const [showReport, setShowReport] = useState(false)
+  const navigate = useNavigate()
   // Compared rather than assumed: refetching the map on every poll would fight
   // the user's panning for no reason.
   const signature = useRef<string>('')
@@ -74,30 +77,69 @@ function ScenarioControl({
     return () => window.clearInterval(timer)
   }, [poll])
 
-  /**
-   * End the run, then show what it found.
-   *
-   * The score is read after the stop returns, because a stop queued behind a
-   * wave only completes when that wave does, and grading a half-finished run
-   * would report a miss the system had not made.
-   */
-  const end = async () => {
-    const scenario = status?.scenario
+  /** End the run and wait until the live tables are back. A stop asked for
+   *  during a wave is queued by the backend until that wave finishes. */
+  const stopAndWait = useCallback(async () => {
+    const response = await fetch('/api/scenario/stop', { method: 'POST' })
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as { detail?: string } | null
+      throw new Error(body?.detail ?? 'The scenario controller refused')
+    }
+    for (;;) {
+      const current = (await (await fetch('/api/scenario/status')).json()) as ScenarioStatus
+      publish(current)
+      if (!current.running) return
+      await new Promise((resolve) => window.setTimeout(resolve, 2000))
+    }
+  }, [publish])
+
+  // A scenario is one forced detection wave. When it has finished, grade it -
+  // but leave it running, so the cards stay on the map for questions. The demo
+  // ends only when someone returns to the scenarios (or reruns it).
+  const graded = useRef<string | null>(null)
+  useEffect(() => {
+    if (!status?.running || status.wave_running || status.stopping || !status.scenario) return
+    const key = `${status.scenario}:${status.started_at}`
+    if (graded.current === key) return
+    graded.current = key
+    fetch(`/api/scenario/report/${status.scenario}`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error('The grader could not score this run.')
+        setReport((await response.json()) as ScenarioReport)
+        setShowReport(true)
+      })
+      .catch((caught: unknown) =>
+        setError(caught instanceof Error ? caught.message : String(caught)),
+      )
+  }, [status])
+
+  const backToScenarios = async () => {
     setBusy(true)
     setError(null)
     try {
-      const response = await fetch('/api/scenario/stop', { method: 'POST' })
+      await stopAndWait()
+      setReport(null)
+      navigate('/demos')
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const rerun = async (scenario: string) => {
+    setBusy(true)
+    setError(null)
+    setShowReport(false)
+    setReport(null)
+    try {
+      await stopAndWait()
+      const response = await fetch(`/api/scenario/start/${scenario}`, { method: 'POST' })
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as
-          | { detail?: string }
-          | null
+        const body = (await response.json().catch(() => null)) as { detail?: string } | null
         throw new Error(body?.detail ?? 'The scenario controller refused')
       }
       await poll()
-      if (scenario) {
-        const graded = await fetch(`/api/scenario/report/${scenario}`)
-        if (graded.ok) setReport((await graded.json()) as ScenarioReport)
-      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
@@ -106,16 +148,15 @@ function ScenarioControl({
   }
 
   const running = status?.running ?? false
-  // A stop requested during a wave is honoured only once that wave finishes,
-  // so the search path is never switched out from under work in flight.
   const stopping = status?.stopping ?? false
   const incidents = status?.counts?.incidents ?? 0
   const projected = status?.counts?.event_projections ?? 0
-  const runningLabel = status?.scenario
-    ? status.scenario.replace('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-    : 'Demo'
+  const runningLabel = report?.label
+    ?? (status?.scenario
+      ? status.scenario.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+      : 'Demo')
 
-  if (!running && !report && !error) return null
+  if (!running && !error) return null
 
   return (
     <div className="scenario">
@@ -125,22 +166,24 @@ function ScenarioControl({
             type="button"
             className="scenario__button scenario__button--stop"
             disabled={busy || stopping}
-            onClick={() => void end()}
-            title="Return the detectors to the live observations table and score the run"
+            onClick={() => void backToScenarios()}
+            title="End the demo, resume live collection and go back to the scenarios"
           >
-            {busy ? '…' : stopping ? 'Ending…' : `End ${runningLabel}`}
+            {busy || stopping ? 'Ending…' : 'Return to all scenarios'}
           </button>
+
+          {report && !showReport && (
+            <button type="button" className="scenario__button" onClick={() => setShowReport(true)}>
+              Show grade
+            </button>
+          )}
 
           <span className="scenario__banner" role="status">
             <span className="scenario__dot" aria-hidden="true" />
             {runningLabel} — scenario data, not live
             <span className="scenario__counts">
               {incidents} incident{incidents === 1 ? '' : 's'} · {projected} projected
-              {stopping
-                ? ' · ending after this wave'
-                : status?.wave_running
-                  ? ' · detecting…'
-                  : ''}
+              {status?.wave_running ? ' · detecting…' : report ? ' · graded' : ' · grading…'}
             </span>
           </span>
         </>
@@ -148,8 +191,14 @@ function ScenarioControl({
 
       {error && <span className="scenario__error">{error}</span>}
 
-      {report && (
-        <ScenarioScore report={report} onClose={() => setReport(null)} />
+      {report && showReport && (
+        <ScenarioScore
+          report={report}
+          busy={busy}
+          onClose={() => setShowReport(false)}
+          onReturn={() => void backToScenarios()}
+          onRerun={() => void rerun(report.scenario)}
+        />
       )}
     </div>
   )

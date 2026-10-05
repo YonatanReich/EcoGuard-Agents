@@ -10,6 +10,7 @@ coordination to the shared runtime.
 
 from __future__ import annotations
 
+from ecoguard.detectors.air_pollution.regional_stations import DESIGNATED_STATIONS
 from ecoguard.shared.activity import live_actor
 
 import logging
@@ -187,6 +188,22 @@ class AirPollutionObservationProcessor:
                 )
                 continue
             observations[index] = observation
+            # Undesignated stations are kept as rows - the bookmark advances
+            # over them - but never cost a baseline lookup: ~200 stations every
+            # five minutes against a database 165 ms away, for readings that
+            # cannot raise an advisory. See regional_stations.
+            if (
+                DESIGNATED_STATIONS is not None
+                and observation.provider_station_id not in DESIGNATED_STATIONS
+            ):
+                contexts[index] = LiveBaselineContextResult(
+                    status="not_designated",
+                    reason="not_a_regional_station",
+                    mode="operational",
+                    comparison_eligible=False,
+                    eligibility_reason="not_a_regional_station",
+                )
+                continue
             valid_indexes.append(index)
             valid_observations.append(observation)
 

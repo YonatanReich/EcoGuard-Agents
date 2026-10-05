@@ -14,6 +14,8 @@
  *               place a run is started from. Starting one hands over to
  *               /dashboard, where its events appear as they are produced.
  *   /system     System — every pipeline actor, lit while it is running.
+ *   /system/improvement-report
+ *               The improvement agent's latest report, printable to PDF.
  *
  * Note there is no auth guard: /dashboard is reachable directly by URL. The
  * "Monitor" button is a navigation trigger, not a credential check.
@@ -24,6 +26,7 @@ import Home from './pages/Home'
 import Dashboard from './pages/Dashboard'
 import DemoScenarios from './pages/DemoScenarios'
 import System from './pages/System'
+import ImprovementReport from './pages/ImprovementReport'
 
 function App() {
   return (
@@ -33,6 +36,7 @@ function App() {
       <Route path="/demo" element={<Dashboard demo />} />
       <Route path="/demos" element={<DemoScenarios />} />
       <Route path="/system" element={<System />} />
+      <Route path="/system/improvement-report" element={<ImprovementReport />} />
     </Routes>
   )
 }

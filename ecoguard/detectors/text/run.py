@@ -26,6 +26,7 @@ from ecoguard.database.repositories.text_candidates import (
 from ecoguard.detectors.fire.hebrew_location_extractor import locality_name_candidates
 from ecoguard.detectors.text.keywords import HAZARDS
 from ecoguard.detectors.text.triage import Report, origin_key, triage
+from ecoguard.coordinator.incidents import TEXT_LOCATION_METHOD
 from ecoguard.shared.cells import cell_for
 from ecoguard.shared.signals import CellLocation, CellSignal
 
@@ -59,6 +60,38 @@ LOOKBACK = timedelta(hours=6)
 TEXT_VARIABLE = "report"
 
 
+# Places fire news names that are not settlements: ridges, forests, sites.
+# Checked before towns, because the bare word is ambiguous in exactly the wrong
+# way - "כרמל" is Mount Carmel in a fire report and also a settlement in the
+# Hebron hills 140 km away, and "לטרון" is a site the towns table does not
+# carry at all. (lat, lon, uncertainty radius in metres); the radius is the
+# region's honest size, so corroboration and matching widen with it.
+#
+# ponytail: a hand list, seeded from the Carmel 2010 and Jerusalem hills 2025
+# news. Add a place when a real report fails to resolve; a gazetteer of named
+# natural features is the upgrade if the list stops being short.
+REGIONS: dict[str, tuple[float, float, float]] = {}
+for _names, _place in (
+    (("כרמל", "הכרמל", "הר הכרמל", "רכס הכרמל", "יערות הכרמל", "יער הכרמל",
+      "carmel", "mount carmel", "the carmel"), (32.715, 35.040, 7000.0)),
+    (("הרי ירושלים", "jerusalem hills", "hills near jerusalem", "jerusalem mountains"),
+     (31.790, 35.060, 10000.0)),
+    (("לטרון", "latrun"), (31.838, 34.979, 1500.0)),
+    (("יער אשתאול", "eshtaol forest"), (31.790, 35.010, 2500.0)),
+    (("פארק קנדה", "canada park"), (31.836, 35.000, 2000.0)),
+):
+    for _name in _names:
+        REGIONS[_name] = _place
+
+
+def _town_named(name: str, limit: int = 1) -> list[dict[str, Any]]:
+    """`town_named` in the list shape the injectable resolver returns."""
+    from ecoguard.database.repositories.towns import town_named
+
+    town = town_named(name)
+    return [town] if town else []
+
+
 def locate(
     location_text: str | None,
     *,
@@ -71,14 +104,30 @@ def locate(
     is kilometres across, so the uncertainty it returns is large on purpose:
     the corroboration radius grows with it instead of pretending to a precision
     a town name cannot carry.
+
+    Exact names only. The UI's search-as-you-type is a substring match, and
+    borrowing it here let "הרי" (from "הרי ירושלים") resolve to a Galilee
+    village and "כרמל" to the Hebron hills.
     """
     if not location_text or not location_text.strip():
         return None
 
-    from ecoguard.database.repositories.towns import search_towns
-
-    resolver = town_resolver or search_towns
-    for candidate in locality_name_candidates(location_text) or [location_text]:
+    # Every place the phrase names, then the most precise. Two guards keep the
+    # precision honest: a region word is never resolved as a town (bare
+    # "כרמל"), and a fragment of a phrase that already matched is skipped -
+    # "ירושלים" inside "הרי ירושלים" is not the city.
+    resolver = town_resolver or _town_named
+    candidates = locality_name_candidates(location_text) or [location_text]
+    matched: list[str] = []
+    places: list[tuple[float, float, float]] = []
+    for candidate in dict.fromkeys([location_text.strip(), *candidates]):
+        key = " ".join(candidate.lower().split())
+        if any(key in earlier for earlier in matched):
+            continue
+        if key in REGIONS:
+            matched.append(key)
+            places.append(REGIONS[key])
+            continue
         try:
             matches = resolver(candidate, 1)
         except Exception:
@@ -86,16 +135,16 @@ def locate(
             continue
         if not matches:
             continue
-        town = matches[0]
-        label = town.get("label") or {}
+        label = matches[0].get("label") or {}
         if label.get("latitude") is None or label.get("longitude") is None:
             continue
-        return (
+        matched.append(key)
+        places.append((
             float(label["latitude"]),
             float(label["longitude"]),
-            _uncertainty_m(town.get("area_km2")),
-        )
-    return None
+            _uncertainty_m(matches[0].get("area_km2")),
+        ))
+    return min(places, key=lambda place: place[2]) if places else None
 
 
 # A town name locates an event to the town, not to a point in it. The radius of
@@ -193,7 +242,7 @@ def signal_from(
             latitude=report.latitude,
             longitude=report.longitude,
             precision_m=report.precision_m,
-            method="text_report_gazetteer",
+            method=TEXT_LOCATION_METHOD,
         ),
         # The reading here is a person's say-so. A corroborated report is
         # trusted because something else agreed with it and carries what

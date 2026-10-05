@@ -1,7 +1,8 @@
 export type HazardKind = 'fire' | 'air_pollution' | 'earthquake' | 'flood' | 'other'
 export type EventClassification = 'emergency' | 'advisory'
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
-export type StepStatus = 'success' | 'partial' | 'unavailable' | 'failed' | 'skipped'
+// 'pending': published mid-wave; the step is still running.
+export type StepStatus = 'success' | 'partial' | 'unavailable' | 'failed' | 'skipped' | 'pending'
 
 export type ProtocolCitation = {
   chunk_id: string
@@ -121,6 +122,7 @@ export type FireExposedSettlement = {
 
 export type FireEvacuationDirective = {
   name: string
+  name_he?: string | null
   priority: 'immediate' | 'prepare' | 'standby'
   population: number | null
   reason: string
@@ -128,6 +130,7 @@ export type FireEvacuationDirective = {
   authority: string | null
   authority_phone: string | null
   police_station: string | null
+  fire_district?: string | null
 }
 
 export type FireSiteAtRisk = {
