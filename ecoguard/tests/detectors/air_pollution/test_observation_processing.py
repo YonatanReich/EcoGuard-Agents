@@ -4,6 +4,8 @@ from datetime import date, datetime, timezone
 
 import pytest
 
+from ecoguard.detectors.air_pollution import observation_processing
+
 from ecoguard.detectors.air_pollution.detector import AirPollutionAnomalyDetector
 from ecoguard.detectors.air_pollution.baseline_schemas import (
     BaselineBucketStatistics,
@@ -24,6 +26,13 @@ from ecoguard.detectors.air_pollution.spatial_schemas import (
 )
 from ecoguard.shared.signals import AIR_POLLUTION
 from ecoguard.shared.air_quality_schemas import AirQualityObservation, LIVE_QUALITY_POLICY
+
+
+@pytest.fixture(autouse=True)
+def every_station_designated(monkeypatch):
+    """These tests are about detection, not about which station speaks for a region."""
+    monkeypatch.setattr(observation_processing, "DESIGNATED_STATIONS", None)
+
 
 OBSERVED = datetime(2026, 9, 13, 17, 15, tzinfo=timezone.utc)
 INGESTED = datetime(2026, 9, 13, 17, 16, tzinfo=timezone.utc)

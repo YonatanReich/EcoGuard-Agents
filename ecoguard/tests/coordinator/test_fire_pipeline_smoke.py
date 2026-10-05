@@ -6,7 +6,11 @@ from datetime import datetime, timezone
 
 from ecoguard.analyzers.fire.incident_handler import FireIncidentHandler
 from ecoguard.api.events import shared_event_feed
-from ecoguard.coordinator.dispatcher import default_handler_registry, dispatch_incidents
+from ecoguard.coordinator.dispatcher import (
+    IncidentDispatchContext,
+    default_handler_registry,
+    dispatch_incidents,
+)
 from ecoguard.coordinator.event_projection import project_processing_results
 from ecoguard.resource_allocator.allocation_agent import ResourceAllocationAgent
 from ecoguard.planners.shared.schemas import EmergencyResponsePlan
@@ -156,6 +160,11 @@ class _OfflineEmergencyPlanner:
         return _plan(plan_input)
 
 
+class _FailingEmergencyPlanner:
+    def plan_response(self, plan_input):
+        raise RuntimeError("planner unavailable")
+
+
 class _NoWriteAllocationRepository:
     def active_allocations(self):
         return []
@@ -259,6 +268,27 @@ def _fire_catalog():
     }
 
 
+def _police_catalog():
+    return {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [35.01, 32.71]},
+                "properties": {
+                    "database_id": 2,
+                    "station_id": 2,
+                    "name": "Test Police Station",
+                    "district": "test-district",
+                    "kind": "station",
+                },
+            }
+        ],
+        "located": 1,
+        "total": 1,
+    }
+
+
 def test_default_dispatcher_registers_fire_without_running_the_handler():
     assert ("fire", "emergency") in default_handler_registry()
 
@@ -287,7 +317,10 @@ def test_fire_runs_from_shared_dispatch_to_frontend_contract_without_external_ca
     assert detected["event_type"] == "fire"
     assert detected["detected"] is True
     assert detected["satellite_evidence"]["selected_hotspot"]["frp"] == 64.0
-    assert "spread" not in detected
+    # The forecast travels on the detected event now. It used to be absent
+    # here and empty on the card, so an operator learned who was near a fire
+    # and never who was downwind of it.
+    assert "spread_forecast" in detected
     assert len(planner.calls) == 1
     assert planner.calls[0].incident_id == incident["id"]
     assert planner.calls[0].risk_context["risk_semantics"] == (
@@ -324,7 +357,18 @@ def test_fire_runs_from_shared_dispatch_to_frontend_contract_without_external_ca
     record = writes[0]
     assert record.event_payload["type"] == "fire"
     assert record.event_payload["details"]["risk_score"] == 68
-    assert record.event_payload["details"]["spread"] is None
+    # Where it goes next reaches the map: a ring to draw, a bearing, and a
+    # head distance. This asserted None while only the static seed script ever
+    # filled it.
+    spread = record.event_payload["details"]["spread"]
+    assert spread is not None, "the forecast must reach the frontend contract"
+    assert spread["heading_deg"] is not None
+    assert spread["head_distance_m"] > 0
+    assert spread["likely"]["type"] == "Polygon"
+    # And the settlements it reaches, each labelled so the map can colour it:
+    # red for one already burning, yellow for one in the path.
+    for settlement in record.event_payload["details"]["exposed_settlements"]:
+        assert settlement["exposure"] in {"burning", "likely", "possible"}
     assert record.event_payload["details"]["recommended_units"] == [
         "fire_department"
     ]
@@ -350,3 +394,143 @@ def test_fire_runs_from_shared_dispatch_to_frontend_contract_without_external_ca
     assert len(feed.events) == 1
     assert feed.events[0].type == "fire"
     assert feed.events[0].id == incident["id"]
+
+
+def test_fire_planning_failure_allocates_one_police_station():
+    incident = _incident()
+    result = dispatch_incidents(
+        [incident],
+        registry={
+            ("fire", "emergency"): FireIncidentHandler(
+                risk_analyzer=_OfflineRiskAnalyzer(),
+                planner=_FailingEmergencyPlanner(),
+                clock=lambda: NOW,
+            )
+        },
+        at=NOW,
+    )[0]
+
+    assert result.status == "partial"
+    assert result.planner_status == "failed"
+    assert result.requires_resource_allocation is True
+    assert result.fallback_allocation_context == {
+        "location": {"latitude": 32.73, "longitude": 35.03},
+        "risk_context": {
+            "risk_semantics": "detected_event_operational_risk",
+            "risk_score": 68,
+            "risk_level": "high",
+            "confidence": "medium",
+        },
+    }
+
+    allocator = ResourceAllocationAgent(
+        station_readers={
+            "fire_department": _empty_catalog,
+            "police": _police_catalog,
+            "medical_services": _empty_catalog,
+        },
+        routing_client=_OfflineRoutingClient(),
+        allocation_repository=_NoWriteAllocationRepository(),
+        town_reader=lambda **_: None,
+    )
+    allocator.allocate_processing_results([result])
+
+    allocation = result.resource_allocation_result
+    assert allocation["allocation_policy"] == (
+        "planning_failure_police_minimum_v1"
+    )
+    assert allocation["requirements"]["police"] == {
+        "requested": 1,
+        "assigned": 1,
+        "shortfall": 0,
+    }
+    assert len(allocation["allocated_units"]["police_stations"]) == 1
+
+
+def test_fire_risk_failure_is_reported_without_automatic_allocation():
+    class FailingRiskAnalyzer:
+        def analyze_event(self, _detected_event):
+            raise RuntimeError("missing credentials")
+
+    result = FireIncidentHandler(
+        risk_analyzer=FailingRiskAnalyzer(),
+        clock=lambda: NOW,
+    ).process(
+        _incident(),
+        IncidentDispatchContext(
+            incident_id="INC-FIRE-SMOKE",
+            hazard="fire",
+            route="emergency",
+            analysis_id="analysis-fire-smoke",
+            coordinator_routing_id="routing-fire-smoke",
+            routed_by="test",
+            routed_at=NOW,
+            requested_at=NOW,
+        ),
+    )
+
+    assert result.planner_status == "skipped"
+    assert result.risk_status == "failed"
+    assert result.requires_resource_allocation is False
+    assert result.fallback_allocation_context is None
+
+
+def _context(progress=None):
+    return IncidentDispatchContext(
+        incident_id="INC-FIRE-SMOKE", hazard="fire", route="emergency",
+        analysis_id="analysis-fire-smoke", coordinator_routing_id="routing-fire-smoke",
+        routed_by="test", routed_at=NOW, requested_at=NOW, progress=progress,
+    )
+
+
+def test_the_card_is_published_before_the_model_calls_finish():
+    risk_analyzer = _OfflineRiskAnalyzer()
+    reported = []
+
+    def progress(result):
+        reported.append((result.risk_status, result.planner_status, len(risk_analyzer.calls)))
+
+    FireIncidentHandler(
+        risk_analyzer=risk_analyzer, planner=_OfflineEmergencyPlanner(), clock=lambda: NOW,
+    ).process(_incident(), _context(progress))
+
+    # First card before the risk call starts; second once it has returned.
+    assert reported == [("pending", "pending", 0), ("success", "pending", 1)]
+
+
+def test_an_interim_card_says_pending_and_the_feed_serves_it():
+    from ecoguard.coordinator.event_projection import project_interim
+
+    captured = []
+    handler = FireIncidentHandler(
+        risk_analyzer=_OfflineRiskAnalyzer(), planner=_OfflineEmergencyPlanner(), clock=lambda: NOW,
+    )
+    handler.process(_incident(), _context(
+        lambda result: project_interim(result, incident=_incident(), writer=captured.append)
+    ))
+
+    first = captured[0]
+    assert first.processing_status == "in_progress"
+    assert (first.analysis_status, first.planner_status) == ("pending", "pending")
+    feed = shared_event_feed([{
+        "incident_id": first.incident_id, "route": "emergency",
+        "processing_status": first.processing_status, "event_payload": first.event_payload,
+        "attempt_count": 0, "last_attempt_at": None, "processed_at": NOW,
+    }])
+    assert [event.planning_status for event in feed.events] == ["pending"]
+
+
+def test_an_injected_registry_never_publishes_interim_cards():
+    # Interim cards are store writes; a test's own registry must not make any.
+    seen = []
+
+    class Recorder:
+        name = "recorder"
+
+        def process(self, incident, context):
+            seen.append(context.progress)
+            return "done"
+
+    dispatch_incidents([_incident()], registry={("fire", "emergency"): Recorder()}, at=NOW,
+                       projection_reader=lambda _id: None)
+    assert seen == [None]

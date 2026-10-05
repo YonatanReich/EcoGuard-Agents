@@ -11,7 +11,7 @@ import logging
 import sys
 from datetime import datetime, timezone
 
-from ecoguard.database.engine import Session, sandbox_schema, use_sandbox
+from ecoguard.database.engine import Session, sandbox_schema, set_replay_clock, use_sandbox
 from ecoguard.demo import sandbox
 
 logger = logging.getLogger(__name__)
@@ -73,6 +73,8 @@ def main() -> int:
                   f"into {schema}: {seeded['by_source']}")
 
         use_sandbox(schema)
+        replay_at = getattr(module, "REPLAY_AT", None)
+        set_replay_clock(replay_at)
         started = datetime.now(timezone.utc)
         for wave in range(1, args.waves + 1):
             counts = run_wave()
@@ -81,6 +83,7 @@ def main() -> int:
                 print(f"   {key:22} {value}")
     finally:
         use_sandbox(None)
+        set_replay_clock(None)
         print("\nlive search path restored; sandbox kept for inspection")
 
     from ecoguard.demo.grade import main as grade_main

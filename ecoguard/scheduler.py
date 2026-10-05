@@ -253,6 +253,32 @@ scheduler.add_job(
 )
 
 
+def write_improvement_report() -> None:
+    """The daily improvement report. Never raises into the scheduler."""
+    try:
+        from ecoguard.improvement.agent import run
+
+        run()
+    except Exception:
+        logger.exception("improvement report failed; the next tick or boot tries again")
+
+
+# Same pattern as retention: daily, plus once at boot, because a container that
+# is redeployed every few hours would otherwise never reach its first 24-hour
+# tick. The agent itself refuses to write a second report within 20 hours, so
+# the boot run costs nothing when a report is already fresh.
+scheduler.add_job(
+    write_improvement_report,
+    "interval",
+    hours=24,
+    id="improvement_report",
+    max_instances=1,
+    coalesce=True,
+    next_run_time=BOOT + BOOT_STAGGER * (len(COLLECTORS) + 1),
+    misfire_grace_time=None,
+)
+
+
 def publish(results):
     """Project finished results to the frontend. Never raises."""
     if not results:
@@ -367,23 +393,42 @@ def _detect_and_coordinate():
     # cadence rather than three), and makes a scenario run reproducible.
     # Isolation is unchanged: process_text_events catches its own failures, as
     # each detector below does.
-    try:
-        process_text_events(coordinate=signals.extend)
-    except Exception:
-        logger.exception("text lane failed; structured detection continues")
-
-    for detector in (
-        satellite,
-        weather,
-        observation_processing,
-        flood_processing,
-        earthquake_processing,
-    ):
+    #
+    # The lane and the five detectors run side by side. Each reads its own
+    # tables and waits on the database (and the classifier on Claude), so in
+    # series they were ~26 s of a wave before anything was coordinated; at once
+    # they take as long as the slowest. Their signals are merged in the order
+    # they always were, and the coordinator sorts by observation time anyway.
+    def text_lane():
+        found: list = []
         try:
-            signals.extend(detector.detect_new())
+            process_text_events(coordinate=found.extend)
         except Exception:
-            logger.exception("detector %s failed; continuing without it",
-                             detector.__name__)
+            logger.exception("text lane failed; structured detection continues")
+        return found
+
+    def run(detector):
+        def detect():
+            try:
+                return list(detector.detect_new())
+            except Exception:
+                logger.exception("detector %s failed; continuing without it",
+                                 detector.__name__)
+                return []
+        return detect
+
+    from ecoguard.shared.concurrency import concurrently
+
+    for found in concurrently(text_lane, *(
+        run(detector) for detector in (
+            satellite,
+            weather,
+            observation_processing,
+            flood_processing,
+            earthquake_processing,
+        )
+    )):
+        signals.extend(found)
 
     coordination = coordinate(signals)
     if coordination is None:

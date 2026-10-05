@@ -105,6 +105,6 @@ npm --prefix ecoguard/frontend run dev # the dashboard
 ```
 
 To show the system working without waiting for something to happen, press
-**Run Demo A** on the dashboard home page. It points the detectors at an
-authored dataset and runs the real pipeline over it, live, until you press
-**End Demo**.
+**Run Demo A** or **Run Demo B** on the dashboard home page. The selected
+control points the detectors at an authored dataset and runs the real pipeline
+over it, live, until you press **End Demo**.

@@ -6,12 +6,15 @@ it does not schedule itself. A caller decides when a refresh is appropriate.
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
+import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any
+from pathlib import Path
+from typing import Any, TypeVar
 
 import requests
 from sqlalchemy import text
@@ -35,16 +38,33 @@ MISSING_THRESHOLD = 999.0
 FLOW_THRESHOLD_STATUS_COMPLETE = "complete_thresholds"
 FLOW_THRESHOLD_STATUS_MISSING = "missing_thresholds"
 FLOW_THRESHOLD_STATUS_PARTIAL = "partial_thresholds"
+OPERATIONAL_FLOW_REGIME_EPHEMERAL = "ephemeral"
+OPERATIONAL_FLOW_REGIME_FLOWING = "flowing_baseline"
+OPERATIONAL_FLOW_REGIMES = frozenset({
+    OPERATIONAL_FLOW_REGIME_EPHEMERAL,
+    OPERATIONAL_FLOW_REGIME_FLOWING,
+})
+FLOW_REGIME_REFERENCE_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "data"
+    / "reference"
+    / "Floods"
+    / "hydrometric_station_flow_regimes.csv"
+)
+FLOW_REGIME_REQUIRED_COLUMNS = frozenset({
+    "source_station_id",
+    "operational_flow_regime",
+})
+logger = logging.getLogger(__name__)
+Number = TypeVar("Number", int, float)
 
 
-class HydrometricStationCatalogError(ValueError):
-    """The station endpoint returned an unsafe or unexpected catalog."""
+class HydrometricStationError(ValueError):
+    """The station catalog or reviewed flow classification is inconsistent."""
 
 
 @dataclass(frozen=True)
 class HydrometricStationCatalog:
-    source_url: str
-    source_version: str
     checksum: str
     owners: list[dict[str, Any]]
     stations: list[dict[str, Any]]
@@ -59,33 +79,44 @@ def _canonical_json(value: Any) -> str:
 def _required_mapping(value: Any, label: str) -> dict[str, Any]:
     """A nested object that must be present."""
     if not isinstance(value, dict):
-        raise HydrometricStationCatalogError(f"{label} must be an object")
+        raise HydrometricStationError(f"{label} must be an object")
     return value
+
+
+def _convert_number(
+    value: Any,
+    label: str,
+    *,
+    converter: Callable[[Any], Number],
+    expected: str,
+) -> Number:
+    """Convert one required numeric value without accepting JSON booleans."""
+    if value is None or isinstance(value, bool):
+        raise HydrometricStationError(f"{label} must be {expected}")
+    try:
+        return converter(value)
+    except (TypeError, ValueError) as error:
+        raise HydrometricStationError(f"{label} must be {expected}") from error
 
 
 def _required_int(value: Any, label: str) -> int:
     """A whole number that must be present."""
-    if value is None or isinstance(value, bool):
-        raise HydrometricStationCatalogError(f"{label} must be an integer")
-    try:
-        return int(value)
-    except (TypeError, ValueError) as error:
-        raise HydrometricStationCatalogError(f"{label} must be an integer") from error
-
-
-def _optional_int(value: Any, label: str) -> int | None:
-    """A whole number, or None when absent."""
-    return None if value is None else _required_int(value, label)
+    return _convert_number(
+        value,
+        label,
+        converter=int,
+        expected="an integer",
+    )
 
 
 def _required_float(value: Any, label: str) -> float:
     """A number that must be present."""
-    if value is None or isinstance(value, bool):
-        raise HydrometricStationCatalogError(f"{label} must be numeric")
-    try:
-        return float(value)
-    except (TypeError, ValueError) as error:
-        raise HydrometricStationCatalogError(f"{label} must be numeric") from error
+    return _convert_number(
+        value,
+        label,
+        converter=float,
+        expected="numeric",
+    )
 
 
 def _optional_float(value: Any, label: str) -> float | None:
@@ -107,7 +138,7 @@ def _threshold(value: Any, label: str) -> float | None:
     if number == MISSING_THRESHOLD:
         return None
     if number < 0:
-        raise HydrometricStationCatalogError(f"{label} cannot be negative")
+        raise HydrometricStationError(f"{label} cannot be negative")
     return number
 
 
@@ -123,21 +154,18 @@ def _flow_threshold_status(thresholds: list[float | None]) -> str:
 
 def parse_hydrometric_station_catalog(
     response: Any,
-    *,
-    synced_at: datetime | None = None,
 ) -> HydrometricStationCatalog:
     """Validate the endpoint response and produce normalized database rows."""
     if not isinstance(response, list) or len(response) < 2:
-        raise HydrometricStationCatalogError("station response must contain stations and owners")
+        raise HydrometricStationError("station response must contain stations and owners")
 
     raw_stations = _required_mapping(response[0], "stations")
     raw_owners = _required_mapping(response[1], "owners")
     if not raw_stations:
-        raise HydrometricStationCatalogError("station response contains no stations")
+        raise HydrometricStationError("station response contains no stations")
     if not raw_owners:
-        raise HydrometricStationCatalogError("station response contains no owners")
+        raise HydrometricStationError("station response contains no owners")
 
-    synced_at = synced_at or datetime.now(timezone.utc)
     owners: list[dict[str, Any]] = []
     owner_ids: set[int] = set()
     for source_id, raw_owner in raw_owners.items():
@@ -145,14 +173,13 @@ def parse_hydrometric_station_catalog(
         source_owner_id = _required_int(source_id, "owner id")
         name = _optional_text(owner.get("name"))
         if name is None:
-            raise HydrometricStationCatalogError(f"owner {source_owner_id} has no name")
+            raise HydrometricStationError(f"owner {source_owner_id} has no name")
         owner_ids.add(source_owner_id)
         owners.append({
             "source_owner_id": source_owner_id,
             "owner_code": _optional_text(owner.get("owner_code")),
             "name": name,
             "source_metadata": _canonical_json(owner),
-            "synced_at": synced_at,
         })
 
     stations: list[dict[str, Any]] = []
@@ -162,7 +189,7 @@ def parse_hydrometric_station_catalog(
         station = _required_mapping(raw_station, f"station {source_id}")
         source_station_id = _required_int(source_id, "station id")
         if source_station_id in station_ids:
-            raise HydrometricStationCatalogError(
+            raise HydrometricStationError(
                 f"duplicate station id {source_station_id}"
             )
         station_ids.add(source_station_id)
@@ -171,13 +198,13 @@ def parse_hydrometric_station_catalog(
             station.get("owner_id"), f"station {source_station_id} owner_id"
         )
         if owner_source_id not in owner_ids:
-            raise HydrometricStationCatalogError(
+            raise HydrometricStationError(
                 f"station {source_station_id} references unknown owner {owner_source_id}"
             )
 
         thresholds = station.get("threshold")
         if not isinstance(thresholds, list) or len(thresholds) != len(RETURN_PERIODS):
-            raise HydrometricStationCatalogError(
+            raise HydrometricStationError(
                 f"station {source_station_id} must have six discharge thresholds"
             )
         normalized_thresholds = [
@@ -189,7 +216,7 @@ def parse_hydrometric_station_catalog(
         name_he = _optional_text(station.get("name_he"))
         name_en = _optional_text(station.get("name_en"))
         if name_he is None and name_en is None:
-            raise HydrometricStationCatalogError(f"station {source_station_id} has no name")
+            raise HydrometricStationError(f"station {source_station_id} has no name")
 
         stations.append({
             "source_station_id": source_station_id,
@@ -202,9 +229,6 @@ def parse_hydrometric_station_catalog(
                 station.get("lon"), f"station {source_station_id} longitude"
             ),
             "owner_source_id": owner_source_id,
-            "map_zoom_level": _optional_int(
-                station.get("zoom"), f"station {source_station_id} zoom"
-            ),
             # Negative values are valid because water levels are relative to a
             # station datum, not to sea level or the river bed.
             "flow_start_water_level_m": _optional_float(
@@ -217,12 +241,11 @@ def parse_hydrometric_station_catalog(
             },
             "flow_threshold_status": flow_threshold_status,
             "source_metadata": _canonical_json(station),
-            "synced_at": synced_at,
         })
 
         envista_ids = station.get("envista_id")
         if not isinstance(envista_ids, list) or len(envista_ids) > 4:
-            raise HydrometricStationCatalogError(
+            raise HydrometricStationError(
                 f"station {source_station_id} envista_id must be an array of up to four ids"
             )
         seen_rain_ids: set[int] = set()
@@ -233,7 +256,7 @@ def parse_hydrometric_station_catalog(
                 raw_rain_id, f"station {source_station_id} envista_id"
             )
             if rain_station_source_id in seen_rain_ids:
-                raise HydrometricStationCatalogError(
+                raise HydrometricStationError(
                     f"station {source_station_id} repeats rain station {rain_station_source_id}"
                 )
             seen_rain_ids.add(rain_station_source_id)
@@ -241,14 +264,11 @@ def parse_hydrometric_station_catalog(
                 "hydrometric_station_source_id": source_station_id,
                 "rain_station_source_id": rain_station_source_id,
                 "link_order": link_order,
-                "synced_at": synced_at,
             })
 
     catalog_payload = {"stations": raw_stations, "owners": raw_owners}
     checksum = hashlib.sha256(_canonical_json(catalog_payload).encode("utf-8")).hexdigest()
     return HydrometricStationCatalog(
-        source_url=f"{BASE_URL}{CATALOG_PATH}",
-        source_version=CATALOG_PATH.rsplit("/", 1)[-1],
         checksum=checksum,
         owners=owners,
         stations=stations,
@@ -275,7 +295,7 @@ def fetch_hydrometric_station_catalog(
     page_response.raise_for_status()
     token_match = TOKEN_PATTERN.search(page_response.text)
     if token_match is None:
-        raise HydrometricStationCatalogError("map page did not provide a session token")
+        raise HydrometricStationError("map page did not provide a session token")
 
     response = http.post(
         f"{BASE_URL}{CATALOG_PATH}",
@@ -294,7 +314,7 @@ def fetch_hydrometric_station_catalog(
     try:
         payload = response.json()
     except requests.JSONDecodeError as error:
-        raise HydrometricStationCatalogError("station endpoint returned invalid JSON") from error
+        raise HydrometricStationError("station endpoint returned invalid JSON") from error
     return parse_hydrometric_station_catalog(payload)
 
 
@@ -303,20 +323,20 @@ OWNER_UPSERT = text(
     INSERT INTO water_authority_station_owners
       (source_owner_id, owner_code, name, is_active, source_metadata, synced_at)
     VALUES
-      (:source_owner_id, :owner_code, :name, true, CAST(:source_metadata AS jsonb), :synced_at)
+      (:source_owner_id, :owner_code, :name, true, CAST(:source_metadata AS jsonb), now())
     ON CONFLICT ON CONSTRAINT water_authority_station_owners_identity DO UPDATE SET
       owner_code = EXCLUDED.owner_code,
       name = EXCLUDED.name,
       is_active = true,
       source_metadata = EXCLUDED.source_metadata,
-      synced_at = EXCLUDED.synced_at
+      synced_at = now()
     """
 )
 
 STATION_UPSERT = text(
     """
     INSERT INTO hydrometric_stations
-      (source_station_id, name_he, name_en, location, cell_id, owner_id, map_zoom_level,
+      (source_station_id, name_he, name_en, location, cell_id, owner_id,
        flow_start_water_level_m, flow_threshold_2y_m3s, flow_threshold_5y_m3s,
        flow_threshold_10y_m3s, flow_threshold_20y_m3s, flow_threshold_50y_m3s,
        flow_threshold_100y_m3s, flow_threshold_status, is_active,
@@ -324,19 +344,18 @@ STATION_UPSERT = text(
     VALUES
       (:source_station_id, :name_he, :name_en,
        ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
-       :cell_id, :owner_id, :map_zoom_level, :flow_start_water_level_m,
+       :cell_id, :owner_id, :flow_start_water_level_m,
        :flow_threshold_2y_m3s, :flow_threshold_5y_m3s,
        :flow_threshold_10y_m3s, :flow_threshold_20y_m3s,
        :flow_threshold_50y_m3s, :flow_threshold_100y_m3s,
        :flow_threshold_status,
-       true, CAST(:source_metadata AS jsonb), :synced_at)
+       true, CAST(:source_metadata AS jsonb), now())
     ON CONFLICT ON CONSTRAINT hydrometric_stations_identity DO UPDATE SET
       name_he = EXCLUDED.name_he,
       name_en = EXCLUDED.name_en,
       location = EXCLUDED.location,
       cell_id = EXCLUDED.cell_id,
       owner_id = EXCLUDED.owner_id,
-      map_zoom_level = EXCLUDED.map_zoom_level,
       flow_start_water_level_m = EXCLUDED.flow_start_water_level_m,
       flow_threshold_2y_m3s = EXCLUDED.flow_threshold_2y_m3s,
       flow_threshold_5y_m3s = EXCLUDED.flow_threshold_5y_m3s,
@@ -347,7 +366,26 @@ STATION_UPSERT = text(
       flow_threshold_status = EXCLUDED.flow_threshold_status,
       is_active = true,
       source_metadata = EXCLUDED.source_metadata,
-      synced_at = EXCLUDED.synced_at
+      synced_at = now()
+    """
+)
+
+FLOW_REGIME_CLEAR = text(
+    "UPDATE hydrometric_stations SET operational_flow_regime = NULL"
+)
+
+FLOW_REGIME_UPDATE = text(
+    """
+    UPDATE hydrometric_stations
+    SET operational_flow_regime = :operational_flow_regime
+    WHERE source_station_id = :source_station_id
+    """
+)
+
+FLOW_REGIME_STATION_STATUS = text(
+    """
+    SELECT source_station_id, is_active, flow_threshold_status
+    FROM hydrometric_stations
     """
 )
 
@@ -356,9 +394,144 @@ LINK_INSERT = text(
     INSERT INTO hydrometric_station_rain_links
       (hydrometric_station_id, rain_station_source_id, link_order, synced_at)
     VALUES
-      (:hydrometric_station_id, :rain_station_source_id, :link_order, :synced_at)
+      (:hydrometric_station_id, :rain_station_source_id, :link_order, now())
     """
 )
+
+
+def read_hydrometric_station_flow_regimes(
+    path: str | Path = FLOW_REGIME_REFERENCE_PATH,
+) -> dict[int, str]:
+    """Read and validate the reviewed operational classification CSV."""
+    reference_path = Path(path)
+    try:
+        handle = reference_path.open(encoding="utf-8-sig", newline="")
+    except OSError as error:
+        raise HydrometricStationError(
+            f"cannot read flow-regime reference: {reference_path}"
+        ) from error
+
+    with handle:
+        reader = csv.DictReader(handle)
+        columns = set(reader.fieldnames or [])
+        missing_columns = sorted(FLOW_REGIME_REQUIRED_COLUMNS - columns)
+        if missing_columns:
+            raise HydrometricStationError(
+                "flow-regime reference is missing columns: "
+                + ", ".join(missing_columns)
+            )
+
+        regimes: dict[int, str] = {}
+        for line_number, row in enumerate(reader, start=2):
+            try:
+                source_station_id = int(str(row["source_station_id"]).strip())
+            except (TypeError, ValueError) as error:
+                raise HydrometricStationError(
+                    f"line {line_number}: source_station_id must be an integer"
+                ) from error
+            if source_station_id <= 0:
+                raise HydrometricStationError(
+                    f"line {line_number}: source_station_id must be positive"
+                )
+            if source_station_id in regimes:
+                raise HydrometricStationError(
+                    f"line {line_number}: duplicate station {source_station_id}"
+                )
+
+            flow_regime = str(row["operational_flow_regime"] or "").strip()
+            if flow_regime not in OPERATIONAL_FLOW_REGIMES:
+                raise HydrometricStationError(
+                    f"line {line_number}: invalid operational_flow_regime "
+                    f"{flow_regime!r}"
+                )
+
+            regimes[source_station_id] = flow_regime
+
+    if not regimes:
+        raise HydrometricStationError(
+            "flow-regime reference contains no stations"
+        )
+    return regimes
+
+
+def _validate_flow_regime_targets(
+    regimes: dict[int, str],
+    station_statuses: list[dict[str, Any]],
+) -> list[int]:
+    """Validate targets and return active complete stations left unclassified."""
+    status_by_id = {
+        int(station["source_station_id"]): station
+        for station in station_statuses
+    }
+    invalid_targets: list[int] = []
+    for source_station_id in regimes:
+        station = status_by_id.get(source_station_id)
+        if (
+            station is None
+            or station.get("is_active") is not True
+            or station.get("flow_threshold_status")
+            != FLOW_THRESHOLD_STATUS_COMPLETE
+        ):
+            invalid_targets.append(source_station_id)
+    if invalid_targets:
+        raise HydrometricStationError(
+            "classification targets must be active stations with complete "
+            "thresholds: " + ", ".join(map(str, sorted(invalid_targets)))
+        )
+
+    classified_ids = set(regimes)
+    return sorted(
+        source_station_id
+        for source_station_id, station in status_by_id.items()
+        if station.get("is_active") is True
+        and station.get("flow_threshold_status") == FLOW_THRESHOLD_STATUS_COMPLETE
+        and source_station_id not in classified_ids
+    )
+
+
+def persist_hydrometric_station_flow_regimes(
+    regimes: dict[int, str],
+) -> dict[str, int]:
+    """Replace DB classifications atomically from the reviewed reference."""
+    from ecoguard.database.engine import Session
+
+    with Session() as session:
+        statuses = [
+            dict(row)
+            for row in session.execute(FLOW_REGIME_STATION_STATUS).mappings()
+        ]
+        unclassified = _validate_flow_regime_targets(regimes, statuses)
+        session.execute(FLOW_REGIME_CLEAR)
+        update_rows = [
+            {
+                "source_station_id": source_station_id,
+                "operational_flow_regime": operational_flow_regime,
+            }
+            for source_station_id, operational_flow_regime in regimes.items()
+        ]
+        session.execute(FLOW_REGIME_UPDATE, update_rows)
+        session.commit()
+
+    if unclassified:
+        logger.warning(
+            "active hydrometric stations with complete thresholds remain "
+            "unclassified: %s",
+            ", ".join(map(str, unclassified)),
+        )
+    return {
+        "classified": len(regimes),
+        "unclassified_active_complete": len(unclassified),
+    }
+
+
+def load_hydrometric_station_flow_regimes(
+    path: str | Path = FLOW_REGIME_REFERENCE_PATH,
+) -> dict[str, int]:
+    """Load the reviewed CSV into the hydrometric station catalog."""
+    return persist_hydrometric_station_flow_regimes(
+        read_hydrometric_station_flow_regimes(path)
+    )
+
 
 
 def persist_hydrometric_station_catalog(
@@ -367,7 +540,6 @@ def persist_hydrometric_station_catalog(
     """Idempotently synchronize owners, stations and rain-station links."""
     from ecoguard.database.engine import Session
 
-    checked_at = datetime.now(timezone.utc)
     with Session() as session:
         existing_checksum = session.execute(
             text(
@@ -378,10 +550,9 @@ def persist_hydrometric_station_catalog(
         if existing_checksum == catalog.checksum:
             session.execute(
                 text(
-                    "UPDATE static_layer_imports SET checked_at = :checked_at "
+                    "UPDATE static_layer_imports SET checked_at = now() "
                     "WHERE layer_name = 'hydrometric_stations'"
-                ),
-                {"checked_at": checked_at},
+                )
             )
             session.commit()
             return {"owners": 0, "stations": 0, "rain_links": 0}
@@ -429,23 +600,21 @@ def persist_hydrometric_station_catalog(
                    feature_count, checked_at, loaded_at)
                 VALUES
                   ('hydrometric_stations', :source_url, :source_version,
-                   :content_sha256, :feature_count, :checked_at, :loaded_at)
+                   :content_sha256, :feature_count, now(), now())
                 ON CONFLICT (layer_name) DO UPDATE SET
                   source_url = EXCLUDED.source_url,
                   source_version = EXCLUDED.source_version,
                   content_sha256 = EXCLUDED.content_sha256,
                   feature_count = EXCLUDED.feature_count,
-                  checked_at = EXCLUDED.checked_at,
-                  loaded_at = EXCLUDED.loaded_at
+                  checked_at = now(),
+                  loaded_at = now()
                 """
             ),
             {
-                "source_url": catalog.source_url,
-                "source_version": catalog.source_version,
+                "source_url": f"{BASE_URL}{CATALOG_PATH}",
+                "source_version": CATALOG_PATH.rsplit("/", 1)[-1],
                 "content_sha256": catalog.checksum,
                 "feature_count": len(catalog.stations),
-                "checked_at": checked_at,
-                "loaded_at": checked_at,
             },
         )
         session.commit()

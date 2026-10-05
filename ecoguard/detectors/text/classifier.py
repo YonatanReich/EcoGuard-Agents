@@ -252,10 +252,18 @@ class TextClassifier:
         labels: dict[int, MessageLabels] = {}
         failure: str | None = None
 
-        if worth_asking:
+        # A reply can be well-formed and still skip a message - the Carmel
+        # replay lost both ynet flashes that way while the third item in the
+        # batch was labelled. A skipped message silently fell to the keyword
+        # net, which has no location, so the report never reached its fire.
+        # The missing ones are asked about once more, on their own.
+        pending = list(worth_asking)
+        for attempt in range(2):
+            if not pending:
+                break
             payload = [
                 {**message, "text": normalise(message["text"])}
-                for _, message in worth_asking
+                for _, message in pending
             ]
             try:
                 parsed = self._llm.parse_structured(
@@ -263,9 +271,6 @@ class TextClassifier:
                     user_text=build_batch_text(payload),
                     output_format=BatchLabels,
                 )
-                for item in parsed.messages:
-                    if 0 <= item.index < len(worth_asking):
-                        labels[worth_asking[item.index][0]] = item
             except Exception as error:
                 # Never raises onward. A classification outage must degrade to
                 # the keyword net, not stop the detector — and a batch lost to
@@ -273,6 +278,16 @@ class TextClassifier:
                 # cursor only advances over messages that produced a row.
                 failure = type(error).__name__
                 logger.exception("text classifier: batch failed; falling back to keywords")
+                break
+            for item in parsed.messages:
+                if 0 <= item.index < len(pending):
+                    labels[pending[item.index][0]] = item
+            pending = [entry for entry in pending if entry[0] not in labels]
+            if pending:
+                logger.warning(
+                    "text classifier: reply skipped %d of %d messages%s",
+                    len(pending), len(payload), "; asking again" if attempt == 0 else "",
+                )
 
         return [
             self._result(message, labels.get(position), keyword_hits[position], failure)

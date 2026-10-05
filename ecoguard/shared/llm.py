@@ -39,9 +39,14 @@ MODELS_WITHOUT_REASONING_CONTROLS = frozenset({
     "claude-haiku-4-5-20251001",
 })
 
-DEFAULT_MAX_TOKENS = 4096
+# Thinking counts against this cap. At 4096 the fire planner ran out of room
+# on the Jerusalem hills replay (19 settlements in the path): the reply was
+# cut off, had no parsed output, and was reported as "malformed". Only the
+# tokens used are billed, so the higher cap costs nothing on short replies.
+DEFAULT_MAX_TOKENS = 8192
 DEFAULT_EFFORT = "medium"
-DEFAULT_TIMEOUT_SECONDS = 60.0
+# Sized to the cap: a full 8k reply does not stream in 60 seconds.
+DEFAULT_TIMEOUT_SECONDS = 120.0
 DEFAULT_MAX_RETRIES = 1
 
 # How many times a server-tool turn paused at the API's 10-iteration ceiling may
@@ -92,6 +97,10 @@ CLAUDE_ERROR_KINDS = frozenset(
 
 class ClaudeProviderError(RuntimeError):
     """Credential-safe Claude failure carrying a provider-level error category."""
+
+
+class _SchemaRejected(ClaudeProviderError):
+    """A reply that arrived whole but failed the output schema. Worth one retry."""
 
 
 # --------------------------------------------------------------------------
@@ -261,14 +270,15 @@ class ClaudeLLMService:
         self.model = model
         self.max_tokens = max_tokens
         self.effort = effort
-        self.last_usage: dict | None = None
-
         # What the most recent request actually did, counted from the response
         # blocks rather than taken from the model's account of itself.
         # last_web_searches is the number to report to a user; the other
         # includes the code execution that dynamic filtering runs internally.
-        self.last_server_tool_uses: int = 0
-        self.last_web_searches: int = 0
+        #
+        # Per thread: incidents are analysed in parallel on one shared service,
+        # and "the most recent request" must mean this thread's, or one fire's
+        # analysis reports another's search count.
+        self._last = threading.local()
 
         if client is not None:
             self.client = client
@@ -299,7 +309,46 @@ class ClaudeLLMService:
         """
         return self.client is not None
 
-    def parse_structured(
+    @property
+    def last_usage(self) -> dict | None:
+        return getattr(self._last, "usage", None)
+
+    @last_usage.setter
+    def last_usage(self, value: dict | None) -> None:
+        self._last.usage = value
+
+    @property
+    def last_server_tool_uses(self) -> int:
+        return getattr(self._last, "server_tool_uses", 0)
+
+    @last_server_tool_uses.setter
+    def last_server_tool_uses(self, value: int) -> None:
+        self._last.server_tool_uses = value
+
+    @property
+    def last_web_searches(self) -> int:
+        return getattr(self._last, "web_searches", 0)
+
+    @last_web_searches.setter
+    def last_web_searches(self, value: int) -> None:
+        self._last.web_searches = value
+
+    def parse_structured(self, **kwargs) -> BaseModel:
+        """Run one structured call, retrying once if the reply fails the schema.
+
+        One reply in a few dozen comes back well-formed but outside the schema
+        (on the Carmel replay: an `explanation` below its minimum length), and
+        without a retry that one reply cost the fire its whole assessment and
+        plan. Only schema rejections are retried - a truncation or a refusal
+        would fail the same way twice. The second failure raises as before.
+        """
+        try:
+            return self._parse_structured_once(**kwargs)
+        except _SchemaRejected:
+            logging.warning("Claude reply failed the output schema; retrying once")
+            return self._parse_structured_once(**kwargs)
+
+    def _parse_structured_once(
         self,
         *,
         system_blocks: list[dict],
@@ -408,6 +457,8 @@ class ClaudeLLMService:
                 )
             except Exception as error:
                 self.log_validation_detail(error)
+                if isinstance(error, ValidationError):
+                    raise _SchemaRejected(self.sanitize_error(error)) from None
                 raise ClaudeProviderError(self.sanitize_error(error)) from None
 
             if getattr(response, "stop_reason", None) != "pause_turn":
@@ -430,8 +481,13 @@ class ClaudeLLMService:
 
         parsed = response.parsed_output
 
-        # A truncated response can also yield no parsed output at all.
+        # A truncated response can also yield no parsed output at all. Say
+        # which: "malformed" alone hid a token-cap truncation for a whole demo.
         if not isinstance(parsed, output_format):
+            logging.warning(
+                "Claude reply had no parsed output: model=%s stop_reason=%s max_tokens=%s",
+                self.model, getattr(response, "stop_reason", None), self.max_tokens,
+            )
             raise ClaudeProviderError("malformed response") from None
 
         self.last_usage = self.read_usage(response)
@@ -498,8 +554,8 @@ class ClaudeLLMService:
         """
         Map any exception onto the closed error vocabulary.
 
-        Mirrors FireDetectionAgent.sanitize_firms_error. The ordering below is
-        load-bearing: AuthenticationError, PermissionDeniedError,
+        The ordering below is load-bearing: AuthenticationError,
+        PermissionDeniedError,
         RateLimitError, NotFoundError and BadRequestError all subclass
         APIStatusError, and APITimeoutError subclasses APIConnectionError. Check
         subclasses first or every failure collapses into "HTTP error".

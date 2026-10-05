@@ -108,9 +108,18 @@ class ResourceAllocationSummary(EventContract):
 
 class EarthquakeResourceAllocationSummary(ResourceAllocationSummary):
     unsupported_units: list[str] = Field(default_factory=list)
-    allocation_policy: Literal["earthquake_minimum_response_v1"]
-    allocation_basis: Literal["protocol_recommended_units"]
-    quantity_source: Literal["ecoguard_minimum_response_policy"]
+    allocation_policy: Literal[
+        "earthquake_minimum_response_v1",
+        "planning_failure_police_minimum_v1",
+    ]
+    allocation_basis: Literal[
+        "protocol_recommended_units",
+        "planner_unavailable_emergency_minimum",
+    ]
+    quantity_source: Literal[
+        "ecoguard_minimum_response_policy",
+        "ecoguard_fallback_policy",
+    ]
 
 
 class FireSpreadRing(EventContract):
@@ -155,6 +164,7 @@ class FireEvacuationDirective(EventContract):
     """Which settlement moves, when, and who holds the decision."""
 
     name: str
+    name_he: str | None = None
     priority: Literal["immediate", "prepare", "standby"]
     population: int | None = None
     reason: str
@@ -162,6 +172,7 @@ class FireEvacuationDirective(EventContract):
     authority: str | None = None
     authority_phone: str | None = None
     police_station: str | None = None
+    fire_district: str | None = None
 
 
 class FireSiteAtRisk(EventContract):
@@ -622,6 +633,22 @@ class AirPollutionDetails(EventContract):
         return self
 
 
+class EventConfirmation(EventContract):
+    """Whether this event is confirmed, and on whose word.
+
+    `basis` is what confirmed it: `instrument` when something measured it,
+    `operator` when a person marked it confirmed, and None when neither has.
+    An unconfirmed event is still fully analysed — the field governs how its
+    response plan should be read, not whether one exists.
+    """
+
+    status: Literal["confirmed", "unconfirmed"]
+    basis: Literal["instrument", "operator"] | None = None
+    detail: str | None = None
+    confirmed_at: AwareDatetime | None = None
+    confirmed_by: str | None = None
+
+
 class CommonSharedEvent(EventContract):
     id: str
     title: str
@@ -630,13 +657,19 @@ class CommonSharedEvent(EventContract):
     longitude: float
     observed_at: AwareDatetime | None = None
     classification: Literal["emergency", "advisory"]
+    # "pending": published mid-wave, the step has not finished yet. Only the
+    # interim projection writes it; a final projection never does.
     analysis_status: Literal[
-        "success", "partial", "unavailable", "failed", "skipped"
+        "success", "partial", "unavailable", "failed", "skipped", "pending"
     ]
     planning_status: Literal[
-        "success", "partial", "unavailable", "failed", "skipped"
+        "success", "partial", "unavailable", "failed", "skipped", "pending"
     ]
     processing: EventProcessingMetadata | None = None
+    # Attached by the projection for every hazard, so the map and the card can
+    # mark an unconfirmed event without knowing which hazard it is. Optional so
+    # a projection written before this existed still validates.
+    confirmation: EventConfirmation | None = None
 
 
 class AirPollutionSharedEvent(CommonSharedEvent):

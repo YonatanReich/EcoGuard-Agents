@@ -7,6 +7,18 @@ import os
 from typing import Any, Iterable
 
 import httpx
+from dotenv import load_dotenv
+
+# Loaded here rather than relied on from elsewhere. This module is constructed
+# by the allocator, which a scheduler thread reaches without going through
+# anything that reads `.env` - and the failure was silent in the usual
+# direction: the token looked absent, every route came back "unavailable", and
+# stations were ranked by straight-line distance with no error anyone saw.
+load_dotenv()
+
+
+# Road verifications by crossing; see MapboxClient.verify_road_candidate.
+_ROAD_VERIFICATIONS: dict[tuple, dict[str, Any]] = {}
 
 
 class RoutingError(RuntimeError):
@@ -197,6 +209,26 @@ class MapboxClient:
         if not math.isfinite(latitude) or not math.isfinite(longitude):
             raise ValueError("road candidate must contain finite coordinates")
 
+        # The crossings are fixed reference points and the road network under
+        # them does not move between waves, yet every allocation asked Mapbox
+        # again - ~45 sequential requests per flood. Answers are kept for the
+        # process; errors raise before this and are retried next time.
+        # ponytail: unbounded, but keyed by the finite set of GIS crossings.
+        key = (
+            round(latitude, 6), round(longitude, 6), float(radius_m),
+            candidate.get("road_ref"), candidate.get("road_name"), candidate.get("road_class"),
+        )
+        cached = _ROAD_VERIFICATIONS.get(key)
+        if cached is not None:
+            return dict(cached)
+        result = self._verify_road(candidate, latitude, longitude, radius_m)
+        _ROAD_VERIFICATIONS[key] = dict(result)
+        return result
+
+    def _verify_road(
+        self, candidate: dict[str, Any], latitude: float, longitude: float, radius_m: float
+    ) -> dict[str, Any]:
+        """The uncached Tilequery match behind `verify_road_candidate`."""
         payload = self._get_json(
             (
                 "v4/mapbox.mapbox-streets-v8/tilequery/"

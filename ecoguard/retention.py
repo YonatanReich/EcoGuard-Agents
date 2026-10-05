@@ -64,7 +64,7 @@ from typing import Any
 
 from sqlalchemy import text
 
-from ecoguard.database.engine import Session
+from ecoguard.database.engine import Session, collector_database
 from ecoguard.database.repositories.collector_runs import log_finish, log_start
 
 logger = logging.getLogger(__name__)
@@ -166,7 +166,15 @@ def run(dry_run: bool = False) -> None:
     a table that is larger than intended, which is survivable, where a raised
     exception out of a scheduler thread is not.
     """
-    run_id = log_start(SOURCE)
+    # Pinned to the live tables. A prune that ran while a scenario held the
+    # search path would delete the scenario's authored observations - they are
+    # backdated on purpose, so most of them are already past their retention.
+    with collector_database():
+        _run(run_id=log_start(SOURCE), dry_run=dry_run)
+
+
+def _run(*, run_id: int, dry_run: bool) -> None:
+    """Prune once and record the outcome. Always called on the live tables."""
     try:
         removed = prune(dry_run=dry_run)
         total = sum(removed.values())

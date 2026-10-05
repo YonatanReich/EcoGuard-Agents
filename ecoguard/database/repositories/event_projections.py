@@ -10,18 +10,12 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text
 
 from ecoguard.database.engine import Session
-
-# How long a closed incident stays on the map. Long enough that an operator
-# watching one resolve sees it resolve rather than blink out between refreshes,
-# short enough that it is gone by the next shift.
-CLOSED_GRACE = timedelta(minutes=30)
-
 
 @dataclass(frozen=True)
 class EventProjectionWrite:
@@ -118,6 +112,73 @@ def upsert_event_projection(record: EventProjectionWrite) -> dict[str, Any] | No
     return event_projection_by_incident(record.incident_id)
 
 
+def upsert_interim_projection(record: EventProjectionWrite) -> bool:
+    """Show a card that is still being worked on. Never counts as an attempt.
+
+    A fire's spread, settlements and evacuation list are computed in seconds;
+    its risk narrative and plan take two model calls and minutes. Publishing
+    only at the end left the screen empty for that long. This writes the
+    partial card as the wave goes, under three rules:
+
+    - It never overwrites a card that has succeeded before: a routine refresh
+      keeps its full card until the new final one replaces it.
+    - It leaves attempt_count and retryable alone, which is what the retry
+      backoff reads, and marks the row `in_progress`, which the freshness gate
+      treats as "no plan yet". If the wave dies after this write, the next one
+      re-plans as if it had never happened. (last_attempt_at is NOT NULL, so a
+      fresh row carries this wave's request time.)
+    - The final `upsert_event_projection` of the same wave overwrites it.
+
+    Returns whether anything was written.
+    """
+    with Session() as session:
+        written = session.execute(
+            text(
+                """
+                INSERT INTO event_projections (
+                  incident_id, hazard, route, processing_status,
+                  analysis_status, planner_status, analysis_id,
+                  coordinator_routing_id, handler, event_payload,
+                  retryable, attempt_count, last_attempt_at, processed_at
+                ) VALUES (
+                  :incident_id, :hazard, :route, :processing_status,
+                  :analysis_status, :planner_status, :analysis_id,
+                  :coordinator_routing_id, :handler, CAST(:event_payload AS jsonb),
+                  false, 0, :attempted_at, :processed_at
+                )
+                ON CONFLICT (incident_id) DO UPDATE SET
+                  processing_status = EXCLUDED.processing_status,
+                  analysis_status = EXCLUDED.analysis_status,
+                  planner_status = EXCLUDED.planner_status,
+                  analysis_id = EXCLUDED.analysis_id,
+                  coordinator_routing_id = EXCLUDED.coordinator_routing_id,
+                  handler = EXCLUDED.handler,
+                  event_payload = EXCLUDED.event_payload,
+                  processed_at = EXCLUDED.processed_at,
+                  updated_at = now()
+                WHERE event_projections.last_successful_event_payload IS NULL
+                RETURNING incident_id
+                """
+            ),
+            {
+                "incident_id": record.incident_id,
+                "hazard": record.hazard,
+                "route": record.route,
+                "processing_status": record.processing_status,
+                "analysis_status": record.analysis_status,
+                "planner_status": record.planner_status,
+                "analysis_id": record.analysis_id,
+                "coordinator_routing_id": record.coordinator_routing_id,
+                "handler": record.handler,
+                "event_payload": json.dumps(record.event_payload),
+                "attempted_at": record.attempted_at,
+                "processed_at": record.processed_at,
+            },
+        ).first()
+        session.commit()
+    return written is not None
+
+
 def event_projection_by_incident(incident_id: str) -> dict[str, Any] | None:
     """The event built for one incident, or None when there is none."""
     with Session() as session:
@@ -130,19 +191,18 @@ def event_projection_by_incident(incident_id: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
-def projected_events(
-    *, limit: int = 100, include_closed_for: timedelta = CLOSED_GRACE
-) -> list[dict[str, Any]]:
+def projected_events(*, limit: int = 100) -> list[dict[str, Any]]:
     """What is happening now, newest first, with a deterministic tie-break.
 
-    Closed incidents drop off. A projection outlives the incident it describes,
-    so without this the map accumulated every fire the system had ever seen -
-    eleven of them, ten closed, one quiet for thirty-five hours, all drawn as
-    though they were burning.
+    Closed incidents drop off immediately. A projection outlives the incident it
+    describes, so without this the map accumulated every fire the system had
+    ever seen - eleven of them, ten closed, one quiet for thirty-five hours, all
+    drawn as though they were burning.
 
-    The grace window keeps an incident visible for a short while after it
-    closes, because an operator watching a fire resolve should see it resolve
-    rather than have it vanish between refreshes.
+    An earlier version kept a closed incident for thirty minutes so an operator
+    watching one resolve saw it resolve rather than blink out. That was dropped
+    deliberately: with the dashboard now polling every fifteen seconds, a closed
+    event lingering is read as a live one that stopped updating.
     """
 
     if not 1 <= limit <= 200:
@@ -156,16 +216,12 @@ def projected_events(
                 "       incidents.status AS incident_status "
                 "FROM event_projections "
                 "JOIN incidents ON incidents.id = event_projections.incident_id "
-                "WHERE (event_projections.event_payload IS NOT NULL "
+                "WHERE incidents.status = 'open' "
+                "  AND (event_projections.event_payload IS NOT NULL "
                 "   OR event_projections.last_successful_event_payload IS NOT NULL) "
-                "  AND (incidents.status = 'open' "
-                "   OR incidents.closed_at >= :closed_after) "
                 "ORDER BY event_projections.updated_at DESC, "
                 "         event_projections.incident_id ASC LIMIT :limit"
             ),
-            {
-                "limit": limit,
-                "closed_after": datetime.now(timezone.utc) - include_closed_for,
-            },
+            {"limit": limit},
         ).mappings().all()
     return [dict(row) for row in rows]

@@ -5,12 +5,15 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal, Protocol
 from uuid import uuid4
 
 from ecoguard.coordinator import incidents as incident_store
+from ecoguard.coordinator.confirmation import confirmation_of
 from ecoguard.coordinator.queues import UnroutableHazard, queue_for
 from ecoguard.database.repositories.event_projections import (
     event_projection_by_incident,
@@ -19,6 +22,9 @@ from ecoguard.database.repositories.event_projections import (
 logger = logging.getLogger(__name__)
 
 ProcessingStatus = Literal["success", "partial", "failed", "skipped"]
+
+# What an interim projection is marked while its wave is still working on it.
+INTERIM_STATUS = "in_progress"
 
 # How long a successful plan stands before a routine re-dispatch may rebuild it.
 #
@@ -93,6 +99,9 @@ def plan_is_fresh(
 
     if projection is None:
         return False
+    # An interim card from a wave that did not finish is not a plan.
+    if projection.get("processing_status") == INTERIM_STATUS:
+        return False
 
     window = timedelta(minutes=PLAN_REFRESH_MINUTES)
 
@@ -166,6 +175,23 @@ class IncidentDispatchContext:
     routed_by: str
     routed_at: datetime
     requested_at: datetime
+    # Whether anything measured this incident, or anyone confirmed it. Defaults
+    # to confirmed so a handler constructed by hand in a test or a manual run
+    # behaves as it always did; the dispatcher always sets it explicitly.
+    confirmed: bool = True
+    confirmation_basis: str | None = None
+    # Where a handler sends a result it has not finished, so the card appears
+    # while the slow steps run. None outside a dispatch (tests, manual runs).
+    progress: Callable[[Any], None] | None = field(default=None, compare=False, repr=False)
+
+    def report(self, result: "IncidentProcessingResult") -> None:
+        """Publish an unfinished result. Best effort; never raises."""
+        if self.progress is None:
+            return
+        try:
+            self.progress(result)
+        except Exception:
+            logger.exception("interim report failed for %s", self.incident_id)
 
 
 @dataclass
@@ -187,6 +213,7 @@ class IncidentProcessingResult:
     analysis_result: Any | None = None
     risk_assessment: Any | None = None
     planner_result: Any | None = None
+    fallback_allocation_context: dict[str, Any] | None = None
     failure_stage: str | None = None
     failure_reason: str | None = None
     resource_allocation_result: dict[str, Any] | None = None
@@ -279,7 +306,7 @@ def default_handler_registry() -> dict[tuple[str, str], IncidentHandler]:
         EarthquakeIncidentHandler,
     )
     from ecoguard.analyzers.flood.incident_handler import (
-        configured_flood_road_incident_handler,
+        configured_flood_incident_handler,
     )
     from ecoguard.analyzers.fire.incident_handler import (
         configured_fire_incident_handler,
@@ -293,7 +320,7 @@ def default_handler_registry() -> dict[tuple[str, str], IncidentHandler]:
             configured_air_pollution_incident_handler(),
         ("earthquake", "emergency"): EarthquakeIncidentHandler(),
         ("fire", "emergency"): configured_fire_incident_handler(),
-        ("flood", "emergency"): configured_flood_road_incident_handler(),
+        ("flood", "emergency"): configured_flood_incident_handler(),
         UNCORROBORATED_ROUTE: UncorroboratedReportHandler(),
     }
 
@@ -304,12 +331,18 @@ def dispatch_incidents(
     registry: HandlerRegistry | None = None,
     at: datetime | None = None,
     projection_reader: ProjectionReader = event_projection_by_incident,
+    publish_interim: bool | None = None,
 ) -> list[IncidentProcessingResult]:
     """Dispatch each open incident facet independently and fail per handler."""
 
     requested_at = _utc(at)
+    # Interim cards are written to the store, so by default only the real
+    # pipeline does it: an injected registry (a test) never publishes.
+    if publish_interim is None:
+        publish_interim = registry is None
     handlers = registry if registry is not None else default_handler_registry()
     results: list[IncidentProcessingResult] = []
+    jobs: dict[str, list[tuple]] = {}
 
     for incident in incidents:
         incident_id = str(incident.get("id") or "unknown")
@@ -366,15 +399,25 @@ def dispatch_incidents(
                 )
                 continue
 
-            # An uncorroborated report is handled the same way whatever it
-            # claims to be, so it is matched before the hazard registry. There
-            # is nothing to analyse in an unconfirmed claim, and a risk score
-            # computed from one would be presented to an operator with exactly
-            # the same weight as a score computed from a satellite.
-            if is_uncorroborated_report(incident):
+            # An unconfirmed incident takes the ordinary hazard handler, not a
+            # separate lane. It used to be diverted here on the grounds that
+            # there is nothing to analyse in a claim - but a claim still has a
+            # place, and a place has weather, fuel, terrain and neighbours.
+            # Refusing to compute spread for it did not make the system more
+            # honest, it left an operator with a pin and no idea which way the
+            # fire would run if the report turned out to be true.
+            #
+            # What confirmation changes is the *plan*: an unconfirmed incident
+            # may ask for verification and notification, never for mobilisation.
+            # That decision belongs to the hazard handler, which is why the
+            # state travels on the context instead of picking the handler.
+            confirmation = confirmation_of(incident)
+            handler = handlers.get((hazard, route))
+            if handler is None and not confirmation.confirmed:
+                # No analyser for this hazard at all. The verification advisory
+                # is still better than nothing, and is what this incident would
+                # have received before.
                 handler = handlers.get(UNCORROBORATED_ROUTE)
-            else:
-                handler = handlers.get((hazard, route))
             if handler is None:
                 results.append(IncidentProcessingResult(
                     incident_id=incident_id,
@@ -397,27 +440,87 @@ def dispatch_incidents(
                 routed_by="shared_coordinator",
                 routed_at=requested_at,
                 requested_at=requested_at,
+                confirmed=confirmation.confirmed,
+                confirmation_basis=confirmation.basis,
+                progress=_interim_publisher(incident) if publish_interim else None,
             )
-            try:
-                results.append(handler.process(incident, context))
-            except Exception as error:
-                logger.exception(
-                    "incident %s handler %s failed", incident_id, handler.name
-                )
-                results.append(IncidentProcessingResult(
-                    incident_id=incident_id,
-                    hazard=hazard,
-                    route=route,
-                    status="failed",
-                    requested_at=requested_at,
-                    completed_at=_utc(),
-                    analysis_id=context.analysis_id,
-                    coordinator_routing_id=context.coordinator_routing_id,
-                    handler=handler.name,
-                    failure_stage="handler",
-                    failure_reason=type(error).__name__,
-                ))
+            # Deferred, not run here: see _run_handlers.
+            slot = len(results)
+            results.append(None)
+            jobs.setdefault(incident_id, []).append(
+                (slot, handler, incident, context, requested_at)
+            )
+
+    _run_handlers(jobs, results)
     return results
+
+
+# How many incidents are analysed at once. Each handler is two model calls in
+# series (risk analysis, then plan), a minute or more each; run one incident
+# after another, three fires took a wave five minutes and a busy afternoon
+# would never finish one. The wait is network, so threads, not processes.
+# Bounded by the pipeline pool (5 + 10 overflow) and the hourly call budget.
+MAX_PARALLEL_INCIDENTS = int(os.getenv("ECOGUARD_PARALLEL_INCIDENTS", "4"))
+
+
+def _run_handlers(jobs: dict[str, list[tuple]], results: list) -> None:
+    """Run every incident's handlers, incidents in parallel, facets in order.
+
+    An incident's facets stay sequential on one worker because they write the
+    same projection row. Each worker runs in a copy of the caller's context,
+    so a context-scoped database routing travels with the work.
+    """
+    def run_incident(facets: list[tuple]) -> list[tuple[int, IncidentProcessingResult]]:
+        return [(slot, _process(*job)) for slot, *job in facets]
+
+    batches = list(jobs.values())
+    if MAX_PARALLEL_INCIDENTS <= 1 or len(batches) <= 1:
+        finished = [item for batch in batches for item in run_incident(batch)]
+    else:
+        with ThreadPoolExecutor(
+            max_workers=min(MAX_PARALLEL_INCIDENTS, len(batches)),
+            thread_name_prefix="incident",
+        ) as pool:
+            futures = [
+                pool.submit(copy_context().run, run_incident, batch) for batch in batches
+            ]
+            finished = [item for future in futures for item in future.result()]
+    for slot, result in finished:
+        results[slot] = result
+
+
+def _interim_publisher(incident: Mapping[str, Any]) -> Callable[[Any], None]:
+    """Publish one incident's unfinished results as its handler produces them."""
+    def publish(result) -> None:
+        # Imported here: event_projection imports this module.
+        from ecoguard.coordinator.event_projection import project_interim
+
+        project_interim(result, incident=incident)
+
+    return publish
+
+
+def _process(handler, incident, context, requested_at) -> IncidentProcessingResult:
+    """One handler on one incident; a failure is a result, never a raise."""
+    try:
+        return handler.process(incident, context)
+    except Exception as error:
+        logger.exception(
+            "incident %s handler %s failed", context.incident_id, handler.name
+        )
+        return IncidentProcessingResult(
+            incident_id=context.incident_id,
+            hazard=context.hazard,
+            route=context.route,
+            status="failed",
+            requested_at=requested_at,
+            completed_at=_utc(),
+            analysis_id=context.analysis_id,
+            coordinator_routing_id=context.coordinator_routing_id,
+            handler=handler.name,
+            failure_stage="handler",
+            failure_reason=type(error).__name__,
+        )
 
 
 def dispatch_touched(

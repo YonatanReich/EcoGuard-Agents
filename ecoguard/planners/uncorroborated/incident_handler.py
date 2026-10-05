@@ -15,6 +15,7 @@ from ecoguard.coordinator.dispatcher import (
 )
 from ecoguard.planners.uncorroborated.planner import (
     UncorroboratedReportPlanner,
+    newest_claim,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,7 +40,7 @@ class UncorroboratedReportHandler:
         Skips analysis entirely: there is nothing measured to analyse, so the only
         useful answer is who to contact to find out.
         """
-        claim, location_text = self._newest_claim(incident)
+        claim, location_text = newest_claim(incident)
 
         advisory = self._planner.plan(
             hazard=context.hazard,
@@ -74,31 +75,6 @@ class UncorroboratedReportHandler:
             failure_reason=None if succeeded else advisory.reason,
             requires_resource_allocation=False,
         )
-
-    @staticmethod
-    def _newest_claim(incident: Mapping[str, Any]) -> tuple[str | None, str | None]:
-        """The most recent report's wording, for the operator to read.
-
-        The newest is used rather than the first because a later message about
-        the same place is usually the more specific one.
-        """
-        claim: str | None = None
-        location_text: str | None = None
-        newest: Any = None
-
-        for signal in incident.get("signals") or ():
-            if not isinstance(signal, Mapping):
-                continue
-            report = (signal.get("evidence") or {}).get("text_report")
-            if not isinstance(report, Mapping):
-                continue
-            observed_at = signal.get("observed_at")
-            if newest is None or (observed_at is not None and observed_at >= newest):
-                newest = observed_at
-                claim = report.get("claim") or claim
-                location_text = report.get("location_text") or location_text
-
-        return claim, location_text
 
 
 __all__ = ["UncorroboratedReportHandler"]

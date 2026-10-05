@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 from sqlalchemy import text
 
@@ -26,11 +26,27 @@ from ecoguard.shared.signals import CellSignal
 OPEN = "open"
 CLOSED = "closed"
 
+# How the text lane marks a location it geocoded from a place name.
+TEXT_LOCATION_METHOD = "text_report_gazetteer"
+
 _COLUMNS = """
     id, status, primary_hazard, hazards, queues, cells,
     latitude, longitude, precision_m, location_method,
     first_seen_at, last_signal_at, closed_at,
-    signal_count, peak_rarity, links, signals
+    signal_count, peak_rarity, links, signals,
+    confirmed_at, confirmed_by
+"""
+
+# What a write hands back: everything matching needs, without `signals` and
+# `links`. The signal history grows with every signal and nothing on the
+# coordinator's path reads it; returning it from each write made a 40-signal
+# advisory cost more per signal the longer it ran. Read the full row with
+# `incident_by_id` when the history is wanted.
+_MATCH_COLUMNS = """
+    id, status, primary_hazard, hazards, queues, cells,
+    latitude, longitude, precision_m, location_method,
+    first_seen_at, last_signal_at, closed_at,
+    signal_count, peak_rarity, confirmed_at, confirmed_by
 """
 
 
@@ -68,13 +84,18 @@ def next_incident_id(at: datetime) -> str:
     Readable because a human reads it aloud to another human during an
     incident. Date-prefixed so the sequence resets daily and stays short, and
     so an id says roughly when without a lookup.
+
+    Highest existing number plus one, not a count: once any row of the day is
+    gone (INC-20261004-0011 was), count + 1 lands on an id still in use and
+    every new incident that day fails on the primary key.
     """
     day = at.astimezone(timezone.utc).strftime("%Y%m%d")
     with Session() as session:
-        used = session.execute(
-            text("SELECT count(*) FROM incidents WHERE id LIKE :prefix"),
+        highest = session.execute(
+            text("SELECT max(id) FROM incidents WHERE id LIKE :prefix"),
             {"prefix": f"INC-{day}-%"},
         ).scalar_one()
+    used = int(highest.rsplit("-", 1)[1]) if highest else 0
     return f"INC-{day}-{used + 1:04d}"
 
 
@@ -113,9 +134,9 @@ def create_incident(
     """Open a new incident from the first signal that did not match anything."""
     location = signal.location
     with Session() as session:
-        session.execute(
+        row = session.execute(
             text(
-                """
+                f"""
                 INSERT INTO incidents (
                   id, status, primary_hazard, hazards, queues, cells,
                   latitude, longitude, precision_m, location_method,
@@ -127,6 +148,7 @@ def create_incident(
                   :at, :at,
                   1, :rarity, '[]'::jsonb, CAST(:signals AS jsonb)
                 )
+                RETURNING {_MATCH_COLUMNS}
                 """
             ),
             {
@@ -144,73 +166,137 @@ def create_incident(
                 "rarity": signal.rarity,
                 "signals": json.dumps([signal_as_json(signal)]),
             },
-        )
+        ).mappings().first()
         session.commit()
-    return incident_by_id(incident_id)
+    # RETURNING rather than a second read: one round trip per signal saved.
+    return _row(row) if row else None
 
 
-def attach_signal(incident_id: str, signal: CellSignal) -> dict[str, Any] | None:
-    """Fold another sighting into an incident that already exists.
+def is_better_fix(location, current: dict[str, Any]) -> bool:
+    """Whether this fix should replace the incident's stored location.
 
-    The location only improves: a better fix replaces a worse one and a worse
-    one is ignored, never averaged. Averaging a 375 m satellite pixel with a
-    2 km town-name geocode produces a place neither source suggested and throws
-    away the good fix.
+    Smaller radius wins, with one exception: a text geocode never beats an
+    instrument fix, whatever the radii say. A town's radius describes the town,
+    not the fire - ynet's "near Isfiya" is a 520 m circle on the village, the
+    MODIS pixel 3 km west is the fire, and letting the smaller number win moved
+    the Carmel incident onto houses and its fuel lookup onto built-up ground.
+    """
+    if location is None:
+        return False
+    stored_precision = current.get("precision_m")
+    if stored_precision is None:
+        return True
+    incoming_is_text = location.method == TEXT_LOCATION_METHOD
+    stored_is_text = current.get("location_method") == TEXT_LOCATION_METHOD
+    if stored_is_text != incoming_is_text:
+        return stored_is_text
+    return location.precision_m < stored_precision
 
-    `last_signal_at` only advances, so a late-arriving old reading — routine
-    with FIRMS, which runs hours behind the overpass — cannot drag an incident
+
+def merged_incident(current: dict[str, Any], signal: CellSignal) -> dict[str, Any]:
+    """The incident after one more sighting, computed without the database.
+
+    The one statement of how a signal folds in, used both to keep the
+    coordinator's in-memory view current within a batch and to write the
+    batch. The location only improves: a better fix replaces a worse one and a
+    worse one is ignored, never averaged - averaging a 375 m satellite pixel
+    with a 2 km town-name geocode produces a place neither source suggested.
+    `last_signal_at` only advances, so a late-arriving old reading - routine
+    with FIRMS, which runs hours behind the overpass - cannot drag an incident
     backwards and make it look quiet.
     """
+    merged = dict(current)
+    cells = list(current.get("cells") or [])
+    if signal.cell_id not in cells:
+        cells.append(signal.cell_id)
+    merged["cells"] = cells
+    last = current.get("last_signal_at")
+    merged["last_signal_at"] = signal.observed_at if last is None else max(last, signal.observed_at)
+    merged["signal_count"] = int(current.get("signal_count") or 0) + 1
+    if signal.rarity is not None:
+        merged["peak_rarity"] = max(float(current.get("peak_rarity") or 0.0), signal.rarity)
     location = signal.location
-    current = incident_by_id(incident_id)
+    if is_better_fix(location, current):
+        merged.update(
+            latitude=location.latitude,
+            longitude=location.longitude,
+            precision_m=location.precision_m,
+            location_method=location.method,
+        )
+    return merged
+
+
+def attach_signal(
+    incident_id: str,
+    signal: CellSignal,
+    *,
+    current: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Fold another sighting into an incident that already exists."""
+    return attach_signals(incident_id, [signal], current=current)
+
+
+def attach_signals(
+    incident_id: str,
+    signals: Sequence[CellSignal],
+    *,
+    current: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Fold several sightings into one incident in a single write.
+
+    A batch routinely carries many signals for one incident - forty hourly
+    fire-weather readings for one advisory on the historical fire replay - and
+    one UPDATE each, at three round trips to a database ~165 ms away, was the
+    largest part of coordination. The merge is computed in Python by
+    `merged_incident` and written once; `signal_count`, `peak_rarity` and
+    `last_signal_at` are still combined with the stored row in SQL, so the write
+    stays correct even if the row moved since `current` was read.
+    """
+    if not signals:
+        return current
+    # The coordinator passes the row it matched against, saving a read.
+    current = current or incident_by_id(incident_id)
     if current is None:
         return None
-
-    # Whether this fix beats the one already stored. Decided in Python rather
-    # than in SQL because the comparison involves two nullable values and the
-    # three-valued logic reads as a puzzle inside a CASE expression.
-    stored_precision = current["precision_m"]
-    better = location is not None and (
-        stored_precision is None or location.precision_m < stored_precision
-    )
+    merged = current
+    for signal in signals:
+        merged = merged_incident(merged, signal)
 
     with Session() as session:
-        session.execute(
+        row = session.execute(
             text(
-                """
+                f"""
                 UPDATE incidents SET
-                  cells = CASE WHEN :cell = ANY(cells) THEN cells
-                               ELSE array_append(cells, :cell) END,
+                  cells = ARRAY(
+                    SELECT DISTINCT unnest(cells || CAST(:cells AS text[]))
+                  ),
                   last_signal_at = GREATEST(last_signal_at, :at),
-                  signal_count = signal_count + 1,
+                  signal_count = signal_count + :count,
                   peak_rarity = GREATEST(coalesce(peak_rarity, 0), coalesce(:rarity, 0)),
-                  signals = signals || CAST(:signal AS jsonb),
-                  latitude = CASE WHEN :better THEN CAST(:latitude AS double precision)
-                                  ELSE latitude END,
-                  longitude = CASE WHEN :better THEN CAST(:longitude AS double precision)
-                                   ELSE longitude END,
-                  location_method = CASE WHEN :better THEN CAST(:location_method AS text)
-                                         ELSE location_method END,
-                  precision_m = CASE WHEN :better THEN CAST(:precision_m AS real)
-                                     ELSE precision_m END
+                  signals = signals || CAST(:signals AS jsonb),
+                  latitude = CAST(:latitude AS double precision),
+                  longitude = CAST(:longitude AS double precision),
+                  location_method = CAST(:location_method AS text),
+                  precision_m = CAST(:precision_m AS real)
                 WHERE id = :id
+                RETURNING {_MATCH_COLUMNS}
                 """
             ),
             {
                 "id": incident_id,
-                "cell": signal.cell_id,
-                "at": signal.observed_at,
-                "rarity": signal.rarity,
-                "signal": json.dumps([signal_as_json(signal)]),
-                "better": better,
-                "latitude": location.latitude if location else None,
-                "longitude": location.longitude if location else None,
-                "precision_m": location.precision_m if location else None,
-                "location_method": location.method if location else None,
+                "cells": merged["cells"],
+                "at": merged["last_signal_at"],
+                "count": len(signals),
+                "rarity": max((s.rarity for s in signals if s.rarity is not None), default=None),
+                "signals": json.dumps([signal_as_json(signal) for signal in signals]),
+                "latitude": merged.get("latitude"),
+                "longitude": merged.get("longitude"),
+                "precision_m": merged.get("precision_m"),
+                "location_method": merged.get("location_method"),
             },
-        )
+        ).mappings().first()
         session.commit()
-    return incident_by_id(incident_id)
+    return _row(row) if row else None
 
 
 def merge_incidents(
@@ -282,20 +368,64 @@ def close_incident(incident_id: str, at: datetime) -> None:
     """
     with Session() as session:
         with session.begin():
-            closed_id = session.execute(
+            close_incident_in_session(session, incident_id, at)
+
+
+def close_incident_in_session(session, incident_id: str, at: datetime) -> bool:
+    """`close_incident` inside a caller's transaction.
+
+    For a caller whose own write must commit or fail together with the close,
+    such as the operator-feedback row written when an incident is handled.
+
+    Returns:
+        bool: True when this call closed the incident, False when it was
+            already closed or does not exist.
+    """
+    closed_id = session.execute(
+        text(
+            "UPDATE incidents SET status = :closed, closed_at = :at "
+            "WHERE id = :id AND status = :open RETURNING id"
+        ),
+        {"id": incident_id, "closed": CLOSED, "open": OPEN, "at": at},
+    ).scalar_one_or_none()
+    if closed_id is None:
+        return False
+    release_incident_allocations_in_session(
+        session,
+        incident_id,
+        released_at=at,
+        reason="incident_closed",
+    )
+    return True
+
+
+def confirm_incident(
+    incident_id: str, at: datetime, by: str = "operator"
+) -> dict[str, Any] | None:
+    """Record that a person checked this incident and it is real.
+
+    Returns the updated incident, or None when there is no open incident with
+    that id — a closed one is not confirmed after the fact, because the decision
+    it records is about a response that is no longer running.
+
+    The first confirmation wins: `confirmed_at IS NULL` in the predicate means a
+    second click does not move the timestamp, so "when was this confirmed" keeps
+    answering the question it was asked.
+    """
+    with Session() as session:
+        with session.begin():
+            session.execute(
                 text(
-                    "UPDATE incidents SET status = :closed, closed_at = :at "
-                    "WHERE id = :id AND status = :open RETURNING id"
+                    "UPDATE incidents SET confirmed_at = :at, confirmed_by = :by "
+                    "WHERE id = :id AND status = :open AND confirmed_at IS NULL"
                 ),
-                {"id": incident_id, "closed": CLOSED, "open": OPEN, "at": at},
-            ).scalar_one_or_none()
-            if closed_id is not None:
-                release_incident_allocations_in_session(
-                    session,
-                    incident_id,
-                    released_at=at,
-                    reason="incident_closed",
-                )
+                {"id": incident_id, "at": at, "by": by, "open": OPEN},
+            )
+            row = session.execute(
+                text(f"SELECT {_COLUMNS} FROM incidents WHERE id = :id AND status = :open"),
+                {"id": incident_id, "open": OPEN},
+            ).mappings().one_or_none()
+    return _row(row) if row is not None else None
 
 
 def close_quiet(at: datetime, quiet_period_for) -> list[str]:

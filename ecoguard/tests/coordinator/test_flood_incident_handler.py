@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta, timezone
 
 from ecoguard.analyzers.flood.event_analyzer import FloodEventAnalyzer
-from ecoguard.analyzers.flood.incident_handler import FloodRoadIncidentHandler
+from ecoguard.analyzers.flood.incident_handler import FloodIncidentHandler
 from ecoguard.coordinator.dispatcher import dispatch_incidents
 from ecoguard.planners.shared.schemas import EmergencyResponsePlan
 
@@ -17,10 +17,11 @@ def _signal(
     observed_at=AT,
     station_id=417,
     cell_id="31.75:35.20",
-    severity=3,
-    previous_discharge=52.0,
-    current_discharge=60.0,
+    previous_discharge=20.0,
+    current_discharge=22.0,
 ):
+    official_level = sum(current_discharge >= threshold for threshold in THRESHOLDS)
+    severity = 3 if official_level <= 1 else min(6, official_level + 2)
     return {
         "cell_id": cell_id,
         "observed_at": observed_at.isoformat(),
@@ -42,6 +43,9 @@ def _signal(
             "timestamp": observed_at.isoformat(),
             "current_discharge": current_discharge,
             "severity_level": severity,
+            "operational_flow_regime": "flowing_baseline",
+            "alert_threshold_m3s": THRESHOLDS[0],
+            "return_period_years": (2, 5, 10, 20, 50, 100)[official_level - 1],
             "threshold_vector_m3s": THRESHOLDS,
             "recent_discharges_m3s": [previous_discharge, current_discharge],
         },
@@ -95,7 +99,7 @@ class FakePlanner:
 
 
 def _dispatch(incident, planner):
-    handler = FloodRoadIncidentHandler(
+    handler = FloodIncidentHandler(
         analyzer=FloodEventAnalyzer(clock=lambda: AT + timedelta(hours=1)),
         planner=planner,
         clock=lambda: AT + timedelta(hours=1),
@@ -131,12 +135,11 @@ def test_escalation_refreshes_the_response_immediately():
     planner = FakePlanner()
     result = _dispatch(
         _incident(
-            _signal(observed_at=AT, severity=3, current_discharge=60.0),
+            _signal(observed_at=AT, current_discharge=22.0),
             _signal(
                 observed_at=AT + timedelta(minutes=10),
-                severity=4,
-                previous_discharge=60.0,
-                current_discharge=85.0,
+                previous_discharge=22.0,
+                current_discharge=40.0,
             ),
         ),
         planner,
@@ -152,12 +155,11 @@ def test_deescalation_preserves_plan_and_allocations_without_planner_call():
     planner = FakePlanner()
     result = _dispatch(
         _incident(
-            _signal(observed_at=AT, severity=5, current_discharge=125.0),
+            _signal(observed_at=AT, current_discharge=60.0),
             _signal(
                 observed_at=AT + timedelta(minutes=10),
-                severity=4,
-                previous_discharge=125.0,
-                current_discharge=110.0,
+                previous_discharge=60.0,
+                current_discharge=40.0,
             ),
         ),
         planner,
@@ -179,10 +181,9 @@ def test_same_band_update_preserves_existing_response():
     planner = FakePlanner()
     result = _dispatch(
         _incident(
-            _signal(observed_at=AT, severity=4, current_discharge=85.0),
+            _signal(observed_at=AT, current_discharge=85.0),
             _signal(
                 observed_at=AT + timedelta(minutes=10),
-                severity=4,
                 previous_discharge=85.0,
                 current_discharge=90.0,
             ),
@@ -201,12 +202,11 @@ def test_spatial_expansion_refreshes_response_even_without_higher_severity():
     planner = FakePlanner()
     result = _dispatch(
         _incident(
-            _signal(observed_at=AT, severity=4, current_discharge=85.0),
+            _signal(observed_at=AT, current_discharge=85.0),
             _signal(
                 observed_at=AT + timedelta(minutes=10),
                 station_id=418,
                 cell_id="31.80:35.25",
-                severity=4,
                 previous_discharge=82.0,
                 current_discharge=85.0,
             ),

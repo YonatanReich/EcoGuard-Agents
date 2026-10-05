@@ -13,6 +13,7 @@ from ecoguard.collectors.flood.road_network import ROAD_CLASSES
 from ecoguard.database.repositories.flood_road_targets import (
     FloodRoadTargetRepository,
 )
+from ecoguard.resource_allocator.geo import haversine_distance
 from ecoguard.resource_allocator.mapbox_client import MapboxClient, RoutingError
 
 
@@ -172,15 +173,12 @@ class FloodRoadTargetAgent:
     @staticmethod
     def _distance_m(first: Mapping[str, Any], second: Mapping[str, Any]) -> float:
         """Distance between two coordinates, in metres."""
-        lat1 = math.radians(float(first["latitude"]))
-        lat2 = math.radians(float(second["latitude"]))
-        delta_lat = lat2 - lat1
-        delta_lon = math.radians(float(second["longitude"]) - float(first["longitude"]))
-        value = (
-            math.sin(delta_lat / 2) ** 2
-            + math.cos(lat1) * math.cos(lat2) * math.sin(delta_lon / 2) ** 2
-        )
-        return 6_371_000 * 2 * math.asin(math.sqrt(value))
+        return haversine_distance(
+            float(first["latitude"]),
+            float(first["longitude"]),
+            float(second["latitude"]),
+            float(second["longitude"]),
+        ) * 1000
 
     @staticmethod
     def _road_identity(candidate: Mapping[str, Any]) -> tuple[str, str]:

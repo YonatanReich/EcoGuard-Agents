@@ -10,9 +10,19 @@ from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 
-from ecoguard.database.engine import DATABASE_URL, engine
+from ecoguard.database.engine import (
+    DATABASE_URL,
+    collector_engine,
+    engine,
+    is_collector_context,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _engine_for_context():
+    """The engine whose connections the caller's work will run on."""
+    return collector_engine if is_collector_context() else engine
 
 if "-pooler" in (make_url(DATABASE_URL).host or ""):
     # Advisory locks are session-scoped, and a transaction pooler hands the
@@ -41,9 +51,13 @@ def lock_key(name: str) -> int:
     A scenario that cannot coordinate is worse than one that fails loudly: it
     grades as "the system detected nothing".
     """
-    from ecoguard.database.engine import sandbox_schema
+    from ecoguard.database.engine import is_collector_context, sandbox_schema
 
-    schema = sandbox_schema()
+    # A collector's lock is a live lock even while a scenario is running: it
+    # guards the real collector against another copy of itself, and a scenario
+    # must not be able to take it or to make a second live run think it is
+    # free. Only pipeline locks follow the sandbox.
+    schema = None if is_collector_context() else sandbox_schema()
     scoped = f"{schema}:{name}" if schema else name
     digest = hashlib.blake2b(scoped.encode("utf-8"), digest_size=8).digest()
     return int.from_bytes(digest, "big", signed=True)
@@ -60,7 +74,11 @@ def single_flight(name: str):
     even if the process is killed mid-run — Postgres drops it with the session.
     """
     key = lock_key(name)
-    with engine.connect() as connection:
+    # Session advisory locks live on one physical connection, so the lock has to
+    # be taken on the same engine the caller's work will use - otherwise a
+    # collector guards itself with a pipeline connection that a scenario has
+    # just pointed at a demo schema.
+    with _engine_for_context().connect() as connection:
         acquired = bool(
             connection.execute(
                 text("SELECT pg_try_advisory_lock(:key)"), {"key": key}

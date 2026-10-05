@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from ecoguard.database.engine import collector_database
 from ecoguard.database.locks import single_flight
 from ecoguard.database.repositories.collector_runs import log_finish, log_start
 from ecoguard.database.repositories.observations import upsert_observations
@@ -57,7 +58,11 @@ class BaseCollector:
         and malformed response any of the four sources can produce.
         """
         try:
-            with single_flight(f"collect_{self.source}") as acquired:
+            # The whole run, not just the write. A collector reads before it
+            # writes - bookmarks, station metadata, existing rows - and a read
+            # against a demo schema is how a scenario's authored observations
+            # get mistaken for live ones.
+            with collector_database(), single_flight(f"collect_{self.source}") as acquired:
                 if not acquired:
                     logger.info("%s collector: previous run still going, skipping tick", self.source)
                     return

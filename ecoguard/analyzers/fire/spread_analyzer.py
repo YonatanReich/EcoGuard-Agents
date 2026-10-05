@@ -11,6 +11,7 @@ from typing import Any, Mapping, Sequence
 
 from ecoguard.analyzers.fire.exposure import (
     BURNING,
+    EXPOSURE_RANK,
     LIKELY,
     POSSIBLE,
     localities_at_risk,
@@ -23,6 +24,7 @@ from ecoguard.analyzers.fire.spread import (
     live_moisture_for_month,
     rate_of_spread,
     spread_rings,
+    with_wind_rule_floor,
 )
 from ecoguard.shared.schemas import risk_level_for_score
 
@@ -103,6 +105,12 @@ EVACUATION_REASON = {
     PREPARE: "on the forecast wind the fire reaches it within the horizon",
     STANDBY: "only a wind shift within forecast error brings the fire here",
 }
+
+
+def _built_up(environment: Mapping[str, Any]) -> bool:
+    """Whether the ground is built up enough that the wildland model is not the story."""
+    built_up = environment.get("built_up_fraction")
+    return built_up is not None and built_up >= BUILT_UP_NOTABLE
 
 
 def compass_point(bearing_deg: float) -> str:
@@ -239,6 +247,53 @@ def _headline(
         parts.append("No populated locality lies in the forecast path.")
 
     return " ".join(parts)
+
+
+# Enough pixels to cover a large fire's front without one 200-pixel Meteosat
+# afternoon turning one forecast into two hundred.
+MAX_FRONT_POINTS = 12
+
+
+def fire_front(
+    incident: Mapping[str, Any], origin: tuple[float, float]
+) -> list[tuple[float, float]]:
+    """The incident's other burning points: its satellite pixels, strongest first.
+
+    Text reports are not part of the front - a town name says where somebody
+    is, not where the flames are.
+    """
+    pixels: dict[tuple[float, float], float] = {}
+    for signal in incident.get("signals") or ():
+        if not isinstance(signal, Mapping) or signal.get("variable") == "report":
+            continue
+        for pixel in (signal.get("evidence") or {}).get("pixels") or ():
+            if pixel.get("latitude") is None or pixel.get("longitude") is None:
+                continue
+            point = (round(float(pixel["latitude"]), 4), round(float(pixel["longitude"]), 4))
+            pixels[point] = max(pixels.get(point, 0.0), float(pixel.get("frp") or 0.0))
+    pixels.pop((round(origin[0], 4), round(origin[1], 4)), None)
+    ranked = sorted(pixels, key=lambda point: -pixels[point])
+    return ranked[:MAX_FRONT_POINTS]
+
+
+def _worst_exposure(
+    current: Sequence[Mapping[str, Any]], incoming: Sequence[Mapping[str, Any]]
+) -> list[dict[str, Any]]:
+    """Each settlement once, at the worst exposure any origin gives it."""
+    def severity(item: Mapping[str, Any]) -> tuple:
+        arrival = item.get("arrival_minutes")
+        return (
+            EXPOSURE_RANK[item["exposure"]],
+            arrival if arrival is not None else float("inf"),
+            item.get("distance_m") or 0.0,
+        )
+
+    worst: dict[Any, dict[str, Any]] = {}
+    for item in [*current, *incoming]:
+        key = item.get("locality_id") or item.get("name")
+        if key not in worst or severity(item) < severity(worst[key]):
+            worst[key] = dict(item)
+    return sorted(worst.values(), key=severity)
 
 
 def evacuation_priorities(
@@ -401,7 +456,7 @@ def build_report(
     # badly incomplete on ground that is four-fifths houses, so the built-up
     # share is stated whenever it is the thing a reader would otherwise miss.
     built_up = environment.get("built_up_fraction")
-    if built_up is not None and built_up >= BUILT_UP_NOTABLE:
+    if _built_up(environment):
         lines.append(
             f"{built_up * 100:.0f}% of this ground is built up. The spread "
             "forecast below covers wildland fuel only; fire in the structures "
@@ -452,6 +507,12 @@ def build_report(
         lines.append(
             f"Inside the forecast spread: {_people(ring_population.get('people'))}, "
             "counted off the population grid over the drawn extent."
+        )
+    elif _built_up(environment):
+        lines.append(
+            "Not counted inside the drawn extent: the extent models wildland fuel "
+            "only, and on built-up ground it says nothing about how many people "
+            "a fire among buildings endangers. This is not a count of zero."
         )
     else:
         lines.append(
@@ -626,6 +687,8 @@ def analyze(
         environment: conditions to assess against, instead of reading the
             store. Terrain, fuel, settlements and population are still read
             from the store either way.
+        localities: settlements already read for this incident (the fire
+            handler reads them once for both the context and the forecast).
         localities: outlines to test exposure against; defaults to the
             reference file.
 
@@ -668,6 +731,12 @@ def analyze(
         slope_deg=float(environment.get("slope_deg", 0.0) or 0.0),
         live_fuel_moisture=float(live_moisture),
     )
+    behaviour = with_wind_rule_floor(
+        behaviour,
+        cover,
+        dead_fuel_moisture=float(dead_moisture),
+        wind_speed_kmh=float(environment.get("wind_speed_kmh", 0.0)),
+    )
     rings = spread_rings(
         latitude,
         longitude,
@@ -678,6 +747,29 @@ def analyze(
     )
 
     at_risk = localities_at_risk(latitude, longitude, rings, localities=localities)
+
+    # The rest of the fire front. A fire seen by several pixels is burning at
+    # all of them, and growing it from the centroid alone throws that away: on
+    # the Carmel replay a MODIS pixel sat 700 m from Isfiya while the centroid
+    # was 3.5 km downwind of it, and Isfiya was never named. Each pixel is grown
+    # with the same behaviour and each settlement keeps its worst exposure.
+    #
+    # ponytail: fuel and weather from the centroid are reused for every pixel.
+    # Per-pixel environment reads are the upgrade if fronts start spanning
+    # different terrain; within a few kilometres they rarely do.
+    if rings["status"] == "ok":
+        for front_latitude, front_longitude in fire_front(incident, (latitude, longitude)):
+            front_rings = spread_rings(
+                front_latitude,
+                front_longitude,
+                behaviour,
+                wind_direction_deg=float(environment.get("wind_direction_deg", 0.0)),
+                aspect_deg=environment.get("aspect_deg"),
+                horizon_minutes=horizon_minutes,
+            )
+            at_risk = _worst_exposure(at_risk, localities_at_risk(
+                front_latitude, front_longitude, front_rings, localities=localities,
+            ))
 
     # Where the fire is, asked independently of where it is going. A structure
     # fire produces no rings, so nothing overlaps anything and the exposure
@@ -720,6 +812,9 @@ def analyze(
         "heading_deg": rings.get("heading_deg"),
         "heading_compass": None if stalled else compass_point(rings["heading_deg"]),
         "length_to_width": round(behaviour["length_to_width"], 2),
+        # Which model set the rate: the Rothermel surface fire, or the
+        # wind-rule floor for a dry forest or shrubland fire. See spread.py.
+        "spread_basis": behaviour.get("spread_basis", "rothermel_surface"),
         "effective_wind_kmh": round(behaviour["effective_wind_kmh"], 1),
         "fuel_model": behaviour["fuel"]["fuel_model_code"],
         "dominant_fuel": behaviour["fuel"]["dominant_fuel_model"],
@@ -855,6 +950,7 @@ def analyze_incident(
     *,
     horizon_minutes: float = DEFAULT_HORIZON_MINUTES,
     environment: Mapping[str, Any] | None = None,
+    localities: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """The production entry point: a coordinator incident in, a report out.
 
@@ -900,7 +996,8 @@ def analyze_incident(
     # this runs twice: once to get the geometry, once with the count folded in
     # so the report can state it. The second pass is pure arithmetic on data
     # already in hand — no provider call, no second read of the store.
-    localities = localities_for(incident)
+    if localities is None:
+        localities = localities_for(incident)
     history = history_for(incident)
     first = analyze(
         incident, environment,
@@ -910,7 +1007,17 @@ def analyze_incident(
     if first["status"] != "ok":
         return first
 
-    ring_population = population_within((first["spread"] or {}).get("likely") or [])
+    # The ring is grown through wildland fuel only (fuel_models.py leaves
+    # buildings out), so on built-up ground it is the few metres of garden and
+    # verge the model can burn, and the grid share of that is not the number of
+    # people a fire among houses endangers. A Telegram fire report in Givat
+    # Shmuel came out at 18 people in a town of about 25,000. Above the
+    # built-up threshold the count is withheld; the report says why, and the
+    # whole-settlement totals still stand.
+    if _built_up(environment):
+        ring_population = None
+    else:
+        ring_population = population_within((first["spread"] or {}).get("likely") or [])
     return analyze(
         incident, environment,
         horizon_minutes=horizon_minutes, localities=localities,

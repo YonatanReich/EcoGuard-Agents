@@ -25,7 +25,7 @@ Results land in `data/generated/evaluation/`, with `latest.md` as a stable path 
 | `probes` | What this case is designed to test. |
 | `notes` | Author-facing. What is artificial about the case and why it exists. |
 | `expected_behaviour_notes` | Author-facing. What a sound answer looks like. |
-| `detected_event` | First planner argument, in `FireDetectionAgent` shape. |
+| `detected_event` | First planner argument, in the internal `DetectedFireEvent` shape. |
 | `risk_assessment` | Second planner argument, in `RiskAnalysisAgent` shape. |
 
 **`notes`, `probes` and `expected_behaviour_notes` are never shown to the judge.** There

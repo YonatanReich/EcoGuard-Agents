@@ -137,7 +137,25 @@ def rings_overlap(
     crosses a town without either shape's corners landing inside the other —
     and at 72 ellipse vertices against a handful of town corners it costs
     nothing worth saving.
+
+    Town outlines are not a handful of corners, though: they run to hundreds
+    of vertices, and every town that is *not* exposed - most of the 25 km
+    search set - paid the full edge-against-edge scan. Profiled on the
+    historical fire demo this was 210 s of pure Python per wave, the largest
+    cost in it. Disjoint bounding boxes cannot share area, so they are
+    rejected first; the answer is unchanged.
     """
+    if not first or not second:
+        return False
+    first_x = [p[0] for p in first]
+    first_y = [p[1] for p in first]
+    second_x = [p[0] for p in second]
+    second_y = [p[1] for p in second]
+    if (
+        max(first_x) < min(second_x) or max(second_x) < min(first_x)
+        or max(first_y) < min(second_y) or max(second_y) < min(first_y)
+    ):
+        return False
     if any(point_in_ring(point, second) for point in first):
         return True
     if any(point_in_ring(point, first) for point in second):

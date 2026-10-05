@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties, type Keyb
 import { useLocation, useNavigate } from 'react-router-dom'
 import HazardIcon from '../components/HazardIcon'
 import { ACTORS, STAGES, type Actor, type ActorIcon } from './systemActors'
+import { LatestReportSummary } from './ImprovementReport'
 import './visuals/dashboard.css'
 import './visuals/system.css'
 
@@ -50,6 +51,7 @@ const PATHS: Partial<Record<ActorIcon, ReactNode>> = {
   droplet: <path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" />,
   clipboard: <><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><path d="M12 11h4" /><path d="M12 16h4" /><path d="M8 11h.01" /><path d="M8 16h.01" /></>,
   truck: <><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2" /><path d="M15 18H9" /><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 8H14" /><circle cx="17" cy="18" r="2" /><circle cx="7" cy="18" r="2" /></>,
+  lightbulb: <><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" /><path d="M9 18h6" /><path d="M10 22h4" /></>,
 }
 
 function ActorGlyph({ icon }: { icon: ActorIcon }) {
@@ -312,6 +314,7 @@ function ActorPanel({ actor, state, live, serverTime, onClose }: {
             <div><dt>Live when</dt><dd><code>{actor.wiredTo}</code> is running</dd></div>
           </dl>
         </section>
+        {actor.id === 'improvement_agent' && <LatestReportSummary />}
       </div>
     </section>
   )

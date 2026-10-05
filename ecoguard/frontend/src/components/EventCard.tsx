@@ -13,12 +13,21 @@ function formatObservationTime(timestamp: string) {
       }).format(value)
 }
 
-function EventCard({ event, onOpen, isSelected }: {
+function EventCard({ event, onOpen, isSelected, onHandled, isLeaving = false }: {
   event: SharedEvent
   onOpen: (event: SharedEvent) => void
   isSelected: boolean
+  /** Handled and on its way out: plays the exit animation. */
+  isLeaving?: boolean
+  /** Opens the handled survey, where the operator also says whether it was
+   *  real. Omitted on the demo feed, which has nothing to close. */
+  onHandled?: (event: SharedEvent) => void
 }) {
   const hazard = hazardOf(event)
+  // Absent on projections written before confirmation existed. Those were all
+  // built from instrument data, so treating a missing value as confirmed keeps
+  // old rows reading the way they always did rather than flagging them all.
+  const unconfirmed = event.confirmation?.status === 'unconfirmed'
   const fire = event.type === 'fire' ? event.details : null
   const assessed = event.analysis_status === 'success' && fire?.risk_level != null
   const officialClassification = event.type === 'air_pollution'
@@ -29,7 +38,7 @@ function EventCard({ event, onOpen, isSelected }: {
 
   return (
     <article
-      className={`event-card${isSelected ? ' event-card--selected' : ''}${strongOfficialEmphasis ? ' event-card--official-strong' : ''}`}
+      className={`event-card${isSelected ? ' event-card--selected' : ''}${strongOfficialEmphasis ? ' event-card--official-strong' : ''}${unconfirmed ? ' event-card--unconfirmed' : ''}${isLeaving ? ' event-card--leaving' : ''}`}
       style={{ '--hazard': hazard.color } as React.CSSProperties}
     >
     <button
@@ -41,6 +50,11 @@ function EventCard({ event, onOpen, isSelected }: {
       <span className="event-card__type">
         <HazardIcon kind={event.type} />
         {hazard.label}
+        {unconfirmed && (
+          <span className="event-card__unconfirmed" title={event.confirmation?.detail ?? undefined}>
+            Unconfirmed
+          </span>
+        )}
       </span>
       <span className="event-card__title">{event.title}</span>
 
@@ -106,20 +120,12 @@ function EventCard({ event, onOpen, isSelected }: {
             </span>
           )}
 
-          {/* Only ever shown when it was actually counted. A fire whose
-              population could not be read must not render a zero. */}
-          {fire?.people_in_spread != null && (
-            <span className="event-card__measurement">
-              {fire.people_in_spread.toLocaleString()} people in the forecast spread
-            </span>
-          )}
-
           {(fire?.evacuation?.length ?? 0) > 0 && (
             <span className="event-card__evacuation">
               {fire!.evacuation.filter((item) => item.priority === 'immediate').length > 0
                 ? `Evacuate now: ${fire!.evacuation
                     .filter((item) => item.priority === 'immediate')
-                    .map((item) => item.name)
+                    .map((item) => item.name_he ?? item.name)
                     .slice(0, 2)
                     .join(', ')}`
                 : `${fire!.evacuation.length} settlement(s) to prepare`}
@@ -131,10 +137,17 @@ function EventCard({ event, onOpen, isSelected }: {
               <span className="event-card__score">
                 {fire.risk_level} · {fire.risk_score}
               </span>
+            ) : event.analysis_status === 'pending' ? (
+              <span className="event-card__score event-card__score--pending">
+                assessing risk…
+              </span>
             ) : (
               <span className="event-card__score event-card__score--none">
                 not assessed
               </span>
+            )}
+            {event.planning_status === 'pending' && (
+              <span className="event-card__pending">plan being prepared…</span>
             )}
             {fire?.detection && fire.detection.verdict !== 'confirmed' && (
               <span className="event-card__detection">
@@ -148,6 +161,20 @@ function EventCard({ event, onOpen, isSelected }: {
         </>
       )}
     </button>
+
+    {/* Outside the card's own button, because a button inside a button is
+        invalid and the browser will not deliver this click. */}
+    {onHandled && (
+      <div className="event-card__handled-row">
+        <button
+          type="button"
+          className="event-card__handled"
+          onClick={() => onHandled(event)}
+        >
+          Handled
+        </button>
+      </div>
+    )}
     </article>
   )
 }

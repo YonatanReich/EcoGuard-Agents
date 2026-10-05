@@ -422,6 +422,14 @@ function MapView({
                     'map-marker' +
                     (isEmergency
                       ? ' map-marker--emergency'
+                      : '') +
+                    /*
+                     * A dashed ring, so an unverified report is visibly a
+                     * claim rather than a measurement at a glance — without
+                     * hiding it, which would be worse than showing it.
+                     */
+                    (event.confirmation?.status === 'unconfirmed'
+                      ? ' map-marker--unconfirmed'
                       : '')
                   }
                   style={{

@@ -195,10 +195,9 @@ class FirmsDataAgent:
             requests.RequestException: If communication with FIRMS fails.
 
         Notes:
-            This agent currently allows request exceptions to propagate.
-            FireDetectionAgent or a future orchestration layer should decide
-            whether FIRMS failure should abort detection or produce a partial
-            result.
+            This client currently allows request exceptions to propagate. Its
+            caller decides whether FIRMS failure should abort collection or
+            produce a partial result.
         """
         if not self.api_key:
             raise FirmsProviderError("authentication error")

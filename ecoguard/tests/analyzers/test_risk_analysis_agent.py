@@ -990,23 +990,15 @@ def test_skipped_assessment_has_no_situational_context(event_builder):
     assert result["web_findings"] == []
 
 
-def test_risk_semantics_distinguishes_this_score_from_the_ml_prediction():
-    """
-    Guards against a genuinely dangerous confusion.
-
-    FireRiskPredictionAgent also emits `risk_score` and `risk_level`, but its
-    score is a 0.0-1.0 probability that a fire *starts*, on a three-level scale.
-    This agent's score is 0-100 severity of a fire that *already exists*, on a
-    four-level scale. A consumer that mistook 0.85 for 85 would be wrong by two
-    orders of magnitude, so both agents must label their semantics.
-    """
+def test_risk_semantics_labels_operational_fire_severity():
+    """The existing-fire assessment always identifies its score semantics."""
     from ecoguard.analyzers.fire.risk_analysis_agent import RISK_SEMANTICS
 
     agent = build_agent()
     result = agent.analyze_event(detected_event())
 
     assert result["risk_semantics"] == "detected_event_operational_risk"
-    assert RISK_SEMANTICS != "estimated_fire_risk"
+    assert result["risk_semantics"] == RISK_SEMANTICS
 
 
 @pytest.mark.parametrize("event_builder", [no_event, failed_detection])

@@ -29,6 +29,11 @@ import EventCard from '../components/EventCard'
 import WeakEventCard from '../components/WeakEventCard'
 import EventLegend from '../components/EventLegend'
 import EventModal from '../components/EventModal'
+import HandledSurvey, { type OperatorFeedback } from '../components/HandledSurvey'
+import FeedbackDialog from '../components/FeedbackDialog'
+
+/** How long a handled card animates out; matches eventCardOut in dashboard.css. */
+const CARD_EXIT_MS = 340
 import { classify } from '../components/hazards'
 
 import FloodLegend from '../components/FloodLegend'
@@ -66,6 +71,11 @@ const FLY_ZOOM: Record<SharedEvent['type'], number> = {
   air_pollution: 12,
   other: 12,
 }
+
+// Detection runs independently in the backend. Keep the open dashboard close
+// enough to that state that new events appear and closed ones disappear
+// without requiring an operator to refresh the page.
+const EVENT_POLL_MS = 15_000
 
 /** Flies the map to the event just opened. Rendered inside MapView so it can
  *  reach the map; `at` makes a second click on the same card fly again. */
@@ -108,10 +118,6 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
   const [floodPreviewEvents, setFloodPreviewEvents] =
     useState<SharedEvent[]>([])
 
-  // One feed, one id scheme. The legacy /api/detected-events point query used
-  // to be merged in here, and because its ids are hotspot hashes rather than
-  // incident ids, a fire seen by both paths rendered as two cards — the legacy
-  // one with no detection verdict, spread or exposure.
   const liveEvents = projectedEvents
 
   const events = useMemo(
@@ -124,9 +130,9 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
   )
 
   /** The event shown in the panel under the map, from a card or a marker.
-   *  Kept after the panel closes so it can animate shut with content in it. */
-  const [openEvent, setOpenEvent] =
-    useState<SharedEvent | null>(null)
+   *  Store its key rather than a second copy of the event so a feed refresh
+   *  updates the panel too. The key is kept while the panel animates shut. */
+  const [openEventKey, setOpenEventKey] = useState<string | null>(null)
   const [panelOpen, setPanelOpen] = useState(false)
   const [flyRequest, setFlyRequest] =
     useState<{ event: SharedEvent; at: number } | null>(null)
@@ -150,10 +156,17 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
     [events, selectedEventKey],
   )
 
+  const openEvent = useMemo(
+    () => events.find(
+      (event) => `${event.type}:${event.id}` === openEventKey,
+    ) ?? null,
+    [events, openEventKey],
+  )
+
   const selectAndOpenEvent = (event: SharedEvent) => {
     setSelectedEventKey(`${event.type}:${event.id}`)
     setDirectionsStationKey(null)
-    setOpenEvent(event)
+    setOpenEventKey(`${event.type}:${event.id}`)
     setPanelOpen(true)
     setFlyRequest({ event, at: Date.now() })
     setRoutesShown(false)
@@ -163,7 +176,7 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
   const showStationDirections = (event: SharedEvent, stationKey: string) => {
     setSelectedEventKey(`${event.type}:${event.id}`)
     setDirectionsStationKey(stationKey)
-    setOpenEvent(event)
+    setOpenEventKey(`${event.type}:${event.id}`)
     setPanelOpen(true)
   }
 
@@ -352,10 +365,9 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
   // Detected events
   // =========================================================
 
-  // Refetched on mount and again whenever a scenario starts, stops or lands a
-  // new wave. A scenario repoints the detectors at authored observations while
-  // this page stays open, so the feed has to be re-read rather than loaded once
-  // — otherwise the map would keep showing the world the dashboard booted in.
+  // Refetched on mount, on a short interval, and immediately when scenario
+  // state changes. The backend pipeline runs independently of this page, so a
+  // dashboard left open must still discover new and closed incidents.
   const loadProjectedEvents = useCallback(() => {
     // An empty list is a valid answer — the pipeline ran and nothing is
     // burning — so this assigns unconditionally rather than only on a truthy
@@ -370,22 +382,80 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
       .finally(() => setIsLoadingEvents(false))
   }, [demo])
 
-  useEffect(() => {
-    loadProjectedEvents()
+  // Handling: the operator is finished with an event. The survey decides
+  // whether feedback goes with it; either way the incident closes server-side
+  // and the refreshed feed comes back without it.
+  const [handlingEvent, setHandlingEvent] = useState<SharedEvent | null>(null)
+  const [leavingIds, setLeavingIds] = useState<ReadonlySet<string>>(() => new Set())
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
+  const [handlingSubmitting, setHandlingSubmitting] = useState(false)
+  const [handlingError, setHandlingError] = useState<string | null>(null)
 
-    // Unverified reports are an operator decision queue. There is nothing to
-    // decide in a demo, and a confirm click would write to the live store.
-    if (!demo) void loadWeakEvents()
-  }, [demo, loadProjectedEvents])
+  const startHandling = useCallback((event: SharedEvent) => {
+    setHandlingError(null)
+    setHandlingEvent(event)
+  }, [])
 
-  const loadWeakEvents = () =>
+  const submitHandled = (feedback: OperatorFeedback | null) => {
+    if (!handlingEvent) return
+    const handled = handlingEvent
+    setHandlingSubmitting(true)
+    setHandlingError(null)
+    void fetch(`/api/events/${encodeURIComponent(handled.id)}/handled`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ handled_by: operatorName.trim() || 'operator', feedback }),
+    })
+      .then((response) => {
+        // 404: it closed on its own (quiet period) while the survey was open.
+        // There is nothing left to handle, so treat it as done.
+        if (response.status === 404) return null
+        if (!response.ok) throw new Error('Handling failed')
+        return response.json() as Promise<SharedEventFeed>
+      })
+      .then((data) => {
+        if (openEventKey === `${handled.type}:${handled.id}`) closePanel()
+        setHandlingEvent(null)
+        // The card plays its exit before the new feed, which no longer has
+        // it, replaces the list; swapping at once would make it blink out.
+        setLeavingIds((current) => new Set(current).add(handled.id))
+        window.setTimeout(() => {
+          if (data) setProjectedEvents(data.events ?? [])
+          else setProjectedEvents((current) => current.filter((event) => event.id !== handled.id))
+          setLeavingIds((current) => {
+            const next = new Set(current)
+            next.delete(handled.id)
+            return next
+          })
+        }, CARD_EXIT_MS)
+      })
+      .catch((error) => {
+        console.error('Error handling event:', error)
+        setHandlingError('This was not recorded and the event is still open. Try again.')
+      })
+      .finally(() => setHandlingSubmitting(false))
+  }
+
+  const loadWeakEvents = useCallback(() =>
     fetch('/api/weak-events')
       .then((response) => {
         if (!response.ok) throw new Error('Weak event feed is unavailable')
         return response.json() as Promise<WeakEventFeed>
       })
       .then((data) => setWeakEvents(data.weak_events ?? []))
-      .catch((error) => console.error('Error fetching weak events:', error))
+      .catch((error) => console.error('Error fetching weak events:', error)),
+  [])
+
+  useEffect(() => {
+    loadProjectedEvents()
+    const timer = window.setInterval(loadProjectedEvents, EVENT_POLL_MS)
+
+    // Unverified reports are an operator decision queue. There is nothing to
+    // decide in a demo, and a confirm click would write to the live store.
+    if (!demo) void loadWeakEvents()
+
+    return () => window.clearInterval(timer)
+  }, [demo, loadProjectedEvents, loadWeakEvents])
 
   const rememberOperator = (name: string) => {
     setOperatorName(name)
@@ -463,6 +533,14 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
         <button
           type="button"
           className="logout-button"
+          onClick={() => setFeedbackOpen(true)}
+        >
+          Feedback
+        </button>
+
+        <button
+          type="button"
+          className="logout-button"
           onClick={() => navigate('/system', { state: { from: demo ? '/demo' : '/dashboard' } })}
         >
           System
@@ -504,6 +582,8 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
                   event={event}
                   onOpen={selectAndOpenEvent}
                   isSelected={selectedEvent?.type === event.type && selectedEvent.id === event.id}
+                  onHandled={demo ? undefined : startHandling}
+                  isLeaving={leavingIds.has(event.id)}
                 />
               ))
             )}
@@ -654,7 +734,10 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
 
         {/* The event panel docks under the map and pushes it up as it opens.
             Inert while shut, so its hidden controls are not tab stops. */}
-        <div className={`event-dock${panelOpen ? ' event-dock--open' : ''}`} inert={!panelOpen}>
+        <div
+          className={`event-dock${panelOpen && openEvent ? ' event-dock--open' : ''}`}
+          inert={!panelOpen || !openEvent}
+        >
           <div className="event-dock__inner">
             {openEvent && (
               <EventModal
@@ -662,6 +745,7 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
                 event={openEvent}
                 directionsStationKey={directionsStationKey}
                 onClose={closePanel}
+                onHandled={demo ? undefined : () => startHandling(openEvent)}
                 routes={openAllocationEvent ? {
                   shown: routesShown,
                   onToggle: () => {
@@ -677,6 +761,21 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
         </div>
 
         </div>
+
+        {feedbackOpen && (
+          <FeedbackDialog submittedBy={operatorName} onClose={() => setFeedbackOpen(false)} />
+        )}
+
+        {handlingEvent && (
+          <HandledSurvey
+            key={handlingEvent.id}
+            event={handlingEvent}
+            isSubmitting={handlingSubmitting}
+            error={handlingError}
+            onSubmit={submitHandled}
+            onCancel={() => setHandlingEvent(null)}
+          />
+        )}
 
 
         <aside className="dashboard__panel dashboard__panel--emergency">
@@ -698,6 +797,8 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
                   event={event}
                   onOpen={selectAndOpenEvent}
                   isSelected={selectedEvent?.type === event.type && selectedEvent.id === event.id}
+                  onHandled={demo ? undefined : startHandling}
+                  isLeaving={leavingIds.has(event.id)}
                 />
               ))
             )}

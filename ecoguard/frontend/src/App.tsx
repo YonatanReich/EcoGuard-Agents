@@ -10,7 +10,12 @@
  *   /demo       Dashboard again, reading fabricated incidents instead of the
  *               live feed, so the allocator and the response plans can be
  *               shown working on demand.
+ *   /demos      Demo scenarios — how the controlled runs were built, and the
+ *               place a run is started from. Starting one hands over to
+ *               /dashboard, where its events appear as they are produced.
  *   /system     System — every pipeline actor, lit while it is running.
+ *   /system/improvement-report
+ *               The improvement agent's latest report, printable to PDF.
  *
  * Note there is no auth guard: /dashboard is reachable directly by URL. The
  * "Monitor" button is a navigation trigger, not a credential check.
@@ -19,7 +24,9 @@
 import { Routes, Route } from 'react-router-dom'
 import Home from './pages/Home'
 import Dashboard from './pages/Dashboard'
+import DemoScenarios from './pages/DemoScenarios'
 import System from './pages/System'
+import ImprovementReport from './pages/ImprovementReport'
 
 function App() {
   return (
@@ -27,7 +34,9 @@ function App() {
       <Route path="/" element={<Home />} />
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/demo" element={<Dashboard demo />} />
+      <Route path="/demos" element={<DemoScenarios />} />
       <Route path="/system" element={<System />} />
+      <Route path="/system/improvement-report" element={<ImprovementReport />} />
     </Routes>
   )
 }

@@ -16,14 +16,17 @@ def signal(
     station_id=417,
     cell_id="31.75:35.20",
     observed_at=AT,
-    severity=3,
+    severity=None,
     previous_discharge=52.0,
     current_discharge=60.0,
     stream_id=82,
     latitude=31.75,
     longitude=35.2,
+    flow_regime="flowing_baseline",
 ):
-    return {
+    official_level = sum(current_discharge >= value for value in THRESHOLDS)
+    expected_severity = 3 if official_level <= 1 else min(6, official_level + 2)
+    result = {
         "cell_id": cell_id,
         "observed_at": observed_at.isoformat(),
         "hazard": "flood",
@@ -44,11 +47,20 @@ def signal(
             "stream_id": stream_id,
             "timestamp": observed_at.isoformat(),
             "current_discharge": current_discharge,
-            "severity_level": severity,
+            "severity_level": expected_severity if severity is None else severity,
+            "operational_flow_regime": flow_regime,
+            "alert_threshold_m3s": (
+                1.0 if flow_regime == "ephemeral" else THRESHOLDS[0]
+            ),
+            "return_period_years": (
+                (2, 5, 10, 20, 50, 100)[official_level - 1]
+                if official_level else None
+            ),
             "threshold_vector_m3s": THRESHOLDS,
             "recent_discharges_m3s": [previous_discharge, current_discharge],
         },
     }
+    return result
 
 
 def incident(*signals):
@@ -69,32 +81,66 @@ def test_initial_signal_establishes_q10_state_without_external_calls():
     result = analyzer().analyze(incident(signal()))
 
     assert result.status == "success"
-    assert result.current_state.severity_level == 3
+    assert result.current_state.severity_level == 5
     assert result.current_state.return_period_years == 10
-    assert result.current_state.alert_level == "active"
+    assert result.current_state.alert_level == "emergency"
     assert result.progression_assessment.trend == "rising"
     assert result.progression_assessment.discharge_change_m3s == 8.0
     assert result.change_assessment.change_type == "initial"
     assert result.change_assessment.material_change is True
 
 
-def test_q10_to_q20_is_an_explicit_material_escalation():
-    first = signal(observed_at=AT, severity=3, current_discharge=60.0)
+def test_ephemeral_detection_below_q2_keeps_actual_return_period_empty():
+    result = analyzer().analyze(incident(signal(
+        previous_discharge=1.0,
+        current_discharge=1.4,
+        flow_regime="ephemeral",
+    )))
+
+    assert result.status == "success"
+    assert result.current_state.severity_level == 3
+    assert result.current_state.return_period_years is None
+    assert result.current_state.alert_level == "active"
+
+
+def test_q5_crossing_escalates_operational_severity_and_actual_band():
+    first = signal(
+        observed_at=AT,
+        previous_discharge=1.0,
+        current_discharge=1.4,
+        flow_regime="ephemeral",
+    )
     second = signal(
         observed_at=AT + timedelta(minutes=10),
-        severity=4,
+        previous_discharge=1.4,
+        current_discharge=40.0,
+        flow_regime="ephemeral",
+    )
+
+    result = analyzer().analyze(incident(first, second))
+
+    assert result.current_state.severity_level == 4
+    assert result.current_state.return_period_years == 5
+    assert result.change_assessment.change_type == "escalated"
+    assert result.change_assessment.threshold_transition == "below_Q2_to_Q5"
+
+
+def test_q10_to_q20_is_an_explicit_material_escalation():
+    first = signal(observed_at=AT, current_discharge=60.0)
+    second = signal(
+        observed_at=AT + timedelta(minutes=10),
         previous_discharge=60.0,
         current_discharge=84.2,
     )
 
     result = analyzer().analyze(incident(first, second))
 
-    assert result.current_state.severity_level == 4
+    assert result.current_state.severity_level == 6
     assert result.current_state.return_period_years == 20
     assert result.change_assessment.change_type == "escalated"
     assert result.change_assessment.material_change is True
-    assert result.change_assessment.previous_severity_level == 3
-    assert result.change_assessment.current_severity_level == 4
+    assert result.change_assessment.previous_severity_level == 5
+    assert result.change_assessment.current_severity_level == 6
     assert result.change_assessment.threshold_transition == "Q10_to_Q20"
     assert result.change_assessment.reasons == [
         "official_return_period_threshold_increased"
@@ -102,10 +148,9 @@ def test_q10_to_q20_is_an_explicit_material_escalation():
 
 
 def test_rising_discharge_inside_the_same_q_band_is_not_material():
-    first = signal(observed_at=AT, severity=4, current_discharge=82.0)
+    first = signal(observed_at=AT, current_discharge=82.0)
     second = signal(
         observed_at=AT + timedelta(minutes=10),
-        severity=4,
         previous_discharge=82.0,
         current_discharge=90.0,
     )
@@ -118,29 +163,44 @@ def test_rising_discharge_inside_the_same_q_band_is_not_material():
     assert result.change_assessment.threshold_transition is None
 
 
-def test_lower_official_threshold_is_reported_as_deescalation():
-    first = signal(observed_at=AT, severity=5, current_discharge=125.0)
+def test_q20_to_q50_remains_in_the_same_operational_severity():
+    first = signal(observed_at=AT, current_discharge=85.0)
     second = signal(
         observed_at=AT + timedelta(minutes=10),
-        severity=4,
-        previous_discharge=125.0,
-        current_discharge=110.0,
+        previous_discharge=85.0,
+        current_discharge=125.0,
+    )
+
+    result = analyzer().analyze(incident(first, second))
+
+    assert result.current_state.severity_level == 6
+    assert result.current_state.return_period_years == 50
+    assert result.change_assessment.change_type == "no_material_change"
+    assert result.change_assessment.material_change is False
+    assert result.change_assessment.threshold_transition is None
+
+
+def test_lower_official_threshold_is_reported_as_deescalation():
+    first = signal(observed_at=AT, current_discharge=60.0)
+    second = signal(
+        observed_at=AT + timedelta(minutes=10),
+        previous_discharge=60.0,
+        current_discharge=40.0,
     )
 
     result = analyzer().analyze(incident(first, second))
 
     assert result.progression_assessment.trend == "falling"
     assert result.change_assessment.change_type == "deescalated"
-    assert result.change_assessment.threshold_transition == "Q50_to_Q20"
+    assert result.change_assessment.threshold_transition == "Q10_to_Q5"
 
 
 def test_new_station_and_cell_are_a_material_footprint_update():
-    first = signal(observed_at=AT, severity=4, current_discharge=85.0)
+    first = signal(observed_at=AT, current_discharge=85.0)
     second = signal(
         station_id=418,
         cell_id="31.80:35.25",
         observed_at=AT + timedelta(minutes=10),
-        severity=4,
         previous_discharge=82.0,
         current_discharge=85.0,
         stream_id=83,
@@ -162,20 +222,19 @@ def test_new_station_and_cell_are_a_material_footprint_update():
 
 
 def test_event_severity_uses_latest_state_per_station_and_worst_current_station():
-    station_417_q50 = signal(observed_at=AT, severity=5, current_discharge=130.0)
-    station_418_q20 = signal(
+    station_417_q10 = signal(observed_at=AT, current_discharge=60.0)
+    station_418_q5 = signal(
         station_id=418,
         cell_id="31.80:35.25",
         observed_at=AT + timedelta(minutes=10),
-        severity=4,
-        previous_discharge=82.0,
-        current_discharge=85.0,
+        previous_discharge=38.0,
+        current_discharge=40.0,
         stream_id=83,
         latitude=31.8,
         longitude=35.25,
     )
 
-    result = analyzer().analyze(incident(station_417_q50, station_418_q20))
+    result = analyzer().analyze(incident(station_417_q10, station_418_q5))
 
     assert result.current_state.primary_station_id == 417
     assert result.current_state.severity_level == 5
@@ -202,6 +261,18 @@ def test_malformed_flood_signal_is_visible_but_does_not_destroy_valid_analysis()
     assert result.status == "partial"
     assert result.invalid_signal_count == 1
     assert "malformed Flood signal" in result.evidence_gaps[-1]
+
+
+def test_signal_without_current_detection_evidence_is_rejected():
+    legacy = signal()
+    del legacy["evidence"]["operational_flow_regime"]
+    del legacy["evidence"]["alert_threshold_m3s"]
+    del legacy["evidence"]["return_period_years"]
+
+    result = analyzer().analyze(incident(legacy))
+
+    assert result.status == "unavailable"
+    assert result.invalid_signal_count == 1
 
 
 def test_missing_signals_returns_unavailable_instead_of_safe_defaults():

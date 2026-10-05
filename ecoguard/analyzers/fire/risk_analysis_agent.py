@@ -1,8 +1,9 @@
 """
 Risk Analysis Agent
 
-Responsible for turning a real detected-fire event from FireDetectionAgent into
-an operational risk assessment, grounded in retrieved fire-protocol text.
+Responsible for turning the active fire pipeline's internal detected-event
+representation into an operational risk assessment grounded in retrieved
+fire-protocol text.
 
 This replaces an earlier stub that branched on a hardcoded event_type string and
 returned fixed numbers. Two things changed. It now consumes the actual nested
@@ -12,10 +13,9 @@ Python against the chunk it claims to quote before the result is returned.
 
 What this agent does NOT do:
     It does not produce a response plan or a unit list. Those belong to
-    ResponsePlanningAgent. The separation mirrors the one FireDetectionAgent
-    already maintains between satellite confidence, fire-weather severity and
-    operational risk — the detection agent explicitly refuses to compute a risk
-    score, and by the same logic risk is not a response plan.
+    EmergencyResponsePlanner. Detection confidence, fire-weather severity and
+    operational risk remain separate inputs, and risk is not itself a response
+    plan.
 
 The no-fabrication rule:
     Every failure and skip path returns ``risk_score: None`` and
@@ -35,7 +35,7 @@ There is deliberately no ungrounded fallback. Answering from the model's general
 knowledge and presenting it as protocol-derived is precisely the fabrication
 this sprint exists to remove.
 
-Consumed by: ecoguard.api.main.get_detected_events
+Consumed by: ecoguard.analyzers.fire.incident_handler.FireIncidentHandler
 """
 
 from __future__ import annotations
@@ -80,18 +80,9 @@ WEB_SEARCH_ENABLED = os.getenv("ECOGUARD_FIRE_WEB_SEARCH", "").strip().lower() i
     "1", "true", "yes", "on",
 }
 
-# Disambiguates this score from FireRiskPredictionAgent's, which shares the
-# field names `risk_score` and `risk_level` but means something different and
-# uses a different scale:
-#
-#   estimated_fire_risk               0.0-1.0 probability that a fire STARTS
-#                                     here, low/medium/high, from the ML model
-#   detected_event_operational_risk   0-100 severity of a fire that ALREADY
-#                                     EXISTS, low/medium/high/critical, here
-#
-# A consumer that confuses 0.85 with 85 would be off by two orders of
-# magnitude, so every consumer must branch on this field rather than on the
-# score alone.
+# Labels this score as operational severity for a fire that already exists.
+# Keeping the meaning explicit prevents downstream consumers from treating a
+# missing or partial assessment as a generic, unlabeled number.
 RISK_SEMANTICS = "detected_event_operational_risk"
 
 # Thresholds used only to steer retrieval toward the right protocol sections.
@@ -102,7 +93,7 @@ LOW_HUMIDITY_PERCENT = 30.0
 HIGH_TEMPERATURE_C = 35.0
 HIGH_FRP = 50.0
 
-# FireDetectionAgent collects geospatial context at this radius but does not
+# The incident adapter collects geospatial context at this radius but does not
 # record it on the event, so it cannot be read back. Stated here and in the
 # prompt because a population figure is meaningless without the radius it was
 # gathered over — "no settlement within 2 km" is a different claim from "no
@@ -334,7 +325,7 @@ class RiskAnalysisAgent:
         Assess one detected fire event.
 
         Args:
-            detected_event (dict): A FireDetectionAgent result. All three of its
+            detected_event (dict): A DetectedFireEvent-shaped mapping. All three of its
                 shapes are accepted — detected True, False, or None.
 
         Returns:
@@ -815,7 +806,7 @@ def build_event_id(detected_event: dict) -> str:
     arrive in the same payload as the event.
 
     Args:
-        detected_event (dict): A FireDetectionAgent result. Tolerates the
+        detected_event (dict): A DetectedFireEvent-shaped mapping. Tolerates the
             no-event and failed shapes, which have no hotspot.
 
     Returns:
@@ -908,7 +899,7 @@ def build_situational_facts(detected_event: dict) -> dict:
     "there are no settlements nearby".
 
     Args:
-        detected_event (dict): A FireDetectionAgent result.
+        detected_event (dict): A DetectedFireEvent-shaped mapping.
 
     Returns:
         dict: Facts for the prompt and for the assessment's derived block.

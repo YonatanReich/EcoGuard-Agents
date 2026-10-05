@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import inspect
 
 import pytest
 
@@ -10,6 +11,7 @@ from ecoguard.collectors.flood.hydrometric_observations import (
     HydrometricObservationError,
     fetch_hydrometric_observations,
     parse_hydrometric_observations,
+    persist_hydrometric_observations,
 )
 
 
@@ -123,3 +125,11 @@ def test_fetch_rejects_a_page_without_a_session_token():
 
     with pytest.raises(HydrometricObservationError, match="session token"):
         fetch_hydrometric_observations(http)
+
+
+def test_persistence_reads_only_active_classified_complete_threshold_stations():
+    source = inspect.getsource(persist_hydrometric_observations)
+
+    assert "flow_threshold_status = 'complete_thresholds'" in source
+    assert "operational_flow_regime IS NOT NULL" in source
+    assert "is_active IS TRUE" in source

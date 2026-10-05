@@ -28,10 +28,12 @@ accident.
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta
 from typing import Any, Sequence
 
 from ecoguard.shared.cells import are_adjacent
+from ecoguard.shared.grid import LATITUDE_KM_PER_DEGREE, LONGITUDE_KM_PER_DEGREE_AT_EQUATOR
 from ecoguard.shared.signals import CORROBORATION_WINDOW, CellSignal
 
 # How long an incident may go unseen before it is no longer the thing a new
@@ -102,10 +104,41 @@ def matches(
     if last_seen is None or abs(signal.observed_at - last_seen) > window:
         return False
 
-    return any(
+    if any(
         are_adjacent(signal.cell_id, cell, radius=radius)
         for cell in incident.get("cells") or ()
+    ):
+        return True
+    return _within_coarse_location(signal, incident)
+
+
+# A 5 km cell and its neighbours reach about 7.5 km from a point in the middle.
+# Locations vaguer than a cell need their own reach, or a report placed at a
+# region's centroid ("a fire on the Carmel", ~7 km across) opens a second
+# incident beside the satellite fire it is describing.
+CELL_REACH_M = 5_000.0
+
+
+def _within_coarse_location(signal: CellSignal, incident: dict[str, Any]) -> bool:
+    """Whether a vague location (either side) still contains the other point.
+
+    Only ever widens matching for locations coarser than a cell. Two precise
+    fixes stay governed by adjacency alone, so this cannot merge two satellite
+    fires; it lets a coarse claim meet the fire it names.
+    """
+    location = signal.location
+    if location is None or incident.get("latitude") is None or incident.get("longitude") is None:
+        return False
+    reach_m = max(float(location.precision_m or 0.0), float(incident.get("precision_m") or 0.0))
+    if reach_m <= CELL_REACH_M:
+        return False
+    scale = math.cos(math.radians(location.latitude))
+    distance_m = 1000.0 * math.hypot(
+        (float(incident["latitude"]) - location.latitude) * LATITUDE_KM_PER_DEGREE,
+        (float(incident["longitude"]) - location.longitude)
+        * LONGITUDE_KM_PER_DEGREE_AT_EQUATOR * scale,
     )
+    return distance_m <= reach_m
 
 
 def best_match(

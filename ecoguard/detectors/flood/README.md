@@ -14,56 +14,60 @@ Flood-specific worker, cursor table, candidate table or scheduler job.
 
 The Water Authority collector runs every ten minutes, matching the provider's
 publication cadence. It writes directly to the shared `observations` stream
-and includes only stations classified as `complete_thresholds`.
+and includes only active stations that have `complete_thresholds` and a
+reviewed `operational_flow_regime`.
+
+The regime is loaded into the station table from the reviewed
+`hydrometric_station_flow_regimes.csv` reference; station ids are not embedded
+in detector or collector code.
 
 Stations whose threshold vector is six `999` sentinels are classified as
 `missing_thresholds`. They remain in the station catalog, but their measurements
 are not stored, evaluated or allowed to open an incident.
 
-## Severity and alert threshold
+## Detection and operational severity
 
-Discharge is compared with the official Q2, Q5, Q10, Q20, Q50 and Q100 values:
+Detection uses two consecutive readings no more than 30 minutes apart:
 
-| Severity | Discharge | Operational state |
-|---:|---|---|
-| 0 | below Q2 | none |
-| 1 | Q2 to below Q5 | none |
-| 2 | Q5 to below Q10 | monitoring only |
-| 3 | Q10 to below Q20 | active alert |
-| 4 | Q20 to below Q50 | severe alert |
-| 5 | Q50 to below Q100 | emergency |
-| 6 | Q100 or higher | emergency |
+- `ephemeral`: both readings must be at least 1 m3/s.
+- `flowing_baseline`: both readings must be at least the station's Q2.
 
-Q10 is the first level allowed to emit a flood signal. Two valid consecutive
-readings at or above Q10, no more than 30 minutes apart, are required. Every
-later qualifying pair emits another ordinary `CellSignal` and keeps the shared
-incident active.
+The detector still compares the current discharge with Q2, Q5, Q10, Q20, Q50
+and Q100. The actual return period is retained in evidence, while confirmed
+events map onto the existing operational severity contract:
+
+| Severity | Confirmed discharge band |
+|---:|---|
+| 3 | below Q5, including an ephemeral event below Q2 |
+| 4 | Q5 to below Q10 |
+| 5 | Q10 to below Q20 |
+| 6 | Q20 or higher |
+
+Every later qualifying pair emits another ordinary `CellSignal` and keeps the
+shared incident active. The history query loads one hour; only a reading no
+more than 30 minutes before the new target can confirm it.
 
 Each signal includes `station_id`, optional `stream_id`, timestamp, current
-discharge, severity, alert level, the threshold vector and the two readings
-used in the decision.
+discharge, flow regime, detection threshold, actual return period, operational
+severity, alert level, the threshold vector and the two readings used in the
+decision.
 
 ## Scheduling and event closure
 
-Flood detection runs in the same shared thirty-minute detection batch as Fire
+Flood detection runs in the same shared ten-minute detection batch as Fire
 and Air Pollution. It uses the same successful-run bookmark pattern as the
 other detectors and returns a plain `list[CellSignal]`.
 
 The Coordinator applies its existing quiet-period lifecycle rule. A Flood
 incident closes after three hours without a new qualifying signal. A later
-confirmed Q10 pair creates a new incident. Closed incidents remain stored in
+confirmed pair creates a new incident. Closed incidents remain stored in
 `incidents`; they are not physically deleted.
 
 ## Current downstream boundary
 
-Flood incidents are persisted and routed to the emergency queue. The resource
-allocator now has a deterministic road-targeting stage that consumes the
-station and severity evidence stored on the incident. The shared dispatcher
-only preserves the incident as allocation input; `ResourceAllocationAgent`
-invokes road targeting and performs the station reservation. A Flood
-unit-quantity planner and frontend event projector are still separate missing
-runtime stages. Until the operational planner is available, a documented
-deterministic fallback assigns stations by Q10-Q100 severity, with exactly one
-responsible police station per incident. Road destinations, station
-reservations and the stream-access advisory are produced automatically;
-frontend projection is not implemented yet.
+Flood incidents are persisted and routed to the emergency queue. Event and
+risk analyzers interpret the detector evidence, and the shared emergency
+planner produces the response plan. Resource allocation keeps its existing
+road-targeting stage and its existing police fallback when planning is
+unavailable. Road proximity affects only the response destination, never flood
+detection. Flood also remains subject to the shared dispatcher freshness gate.

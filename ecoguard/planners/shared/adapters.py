@@ -59,8 +59,8 @@ def build_fire_plan_input(
         raise OperationalAnalysisUnavailable("risk_analysis_unavailable")
 
     additional_context: dict[str, Any] = {
-        # Kept nested because these shapes are Fire-specific and are also used
-        # by the compatibility wrapper's established retrieval/prompt logic.
+        # Kept nested because these shapes are Fire-specific and the shared
+        # planner treats them as additional context rather than common fields.
         "detected_event": event,
         "risk_assessment": risk,
         "situational_context": risk.get("situational_context"),
@@ -95,9 +95,8 @@ def build_fire_plan_input(
 
     try:
         return EmergencyResponsePlanInput(
-            # Preserve the established Fire wire identity. The legacy planner
-            # has always identified the plan from the detected event itself;
-            # a stale or mismatched assessment id must not silently retarget it.
+            # Preserve the Fire incident identity from the detected event; a
+            # stale or mismatched assessment id must not silently retarget it.
             incident_id=build_event_id(event),
             hazard_type="fire",
             location=location,
@@ -117,10 +116,8 @@ def build_fire_plan_input(
 
 
 # The spread analyser's own severity scale, declared here so a reader of the
-# planner input can never mistake it for the other two. `estimated_fire_risk`
-# is 0-1 and is about ignition; `detected_event_operational_risk` is 0-100 and
-# is about how bad an existing fire is; this is 0-100 and is about how bad its
-# *spread* is about to be over a stated horizon.
+# planner input cannot mistake spread forecast severity for the operational
+# severity of the existing fire assessment.
 FIRE_SPREAD_SEMANTICS = "fire_spread_forecast"
 
 # EmergencyResponsePlanInput caps these, and a value over the cap fails

@@ -5,7 +5,25 @@ from ecoguard.planners.shared.adapters import (
     build_fire_plan_input,
 )
 from ecoguard.tests.analyzers.test_risk_analysis_agent import detected_event
-from ecoguard.tests.planners.test_planning_agent import successful_assessment
+
+
+def successful_assessment(**overrides) -> dict:
+    """A minimal successful operational-risk result for adapter tests."""
+    assessment = {
+        "metadata": {"analysis_status": "success"},
+        "event_id": "a3f19c2b8d04",
+        "event_type": "fire",
+        "location": {"latitude": 31.9, "longitude": 34.8},
+        "risk_score": 78,
+        "risk_level": "high",
+        "risk_semantics": "detected_event_operational_risk",
+        "confidence": "medium",
+        "primary_drivers": ["very high FWI class", "wind 34 km/h"],
+        "explanation": "Very high fire danger with wind supporting rapid spread.",
+        "evidence_gaps": [],
+    }
+    assessment.update(overrides)
+    return assessment
 
 
 def test_fire_adapter_maps_only_operational_risk_and_preserves_context():

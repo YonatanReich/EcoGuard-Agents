@@ -17,43 +17,19 @@ from ecoguard.analyzers.flood.event_analysis_schemas import (
     FloodProgressionAssessment,
     HydrometricStationState,
 )
+from ecoguard.detectors.flood.station_rules import (
+    FLOW_RETURN_PERIODS,
+    OPERATIONAL_ALERT_BY_SEVERITY,
+    OPERATIONAL_FLOW_REGIME_EPHEMERAL,
+    OPERATIONAL_FLOW_REGIME_FLOWING,
+    operational_severity_level,
+)
 
 
 ANALYZER_LIMITATIONS = [
     "Hydrologic state is derived from persisted gauge signals and does not confirm inundation extent.",
     "Road flooding, safety, and passability are not established by this analysis.",
 ]
-
-RETURN_PERIOD_BY_SEVERITY: dict[int, int | None] = {
-    0: None,
-    1: 2,
-    2: 5,
-    3: 10,
-    4: 20,
-    5: 50,
-    6: 100,
-}
-
-ALERT_BY_SEVERITY = {
-    0: "none",
-    1: "none",
-    2: "monitoring",
-    3: "active",
-    4: "severe",
-    5: "emergency",
-    6: "emergency",
-}
-
-THRESHOLD_LABEL_BY_SEVERITY = {
-    0: "below_Q2",
-    1: "Q2",
-    2: "Q5",
-    3: "Q10",
-    4: "Q20",
-    5: "Q50",
-    6: "Q100",
-}
-
 
 @dataclass(frozen=True)
 class _ParsedSignal:
@@ -68,6 +44,7 @@ class _ParsedSignal:
     current_discharge_m3s: float
     previous_discharge_m3s: float | None
     severity_level: int
+    return_period_years: int | None
     threshold_vector_m3s: list[float] | None
     confidence: float | None
 
@@ -84,8 +61,8 @@ class _ParsedSignal:
             current_discharge_m3s=self.current_discharge_m3s,
             previous_discharge_m3s=self.previous_discharge_m3s,
             severity_level=self.severity_level,
-            return_period_years=RETURN_PERIOD_BY_SEVERITY[self.severity_level],
-            alert_level=ALERT_BY_SEVERITY[self.severity_level],
+            return_period_years=self.return_period_years,
+            alert_level=OPERATIONAL_ALERT_BY_SEVERITY[self.severity_level],
             threshold_vector_m3s=self.threshold_vector_m3s,
             confidence=self.confidence,
         )
@@ -192,7 +169,7 @@ class FloodEventAnalyzer:
                 evidence.get("source_station_id", evidence.get("station_id")),
                 minimum=1,
             )
-            severity = self._integer(evidence.get("severity_level"), minimum=0)
+            severity = self._integer(evidence.get("severity_level"), minimum=3)
             if severity > 6:
                 return None
             observed_at = self._datetime(
@@ -204,11 +181,37 @@ class FloodEventAnalyzer:
             thresholds = self._threshold_vector(evidence.get("threshold_vector_m3s"))
             if thresholds is None:
                 return None
-            # The vector is the official source of the band. Reject an
-            # internally inconsistent detector payload instead of carrying a
-            # plausible-looking but incorrect severity into operations.
-            derived_severity = sum(discharge >= threshold for threshold in thresholds)
-            if severity != derived_severity:
+            # The vector is the official source of the return-period band;
+            # operational severity remains on the shared 3-6 scale.
+            official_level = sum(discharge >= threshold for threshold in thresholds)
+            if severity != operational_severity_level(official_level):
+                return None
+            flow_regime = evidence.get("operational_flow_regime")
+            if flow_regime not in {
+                OPERATIONAL_FLOW_REGIME_EPHEMERAL,
+                OPERATIONAL_FLOW_REGIME_FLOWING,
+            }:
+                return None
+            alert_threshold = self._number(
+                evidence.get("alert_threshold_m3s"), minimum=0
+            )
+            expected_alert_threshold = (
+                1.0
+                if flow_regime == OPERATIONAL_FLOW_REGIME_EPHEMERAL
+                else thresholds[0]
+            )
+            if not math.isclose(
+                alert_threshold, expected_alert_threshold, abs_tol=1e-9
+            ):
+                return None
+            if discharge < alert_threshold:
+                return None
+            return_period = (
+                FLOW_RETURN_PERIODS[official_level - 1]
+                if official_level > 0
+                else None
+            )
+            if evidence.get("return_period_years") != return_period:
                 return None
             cell_id = str(raw.get("cell_id") or "").strip()
             if not cell_id:
@@ -224,6 +227,8 @@ class FloodEventAnalyzer:
                     previous_discharge = self._number(recent[-2], minimum=0)
                 except (TypeError, ValueError):
                     previous_discharge = None
+        if previous_discharge is None or previous_discharge < alert_threshold:
+            return None
 
         stream_id = self._optional_integer(evidence.get("stream_id"), minimum=1)
         latitude = self._optional_number(location.get("latitude"), minimum=-90, maximum=90)
@@ -245,6 +250,7 @@ class FloodEventAnalyzer:
             current_discharge_m3s=discharge,
             previous_discharge_m3s=previous_discharge,
             severity_level=severity,
+            return_period_years=return_period,
             threshold_vector_m3s=thresholds,
             confidence=confidence,
         )
@@ -278,8 +284,8 @@ class FloodEventAnalyzer:
             primary_station_id=primary.station_id,
             observed_at=max(item.observed_at for item in latest),
             severity_level=primary.severity_level,
-            return_period_years=RETURN_PERIOD_BY_SEVERITY[primary.severity_level],
-            alert_level=ALERT_BY_SEVERITY[primary.severity_level],
+            return_period_years=primary.return_period_years,
+            alert_level=OPERATIONAL_ALERT_BY_SEVERITY[primary.severity_level],
             station_count=len(states),
             cells=sorted({item.cell_id for item in latest}),
             stations=states,
@@ -315,7 +321,8 @@ class FloodEventAnalyzer:
         previous_by_station: Mapping[int, _ParsedSignal],
     ) -> FloodChangeAssessment:
         """How this reading compares with the one before it."""
-        current_severity = self._primary(list(current_by_station.values())).severity_level
+        current_primary = self._primary(list(current_by_station.values()))
+        current_severity = current_primary.severity_level
         if not previous_by_station:
             return FloodChangeAssessment(
                 change_type="initial",
@@ -327,7 +334,8 @@ class FloodEventAnalyzer:
                 reasons=["initial_hydrometric_state_established"],
             )
 
-        previous_severity = self._primary(list(previous_by_station.values())).severity_level
+        previous_primary = self._primary(list(previous_by_station.values()))
+        previous_severity = previous_primary.severity_level
         previous_station_ids = set(previous_by_station)
         previous_cells = {item.cell_id for item in previous_by_station.values()}
         new_stations = sorted(set(current_by_station) - previous_station_ids)
@@ -339,8 +347,8 @@ class FloodEventAnalyzer:
         reasons: list[str] = []
         if current_severity != previous_severity:
             transition = (
-                f"{THRESHOLD_LABEL_BY_SEVERITY[previous_severity]}_to_"
-                f"{THRESHOLD_LABEL_BY_SEVERITY[current_severity]}"
+                f"{self._threshold_label(previous_primary)}_to_"
+                f"{self._threshold_label(current_primary)}"
             )
             if current_severity > previous_severity:
                 change_type = "escalated"
@@ -371,6 +379,13 @@ class FloodEventAnalyzer:
             new_cell_ids=new_cells,
             reasons=reasons,
         )
+
+    @staticmethod
+    def _threshold_label(signal: _ParsedSignal) -> str:
+        """The actual official band represented by one parsed signal."""
+        if signal.return_period_years is None:
+            return "below_Q2"
+        return f"Q{signal.return_period_years}"
 
     @staticmethod
     def _evidence_gaps(
@@ -497,8 +512,6 @@ class FloodEventAnalyzer:
 
 
 __all__ = [
-    "ALERT_BY_SEVERITY",
     "ANALYZER_LIMITATIONS",
     "FloodEventAnalyzer",
-    "RETURN_PERIOD_BY_SEVERITY",
 ]

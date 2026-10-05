@@ -7,8 +7,10 @@ import os
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import TypeAdapter, ValidationError
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
 from ecoguard.analyzers.air_pollution.event_qualification import (
     MatchingOfficialPollutantIndex,
@@ -18,6 +20,7 @@ from ecoguard.analyzers.air_pollution.event_qualification import (
 from ecoguard.analyzers.air_pollution.official_classification import (
     classify_official_pollutant_sub_index,
 )
+from ecoguard.improvement.feedback import OperatorFeedback, code_version
 from ecoguard.shared.events import (
     AirPollutionSharedEvent,
     ComponentUnavailableReason,
@@ -172,7 +175,9 @@ def shared_event_feed(rows: Sequence[Mapping[str, Any]]) -> SharedEventFeed:
                 failure_reason=row.get("failure_reason"),
                 retryable=bool(row.get("retryable")),
                 attempt_count=int(row.get("attempt_count") or 1),
-                last_attempt_at=row["last_attempt_at"],
+                # An interim card has no attempt yet; it was written at
+                # processed_at.
+                last_attempt_at=row["last_attempt_at"] or row["processed_at"],
                 processed_at=row["processed_at"],
                 using_last_successful_payload=fallback,
             )
@@ -198,3 +203,122 @@ def get_shared_events(
     except Exception as error:
         logger.exception("Unable to read durable event projections")
         raise HTTPException(status_code=503, detail="Event feed is unavailable") from error
+
+
+class ConfirmEventRequest(BaseModel):
+    """Who is confirming. Optional, because most deployments have one operator."""
+
+    by: str = Field(default="operator", min_length=1, max_length=120)
+
+
+@router.post("/api/events/{incident_id}/confirm", response_model=SharedEventFeed)
+def confirm_event(
+    incident_id: str,
+    body: ConfirmEventRequest | None = None,
+) -> SharedEventFeed:
+    """Mark an unconfirmed incident as real, on an operator's word.
+
+    Confirmation is the second way an incident becomes confirmed; the first is an
+    instrument measuring it, which needs no endpoint. Recording it re-plans the
+    incident immediately rather than waiting for the next wave, because the
+    operator clicked in order to change the response - a confirmation that takes
+    ten minutes to show up reads as a broken button.
+
+    The re-dispatch deliberately bypasses the plan-freshness gate: the incident's
+    existing plan is fresh by the clock and wrong by the evidence, which is the
+    one case the gate must not win.
+    """
+    from ecoguard.coordinator import incidents as incident_store
+    from ecoguard.coordinator.dispatcher import dispatch_touched
+    from ecoguard.coordinator.event_projection import project_processing_results
+
+    confirmed_by = (body.by if body is not None else "operator").strip()
+    try:
+        incident = incident_store.confirm_incident(
+            incident_id, at=datetime.now(timezone.utc), by=confirmed_by
+        )
+    except Exception as error:
+        logger.exception("Unable to confirm incident %s", incident_id)
+        raise HTTPException(
+            status_code=503, detail="Confirmation is unavailable"
+        ) from error
+
+    if incident is None:
+        raise HTTPException(
+            status_code=404, detail="No open incident with that id"
+        )
+
+    try:
+        results = dispatch_touched(
+            [incident_id],
+            # Never fresh: see the docstring. The plan that exists was built for
+            # an unconfirmed incident and is exactly what this call invalidates.
+            projection_reader=lambda _incident_id: None,
+        )
+        project_processing_results(results)
+    except Exception:
+        # The confirmation is already persisted and is what the operator asked
+        # for. A failed re-plan leaves the old plan in place and the next wave
+        # rebuilds it, so this must not read as a failed confirmation.
+        logger.exception(
+            "incident %s confirmed, but re-planning it failed", incident_id
+        )
+
+    try:
+        return shared_event_feed(read_projected_events(limit=200))
+    except Exception as error:
+        logger.exception("Unable to read durable event projections")
+        raise HTTPException(
+            status_code=503, detail="Event feed is unavailable"
+        ) from error
+
+
+class HandledEventRequest(BaseModel):
+    """Who handled the incident, and their survey answers if they gave any."""
+
+    handled_by: str = Field(default="operator", min_length=1, max_length=120)
+    feedback: OperatorFeedback | None = None
+
+
+@router.post("/api/events/{incident_id}/handled", response_model=SharedEventFeed)
+def handle_event(
+    incident_id: str,
+    body: HandledEventRequest | None = None,
+) -> SharedEventFeed:
+    """Close an incident an operator has finished with, recording their feedback.
+
+    The incident is closed rather than deleted: closing releases the stations
+    allocated to it and drops it from the feed, and a deleted row would take
+    the evidence the improvement agent reads with it. What the operator saw is
+    snapshotted in the same transaction as the close.
+
+    Returns the refreshed feed, as confirmation does, so the card disappears
+    without a second request.
+    """
+    from ecoguard.database.repositories.operator_feedback import record_handled
+
+    body = body or HandledEventRequest()
+    try:
+        feedback_id = record_handled(
+            incident_id,
+            handled_by=body.handled_by.strip(),
+            feedback=body.feedback.model_dump() if body.feedback else None,
+            code_version=code_version(),
+            at=datetime.now(timezone.utc),
+        )
+    except Exception as error:
+        logger.exception("Unable to record incident %s as handled", incident_id)
+        raise HTTPException(
+            status_code=503, detail="Handling is unavailable"
+        ) from error
+
+    if feedback_id is None:
+        raise HTTPException(status_code=404, detail="No open incident with that id")
+
+    try:
+        return shared_event_feed(read_projected_events(limit=200))
+    except Exception as error:
+        logger.exception("Unable to read durable event projections")
+        raise HTTPException(
+            status_code=503, detail="Event feed is unavailable"
+        ) from error

@@ -8,19 +8,23 @@
 > spread read it. This document is kept as the record of the method. The
 > training scripts it describes are still under `analyzers/fire/ml/`.
 
-## Product meaning
+## Research meaning
 
-`FireRiskPredictionAgent` estimates how strongly a complete set of current conditions resembles conditions associated with historical fire occurrence. It returns a continuous score and `low`, `medium`, or `high`. The score is **not** a guaranteed fire probability and is not evidence that a fire exists.
+The offline model estimates how strongly a complete set of conditions resembles
+conditions associated with historical fire occurrence. It returns a continuous
+score and `low`, `medium`, or `high`. The score is **not** a guaranteed fire
+probability and is not evidence that a fire exists.
 
 The system boundaries remain separate:
 
-- Prediction agent: prepared current conditions → estimated fire risk.
+- Offline research model: prepared conditions → estimated fire risk.
 - FIRMS detection: structured hotspot observations that may evidence an actual event.
 - Telegram: supporting report evidence checked only after a structured Fire signal exists.
 - Risk Analysis (Developer B): analyzes an already detected incident.
 - Resource Allocation/Response Planning (Developer C): recommends operational resources and response.
 
-This work does not connect the prediction agent to an API, scheduler, dashboard, map, or alerting system.
+This research does not connect the offline model to an API, scheduler,
+dashboard, map, or alerting system.
 
 ## Model and calibration
 
@@ -60,7 +64,11 @@ Validation prevalence is monotonic. Partial-2026 is not fully monotonic because 
 
 For 2026, LOW/MEDIUM/HIGH burdens are 40.2% / 39.2% / 20.7%. HIGH captures 44.7% of positives; MEDIUM+HIGH captures 69.4%. HIGH contains 142 false positives (78.9% of HIGH alerts, or 18.1% of all 786 negatives). MEDIUM+HIGH contains 462 false positives (88.7% of those alerts, or 58.8% of negatives). These figures reflect proxy labels and must not be interpreted as operational false alarms without prospective validation.
 
-## Agent contract
+## Historical serving contract
+
+The removed serving agent accepted the following interface. It is retained
+here only to document the research artifact; no runtime module or HTTP endpoint
+implements this contract.
 
 Input is a mapping containing exactly the 44 feature names stored in `fire_risk_thresholds.json`. Values must be numeric. Missing and unknown fields are rejected. NaN is passed through because the saved sklearn pipeline supports missing numeric values; infinity is rejected. The model artifact and calibration metadata must have identical feature names and order.
 
@@ -90,16 +98,10 @@ The independent Tier B events were not used for calibration or thresholds. They 
 
 ## Reproduction
 
-Regenerate calibration metadata:
+Regenerate calibration metadata from the retained research pipeline:
 
 ```powershell
-.\.ml-venv\Scripts\python.exe -m scripts.calibrate_fire_risk_levels
-```
-
-Score one prepared feature JSON object containing exactly all 44 fields:
-
-```powershell
-.\.ml-venv\Scripts\python.exe -m ecoguard.analyzers.fire.risk_prediction_agent .\prepared_fire_risk_features.json
+.\.ml-venv\Scripts\python.exe -m ecoguard.analyzers.fire.ml.calibrate_fire_risk_levels
 ```
 
 The generated `data/generated/ml/fire_risk_thresholds.json` stores the feature order, thresholds, sigmoid parameters, selection rules, evaluation summaries, training references, sklearn version, paths, and semantics.

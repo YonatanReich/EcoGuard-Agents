@@ -562,7 +562,7 @@ function fireBoxes(event: FireEvent, parties: PartiesState): HazardBoxes {
           ? `${capitalise(detection.verdict)} detection${detection.score != null ? ` · ${detection.score}/100` : ''}`
           : 'Detection not assessed'],
         ['Confidence', details.confidence ?? details.detection_confidence ?? 'not assessed'],
-        ['Risk', assessed ? `${details.risk_level} · ${details.risk_score}` : 'not assessed'],
+        ['Risk', assessed ? `${details.risk_level} · ${details.risk_score}` : event.analysis_status === 'pending' ? 'assessing…' : 'not assessed'],
       ],
       body: (
         <>
@@ -672,6 +672,12 @@ function fireBoxes(event: FireEvent, parties: PartiesState): HazardBoxes {
       summary: planSummary(steps, parties),
       body: (
         <>
+          {event.planning_status === 'pending' && (
+            <p className="event-modal__pending">
+              The response plan and unit allocation are being prepared. The
+              evacuation list below is already computed from the spread forecast.
+            </p>
+          )}
           <Contacts parties={parties} />
           <ActionPlan steps={steps} />
 
@@ -685,7 +691,7 @@ function fireBoxes(event: FireEvent, parties: PartiesState): HazardBoxes {
                       {item.priority === 'immediate' ? 'Evacuate now' : item.priority === 'prepare' ? 'Prepare' : 'Standby'}
                     </Tag>
                     <div className="evacuation__body">
-                      <strong>{item.name}</strong>
+                      <strong>{item.name_he ?? item.name}</strong>
                       <span>
                         {[item.population != null ? `${item.population.toLocaleString()} residents` : '',
                           item.arrival_minutes != null ? `fire in ~${minutesWord(item.arrival_minutes)}` : ''].filter(Boolean).join(' · ')}
@@ -1243,9 +1249,19 @@ function VehicleIcon() {
   )
 }
 
-function EventModal({ event, onClose, directionsStationKey = null, routes }: {
+function HandledIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  )
+}
+
+function EventModal({ event, onClose, onHandled, directionsStationKey = null, routes }: {
   event: SharedEvent
   onClose: () => void
+  /** Opens the handled survey. Omitted on the demo feed. */
+  onHandled?: () => void
   directionsStationKey?: string | null
   /** Present only for events with allocated stations. */
   routes?: RoutesControl
@@ -1387,6 +1403,13 @@ function EventModal({ event, onClose, directionsStationKey = null, routes }: {
               </button>
             )}
           </div>
+        )}
+
+        {onHandled && (
+          <button type="button" className="event-tool event-tool--handled" onClick={onHandled}>
+            <HandledIcon />
+            Handled
+          </button>
         )}
 
         <button type="button" className="event-panel__close" onClick={onClose} aria-label="Close event details">

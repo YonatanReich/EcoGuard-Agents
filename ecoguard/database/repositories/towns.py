@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from enum import StrEnum
+from functools import lru_cache
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -411,6 +412,86 @@ def search_towns(query: str, limit: int = DEFAULT_LIMIT) -> list[dict[str, Any]]
         }).mappings().all()
 
     return [_as_town(row) for row in rows]
+
+
+def _spelling_key(name: str) -> str:
+    """A name with the letters Hebrew spells either way removed.
+
+    Hebrew news writes the same village with or without its vowel letters -
+    ynet's "עוספיה" is the towns table's "עספיא" - so the key drops ו, י and א
+    and a final ה. English transliterations drift the same way ("Neveh" /
+    "Neve"), so a word-final h goes too. Only ever used when an exact match has
+    failed, and only accepted when it picks out a single town.
+    """
+    words = []
+    for word in "".join(
+        ch if ch.isalnum() or ch.isspace() else " " for ch in name.lower()
+    ).split():
+        word = "".join(ch for ch in word if ch not in "ויא")
+        word = word[:-1] if len(word) > 2 and word.endswith(("ה", "h")) else word
+        words.append(word)
+    return " ".join(words)
+
+
+@lru_cache(maxsize=1)
+def _all_towns() -> tuple[dict[str, Any], ...]:
+    """Every town, for exact name resolution.
+
+    ponytail: cached for the process. The towns table is reference data that
+    changes by migration, not at runtime; restart to pick up a reload.
+    """
+    with Session() as session:
+        rows = session.execute(text("""
+            SELECT town_id, name_he, name_en, place, population, households,
+                   cbs_code, outline_source, fire_district, authority, authority_type, authority_phone,
+                   authority_address, authority_website,
+                   police_station, police_region, police_district,
+                   area_km2, label_lat, label_lon,
+                   min_lon, min_lat, max_lon, max_lat
+            FROM towns
+        """)).mappings().all()
+    return tuple(_as_town(row) for row in rows)
+
+
+def town_named(name: str) -> dict[str, Any] | None:
+    """The one town this name refers to, or None. For geocoding, not search.
+
+    `search_towns` is search-as-you-type: a substring match, which is right for
+    a dropdown and wrong for placing an event - "הרי" matched a Galilee village
+    and put a Jerusalem hills fire 135 km away. This is exact, Hebrew or
+    English, with the spelling-tolerant key as the only fallback.
+    """
+    needle = " ".join((name or "").split()).lower()
+    if not needle:
+        return None
+    towns = _all_towns()
+    exact = [town for town in towns if needle in _names_of(town)]
+    if exact:
+        return max(exact, key=lambda town: town["population"] or 0)
+    key = _spelling_key(needle)
+    loose = [
+        town for town in towns
+        if key in {_spelling_key(value) for value in _names_of(town)}
+    ]
+    return loose[0] if len(loose) == 1 else None
+
+
+def _names_of(town: dict[str, Any]) -> set[str]:
+    """Every name a report might use for this town, lower-cased.
+
+    Official compound names carry the everyday one before the hyphen: nobody
+    writes "תל אביב -יפו" or "Neve Shalom-Wahat Al-Salam" in a news flash.
+    """
+    names = set()
+    for value in (town["name_he"], town["name_en"]):
+        value = " ".join((value or "").replace("*", "").split()).lower()
+        if not value:
+            continue
+        names.add(value)
+        head = value.split("-")[0].strip()
+        if len(head) >= 3:
+            names.add(head)
+    return names
 
 
 def town_outline(town_id: str) -> dict[str, Any] | None:

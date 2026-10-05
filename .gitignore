@@ -75,14 +75,6 @@ ecoguard/data/generated/static_environmental_sources/
 ecoguard/data/generated/historical_landcover_terrain_cache.json
 ecoguard/data/generated/fire_prediction_ml_landcover_terrain_dataset_2023_2026.csv
 
-# Generated offline nationwide fire-risk grid
-ecoguard/data/generated/fire_risk_grid.sqlite*
-
-# Generated rolling hourly weather cache
-ecoguard/data/generated/fire_risk_weather_cache.sqlite*
-ecoguard/data/generated/national_current_risk_scan.json
-ecoguard/data/generated/fire_risk_refresh_status.json
-
 # Generated tiered historical wildfire ground truth and curated input
 ecoguard/data/generated/historical_wildfire_external_events_2023_2026.csv
 ecoguard/data/generated/historical_wildfire_telegram_pilot_2023_2026.csv

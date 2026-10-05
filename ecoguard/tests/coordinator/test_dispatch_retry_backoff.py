@@ -104,3 +104,12 @@ if __name__ == "__main__":
             case()
             print(f"ok  {name}")
     print("\nall retry-backoff checks passed")
+
+
+def test_an_interim_card_from_an_unfinished_wave_is_never_a_fresh_plan():
+    # The wave published a card mid-way and then died: re-plan on the next tick.
+    interim = {
+        "processing_status": "in_progress", "retryable": False, "attempt_count": 0,
+        "last_attempt_at": NOW, "last_success_at": None,
+    }
+    assert plan_is_fresh("INC-1", NOW + timedelta(minutes=1), lambda _id: interim) is False

@@ -8,7 +8,12 @@ from functools import lru_cache
 from typing import Any
 
 from ecoguard.analyzers.fire.risk_analysis_agent import RiskAnalysisAgent
-from ecoguard.analyzers.fire.stored_context import stored_context_for
+from ecoguard.analyzers.fire.stored_context import (
+    shared_reads,
+    spread_forecast_for,
+    stored_context_for,
+)
+from ecoguard.shared.concurrency import concurrently
 from ecoguard.coordinator.dispatcher import (
     IncidentDispatchContext,
     IncidentProcessingResult,
@@ -18,6 +23,10 @@ from ecoguard.planners.shared.adapters import (
     build_fire_plan_input,
 )
 from ecoguard.planners.shared.planner import EmergencyResponsePlanner
+from ecoguard.planners.uncorroborated.planner import (
+    UncorroboratedReportPlanner,
+    newest_claim,
+)
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -55,6 +64,41 @@ def _confidence_label(raw: object, numeric: object) -> str | None:
             return "nominal"
         return "low"
     return None
+
+
+def without_unconfirmed_claims(detected_event: Mapping[str, Any]) -> dict[str, Any]:
+    """The analysis of an unconfirmed fire, minus what it cannot stand behind.
+
+    An unconfirmed fire rests on a report, placed at the gazetteer point for
+    the place it names. The spread around that point is still drawn, as the
+    shape of what to check, but evacuation orders and people counts are not
+    kept: they would tell an operator to move a town on the strength of one
+    post. A Telegram report in Givat Shmuel produced "Evacuate now: Givat
+    Shmuel" and "18 people in the forecast spread".
+
+    Stripped here, before the risk model runs, rather than only from the card:
+    the model reads this structure and would otherwise repeat the orders in its
+    own words. The written `report` and `headline` go too, because both restate
+    the populations and the evacuation list.
+    """
+    spread = detected_event.get("spread_forecast")
+    if not isinstance(spread, Mapping):
+        return dict(detected_event)
+    return {
+        **detected_event,
+        "spread_forecast": {
+            **spread,
+            "evacuation": [],
+            "population_in_spread": None,
+            "population_at_risk": {},
+            "exposure": [
+                {**item, "population": None} if isinstance(item, Mapping) else item
+                for item in spread.get("exposure") or ()
+            ],
+            "report": None,
+            "headline": None,
+        },
+    }
 
 
 def detected_event_from_incident(incident: Mapping[str, Any]) -> dict[str, Any]:
@@ -142,7 +186,13 @@ def detected_event_from_incident(incident: Mapping[str, Any]) -> dict[str, Any]:
         }
 
     timestamp = _iso(incident.get("last_signal_at") or incident.get("first_seen_at"))
-    stored = stored_context_for(incident)
+    # One read of the surroundings, shared, then the context and the forecast
+    # side by side: all of it is waiting on the database, none on the CPU.
+    environment, localities = shared_reads(incident)
+    stored, spread = concurrently(
+        lambda: stored_context_for(incident, environment=environment, localities=localities),
+        lambda: spread_forecast_for(incident, environment=environment, localities=localities),
+    )
     return {
         "metadata": {
             "timestamp": timestamp or datetime.now(timezone.utc).isoformat(),
@@ -174,6 +224,9 @@ def detected_event_from_incident(incident: Mapping[str, Any]) -> dict[str, Any]:
         # absent made the assessment report a coordinate's fire danger as
         # unknown while its band sat in the database.
         **stored,
+        # Where it goes next, and who that reaches. Absent when the forecast
+        # could not be produced, which the card reports rather than hides.
+        "spread_forecast": spread,
         "source_status": {
             "coordinator": "success",
             "nasa_firms": "success" if satellite is not None else "not_available",
@@ -194,11 +247,20 @@ class FireIncidentHandler:
         *,
         risk_analyzer: object | None = None,
         planner: object | None = None,
+        verification_planner: object | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
-        """Build the handler with its risk analyzer and planner."""
+        """Build the handler with its risk analyzer and both planners.
+
+        Two planners, because a fire has two kinds of answer. A confirmed one
+        gets a protocol-grounded mobilisation plan from the model. An unconfirmed
+        one gets the verification advisory: who to telephone, by lookup.
+        """
         self._risk_analyzer = risk_analyzer or RiskAnalysisAgent()
         self._planner = planner or EmergencyResponsePlanner()
+        self._verification_planner = (
+            verification_planner or UncorroboratedReportPlanner()
+        )
         self._clock = clock
 
     def _now(self) -> datetime:
@@ -207,6 +269,31 @@ class FireIncidentHandler:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("Fire handler clock must carry a UTC offset")
         return value.astimezone(timezone.utc)
+
+    def _interim(
+        self,
+        context: IncidentDispatchContext,
+        detected_event: Mapping[str, Any],
+        risk: Mapping[str, Any] | None = None,
+    ) -> IncidentProcessingResult:
+        """This fire as far as it has got: the steps still running say pending."""
+        return IncidentProcessingResult(
+            incident_id=context.incident_id,
+            hazard=context.hazard,
+            route=context.route,
+            status="partial",
+            requested_at=context.requested_at,
+            completed_at=self._now(),
+            analysis_id=context.analysis_id,
+            coordinator_routing_id=context.coordinator_routing_id,
+            handler=self.name,
+            analysis_status="success",
+            risk_status="success" if risk is not None else "pending",
+            planner_status="pending",
+            analysis_result=detected_event,
+            risk_assessment=risk,
+            requires_resource_allocation=False,
+        )
 
     def process(
         self,
@@ -240,6 +327,15 @@ class FireIncidentHandler:
                 failure_reason=type(error).__name__,
                 requires_resource_allocation=False,
             )
+
+        if not context.confirmed:
+            detected_event = without_unconfirmed_claims(detected_event)
+
+        # On screen now: location, evidence, spread, settlements and the
+        # evacuation list are all computed, none by a model. The two model
+        # calls below take minutes; the operator should not wait for them to
+        # see who is in the path.
+        context.report(self._interim(context, detected_event))
 
         try:
             risk = _as_dict(self._risk_analyzer.analyze_event(detected_event))
@@ -290,12 +386,55 @@ class FireIncidentHandler:
                 requires_resource_allocation=False,
             )
 
+        context.report(self._interim(context, detected_event, risk))
+
+        # The analysis above ran regardless of confirmation, and that is the
+        # point: a claim has a place, and a place has weather, fuel, terrain and
+        # neighbours. What an unconfirmed incident must not do is ask for
+        # mobilisation, so its plan is the verification advisory instead - who to
+        # telephone to find out, computed by lookup rather than by a model.
+        #
+        # No protocol grounding is needed because nothing is being recommended
+        # beyond "check": the actions are contact details for the bodies
+        # responsible for that point.
+        if not context.confirmed:
+            claim, location_text = newest_claim(incident)
+            advisory = self._verification_planner.plan(
+                hazard=context.hazard,
+                latitude=incident.get("latitude"),
+                longitude=incident.get("longitude"),
+                claim=claim,
+                location_text=location_text,
+                analysis_performed=True,
+            )
+            succeeded = advisory.status == "success"
+            return IncidentProcessingResult(
+                incident_id=context.incident_id,
+                hazard=context.hazard,
+                route=context.route,
+                status="success" if succeeded else "partial",
+                requested_at=context.requested_at,
+                completed_at=self._now(),
+                analysis_id=context.analysis_id,
+                coordinator_routing_id=context.coordinator_routing_id,
+                handler=self.name,
+                analysis_status="success",
+                risk_status="success",
+                planner_status="success" if succeeded else "skipped",
+                analysis_result=detected_event,
+                risk_assessment=risk,
+                planner_result=advisory.as_dict(),
+                failure_stage=None if succeeded else "planning",
+                failure_reason=None if succeeded else advisory.reason,
+                # Nothing is reserved against an unconfirmed report. A crew held
+                # for a rumour is a crew unavailable for a fire.
+                requires_resource_allocation=False,
+            )
+
         try:
             plan_input = build_fire_plan_input(detected_event, risk).model_copy(
                 update={"incident_id": context.incident_id}
             )
-            plan = self._planner.plan_response(plan_input)
-            planner_result = _as_dict(plan)
         except OperationalAnalysisUnavailable as error:
             return IncidentProcessingResult(
                 incident_id=context.incident_id,
@@ -316,6 +455,18 @@ class FireIncidentHandler:
                 failure_reason=str(error),
                 requires_resource_allocation=False,
             )
+
+        fallback_allocation_context = {
+            "location": (
+                plan_input.location.model_dump(mode="json")
+                if plan_input.location is not None
+                else None
+            ),
+            "risk_context": dict(plan_input.risk_context or {}),
+        }
+        try:
+            plan = self._planner.plan_response(plan_input)
+            planner_result = _as_dict(plan)
         except Exception as error:
             return IncidentProcessingResult(
                 incident_id=context.incident_id,
@@ -332,9 +483,10 @@ class FireIncidentHandler:
                 planner_status="failed",
                 analysis_result=detected_event,
                 risk_assessment=risk,
+                fallback_allocation_context=fallback_allocation_context,
                 failure_stage="planning",
                 failure_reason=type(error).__name__,
-                requires_resource_allocation=False,
+                requires_resource_allocation=True,
             )
 
         metadata = planner_result.get("metadata") or {}
@@ -356,6 +508,11 @@ class FireIncidentHandler:
             analysis_result=detected_event,
             risk_assessment=risk,
             planner_result=planner_result,
+            fallback_allocation_context=(
+                fallback_allocation_context
+                if planner_status in {"partial", "failed", "skipped"}
+                else None
+            ),
             failure_stage=None if planner_succeeded else "planning",
             failure_reason=(
                 None
@@ -363,10 +520,16 @@ class FireIncidentHandler:
                 else str(
                     planner_result.get("error")
                     or metadata.get("reason")
-                    or "fire_planning_failed"
+                    or (
+                        "partially_grounded_response"
+                        if planner_status == "partial"
+                        else "fire_planning_failed"
+                    )
                 )
             ),
-            requires_resource_allocation=planner_succeeded,
+            requires_resource_allocation=(
+                planner_status in {"success", "partial", "failed", "skipped"}
+            ),
         )
 
 

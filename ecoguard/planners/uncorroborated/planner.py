@@ -1,8 +1,15 @@
 """What to tell an operator about a report nothing has confirmed.
 
-No model call and no analysis: there is nothing measured here to analyse. The
-useful answer is who to contact - the police station responsible for that area,
-with its number, and the local authority."""
+No model call: the useful answer is who to contact - the police station
+responsible for that area, with its number, the local authority, and for a fire
+the nearest station and 102. All of that is a lookup, and a lookup is
+deterministic, free and always available, which is what an unverified report
+deserves.
+
+This planner no longer implies that nothing was analysed. A hazard with an
+analyser is analysed whether or not it is confirmed; what this card replaces is
+the *mobilisation* plan, not the assessment. Pass `analysis_performed=True` when
+an assessment sits beside it, so the limitations say so."""
 
 from __future__ import annotations
 
@@ -70,6 +77,53 @@ STANDING_LIMITATIONS = (
     "No responder has been dispatched and no resource has been reserved.",
 )
 
+# The same card, for an incident whose hazard analyser did run. Every hazard
+# with an analyser is now analysed whether or not it is confirmed, so the middle
+# limitation above would be false — and claiming no assessment exists while one
+# is displayed beside it is the worse error. What needs saying instead is what
+# the assessment rests on: a place somebody named, not a fire anybody measured.
+#
+# The first line also drops "and no independent report", because an incident can
+# now carry two corroborating reports and still be unconfirmed: corroboration
+# raises what evidence is worth, only a measurement or a person confirms it.
+ANALYSED_LIMITATIONS = (
+    "This is an unverified report from a public channel. No instrument reading "
+    "supports it.",
+    "The severity, spread and exposure on this card were computed from the "
+    "reported location, not from a measured fire. They describe what would be "
+    "true if the report is.",
+    "No responder has been dispatched and no resource has been reserved.",
+)
+
+
+def newest_claim(incident: Mapping[str, Any]) -> tuple[str | None, str | None]:
+    """The most recent report's wording and place name, for the operator to read.
+
+    The newest rather than the first, because a later message about the same
+    place is usually the more specific one.
+
+    Lives here rather than on a handler because two handlers now need it: the
+    advisory handler for hazards with no analyser, and each hazard handler that
+    builds a verification plan for an unconfirmed incident.
+    """
+    claim: str | None = None
+    location_text: str | None = None
+    newest: Any = None
+
+    for signal in incident.get("signals") or ():
+        if not isinstance(signal, Mapping):
+            continue
+        report = (signal.get("evidence") or {}).get("text_report")
+        if not isinstance(report, Mapping):
+            continue
+        observed_at = signal.get("observed_at")
+        if newest is None or (observed_at is not None and observed_at >= newest):
+            newest = observed_at
+            claim = report.get("claim") or claim
+            location_text = report.get("location_text") or location_text
+
+    return claim, location_text
+
 
 class UncorroboratedReportPlanner:
     """Turn an unconfirmed claim into "who to phone", and nothing more."""
@@ -98,10 +152,21 @@ class UncorroboratedReportPlanner:
         longitude: float | None,
         claim: str | None = None,
         location_text: str | None = None,
+        analysis_performed: bool = False,
     ) -> UncorroboratedAdvisory:
-        """Build the advisory for one unconfirmed report."""
+        """Build the advisory for one unconfirmed report.
+
+        Args:
+            analysis_performed: whether a hazard analyser ran for this incident.
+                Only changes which limitations are stated — the actions and
+                contacts are the same, because who to telephone does not depend
+                on whether a spread model was available.
+        """
         label = HAZARD_LABEL.get(hazard, hazard)
         place = location_text or "the reported location"
+        limitations = list(
+            ANALYSED_LIMITATIONS if analysis_performed else STANDING_LIMITATIONS
+        )
 
         if latitude is None or longitude is None:
             return UncorroboratedAdvisory(
@@ -113,7 +178,7 @@ class UncorroboratedReportPlanner:
                 ),
                 claim=claim,
                 location_text=location_text,
-                limitations=list(STANDING_LIMITATIONS),
+                limitations=limitations,
                 reason="no_resolvable_location",
             )
 
@@ -163,7 +228,7 @@ class UncorroboratedReportPlanner:
             contacts=contacts,
             claim=claim,
             location_text=location_text,
-            limitations=list(STANDING_LIMITATIONS),
+            limitations=limitations,
         )
 
     @staticmethod

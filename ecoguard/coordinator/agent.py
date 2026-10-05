@@ -85,10 +85,23 @@ def coordinate(
         entry per thing that is happening, which is the whole point.
     """
     selected_store = incident_store or store
-    now = at or datetime.now(timezone.utc)
+    from ecoguard.database.engine import pipeline_now
+
+    now = at or pipeline_now()
     result = CoordinationResult()
 
     result.closed = selected_store.close_quiet(now, quiet_period_for)
+
+    # Open incidents per hazard, read once per batch and kept current from what
+    # create/attach return. Re-reading them for every signal - each read
+    # carrying every incident's whole signal history - was 36 s of a 49-signal
+    # wave on a 150 ms database, before attach_signal's own reads.
+    open_by_hazard: dict[str, list[dict[str, Any]]] = {}
+
+    # Signals for an existing incident are written once per incident at the
+    # end of the batch (see incidents.attach_signals), when the store can.
+    batched = hasattr(selected_store, "attach_signals")
+    pending: dict[str, tuple[dict[str, Any], list[CellSignal]]] = {}
 
     for signal in sorted(signals, key=lambda s: s.observed_at):
         try:
@@ -101,15 +114,35 @@ def coordinate(
             result.skipped.append({"signal": signal, "reason": str(error)})
             continue
 
-        open_now = selected_store.open_incidents(hazards=[signal.hazard])
+        if signal.hazard not in open_by_hazard:
+            open_by_hazard[signal.hazard] = list(
+                selected_store.open_incidents(hazards=[signal.hazard])
+            )
+        open_now = open_by_hazard[signal.hazard]
         match = best_match(signal, open_now)
         if match is None:
             incident_id = selected_store.next_incident_id(now)
-            selected_store.create_incident(incident_id, signal, queues)
+            created = selected_store.create_incident(incident_id, signal, queues)
             result.created.append(incident_id)
-        else:
-            selected_store.attach_signal(match["id"], signal)
+            if created:
+                open_now.append(created)
+        elif batched:
+            # Held and written once per incident after the loop; the merged
+            # view keeps later signals in this batch matching correctly.
+            stored, held = pending.setdefault(match["id"], (match, []))
+            held.append(signal)
             result.updated.append(match["id"])
+            open_now[:] = [i for i in open_now if i["id"] != match["id"]]
+            open_now.append(store.merged_incident(match, signal))
+        else:
+            updated = selected_store.attach_signal(match["id"], signal, current=match)
+            result.updated.append(match["id"])
+            open_now[:] = [i for i in open_now if i["id"] != match["id"]]
+            if updated:
+                open_now.append(updated)
+
+    for incident_id, (stored, held) in pending.items():
+        selected_store.attach_signals(incident_id, held, current=stored)
 
     result.linked = _package(now, incident_store=selected_store)
 

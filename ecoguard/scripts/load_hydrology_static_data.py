@@ -7,6 +7,7 @@ from ecoguard.collectors.flood.hydrology_static import (
 )
 from ecoguard.collectors.flood.hydrometric_stations import (
     load_hydrometric_station_catalog,
+    load_hydrometric_station_flow_regimes,
 )
 from ecoguard.collectors.flood.static_context import refresh_flood_static_context
 
@@ -28,6 +29,14 @@ def main() -> None:
             f"{station_result['stations']:,} stations, "
             f"{station_result['rain_links']:,} rain-station links synchronized"
         )
+
+    regime_result = load_hydrometric_station_flow_regimes()
+    print(
+        "hydrometric station flow regimes: "
+        f"{regime_result['classified']:,} classified, "
+        f"{regime_result['unclassified_active_complete']:,} active complete "
+        "stations unclassified"
+    )
 
     context = refresh_flood_static_context()
     print(

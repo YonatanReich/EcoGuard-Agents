@@ -10,7 +10,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ecoguard.planners.fire.planning_agent import ResponsePlanningAgent
+from ecoguard.planners.shared.adapters import build_fire_plan_input
+from ecoguard.planners.shared.planner import EmergencyResponsePlanner
 from ecoguard.analyzers.fire.risk_analysis_agent import RiskAnalysisAgent
 from ecoguard.shared.llm import ClaudeLLMService
 from ecoguard.shared.protocols import ProtocolRetriever
@@ -111,7 +112,10 @@ def main() -> int:
         return 1
 
     risk_agent = RiskAnalysisAgent(llm_service=risk_service, retriever=retriever)
-    planning_agent = ResponsePlanningAgent(
+    # The fire-specific planner was removed; the shared one is what the live
+    # pipeline uses, so the smoke check follows it rather than a path nothing
+    # else takes.
+    planning_agent = EmergencyResponsePlanner(
         llm_service=ClaudeLLMService(effort="low"), retriever=retriever
     )
 
@@ -148,7 +152,9 @@ def main() -> int:
         print(f"      \"{citation['quoted_text'][:110]}...\"")
 
     print("\nResponse planning (second real Claude call)")
-    plan = planning_agent.plan_response(SAMPLE_EVENT, risk)
+    plan = planning_agent.plan_response(build_fire_plan_input(SAMPLE_EVENT, risk))
+    if hasattr(plan, "model_dump"):
+        plan = plan.model_dump(mode="json")
 
     # "partial" is a working plan, not a failure. The planner keeps the actions
     # it could ground and labels the rest, so a run that lands there has done
