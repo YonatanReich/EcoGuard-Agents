@@ -81,10 +81,12 @@ def grade(scenario: str, *, schema: str | None = None) -> dict[str, Any]:
             "notes": expected["expect_notes"],
         }
         if match is None:
-            entry.update(verdict="MISS", detail=(
+            detail = (
                 f"no incident in cell {expected['expect_cell']}" if expected.get("expect_cell")
                 else "no incident within 25 km of the event"
-            ))
+            )
+            # The scorecard lists `problems` for every finding, a miss included.
+            entry.update(verdict="MISS", detail=detail, problems=[detail])
             findings.append(entry)
             continue
         claimed_incidents.add(match["id"])

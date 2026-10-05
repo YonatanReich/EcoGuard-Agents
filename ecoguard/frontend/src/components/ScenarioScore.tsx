@@ -24,7 +24,7 @@ export type ScenarioFinding = {
   title: string | null
   incident_id: string | null
   marker_km_from_event: number | null
-  problems: string[]
+  problems?: string[]
 }
 
 export type ScenarioReport = {
@@ -147,7 +147,7 @@ function ScenarioScore({
                     ` · ${finding.marker_km_from_event.toFixed(2)} km from the real location`}
                 </p>
               )}
-              {finding.problems.length > 0 && (
+              {!!finding.problems?.length && (
                 <ul className="score__problems">
                   {finding.problems.map((problem) => (
                     <li key={problem}>{problem}</li>
