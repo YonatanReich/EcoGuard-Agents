@@ -62,6 +62,7 @@ from ecoguard.shared.events import (
     FloodStream,
     FireResponseAction,
     GenericSharedEvent,
+    SharedEvent,
     GeographicPoint,
     MinistryAirQualityIndex,
     OfficialPollutantClassification,
@@ -154,6 +155,16 @@ def _component_gaps(result) -> list[ComponentUnavailableReason]:
             reason=planning.plan.reason or planning.plan.status,
         ))
     return gaps
+
+
+def _air_pollution_title(anomaly) -> str:
+    """The card's headline: the region a designated station speaks for, first."""
+    from ecoguard.detectors.air_pollution.regional_stations import region_of
+
+    station = anomaly.station_name or anomaly.station_id
+    region = region_of(anomaly.station_id)
+    where = f"{region} ({station})" if region else station
+    return f"Air pollution advisory: {anomaly.pollutant} in {where}"
 
 
 def air_pollution_shared_event(
@@ -359,10 +370,7 @@ def air_pollution_shared_event(
     return AirPollutionSharedEvent(
         id=result.incident_id,
         type="air_pollution",
-        title=(
-            f"Air pollution advisory: {anomaly.pollutant} at "
-            f"{anomaly.station_name or anomaly.station_id}"
-        ),
+        title=_air_pollution_title(anomaly),
         description=description,
         latitude=anomaly.location.latitude,
         longitude=anomaly.location.longitude,
@@ -1291,6 +1299,52 @@ def _retryable(result: IncidentProcessingResult) -> bool:
     )
 
 
+def _with_confirmation(event: SharedEvent, incident: Mapping[str, Any]) -> SharedEvent:
+    """Attach the incident's confirmation, and withhold people counts if it has none.
+
+    One place, every hazard. The mappers know their own hazard and nothing
+    about confirmation, and confirmation is the same question for all of them,
+    so it is attached here rather than threaded through five mappers that would
+    each have to remember to do it.
+
+    An unconfirmed incident rests on someone's say-so, and its position is a
+    gazetteer point for a place name, good to a couple of kilometres. A count of
+    people inside an area drawn around that point is precise about a location
+    nobody measured, and an evacuation order built on it would move a town on
+    the strength of one post. Neither is shown until an instrument or an
+    operator confirms the incident. The fire handler strips the same fields
+    before its model runs (`without_unconfirmed_claims`); this is the guarantee
+    for every hazard and every path.
+    """
+    confirmation = confirmation_of(incident)
+    update: dict[str, Any] = {
+        "confirmation": EventConfirmation.model_validate(confirmation.as_dict())
+    }
+    if not confirmation.confirmed:
+        details = event.details
+        if isinstance(details, FireDetails):
+            update["details"] = details.model_copy(update={
+                "people_in_spread": None,
+                "population_at_risk": {},
+                "evacuation": [],
+                "exposed_settlements": [
+                    settlement.model_copy(update={"population": None})
+                    for settlement in details.exposed_settlements
+                ],
+            })
+        elif isinstance(details, EarthquakeDetails):
+            update["details"] = details.model_copy(update={
+                "population_summary": EarthquakePopulationSummary(
+                    status="unavailable", reason="unconfirmed_report"
+                )
+            })
+        elif isinstance(details, AirPollutionDetails):
+            update["details"] = details.model_copy(
+                update={"population_within_screening_corridor": None}
+            )
+    return event.model_copy(update=update)
+
+
 def project_interim(
     result: IncidentProcessingResult,
     *,
@@ -1309,10 +1363,7 @@ def project_interim(
     if mapper is None:
         return False
     try:
-        event = mapper(result, incident)
-        event = event.model_copy(update={"confirmation": EventConfirmation.model_validate(
-            confirmation_of(incident).as_dict()
-        )})
+        event = _with_confirmation(mapper(result, incident), incident)
         return (writer or upsert_interim_projection)(EventProjectionWrite(
             incident_id=result.incident_id,
             hazard=result.hazard,
@@ -1367,16 +1418,7 @@ def project_processing_results(
         event = None
         mapping_failure = None
         try:
-            event = mapper(result, incident)
-            # One place, every hazard. The mappers know their own hazard and
-            # nothing about confirmation, and confirmation is the same question
-            # for all of them, so it is attached here rather than threaded
-            # through five mappers that would each have to remember to do it.
-            event = event.model_copy(
-                update={"confirmation": EventConfirmation.model_validate(
-                    confirmation_of(incident).as_dict()
-                )}
-            )
+            event = _with_confirmation(mapper(result, incident), incident)
             if (
                 isinstance(event, FloodSharedEvent)
                 and result.preserve_existing_response

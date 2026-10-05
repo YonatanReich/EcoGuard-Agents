@@ -283,3 +283,29 @@ def test_planner_does_not_repeat_detector_or_analyzer_science():
     assert "ministry_air_quality_index_service_unavailable" in prompt
     assert "trend_inference_service_unavailable" in prompt
     assert "shared_population_service_unavailable" in prompt
+
+
+def test_an_unverifiable_action_is_removed_not_the_verified_one_beside_it():
+    # 16 Feb replay: one paraphrased item left 3 of 13 regional cards blank.
+    proposal = _proposal()
+    altered = proposal.actions[0].model_copy(update={
+        "recommendation": "Tell everyone to stay indoors.",
+    })
+    proposal = proposal.model_copy(update={"actions": [proposal.actions[0], altered]})
+
+    result = _planner(output=proposal)[0].plan_response(_analysis()[0])
+
+    assert result.plan.status == "success"
+    assert [action.recommendation for action in result.plan.actions] == [GUIDANCE]
+    assert any("could not be verified" in item for item in result.plan.limitations)
+
+
+def test_nothing_verifiable_still_fails():
+    proposal = _proposal()
+    proposal.actions[0] = proposal.actions[0].model_copy(update={
+        "recommendation": "Close every school in the region until further notice.",
+    })
+
+    result = _planner(output=proposal)[0].plan_response(_analysis()[0])
+
+    assert (result.plan.status, result.plan.reason) == ("failed", "ungrounded_response")

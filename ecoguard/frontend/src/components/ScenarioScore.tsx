@@ -7,10 +7,13 @@
  * was supposed to leave alone — a run that reports only its successes is not a
  * measurement.
  *
- * Dismissable, and dismissing it does not re-run anything.
+ * The run is still live behind it, so its cards can be opened and questioned;
+ * leaving for the scenarios is what ends it. Rendered into <body> so no transformed
+ * ancestor can pull the fixed overlay off the viewport.
  */
 
 import { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 
 export type ScenarioFinding = {
   id: string
@@ -26,6 +29,8 @@ export type ScenarioFinding = {
 
 export type ScenarioReport = {
   scenario: string
+  label?: string
+  passes?: string
   events_expected: number
   events_passed: number
   events_partial: number
@@ -35,25 +40,29 @@ export type ScenarioReport = {
   findings: ScenarioFinding[]
 }
 
-const VERDICT_CLASS: Record<string, string> = {
-  pass: 'score__verdict--pass',
-  partial: 'score__verdict--partial',
-  miss: 'score__verdict--miss',
-}
-
 const VERDICT_LABEL: Record<string, string> = {
-  pass: 'Found',
+  pass: 'Passed',
   partial: 'Partly',
   miss: 'Missed',
 }
 
+/** The ring's circumference, for r = 52. */
+const RING = 2 * Math.PI * 52
+
 function ScenarioScore({
   report,
+  busy,
   onClose,
+  onReturn,
+  onRerun,
 }: {
   report: ScenarioReport
+  busy: boolean
   onClose: () => void
+  onReturn: () => void
+  onRerun: () => void
 }) {
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
@@ -62,110 +71,110 @@ function ScenarioScore({
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const label = report.scenario.replace('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  const label = report.label ?? report.scenario
   const spurious = report.spurious_incidents?.length ?? 0
+  const share = report.events_expected ? report.events_passed / report.events_expected : 0
+  const outcome =
+    share === 1 && spurious === 0 ? 'pass' : report.events_passed > 0 ? 'partial' : 'miss'
+  const headline = { pass: 'Demo passed', partial: 'Partly passed', miss: 'Demo failed' }[outcome]
 
-  return (
+  return createPortal(
     <div className="score" role="dialog" aria-modal="true" aria-label={`${label} results`}>
       <div className="score__backdrop" onClick={onClose} />
-      <div className="score__panel">
+      <div className={`score__panel score__panel--${outcome}`}>
         <header className="score__head">
           <div>
-            <div className="score__eyebrow">Run complete</div>
+            <div className="score__eyebrow">Demo graded</div>
             <h2 className="score__title">{label}</h2>
           </div>
-          <button
-            type="button"
-            className="score__close"
-            onClick={onClose}
-            aria-label="Close"
-          >
+          <button type="button" className="score__close" onClick={onClose} aria-label="Close">
             <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-              <path
-                d="M6 6l12 12M18 6L6 18"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
+              <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             </svg>
           </button>
         </header>
 
-        <div className="score__headline">
-          <span className="score__big">{report.events_passed}</span>
-          <span className="score__of">of {report.events_expected}</span>
-          <span className="score__caption">events detected in full</span>
-        </div>
+        <section className="score__hero">
+          <svg className="score__ring" viewBox="0 0 120 120" aria-hidden="true">
+            <circle cx="60" cy="60" r="52" className="score__ring-track" />
+            <circle
+              cx="60"
+              cy="60"
+              r="52"
+              className="score__ring-fill"
+              strokeDasharray={RING}
+              strokeDashoffset={RING * (1 - share)}
+            />
+          </svg>
+          <div className="score__ring-label">
+            <span className="score__big">{report.events_passed}</span>
+            <span className="score__of">/ {report.events_expected}</span>
+          </div>
+          <div className="score__verdict-block">
+            <p className={`score__outcome score__outcome--${outcome}`}>{headline}</p>
+            <div className="score__tallies">
+              <span className="score__tally score__tally--pass">{report.events_passed} passed</span>
+              <span className="score__tally score__tally--partial">{report.events_partial} partly</span>
+              <span className="score__tally score__tally--miss">{report.events_missed} missed</span>
+              <span className="score__tally">{spurious} unexplained</span>
+            </div>
+            <p className="score__restored">
+              <span className="score__restored-dot" aria-hidden="true" />
+              The demo is still on the map. Close this to look at its cards;
+              returning to the scenarios ends it and brings back live data.
+            </p>
+          </div>
+        </section>
 
-        <div className="score__tallies">
-          <div className="score__tally">
-            <span className="score__tally-value score__tally-value--pass">
-              {report.events_passed}
-            </span>
-            <span className="score__tally-label">found</span>
-          </div>
-          <div className="score__tally">
-            <span className="score__tally-value score__tally-value--partial">
-              {report.events_partial}
-            </span>
-            <span className="score__tally-label">partly</span>
-          </div>
-          <div className="score__tally">
-            <span className="score__tally-value score__tally-value--miss">
-              {report.events_missed}
-            </span>
-            <span className="score__tally-label">missed</span>
-          </div>
-          <div className="score__tally">
-            <span className="score__tally-value">{spurious}</span>
-            <span className="score__tally-label">unexplained</span>
-          </div>
-        </div>
+        {report.passes && (
+          <p className="score__rule">
+            <strong>To pass:</strong> {report.passes}
+          </p>
+        )}
 
         <ul className="score__events">
           {report.findings.map((finding) => (
-            <li key={finding.id} className="score__event">
-              <span
-                className={`score__verdict ${VERDICT_CLASS[finding.verdict] ?? ''}`}
-              >
-                {VERDICT_LABEL[finding.verdict] ?? finding.verdict}
-              </span>
-              <div className="score__event-body">
-                <p className="score__event-text">
-                  <span className="score__event-id">{finding.id}</span>
-                  {finding.event}
-                </p>
-                {finding.title && (
-                  <p className="score__event-title">
-                    Reported as &ldquo;{finding.title}&rdquo;
-                    {finding.marker_km_from_event !== null &&
-                      `, ${finding.marker_km_from_event.toFixed(2)} km from where it was placed`}
-                  </p>
-                )}
-                {finding.problems.map((problem) => (
-                  <p key={problem} className="score__event-problem">
-                    {problem}
-                  </p>
-                ))}
+            <li key={finding.id} className={`score__event score__event--${finding.verdict}`}>
+              <div className="score__event-head">
+                <span className="score__verdict">{VERDICT_LABEL[finding.verdict] ?? finding.verdict}</span>
+                <span className="score__event-id">{finding.id}</span>
               </div>
+              <p className="score__event-text">{finding.event}</p>
+              {finding.title && (
+                <p className="score__event-title">
+                  Reported as &ldquo;{finding.title}&rdquo;
+                  {finding.marker_km_from_event !== null &&
+                    ` · ${finding.marker_km_from_event.toFixed(2)} km from the real location`}
+                </p>
+              )}
+              {finding.problems.length > 0 && (
+                <ul className="score__problems">
+                  {finding.problems.map((problem) => (
+                    <li key={problem}>{problem}</li>
+                  ))}
+                </ul>
+              )}
             </li>
           ))}
         </ul>
 
         <footer className="score__foot">
           <span className="score__foot-note">
-            {report.incident_count} incident
-            {report.incident_count === 1 ? '' : 's'} opened in total
-            {spurious > 0 &&
-              ` · ${spurious} not accounted for by the scenario`}
+            {report.incident_count} incident{report.incident_count === 1 ? '' : 's'} opened
+            {spurious > 0 && ` · ${spurious} not accounted for by the scenario`}
           </span>
-          <button type="button" className="score__done" onClick={onClose}>
-            Close
-          </button>
+          <div className="score__actions">
+            <button type="button" className="score__done" onClick={onReturn} disabled={busy}>
+              Return to all scenarios
+            </button>
+            <button type="button" className="score__rerun" onClick={onRerun} disabled={busy}>
+              {busy ? 'Working…' : 'Rerun demo'}
+            </button>
+          </div>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

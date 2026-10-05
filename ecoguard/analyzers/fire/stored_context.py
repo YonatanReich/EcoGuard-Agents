@@ -16,6 +16,9 @@ from __future__ import annotations
 import logging
 from typing import Any, Mapping
 
+from sqlalchemy import text
+
+from ecoguard.database.engine import Session
 from ecoguard.shared.concurrency import concurrently
 
 logger = logging.getLogger(__name__)
@@ -157,15 +160,26 @@ def geospatial_context_at(
         for item in nearest[:MAX_SETTLEMENTS]
     ]
 
-    try:
-        from ecoguard.database.repositories.responsible_services import (
-            responsible_parties_at,
-        )
+    def read_parties():
+        try:
+            from ecoguard.database.repositories.responsible_services import (
+                responsible_parties_at,
+            )
 
-        parties = responsible_parties_at(latitude=latitude, longitude=longitude)
-    except Exception:
-        logger.exception("could not read who is responsible for the incident location")
-        parties = {}
+            return responsible_parties_at(latitude=latitude, longitude=longitude)
+        except Exception:
+            logger.exception("could not read who is responsible for the incident location")
+            return {}
+
+    def read_roads():
+        try:
+            return main_roads_near(latitude, longitude)
+        except Exception:
+            logger.exception("could not read roads near the incident")
+            return None
+
+    # Two round trips to a database ~165 ms away; side by side, not in turn.
+    parties, roads = concurrently(read_parties, read_roads)
 
     def station(key: str) -> list[dict[str, Any]]:
         """One responsible station as a one-item list, or empty when there is none."""
@@ -192,11 +206,50 @@ def geospatial_context_at(
         "nearby_fire_stations": station("nearest_fire_station"),
         "nearby_police_stations": station("police_station"),
         "nearby_hospitals": station("nearest_mda_station"),
-        # Roads are not held as a national layer, so this stays empty rather
-        # than claiming a search found none.
-        "nearby_roads": [],
+        "nearby_roads": roads or [],
         "responsible_authority": (parties or {}).get("authority"),
     }
+
+
+ROAD_RADIUS_M = 3_000.0
+MAX_ROADS = 8
+
+# The national OSM road layer the flood collector imports. Numbered highways
+# first - they are the access and evacuation routes - then nearer streets.
+_MAIN_ROADS = text(
+    """
+    SELECT name, ref, type, latitude, longitude, distance_m FROM (
+      SELECT DISTINCT ON (COALESCE('ref:' || road_ref, 'name:' || name))
+             name, road_ref AS ref, road_class AS type,
+             ST_Y(ST_ClosestPoint(geometry, p)) AS latitude,
+             ST_X(ST_ClosestPoint(geometry, p)) AS longitude,
+             ST_Distance(geometry::geography, p::geography) AS distance_m
+      FROM public.road_segments, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326) AS p
+      WHERE road_class IN ('motorway', 'trunk', 'primary', 'secondary')
+        AND COALESCE(road_ref, name) IS NOT NULL
+        AND geometry && ST_Expand(p, 0.04)
+        AND ST_DWithin(geometry::geography, p::geography, :radius)
+      ORDER BY COALESCE('ref:' || road_ref, 'name:' || name), distance_m
+    ) roads
+    ORDER BY CASE type WHEN 'motorway' THEN 0 WHEN 'trunk' THEN 1
+                       WHEN 'primary' THEN 2 ELSE 3 END,
+             distance_m
+    LIMIT :limit
+    """
+)
+
+
+def main_roads_near(latitude: float, longitude: float) -> list[dict[str, Any]]:
+    """The main roads within a few km, one row per road, in the shape the
+    assessment already reads (name, ref, type, closest point)."""
+    with Session() as session:
+        rows = session.execute(
+            _MAIN_ROADS,
+            {"lat": latitude, "lon": longitude, "radius": ROAD_RADIUS_M, "limit": MAX_ROADS},
+        ).mappings().all()
+    return [
+        {**row, "distance_m": round(float(row["distance_m"]))} for row in rows
+    ]
 
 
 def spread_forecast_for(

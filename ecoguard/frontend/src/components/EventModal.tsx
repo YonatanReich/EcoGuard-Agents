@@ -1249,9 +1249,19 @@ function VehicleIcon() {
   )
 }
 
-function EventModal({ event, onClose, directionsStationKey = null, routes }: {
+function HandledIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  )
+}
+
+function EventModal({ event, onClose, onHandled, directionsStationKey = null, routes }: {
   event: SharedEvent
   onClose: () => void
+  /** Opens the handled survey. Omitted on the demo feed. */
+  onHandled?: () => void
   directionsStationKey?: string | null
   /** Present only for events with allocated stations. */
   routes?: RoutesControl
@@ -1393,6 +1403,13 @@ function EventModal({ event, onClose, directionsStationKey = null, routes }: {
               </button>
             )}
           </div>
+        )}
+
+        {onHandled && (
+          <button type="button" className="event-tool event-tool--handled" onClick={onHandled}>
+            <HandledIcon />
+            Handled
+          </button>
         )}
 
         <button type="button" className="event-panel__close" onClick={onClose} aria-label="Close event details">

@@ -107,6 +107,12 @@ EVACUATION_REASON = {
 }
 
 
+def _built_up(environment: Mapping[str, Any]) -> bool:
+    """Whether the ground is built up enough that the wildland model is not the story."""
+    built_up = environment.get("built_up_fraction")
+    return built_up is not None and built_up >= BUILT_UP_NOTABLE
+
+
 def compass_point(bearing_deg: float) -> str:
     """A bearing as one of sixteen named directions."""
     return COMPASS[int((float(bearing_deg) % 360.0) / 22.5 + 0.5) % 16]
@@ -450,7 +456,7 @@ def build_report(
     # badly incomplete on ground that is four-fifths houses, so the built-up
     # share is stated whenever it is the thing a reader would otherwise miss.
     built_up = environment.get("built_up_fraction")
-    if built_up is not None and built_up >= BUILT_UP_NOTABLE:
+    if _built_up(environment):
         lines.append(
             f"{built_up * 100:.0f}% of this ground is built up. The spread "
             "forecast below covers wildland fuel only; fire in the structures "
@@ -501,6 +507,12 @@ def build_report(
         lines.append(
             f"Inside the forecast spread: {_people(ring_population.get('people'))}, "
             "counted off the population grid over the drawn extent."
+        )
+    elif _built_up(environment):
+        lines.append(
+            "Not counted inside the drawn extent: the extent models wildland fuel "
+            "only, and on built-up ground it says nothing about how many people "
+            "a fire among buildings endangers. This is not a count of zero."
         )
     else:
         lines.append(
@@ -995,7 +1007,17 @@ def analyze_incident(
     if first["status"] != "ok":
         return first
 
-    ring_population = population_within((first["spread"] or {}).get("likely") or [])
+    # The ring is grown through wildland fuel only (fuel_models.py leaves
+    # buildings out), so on built-up ground it is the few metres of garden and
+    # verge the model can burn, and the grid share of that is not the number of
+    # people a fire among houses endangers. A Telegram fire report in Givat
+    # Shmuel came out at 18 people in a town of about 25,000. Above the
+    # built-up threshold the count is withheld; the report says why, and the
+    # whole-settlement totals still stand.
+    if _built_up(environment):
+        ring_population = None
+    else:
+        ring_population = population_within((first["spread"] or {}).get("likely") or [])
     return analyze(
         incident, environment,
         horizon_minutes=horizon_minutes, localities=localities,

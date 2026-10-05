@@ -253,6 +253,32 @@ scheduler.add_job(
 )
 
 
+def write_improvement_report() -> None:
+    """The daily improvement report. Never raises into the scheduler."""
+    try:
+        from ecoguard.improvement.agent import run
+
+        run()
+    except Exception:
+        logger.exception("improvement report failed; the next tick or boot tries again")
+
+
+# Same pattern as retention: daily, plus once at boot, because a container that
+# is redeployed every few hours would otherwise never reach its first 24-hour
+# tick. The agent itself refuses to write a second report within 20 hours, so
+# the boot run costs nothing when a report is already fresh.
+scheduler.add_job(
+    write_improvement_report,
+    "interval",
+    hours=24,
+    id="improvement_report",
+    max_instances=1,
+    coalesce=True,
+    next_run_time=BOOT + BOOT_STAGGER * (len(COLLECTORS) + 1),
+    misfire_grace_time=None,
+)
+
+
 def publish(results):
     """Project finished results to the frontend. Never raises."""
     if not results:

@@ -2,6 +2,7 @@
 
 from ecoguard.shared.activity import live_actor
 import json
+import logging
 
 from pydantic import ValidationError
 
@@ -24,6 +25,8 @@ from ecoguard.shared.protocols import (
     verify_citations,
 )
 
+logger = logging.getLogger(__name__)
+
 SYSTEM_PROMPT = """\
 You are EcoGuard's NON-EMERGENCY air-pollution response-planning component.
 Produce decision-support recommendations, not operational commands, using only
@@ -44,6 +47,12 @@ Strict rules:
   referenced only when present in the supplied list.
 - Every protocol citation must quote the supplied chunk verbatim.
 - Preserve Analyzer limitations and evidence gaps.
+- The official Ministry pollutant classification in the Analyzer report is the
+  authority's own published assessment. By the Ministry's index method, LOW
+  (index -1 to -200) means the air is harmful to sensitive groups and VERY_LOW
+  (below -200) harmful to the general public as well. When the classification
+  for PM2.5 or PM10 is LOW or VERY_LOW, that is the authority confirmation a
+  conditional particulate advisory requires: include that advisory action.
 """
 
 
@@ -69,7 +78,8 @@ class AirPollutionResponsePlanner:
         Finds guidance covering the pollutants involved, asks the model to
         choose from the reviewed actions in it, then checks every choice and
         every quotation against the source. Anything it cannot verify is
-        thrown away and the plan is reported as failed rather than shown.
+        removed and named in the plan's limitations; if nothing verifiable is
+        left, the plan is reported as failed rather than shown.
         """
         validated = AirPollutionEventAnalysis.model_validate(
             analysis.model_dump(round_trip=True)
@@ -115,10 +125,10 @@ class AirPollutionResponsePlanner:
             reviewed = self._reviewed_actions(chunks, documents)
             # Send only the chunks that can actually ground an action.
             #
-            # _actions_grounded requires every action to copy a reviewed action
+            # _action_grounded requires an action to copy a reviewed action
             # exactly AND to cite a chunk quoting it, so a chunk carrying no
             # reviewed action cannot contribute to an accepted plan — it can
-            # only be cited wrongly, which fails the whole plan. Four of the ten
+            # only be cited wrongly. Four of the ten
             # corpus documents have no reviewed actions at all; sending their
             # chunks was paying input tokens for text the grounding check was
             # always going to reject.
@@ -162,7 +172,9 @@ class AirPollutionResponsePlanner:
                 ),
                 output_format=AirPollutionPlanProposal,
             )
-        except ClaudeProviderError:
+        except ClaudeProviderError as error:
+            # The category only (rate limited, timeout, ...): never the prompt.
+            logger.warning("air pollution plan: model call failed: %s", error)
             return self._result(validated, "failed", "model_failure", limitations)
         try:
             proposal = AirPollutionPlanProposal.model_validate(
@@ -176,26 +188,46 @@ class AirPollutionResponsePlanner:
         payload = proposal.model_dump(mode="json")
         citations, dropped = verify_citations(payload["protocol_citations"], chunks)
         verified_chunk_ids = {citation["chunk_id"] for citation in citations}
-        action_chunk_ids = {
-            chunk_id
-            for action in proposal.actions
-            for chunk_id in action.supporting_chunk_ids
-        }
-        action_analysis_ids = {
-            evidence_id
-            for action in proposal.actions
-            for evidence_id in action.supporting_analysis_evidence_ids
-        }
-        if (
-            dropped
-            or not citations
-            or not action_chunk_ids.issubset(verified_chunk_ids)
-            or not action_analysis_ids.issubset(analysis_evidence_ids)
-            or not self._actions_grounded(proposal, reviewed, citations)
-        ):
+
+        # Keep what verifies, remove what does not, and say so. Only an exact
+        # copy of a reviewed action with a verified quotation is ever shown -
+        # an altered recommendation is removed, never repaired - but one
+        # unverifiable item no longer discards the verified ones beside it:
+        # on the 16 Feb replay that turned 3 of 13 regional advisories into
+        # blank cards over one paraphrased citation. Nothing verifiable left
+        # still fails, exactly as before.
+        grounded = [
+            action for action in proposal.actions
+            if set(action.supporting_chunk_ids) <= verified_chunk_ids
+            and set(action.supporting_analysis_evidence_ids) <= analysis_evidence_ids
+            and self._action_grounded(action, reviewed, citations)
+        ]
+        if not citations or not grounded:
             return self._result(
                 validated, "failed", "ungrounded_response", limitations
             )
+        removed = len(proposal.actions) - len(grounded)
+        if removed or dropped:
+            limitations = [
+                *limitations,
+                f"{removed} proposed recommendation(s) and {dropped} citation(s) "
+                "could not be verified against the reviewed guidance and were "
+                "removed; everything shown is verified.",
+            ]
+        proposal = proposal.model_copy(update={
+            "actions": grounded,
+            "recommended_authority_types": sorted(
+                {action.responsible_authority_type for action in grounded}
+            ),
+            "recommended_resource_types": sorted(
+                {action.resource_type for action in grounded}
+            ),
+        })
+        action_analysis_ids = {
+            evidence_id
+            for action in grounded
+            for evidence_id in action.supporting_analysis_evidence_ids
+        }
 
         spatial_relevance = (
             "Existing transport/corridor output is contextual screening only; "
@@ -343,15 +375,9 @@ class AirPollutionResponsePlanner:
                     )
         return reviewed
 
-    @staticmethod
-    def _actions_grounded(proposal, reviewed, citations):
-        """Whether every recommendation copies an approved one exactly.
-
-        Compares all five fields character for character and requires a
-        verified quotation containing the wording. One mismatch fails the whole
-        plan, because a half-invented recommendation is not safer than a fully
-        invented one.
-        """
+    @classmethod
+    def _action_grounded(cls, action, reviewed, citations) -> bool:
+        """Whether one recommendation copies an approved one exactly."""
         fields = (
             "recommendation",
             "responsible_authority_type",
@@ -359,27 +385,15 @@ class AirPollutionResponsePlanner:
             "timeframe",
             "priority",
         )
-        for action in proposal.actions:
-            if not any(
-                all(getattr(action, field) == approved[field] for field in fields)
-                and set(action.supporting_chunk_ids).issubset(
-                    approved["supporting_chunk_ids"]
-                )
-                for approved in reviewed
-            ):
-                return False
-            if not any(
-                citation["chunk_id"] in action.supporting_chunk_ids
-                and normalize_for_match(action.recommendation)
-                in normalize_for_match(citation["quoted_text"])
-                for citation in citations
-            ):
-                return False
-        return (
-            set(proposal.recommended_authority_types)
-            == {action.responsible_authority_type for action in proposal.actions}
-            and set(proposal.recommended_resource_types)
-            == {action.resource_type for action in proposal.actions}
+        return any(
+            all(getattr(action, field) == approved[field] for field in fields)
+            and set(action.supporting_chunk_ids).issubset(approved["supporting_chunk_ids"])
+            for approved in reviewed
+        ) and any(
+            citation["chunk_id"] in action.supporting_chunk_ids
+            and normalize_for_match(action.recommendation)
+            in normalize_for_match(citation["quoted_text"])
+            for citation in citations
         )
 
     @staticmethod

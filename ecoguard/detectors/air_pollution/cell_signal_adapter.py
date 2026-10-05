@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ecoguard.detectors.air_pollution.regional_stations import anchor_cell
 from ecoguard.detectors.air_pollution.correlation import (
     PollutionCorrelationCandidate,
     correlation_candidate,
@@ -83,6 +84,10 @@ def _candidate_to_signal(
         raise AirPollutionCellSignalAdapterError(
             "monitoring_station_outside_service_area"
         )
+    # A designated station reports under its region's anchor cell, so a region
+    # is one incident however many of its stations exceed; the signal keeps
+    # the station's own coordinates below. See regional_stations.
+    cell_id = anchor_cell(anomaly.station_id) or cell_id
 
     baseline = anomaly.baseline_evidence
     evidence: dict[str, Any] = {

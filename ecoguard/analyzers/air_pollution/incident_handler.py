@@ -171,6 +171,11 @@ class AirPollutionIncidentHandler:
             planner_status=planning.plan.status,
             analysis_result=analysis,
             planner_result=planning,
+            # A failed plan says why on the card and in the projection; it
+            # used to fail with no reason anywhere, which on the 16 Feb replay
+            # made three transient failures indistinguishable from a bug.
+            failure_stage="planning" if planning.plan.status == "failed" else None,
+            failure_reason=planning.plan.reason if planning.plan.status == "failed" else None,
         )
 
     def _apply_ea371_policy(

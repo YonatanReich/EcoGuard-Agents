@@ -107,6 +107,8 @@ class LiveObservationContext(LookupContract):
 LiveBaselineContextStatus = Literal[
     "available", "insufficient_history", "profile_unavailable",
     "baseline_unavailable", "bucket_unavailable", "invalid_live_observation",
+    # Stored, but not one of the stations that speak for a region.
+    "not_designated",
 ]
 
 

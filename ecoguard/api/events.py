@@ -20,6 +20,7 @@ from ecoguard.analyzers.air_pollution.event_qualification import (
 from ecoguard.analyzers.air_pollution.official_classification import (
     classify_official_pollutant_sub_index,
 )
+from ecoguard.improvement.feedback import OperatorFeedback, code_version
 from ecoguard.shared.events import (
     AirPollutionSharedEvent,
     ComponentUnavailableReason,
@@ -262,6 +263,57 @@ def confirm_event(
         logger.exception(
             "incident %s confirmed, but re-planning it failed", incident_id
         )
+
+    try:
+        return shared_event_feed(read_projected_events(limit=200))
+    except Exception as error:
+        logger.exception("Unable to read durable event projections")
+        raise HTTPException(
+            status_code=503, detail="Event feed is unavailable"
+        ) from error
+
+
+class HandledEventRequest(BaseModel):
+    """Who handled the incident, and their survey answers if they gave any."""
+
+    handled_by: str = Field(default="operator", min_length=1, max_length=120)
+    feedback: OperatorFeedback | None = None
+
+
+@router.post("/api/events/{incident_id}/handled", response_model=SharedEventFeed)
+def handle_event(
+    incident_id: str,
+    body: HandledEventRequest | None = None,
+) -> SharedEventFeed:
+    """Close an incident an operator has finished with, recording their feedback.
+
+    The incident is closed rather than deleted: closing releases the stations
+    allocated to it and drops it from the feed, and a deleted row would take
+    the evidence the improvement agent reads with it. What the operator saw is
+    snapshotted in the same transaction as the close.
+
+    Returns the refreshed feed, as confirmation does, so the card disappears
+    without a second request.
+    """
+    from ecoguard.database.repositories.operator_feedback import record_handled
+
+    body = body or HandledEventRequest()
+    try:
+        feedback_id = record_handled(
+            incident_id,
+            handled_by=body.handled_by.strip(),
+            feedback=body.feedback.model_dump() if body.feedback else None,
+            code_version=code_version(),
+            at=datetime.now(timezone.utc),
+        )
+    except Exception as error:
+        logger.exception("Unable to record incident %s as handled", incident_id)
+        raise HTTPException(
+            status_code=503, detail="Handling is unavailable"
+        ) from error
+
+    if feedback_id is None:
+        raise HTTPException(status_code=404, detail="No open incident with that id")
 
     try:
         return shared_event_feed(read_projected_events(limit=200))

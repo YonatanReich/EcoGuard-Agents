@@ -368,20 +368,35 @@ def close_incident(incident_id: str, at: datetime) -> None:
     """
     with Session() as session:
         with session.begin():
-            closed_id = session.execute(
-                text(
-                    "UPDATE incidents SET status = :closed, closed_at = :at "
-                    "WHERE id = :id AND status = :open RETURNING id"
-                ),
-                {"id": incident_id, "closed": CLOSED, "open": OPEN, "at": at},
-            ).scalar_one_or_none()
-            if closed_id is not None:
-                release_incident_allocations_in_session(
-                    session,
-                    incident_id,
-                    released_at=at,
-                    reason="incident_closed",
-                )
+            close_incident_in_session(session, incident_id, at)
+
+
+def close_incident_in_session(session, incident_id: str, at: datetime) -> bool:
+    """`close_incident` inside a caller's transaction.
+
+    For a caller whose own write must commit or fail together with the close,
+    such as the operator-feedback row written when an incident is handled.
+
+    Returns:
+        bool: True when this call closed the incident, False when it was
+            already closed or does not exist.
+    """
+    closed_id = session.execute(
+        text(
+            "UPDATE incidents SET status = :closed, closed_at = :at "
+            "WHERE id = :id AND status = :open RETURNING id"
+        ),
+        {"id": incident_id, "closed": CLOSED, "open": OPEN, "at": at},
+    ).scalar_one_or_none()
+    if closed_id is None:
+        return False
+    release_incident_allocations_in_session(
+        session,
+        incident_id,
+        released_at=at,
+        reason="incident_closed",
+    )
+    return True
 
 
 def confirm_incident(

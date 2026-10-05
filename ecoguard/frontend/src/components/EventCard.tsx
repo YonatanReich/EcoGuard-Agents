@@ -13,13 +13,13 @@ function formatObservationTime(timestamp: string) {
       }).format(value)
 }
 
-function EventCard({ event, onOpen, isSelected, onConfirm, isConfirming }: {
+function EventCard({ event, onOpen, isSelected, onHandled }: {
   event: SharedEvent
   onOpen: (event: SharedEvent) => void
   isSelected: boolean
-  /** Omitted where confirming makes no sense, such as the demo feed. */
-  onConfirm?: (event: SharedEvent) => void
-  isConfirming?: boolean
+  /** Opens the handled survey, where the operator also says whether it was
+   *  real. Omitted on the demo feed, which has nothing to close. */
+  onHandled?: (event: SharedEvent) => void
 }) {
   const hazard = hazardOf(event)
   // Absent on projections written before confirmation existed. Those were all
@@ -118,14 +118,6 @@ function EventCard({ event, onOpen, isSelected, onConfirm, isConfirming }: {
             </span>
           )}
 
-          {/* Only ever shown when it was actually counted. A fire whose
-              population could not be read must not render a zero. */}
-          {fire?.people_in_spread != null && (
-            <span className="event-card__measurement">
-              {fire.people_in_spread.toLocaleString()} people in the forecast spread
-            </span>
-          )}
-
           {(fire?.evacuation?.length ?? 0) > 0 && (
             <span className="event-card__evacuation">
               {fire!.evacuation.filter((item) => item.priority === 'immediate').length > 0
@@ -170,19 +162,14 @@ function EventCard({ event, onOpen, isSelected, onConfirm, isConfirming }: {
 
     {/* Outside the card's own button, because a button inside a button is
         invalid and the browser will not deliver this click. */}
-    {unconfirmed && onConfirm && (
-      <div className="event-card__confirm-row">
-        <p className="event-card__confirm-note">
-          Verify with the local authority and the responsible fire and police
-          stations before treating this as an event.
-        </p>
+    {onHandled && (
+      <div className="event-card__handled-row">
         <button
           type="button"
-          className="event-card__confirm"
-          disabled={isConfirming}
-          onClick={() => onConfirm(event)}
+          className="event-card__handled"
+          onClick={() => onHandled(event)}
         >
-          {isConfirming ? 'Confirming…' : 'Mark as confirmed'}
+          Handled
         </button>
       </div>
     )}

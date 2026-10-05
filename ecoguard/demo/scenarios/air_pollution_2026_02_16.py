@@ -31,6 +31,7 @@ from sqlalchemy import text
 
 from ecoguard.collectors.pollution.collector import AirPollutionCollector
 from ecoguard.database.engine import Session
+from ecoguard.detectors.air_pollution.regional_stations import REGIONS
 from ecoguard.shared.air_quality_schemas import AirQualityCollectionResult, AirQualityStation
 from ecoguard.shared.ministry_air_quality_client import (
     MINISTRY_INDEX_CLOCK,
@@ -52,40 +53,45 @@ WARNING_ADVICE = (
 )
 
 
-def _region(event_id: str, place: str, latitude: float, longitude: float, index: int) -> dict:
+def _region(region_id: str) -> dict:
+    """One region's expected card, anchored on its primary designated station."""
+    region, anchor, stations = REGIONS[region_id]
+    where = {
+        item["provider_station_id"]: item["location"] for item in DATA["stations"]
+    }
+    primary = where[stations[0][0]]
+    names = " + ".join(name for _, name in stations)
     return {
-        "id": event_id,
-        "event": f"High air pollution at {place}, 16 Feb 2026 (reconstructed index {index}).",
+        "id": f"AP-REGION-{region_id}",
+        "event": f"{region}: high air pollution on 16 Feb 2026, read at {names}.",
         "hazard": "air_pollution",
-        "latitude": latitude,
-        "longitude": longitude,
+        "latitude": primary["latitude"],
+        "longitude": primary["longitude"],
         "expect_detected": True,
         "expect_route": "non_emergency",
-        "expect_marker_within_km": 5.0,
+        # Matched by the region's anchor cell, not by distance; the marker
+        # must sit on one of the region's own stations.
+        "expect_cell": anchor,
+        "expect_points": [
+            (where[sid]["latitude"], where[sid]["longitude"]) for sid, _ in stations
+        ],
+        "expect_marker_within_km": 1.0,
         "expect_min_signals": 2,
         "expect_classification": ["LOW", "VERY_LOW"],
         "expect_advice": list(WARNING_ADVICE),
         "expect_notes": (
-            "The warning covered all parts of the country; this region's advisory must "
-            "exist, classify the air as the warning did (high to very high pollution = "
-            "index category LOW or VERY_LOW), and carry its advice."
+            "The warning covered all parts of the country, so every region's card must "
+            "exist, read the air as the warning did (high to very high pollution = index "
+            "category LOW or VERY_LOW) and carry its advice. The region's designated "
+            "stations report as one incident."
         ),
     }
 
 
-GROUND_TRUTH: list[dict[str, Any]] = [
-    _region("AP-HAIFA", "Haifa (Check Post)", 32.7893, 35.0407, -210),
-    _region("AP-TELAVIV", "Tel Aviv (Shikun Lamed)", 32.1083, 34.7903, -316),
-    _region("AP-JERUSALEM", "Jerusalem (Kikar Safra)", 31.7805, 35.2247, -217),
-    _region("AP-ASHDOD", "Ashdod (Hanson, pier 30)", 31.8226, 34.6360, -179),
-    _region("AP-BEERSHEVA", "Be'er Sheva (Neighbourhood Vav)", 31.2572, 34.7821, -182),
-    _region("AP-GALILEE", "Karmiel (Western Galilee)", 32.9159, 35.2943, -259),
-    _region("AP-EILAT", "Eilat (Shahamon)", 29.5464, 34.9308, -384),
-]
+GROUND_TRUTH: list[dict[str, Any]] = [_region(region_id) for region_id in REGIONS]
 
-# Every other station cluster raises its own advisory: the episode was national
-# and the system advises per place, not per country.
-EXPECTED_BYPRODUCTS = [{"hazard": "air_pollution", "why": "one advisory per station cluster"}]
+# One card per region and nothing else: an extra card is a finding.
+EXPECTED_BYPRODUCTS: list[dict[str, str]] = []
 EXPECTED_SILENCE: list[dict[str, str]] = []
 
 

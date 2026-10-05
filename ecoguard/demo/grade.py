@@ -44,7 +44,7 @@ def grade(scenario: str, *, schema: str | None = None) -> dict[str, Any]:
 
     incidents = _rows(target, """
         SELECT id, primary_hazard, hazards::text AS hazards, queues::text AS queues,
-               status, latitude, longitude, signal_count, last_signal_at, signals
+               status, latitude, longitude, signal_count, last_signal_at, signals, cells
         FROM {s}.incidents ORDER BY id
     """)
     projections = _rows(target, """
@@ -68,10 +68,10 @@ def grade(scenario: str, *, schema: str | None = None) -> dict[str, Any]:
         # Demo B's two nearby fires: a nearest-neighbour grader that reused a
         # row could claim both fires passed even if the coordinator merged
         # them into one.
-        match, distance = _closest(
-            incidents,
-            expected,
-            excluded=claimed_incidents,
+        match, distance = (
+            _by_cell(incidents, expected, excluded=claimed_incidents)
+            if expected.get("expect_cell")
+            else _closest(incidents, expected, excluded=claimed_incidents)
         )
         entry: dict[str, Any] = {
             "id": expected["id"],
@@ -81,7 +81,10 @@ def grade(scenario: str, *, schema: str | None = None) -> dict[str, Any]:
             "notes": expected["expect_notes"],
         }
         if match is None:
-            entry.update(verdict="MISS", detail="no incident within 25 km of the event")
+            entry.update(verdict="MISS", detail=(
+                f"no incident in cell {expected['expect_cell']}" if expected.get("expect_cell")
+                else "no incident within 25 km of the event"
+            ))
             findings.append(entry)
             continue
         claimed_incidents.add(match["id"])
@@ -337,6 +340,31 @@ def _plan_findings(
             f"{item.get('name_he')} ({item.get('priority')})" for item in evacuation
         ],
     }
+
+
+def _by_cell(incidents, expected, *, excluded: set[str] | None = None):
+    """The incident that holds the expected cell; distance to the nearest expected point.
+
+    For events whose identity is a place on the grid - an air-pollution region
+    reports under its anchor cell - matching by nearest distance picks a
+    neighbouring region's card. The marker must still sit on one of the
+    places listed in `expect_points` (the region's stations).
+    """
+    excluded = excluded or set()
+    for row in incidents:
+        cells = row.get("cells") or []
+        if isinstance(cells, str):
+            cells = cells.strip("{}").split(",")
+        if row["id"] in excluded or expected["expect_cell"] not in cells:
+            continue
+        if row["latitude"] is None or row["longitude"] is None:
+            return row, float("inf")
+        points = expected.get("expect_points") or [(expected["latitude"], expected["longitude"])]
+        return row, min(
+            _distance_km(lat, lon, float(row["latitude"]), float(row["longitude"]))
+            for lat, lon in points
+        )
+    return None, None
 
 
 def _closest(incidents, expected, *, excluded: set[str] | None = None):
