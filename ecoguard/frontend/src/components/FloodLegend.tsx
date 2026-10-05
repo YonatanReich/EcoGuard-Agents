@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react'
 
 const SEVERITY_LEVELS = [
-  { label: '10-year', color: '#facc15' },
+  { label: '10-year or below', color: '#facc15' },
   { label: '20-year', color: '#f97316' },
   { label: '50-year', color: '#ef4444' },
   { label: '100-year', color: '#7f1d1d' },

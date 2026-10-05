@@ -263,6 +263,9 @@ const UNIT_LABEL: Record<string, string> = {
   fire_department: 'Fire & rescue',
   police: 'Police',
   medical_services: 'MDA',
+  home_front_command: 'Home Front Command',
+  municipal_emergency_team: 'Municipal emergency team',
+  utility_operator: 'Infrastructure operator',
 }
 
 
@@ -422,8 +425,16 @@ function ActionPlan({ steps, intro }: { steps: PlanStep[]; intro?: string | null
 /** The stations sent, how long each takes, and turn-by-turn directions. */
 function UnitsAssigned({ allocation }: { allocation: ResourceAllocationSummary }) {
   if (allocation.stations.length === 0) return null
-  const partial = Object.values(allocation.requirements).some((requirement) => requirement.shortfall > 0)
-  const unsupported = 'unsupported_units' in allocation ? (allocation.unsupported_units as string[]) : []
+  // Saved demos also contain recommendations for agencies without station
+  // catalogues. Keep those separate from an actual shortage of dispatchable stations.
+  const stationUnits = new Set(['police', 'fire_department', 'medical_services'])
+  const partial = Object.entries(allocation.requirements).some(
+    ([unit, requirement]) => stationUnits.has(unit) && requirement.shortfall > 0,
+  )
+  const unsupported = [...new Set([
+    ...Object.keys(allocation.requirements).filter((unit) => !stationUnits.has(unit)),
+    ...('unsupported_units' in allocation ? (allocation.unsupported_units as string[]) : []),
+  ])]
   return (
     <section className="plan-block">
       <h3>Units assigned</h3>
@@ -479,7 +490,7 @@ function UnitsAssigned({ allocation }: { allocation: ResourceAllocationSummary }
       </ul>
       {partial && (
         <p className="event-modal__allocation-warning">
-          Not every requested unit could be assigned; the allocation is partial.
+          Some requested police, fire or MDA stations could not be assigned.
         </p>
       )}
       {allocation.errors.length > 0 && (
@@ -488,8 +499,9 @@ function UnitsAssigned({ allocation }: { allocation: ResourceAllocationSummary }
         </p>
       )}
       {unsupported.length > 0 && (
-        <p className="event-modal__allocation-warning">
-          No station catalogue for: {unsupported.join(', ')}.
+        <p className="event-box__muted">
+          Additional agencies in the response plan: {unsupported.map((unit) => UNIT_LABEL[unit] ?? formatComponentName(unit)).join(', ')}.
+          {' '}Station assignment is available for police, fire and MDA.
         </p>
       )}
     </section>

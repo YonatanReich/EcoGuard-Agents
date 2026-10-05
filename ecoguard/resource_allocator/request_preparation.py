@@ -180,11 +180,20 @@ class AllocationRequestPreparer:
 
     @staticmethod
     def _flood_site_priority(site):
-        """Rank eligible flood sites by severity and operational road impact."""
+        """Prefer the crossing nearest its gauge, then operational road impact."""
         road = site.get("road") or {}
         verification = site.get("mapbox_verification") or {}
         snap_distance = verification.get("mapbox_snap_distance_m")
+        station_distance = site.get("distance_from_station_m")
         return (
+            (
+                -float(station_distance)
+                if isinstance(station_distance, (int, float))
+                and not isinstance(station_distance, bool)
+                and math.isfinite(station_distance)
+                and station_distance >= 0
+                else -math.inf
+            ),
             int(site.get("severity_level") or 0),
             FLOOD_ROAD_PRIORITY.get(str(road.get("base_class") or ""), 0),
             int(site.get("urban") is True),
@@ -274,7 +283,7 @@ class AllocationRequestPreparer:
         ]
 
     def _verified_road_target(self, *, incident_id, ready_sites):
-        """Build the allocation context for the highest-priority road site."""
+        """Build the allocation context for the nearest verified crossing."""
         primary = max(ready_sites, key=self._flood_site_priority)
         severity = max(
             3,
