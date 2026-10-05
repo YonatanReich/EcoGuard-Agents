@@ -286,6 +286,36 @@
     border-radius: 8px;
     background: var(--ops-raised);
     transition: background 0.15s ease, border-color 0.15s ease;
+    animation: eventCardIn 0.35s var(--ease-out, ease-out) both;
+}
+
+/* Arrives: a short drop into place, so a new incident is noticed without
+   being shouted. Leaves (after Handled): slides aside, then the gap closes,
+   so the cards below move up instead of jumping. The duration is mirrored by
+   CARD_EXIT_MS in Dashboard.tsx, which keeps the card mounted until it ends. */
+.event-card--leaving {
+    animation: eventCardOut 0.34s ease-in forwards;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+@keyframes eventCardIn {
+    from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+    to   { opacity: 1; transform: none; }
+}
+
+@keyframes eventCardOut {
+    0%   { opacity: 1; transform: none; max-height: 600px; }
+    55%  { opacity: 0; transform: translateX(28px); max-height: 600px; }
+    100% { opacity: 0; transform: translateX(28px); max-height: 0;
+           margin-bottom: -8px; border-width: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .event-card,
+    .event-card--leaving {
+        animation: none;
+    }
 }
 
 .event-card__open {

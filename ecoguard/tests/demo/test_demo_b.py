@@ -30,8 +30,11 @@ def test_demo_b_is_registered_and_contains_all_eight_events():
     }
     assert "expect_allocation" not in demo_b.GROUND_TRUTH[0]
     assert "expect_allocation" not in demo_b.GROUND_TRUTH[1]
+    # The flood and both quakes need units routed to them; which units is the
+    # plan's call, so no exact list is pinned.
     assert all(
-        event["expect_allocated_units"] == ["police"]
+        event["expect_allocation"] and event["expect_routing"]
+        and "expect_allocated_units" not in event
         for event in (
             demo_b.GROUND_TRUTH[2],
             demo_b.GROUND_TRUTH[3],

@@ -25,12 +25,16 @@ from ecoguard.database.engine import Session
 EILAT = (29.5577, 34.9519)
 CARMEL = (32.7500, 35.0300)
 ASHALIM = (31.0659, 35.3301)
-NEGEV_STATION = (30.9644, 34.7008)
+# Arad, the designated station for the Northern Negev region. Only designated
+# regional stations raise advisories (detectors/air_pollution/regional_stations.py),
+# so the episode is read where the live system would read it.
+ARAD_STATION = (31.2496, 35.2157)
 NETANYA = (32.3215, 34.8532)
 
 GROUND_TRUTH: list[dict[str, Any]] = [
     {
         "id": "A1",
+        "expect_spread": True,
         "event": "Large fire in central Eilat, growing across three overpasses.",
         "hazard": "fire",
         "latitude": EILAT[0],
@@ -48,6 +52,7 @@ GROUND_TRUTH: list[dict[str, Any]] = [
     },
     {
         "id": "A2",
+        "expect_spread": True,
         "event": "Moderate fire in the Carmel forest.",
         "hazard": "fire",
         "latitude": CARMEL[0],
@@ -81,15 +86,15 @@ GROUND_TRUTH: list[dict[str, Any]] = [
     },
     {
         "id": "A4",
-        "event": "Dust/particulate episode at the Negev monitoring station.",
+        "event": "Dust/particulate episode at the Northern Negev regional station (Arad).",
         "hazard": "air_pollution",
-        "latitude": NEGEV_STATION[0],
-        "longitude": NEGEV_STATION[1],
+        "latitude": ARAD_STATION[0],
+        "longitude": ARAD_STATION[1],
         "expect_detected": True,
         "expect_route": "non_emergency",
         "expect_marker_within_km": 3.0,
         "expect_notes": (
-            "PM10 185 ug/m3 against a September p95 of about 50. Advisory route "
+            "PM10 320 ug/m3, a dust-storm level, after an ordinary run-up. Advisory route "
             "only — it must never be classified as an emergency, and no station "
             "should be allocated to it."
         ),
@@ -101,13 +106,16 @@ GROUND_TRUTH: list[dict[str, Any]] = [
         "latitude": NETANYA[0],
         "longitude": NETANYA[1],
         "expect_detected": True,
-        "expect_route": "uncorroborated",
+        "expect_route": "emergency",
+        "expect_confirmation": "unconfirmed",
+        "expect_allocated_units": [],
         "expect_marker_within_km": 6.0,
         "expect_notes": (
-            "One Telegram claim, no satellite hotspot, no second origin. Must "
-            "reach the operator as an UNCORROBORATED advisory naming Netanya's "
-            "responsible police station and local authority with phone numbers "
-            "— and must NOT get a risk score or an allocation."
+            "One Telegram claim, no satellite hotspot, no second origin. It is "
+            "analysed like any fire but stays UNCONFIRMED: its plan is who to "
+            "phone to verify (Netanya's police station and local authority), "
+            "it carries no evacuation order or people count, and nothing is "
+            "allocated to it."
         ),
     },
 ]
@@ -361,20 +369,21 @@ def build_rows(now: datetime) -> list[tuple[str, str, datetime, dict[str, Any]]]
                      _gauge(58, "Ramon", "רמון",
                             30.6144, 34.8601, 0.2, -0.18, 68)))
 
-    # --- A4: Negev PM10 episode, after a normal run-up (N4) ---------------
-    pm10_cell = "ministry:417:1:PM10:%C2%B5g%2Fm%C2%B3"
+    # --- A4: Northern Negev PM10 episode at Arad, after a normal run-up (N4)
+    pm10_cell = "ministry:158:4:PM10:%C2%B5g%2Fm%C2%B3"
     for minutes, value in ((150, 24.0), (110, 27.0), (70, 31.0)):
         rows.append(("air_pollution", pm10_cell, ago_5(minutes),
-                     _pollution("417", "1", "PM10", value, *NEGEV_STATION, ago_5(minutes))))
+                     _pollution("158", "4", "PM10", value, *ARAD_STATION, ago_5(minutes))))
     rows.append(("air_pollution", pm10_cell, ago_5(12),
-                 _pollution("417", "1", "PM10", 185.0, *NEGEV_STATION, ago_5(12))))
+                 _pollution("158", "4", "PM10", 320.0, *ARAD_STATION, ago_5(12))))
     # N4: a second station reading normally throughout.
     no2_cell = "ministry:377:8:NO2:%C2%B5g%2Fm%C2%B3"
-    # Below station 377's own September NO2 p95, which is 6.2-6.7 at these
-    # hours against a median near 3.2. An earlier draft used 8-11 "normal"
-    # readings and the detector correctly called them anomalies -- the noise
-    # was wrong, not the detector.
-    for minutes, value in ((150, 3.1), (90, 3.6), (20, 3.3)):
+    # Clean air, below station 377's NO2 p95 at any month and hour. The
+    # baseline is per month *and* hour, and the demo stamps its readings
+    # relative to whenever it runs: values of 3.1-3.6, tuned to September
+    # afternoons (p95 6.2-6.7, median 3.2), crossed the p95 of an October
+    # night and raised a false advisory. Noise must be normal at any time.
+    for minutes, value in ((150, 0.9), (90, 1.1), (20, 1.0)):
         rows.append(("air_pollution", no2_cell, ago_5(minutes),
                      _pollution("377", "8", "NO2", value, 29.5545, 34.9492, ago_5(minutes))))
 

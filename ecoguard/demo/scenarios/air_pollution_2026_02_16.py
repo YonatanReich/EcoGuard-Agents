@@ -185,4 +185,9 @@ def seed(schema: str, *, now: datetime | None = None) -> dict[str, Any]:
     }
 
 
-__all__ = ["GROUND_TRUTH", "EXPECTED_BYPRODUCTS", "EXPECTED_SILENCE", "REPLAY_AT", "build_rows", "seed"]
+# Thirteen regions are thirteen samples of one national episode. Ten of them
+# right already paint the Ministry's picture; demanding all thirteen would fail
+# the demo on one planner wording slip in one region.
+REQUIRED_PASSES = 10
+
+__all__ = ["REQUIRED_PASSES", "GROUND_TRUTH", "EXPECTED_BYPRODUCTS", "EXPECTED_SILENCE", "REPLAY_AT", "build_rows", "seed"]

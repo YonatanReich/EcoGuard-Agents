@@ -34,7 +34,8 @@ ASHALIM = (31.0659, 35.3301)
 TIBERIAS = (32.7900, 35.5300)
 TIBERIAS_AFTERSHOCK = (32.8000, 35.5300)
 EILAT_QUAKE = (29.5577, 34.9519)
-NEGEV_STATION = (30.9644, 34.7008)
+# Arad, the designated station for the Northern Negev region; see demo_a.
+ARAD_STATION = (31.2496, 35.2157)
 ASHDOD = (31.8014, 34.6435)
 NETANYA = (32.3215, 34.8532)
 
@@ -48,7 +49,7 @@ ASHALIM_CELL = "risk-05000m-r0036-c0021"
 TIBERIAS_CELL = "risk-05000m-r0074-c0024"
 TIBERIAS_AFTERSHOCK_CELL = "risk-05000m-r0075-c0024"
 EILAT_QUAKE_CELL = "risk-05000m-r0003-c0014"
-NEGEV_STATION_CELL = "risk-05000m-r0034-c0009"
+ARAD_STATION_CELL = "risk-05000m-r0040-c0019"
 NETANYA_CELL = "risk-05000m-r0064-c0012"
 
 # Real configured sources, so the text classifier's joins resolve against
@@ -61,6 +62,7 @@ MDA_CHANNEL = (-1001177174722, "mdaisrael", "מגן דוד אדום")
 GROUND_TRUTH: list[dict[str, Any]] = [
     {
         "id": "B1",
+        "expect_spread": True,
         "event": (
             "A growing wildfire in the Jerusalem Hills spreads into an "
             "adjacent grid cell."
@@ -82,6 +84,7 @@ GROUND_TRUTH: list[dict[str, Any]] = [
     },
     {
         "id": "B2",
+        "expect_spread": True,
         "event": (
             "A separate fire near Beit Shemesh burns at the same time as B1."
         ),
@@ -111,7 +114,6 @@ GROUND_TRUTH: list[dict[str, Any]] = [
         "expect_marker_within_km": 6.0,
         "expect_min_signals": 1,
         "expect_allocation": True,
-        "expect_allocated_units": ["police"],
         "expect_routing": True,
         "expect_notes": (
             "Nahal Ashalim is classified as ephemeral, so the detector confirms "
@@ -136,7 +138,6 @@ GROUND_TRUTH: list[dict[str, Any]] = [
         "expect_marker_within_km": 4.0,
         "expect_min_signals": 3,
         "expect_allocation": True,
-        "expect_allocated_units": ["police"],
         "expect_routing": True,
         "expect_notes": (
             "A magnitude 5.4 mainshock and two reportable aftershocks arrive "
@@ -158,32 +159,31 @@ GROUND_TRUTH: list[dict[str, Any]] = [
         "expect_marker_within_km": 4.0,
         "expect_min_signals": 1,
         "expect_allocation": True,
-        "expect_allocated_units": ["police"],
         "expect_routing": True,
         "expect_notes": (
             "The magnitude 4.8 Eilat event overlaps B4 in time but is hundreds "
-            "of kilometres away. It must open a separate incident. With Claude "
-            "unavailable, deterministic earthquake risk still permits the "
-            "one-police-station fallback."
+            "of kilometres away. It must open a separate incident. Which units "
+            "respond is the plan's call; at least one must be allocated and "
+            "routed."
         ),
     },
     {
         "id": "B6",
         "event": (
             "A gradually worsening PM10 episode reaches an anomalous level at "
-            "the Negev monitoring station."
+            "the Northern Negev regional station (Arad)."
         ),
         "hazard": "air_pollution",
-        "latitude": NEGEV_STATION[0],
-        "longitude": NEGEV_STATION[1],
+        "latitude": ARAD_STATION[0],
+        "longitude": ARAD_STATION[1],
         "expect_detected": True,
         "expect_route": "non_emergency",
         "expect_marker_within_km": 3.0,
         "expect_min_signals": 1,
         "expect_allocated_units": [],
         "expect_notes": (
-            "Three ordinary readings lead into PM10 185 ug/m3, above this "
-            "station's September baseline. Wind context is present for the "
+            "Three rising readings lead into PM10 320 ug/m3, a dust-storm "
+            "level. Wind context is present for the "
             "downwind corridor. It belongs only in Advisory and must receive "
             "no resource allocation."
         ),
@@ -198,7 +198,8 @@ GROUND_TRUTH: list[dict[str, Any]] = [
         "latitude": ASHDOD[0],
         "longitude": ASHDOD[1],
         "expect_detected": True,
-        "expect_route": "uncorroborated",
+        "expect_route": "emergency",
+        "expect_confirmation": "unconfirmed",
         "expect_marker_within_km": 6.0,
         "expect_min_signals": 1,
         "expect_allocated_units": [],
@@ -206,13 +207,15 @@ GROUND_TRUTH: list[dict[str, Any]] = [
         "expect_notes": (
             "All three messages carry the same origin peer and message id, so "
             "they count as one source and must not promote the claim to an "
-            "emergency. It is an Advisory with no risk or allocation. This "
+            "a confirmed emergency. It stays unconfirmed, with a verify-first "
+            "plan and no allocation. This "
             "event requires the model classifier because the keyword fallback "
             "deliberately does not extract a location."
         ),
     },
     {
         "id": "B8",
+        "expect_spread": True,
         "event": (
             "A Netanya fire report and a satellite hotspot describe the same "
             "event in one detection wave."
@@ -664,8 +667,8 @@ def build_rows(now: datetime) -> list[tuple[str, str, datetime, dict[str, Any]]]
     )
 
     # --- B6: PM10 rises gradually before crossing the local baseline ------
-    pm10_cell = "ministry:417:1:PM10:%C2%B5g%2Fm%C2%B3"
-    for minutes, value in ((155, 24.0), (110, 32.0), (65, 58.0), (10, 185.0)):
+    pm10_cell = "ministry:158:4:PM10:%C2%B5g%2Fm%C2%B3"
+    for minutes, value in ((155, 24.0), (110, 32.0), (65, 58.0), (10, 320.0)):
         observed = ago_5(minutes)
         rows.append(
             (
@@ -673,11 +676,11 @@ def build_rows(now: datetime) -> list[tuple[str, str, datetime, dict[str, Any]]]
                 pm10_cell,
                 observed,
                 _pollution(
-                    "417",
-                    "1",
+                    "158",
+                    "4",
                     "PM10",
                     value,
-                    *NEGEV_STATION,
+                    *ARAD_STATION,
                     observed,
                 ),
             )
@@ -685,7 +688,7 @@ def build_rows(now: datetime) -> list[tuple[str, str, datetime, dict[str, Any]]]
     rows.append(
         (
             "weather",
-            NEGEV_STATION_CELL,
+            ARAD_STATION_CELL,
             ago(40),
             _weather(29.0, 35.0, 18.0, 24.0, 270.0),
         )

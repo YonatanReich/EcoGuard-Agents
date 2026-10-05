@@ -31,6 +31,9 @@ import EventLegend from '../components/EventLegend'
 import EventModal from '../components/EventModal'
 import HandledSurvey, { type OperatorFeedback } from '../components/HandledSurvey'
 import FeedbackDialog from '../components/FeedbackDialog'
+
+/** How long a handled card animates out; matches eventCardOut in dashboard.css. */
+const CARD_EXIT_MS = 340
 import { classify } from '../components/hazards'
 
 import FloodLegend from '../components/FloodLegend'
@@ -383,6 +386,7 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
   // whether feedback goes with it; either way the incident closes server-side
   // and the refreshed feed comes back without it.
   const [handlingEvent, setHandlingEvent] = useState<SharedEvent | null>(null)
+  const [leavingIds, setLeavingIds] = useState<ReadonlySet<string>>(() => new Set())
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [handlingSubmitting, setHandlingSubmitting] = useState(false)
   const [handlingError, setHandlingError] = useState<string | null>(null)
@@ -410,10 +414,20 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
         return response.json() as Promise<SharedEventFeed>
       })
       .then((data) => {
-        if (data) setProjectedEvents(data.events ?? [])
-        else setProjectedEvents((current) => current.filter((event) => event.id !== handled.id))
         if (openEventKey === `${handled.type}:${handled.id}`) closePanel()
         setHandlingEvent(null)
+        // The card plays its exit before the new feed, which no longer has
+        // it, replaces the list; swapping at once would make it blink out.
+        setLeavingIds((current) => new Set(current).add(handled.id))
+        window.setTimeout(() => {
+          if (data) setProjectedEvents(data.events ?? [])
+          else setProjectedEvents((current) => current.filter((event) => event.id !== handled.id))
+          setLeavingIds((current) => {
+            const next = new Set(current)
+            next.delete(handled.id)
+            return next
+          })
+        }, CARD_EXIT_MS)
       })
       .catch((error) => {
         console.error('Error handling event:', error)
@@ -569,6 +583,7 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
                   onOpen={selectAndOpenEvent}
                   isSelected={selectedEvent?.type === event.type && selectedEvent.id === event.id}
                   onHandled={demo ? undefined : startHandling}
+                  isLeaving={leavingIds.has(event.id)}
                 />
               ))
             )}
@@ -783,6 +798,7 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
                   onOpen={selectAndOpenEvent}
                   isSelected={selectedEvent?.type === event.type && selectedEvent.id === event.id}
                   onHandled={demo ? undefined : startHandling}
+                  isLeaving={leavingIds.has(event.id)}
                 />
               ))
             )}

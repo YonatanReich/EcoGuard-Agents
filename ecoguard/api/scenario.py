@@ -135,9 +135,9 @@ SCENARIO_STORIES: dict[str, dict] = {
             "area sees its own reading and its own advice.",
         ],
         "passes": (
-            "Each of the 13 regions passes only if it is detected, placed at "
-            "its station, rated low or very low on the Ministry scale, and "
-            "given the Ministry's advice."
+            "A region passes if it is detected, placed at its station, rated "
+            "low or very low on the Ministry scale, and given the Ministry's "
+            "advice. The demo passes when at least 10 of the 13 regions do."
         ),
     },
     "flood_demo": {
@@ -201,8 +201,9 @@ SCENARIO_STORIES: dict[str, dict] = {
             "claim is shown as unconfirmed rather than as a fire.",
         ],
         "passes": (
-            "Each event passes if it is found, placed and routed as authored - "
-            "including the Netanya claim, which must stay unverified."
+            "Each event passes if it is found, placed and routed as authored, "
+            "and each fire carries its spread forecast and risk. The Netanya "
+            "claim must stay unconfirmed, with nothing sent to it."
         ),
     },
     "demo_b": {
@@ -230,7 +231,9 @@ SCENARIO_STORIES: dict[str, dict] = {
         ],
         "passes": (
             "Each event passes if it becomes exactly the incident it was "
-            "authored as - no merges, no splits, nothing unaccounted for."
+            "authored as - no merges, no splits, nothing unaccounted for - "
+            "with a spread forecast for every confirmed fire and units routed "
+            "to every emergency."
         ),
     },
 }

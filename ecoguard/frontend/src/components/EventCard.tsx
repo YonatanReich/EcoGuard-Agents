@@ -13,10 +13,12 @@ function formatObservationTime(timestamp: string) {
       }).format(value)
 }
 
-function EventCard({ event, onOpen, isSelected, onHandled }: {
+function EventCard({ event, onOpen, isSelected, onHandled, isLeaving = false }: {
   event: SharedEvent
   onOpen: (event: SharedEvent) => void
   isSelected: boolean
+  /** Handled and on its way out: plays the exit animation. */
+  isLeaving?: boolean
   /** Opens the handled survey, where the operator also says whether it was
    *  real. Omitted on the demo feed, which has nothing to close. */
   onHandled?: (event: SharedEvent) => void
@@ -36,7 +38,7 @@ function EventCard({ event, onOpen, isSelected, onHandled }: {
 
   return (
     <article
-      className={`event-card${isSelected ? ' event-card--selected' : ''}${strongOfficialEmphasis ? ' event-card--official-strong' : ''}${unconfirmed ? ' event-card--unconfirmed' : ''}`}
+      className={`event-card${isSelected ? ' event-card--selected' : ''}${strongOfficialEmphasis ? ' event-card--official-strong' : ''}${unconfirmed ? ' event-card--unconfirmed' : ''}${isLeaving ? ' event-card--leaving' : ''}`}
       style={{ '--hazard': hazard.color } as React.CSSProperties}
     >
     <button

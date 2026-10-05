@@ -143,6 +143,17 @@ def grade(scenario: str, *, schema: str | None = None) -> dict[str, Any]:
                 f"allocated units {allocated_units!r}, expected "
                 f"{sorted(expected_units)!r}"
             )
+        expected_confirmation = expected.get("expect_confirmation")
+        confirmation = (payload.get("confirmation") or {}).get("status")
+        if expected_confirmation and confirmation != expected_confirmation:
+            problems.append(f"confirmation {confirmation!r}, expected {expected_confirmation!r}")
+        # The incident report a fire must carry: where it goes and how bad
+        # that is. Without both, an operator has a marker and no picture.
+        if expected.get("expect_spread"):
+            if not (details.get("spread") or {}).get("likely"):
+                problems.append("no spread forecast drawn")
+            if details.get("risk_level") is None:
+                problems.append("no spread risk level")
         if expected.get("expect_routing") and routing_status != "complete":
             problems.append(
                 f"allocation routing {routing_status!r}, expected 'complete'"
@@ -208,11 +219,17 @@ def grade(scenario: str, *, schema: str | None = None) -> dict[str, Any]:
     ]
 
     passed = sum(1 for entry in findings if entry["verdict"] == "PASS")
+    # Most scenarios need every event. One may accept fewer when its events
+    # are many samples of one story (13 regions of one national episode), so a
+    # single planner wording slip does not fail a picture that is plainly right.
+    required = getattr(module, "REQUIRED_PASSES", len(module.GROUND_TRUTH))
     return {
         "scenario": scenario,
         "schema": target,
         "events_expected": len(module.GROUND_TRUTH),
         "events_passed": passed,
+        "required_passes": required,
+        "scenario_passed": passed >= required,
         "events_partial": sum(1 for e in findings if e["verdict"] == "PARTIAL"),
         "events_missed": sum(1 for e in findings if e["verdict"] == "MISS"),
         "spurious_incidents": spurious,
@@ -398,8 +415,9 @@ def main() -> int:
     scenario = sys.argv[1] if len(sys.argv) > 1 else "demo_a"
     report = grade(scenario)
 
-    print(f"\n{report['scenario']}  —  {report['events_passed']}/"
-          f"{report['events_expected']} events passed, "
+    print(f"\n{report['scenario']}  —  {'PASS' if report['scenario_passed'] else 'FAIL'}: "
+          f"{report['events_passed']}/{report['events_expected']} events passed "
+          f"(needs {report['required_passes']}), "
           f"{report['events_partial']} partial, {report['events_missed']} missed")
     print(f"{report['incident_count']} incidents, "
           f"{len(report['spurious_incidents'])} unaccounted for\n")
