@@ -409,6 +409,7 @@ def _flood_site(severity, road_class="primary", target_id="target-primary"):
         "target_id": target_id,
         "severity_level": severity,
         "urban": True,
+        "distance_from_station_m": 100.0,
         "road": {"base_class": road_class, "ref": "4"},
         "mapbox_verification": {"mapbox_snap_distance_m": 4.0},
         "allocation_location": {"latitude": 32.0, "longitude": 34.8},
@@ -541,7 +542,7 @@ def test_flood_allocator_requires_risk_analyzer_output():
         )
 
 
-def test_flood_allocator_selects_the_highest_priority_verified_road():
+def test_flood_allocator_uses_road_priority_when_distances_are_equal():
     agent = allocation_agent({})
     street = _flood_site(4, "street", "street-target")
     motorway = _flood_site(4, "motorway", "motorway-target")
@@ -1675,3 +1676,40 @@ def test_unsuccessful_planner_status_is_preserved(planning_status):
         "planner error" if planning_status == "failed" else None
     )
     assert fire_reader.call_count == 1
+
+
+def test_flood_allocator_prefers_nearest_verified_crossing_over_road_class():
+    agent = allocation_agent({})
+    near = _flood_site(4, "secondary", "near-target")
+    near["distance_from_station_m"] = 120.0
+    far = _flood_site(4, "motorway", "far-target")
+    far["distance_from_station_m"] = 7000.0
+    unverified = _flood_site(4, "motorway", "unverified-target")
+    unverified["distance_from_station_m"] = 10.0
+    unverified["allocation_eligible"] = False
+    near["allocation_location"] = {"latitude": 32.001, "longitude": 34.801}
+    prepared = agent.request_preparer.prepare(
+        {
+            "incident_id": "INC-FLOOD-1",
+            "hazard": "flood",
+            "queued_at": NOW,
+            "risk_assessment": _flood_risk(4),
+            "flood_targeting": {
+                "allocation_ready_sites": [far, near, unverified],
+            },
+        },
+        NOW,
+    )
+    assert prepared["allocation_target"]["target_id"] == "near-target"
+    assert prepared["response_plan"]["location"] == near["allocation_location"]
+
+
+@pytest.mark.parametrize("distance", [None, -1, float("nan"), float("inf"), True])
+def test_flood_site_with_unknown_or_invalid_distance_does_not_beat_known_distance(distance):
+    from ecoguard.resource_allocator.request_preparation import AllocationRequestPreparer
+
+    known = _flood_site(3, "secondary", "known-target")
+    unknown = _flood_site(6, "motorway", "unknown-target")
+    unknown["distance_from_station_m"] = distance
+    selected = max([unknown, known], key=AllocationRequestPreparer._flood_site_priority)
+    assert selected["target_id"] == "known-target"

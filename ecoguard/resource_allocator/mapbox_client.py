@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 from typing import Any, Iterable
 
 import httpx
@@ -442,9 +443,22 @@ class MapboxClient:
             if not isinstance(step, dict):
                 continue
             maneuver = step.get("maneuver") or {}
+            instruction = maneuver.get("instruction") or ""
+            # A numbered route is a highway, even when Mapbox's Hebrew text
+            # calls it a street. Only rewrite numbers confirmed by this step's ref.
+            road_ref = step.get("ref")
+            if isinstance(road_ref, str):
+                for reference in re.split(r"[;,]", road_ref):
+                    reference = reference.strip()
+                    if re.fullmatch(r"[0-9]+", reference):
+                        instruction = re.sub(
+                            rf"רחוב\s+({re.escape(reference)})(?=$|[\s/.,;:!?()])",
+                            r"כביש \1",
+                            instruction,
+                        )
             result.append(
                 {
-                    "instruction": maneuver.get("instruction") or "",
+                    "instruction": instruction,
                     "distance_m": step.get("distance"),
                     "duration_s": step.get("duration"),
                     "road_name": step.get("name") or None,

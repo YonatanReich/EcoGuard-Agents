@@ -212,9 +212,27 @@ Flood first needs a physical response destination. `FloodRoadTargetAgent`:
    Haversine calculation;
 6. verifies each candidate against Mapbox before making it allocation-eligible.
 
-The request preparer selects the highest-priority verified road site. One police
-station is routed to the selected target unless a successful Planner response
-requests a different supported set of unit types.
+The request preparer selects the allocation-eligible road crossing closest to
+its source hydrometric station. `distance_from_station_m` is the Haversine
+distance in meters from the station coordinates to `crossing_location`, including
+when the crossing was found on a matched stream. It is calculated from those
+coordinates rather than using the GIS candidate's distance to the stream, which
+can be zero for every stream crossing. This is a geographic distance, not a
+driving distance or a distance along the stream. When an incident contains
+multiple stations, each crossing is compared using its distance to its own
+source station.
+
+Only allocation-eligible sites with an `allocation_location` participate in
+selection. The shortest valid station-to-crossing distance takes precedence;
+missing or invalid distances rank behind valid distances. Ties are resolved by
+higher severity, higher road-class priority, an urban site, smaller Mapbox snap
+distance, and finally the target id for deterministic ordering.
+
+After choosing the crossing, units are routed to its Mapbox-verified
+`allocation_location` (the vehicle-access point), which may differ from the
+physical `crossing_location`. One police station is routed to the selected
+target unless a successful Planner response requests a different supported set
+of unit types.
 
 If there is no verified road site but valid hydrometric station coordinates are
 available, the station becomes an explicitly marked fallback destination. Its

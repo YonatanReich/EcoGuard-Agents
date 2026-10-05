@@ -306,7 +306,7 @@ class FloodRoadTargetAgent:
                 "error": str(error),
             }
         verified = verification.get("verified") is True
-        local_distance = float(candidate.get("distance_from_station_m") or 0.0)
+        local_distance = self._distance_m(state, crossing_location)
         local_confidence = (
             "high"
             if strategy == "matched_stream" or local_distance <= self.primary_station_radius_m

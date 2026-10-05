@@ -10,6 +10,21 @@ const SEVERITY_COLORS: Record<3 | 4 | 5 | 6, string> = {
   6: '#7f1d1d',
 }
 
+function floodColor(details: FloodEvent['details']) {
+  // Operational risk levels are separate from the hydrological return period.
+  const period = /^(\d+)-year$/.exec(details.return_period_label)
+  if (details.return_period_label === 'below Q2') return SEVERITY_COLORS[3]
+  if (period) {
+    const years = Number(period[1])
+    if (years <= 10) return SEVERITY_COLORS[3]
+    if (years <= 20) return SEVERITY_COLORS[4]
+    if (years <= 50) return SEVERITY_COLORS[5]
+    return SEVERITY_COLORS[6]
+  }
+  // Preserve support for older events that lack a recognised period label.
+  return SEVERITY_COLORS[details.severity_level] ?? SEVERITY_COLORS[3]
+}
+
 function precisionCircle(center: GeographicPoint, radiusM: number) {
   const earthRadiusM = 6_371_000
   const latitude = center.latitude * Math.PI / 180
@@ -39,7 +54,7 @@ function FloodEventLayer({ event, onEventClick }: {
   onEventClick?: (event: FloodEvent) => void
 }) {
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null)
-  const color = SEVERITY_COLORS[event.details.severity_level]
+  const color = floodColor(event.details)
   const selectedTarget = event.details.response_sites.find(
     (site) => site.target_id === selectedTargetId,
   ) ?? null
@@ -95,6 +110,8 @@ function FloodEventLayer({ event, onEventClick }: {
             layout={{ 'line-cap': 'round', 'line-join': 'round' }}
             paint={{
               'line-color': color,
+              // Keep the warning color visible under Standard's dusk lighting.
+              'line-emissive-strength': 1,
               'line-width': 14,
               'line-opacity': 0.2,
               'line-blur': 3,
@@ -105,7 +122,7 @@ function FloodEventLayer({ event, onEventClick }: {
             type="line"
             slot="top"
             layout={{ 'line-cap': 'round', 'line-join': 'round' }}
-            paint={{ 'line-color': color, 'line-width': 4, 'line-opacity': 0.95 }}
+            paint={{ 'line-color': color, 'line-emissive-strength': 1, 'line-width': 4, 'line-opacity': 0.95 }}
           />
         </Source>
       )}

@@ -259,3 +259,32 @@ def test_tilequery_rejects_a_conflicting_explicit_road_number():
 
     assert result["verified"] is False
     assert result["reason"] == "compatible_mapbox_road_not_found"
+
+
+@pytest.mark.parametrize(
+    ("reference", "instruction", "expected"),
+    [
+        ("90", "המשך ברחוב 90/דרך ים המלח.", "המשך בכביש 90/דרך ים המלח."),
+        ("90", "צא מהכיכר אל רחוב 90.", "צא מהכיכר אל כביש 90."),
+        ("31; 90", "המשך ברחוב 31 ואז ברחוב 90", "המשך בכביש 31 ואז בכביש 90"),
+        ("90", "המשך ברחוב 900.", "המשך ברחוב 900."),
+        ("90", "פנה לרחוב יהודה.", "פנה לרחוב יהודה."),
+        (None, "המשך ברחוב 90.", "המשך ברחוב 90."),
+        ("", "המשך ברחוב 90.", "המשך ברחוב 90."),
+        ("90", "המשך בכביש 90.", "המשך בכביש 90."),
+        ("90", "המשך ברחוב 90א.", "המשך ברחוב 90א."),
+    ],
+)
+def test_hebrew_directions_use_highway_wording_only_for_confirmed_route_numbers(
+    reference, instruction, expected,
+):
+    steps = MapboxClient._hebrew_steps([{
+        "ref": reference,
+        "name": "דרך ים המלח",
+        "distance": 120,
+        "duration": 15,
+        "maneuver": {"type": "turn", "instruction": instruction},
+    }])
+    assert steps[0]["instruction"] == expected
+    assert steps[0]["road_name"] == "דרך ים המלח"
+    assert steps[0]["distance_m"] == 120

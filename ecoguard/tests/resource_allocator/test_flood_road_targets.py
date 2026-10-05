@@ -172,7 +172,7 @@ def test_matched_station_uses_only_its_water_source_geometry():
 
 
 def test_station_fallback_searches_30m_then_expands_to_signal_precision():
-    road = candidate("secondary", distance=75)
+    road = candidate("secondary", latitude=32.000675, distance=75)
     repository = FakeRepository(nearby_by_radius={100.0: [road]})
     agent = FloodRoadTargetAgent(
         repository=repository,
@@ -276,3 +276,16 @@ def test_no_candidates_returns_stream_access_advisory():
     assert result["resource_allocations"] == []
     assert result["advisories"][0]["action"] == "warn_and_restrict_stream_access"
 
+
+
+def test_stream_crossing_distance_is_measured_from_the_gauge():
+    agent = FloodRoadTargetAgent(
+        repository=FakeRepository(
+            stream={"water_source_id": 9001, "has_geometry": True},
+            crossings=[candidate("primary", latitude=32.01, distance=0)],
+        ),
+        mapbox_client=FakeMapbox(),
+    )
+    site = agent.identify(incident())["allocation_ready_sites"][0]
+    # The repository used to return zero for every matched-stream crossing.
+    assert site["distance_from_station_m"] == pytest.approx(1112, abs=2)
