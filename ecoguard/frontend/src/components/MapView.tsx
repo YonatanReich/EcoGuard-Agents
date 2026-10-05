@@ -19,7 +19,7 @@
  * the terrain is the point — slope and aspect drive fire behaviour.
  */
 
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, type CSSProperties } from 'react'
 import Map, {
   NavigationControl,
   ScaleControl,
@@ -201,15 +201,6 @@ function MapView({
 }: MapViewProps) {
 
   /**
-   * Surface a map-tile loading error once instead
-   * of leaving the user with a silently broken map.
-   */
-  const [
-    hadError,
-    setHadError,
-  ] = useState(false)
-
-  /**
    * Mapbox only resizes itself on window resize, not when its container
    * changes size — and the event panel docked under the map shrinks it. Watch
    * the container and resize the canvas with it, frame by frame, so the map
@@ -267,16 +258,6 @@ function MapView({
       style={containerStyle}
     >
 
-      {hadError && (
-        <div
-          style={errorBannerStyle}
-        >
-          Failed to load map tiles — check your
-          Mapbox token and network.
-        </div>
-      )}
-
-
       <Map
         ref={mapRef}
 
@@ -330,9 +311,8 @@ function MapView({
          */
         attributionControl
 
-        onError={() =>
-          setHadError(true)
-        }
+        // ponytail: no onError handler, so react-map-gl logs map errors to the
+        // console. A banner here fired on any layer error and never cleared.
 
         style={{
           width: '100%',
@@ -482,31 +462,6 @@ const messageStyle: CSSProperties = {
   color: '#9fb3d1',
 
   borderRadius: 12,
-}
-
-
-/**
- * Tile-load error banner.
- */
-const errorBannerStyle: CSSProperties = {
-  position: 'absolute',
-
-  top: 8,
-
-  left: 8,
-
-  zIndex: 2,
-
-  background:
-    'rgba(180, 30, 30, 0.92)',
-
-  color: '#fff',
-
-  padding: '6px 10px',
-
-  borderRadius: 6,
-
-  fontSize: '0.85rem',
 }
 
 
