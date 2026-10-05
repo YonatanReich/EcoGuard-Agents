@@ -110,6 +110,8 @@ function FloodEventLayer({ event, onEventClick }: {
             layout={{ 'line-cap': 'round', 'line-join': 'round' }}
             paint={{
               'line-color': color,
+              // Keep the warning color visible under Standard's dusk lighting.
+              'line-emissive-strength': 1,
               'line-width': 14,
               'line-opacity': 0.2,
               'line-blur': 3,
@@ -120,7 +122,7 @@ function FloodEventLayer({ event, onEventClick }: {
             type="line"
             slot="top"
             layout={{ 'line-cap': 'round', 'line-join': 'round' }}
-            paint={{ 'line-color': color, 'line-width': 4, 'line-opacity': 0.95 }}
+            paint={{ 'line-color': color, 'line-emissive-strength': 1, 'line-width': 4, 'line-opacity': 0.95 }}
           />
         </Source>
       )}
